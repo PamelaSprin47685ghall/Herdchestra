@@ -1,0 +1,34 @@
+{
+  "name": "@herdchestra/host-cline",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "Herdchestra adapter for Cline: js-manager / js-worker / js-review / fork / join as a Cline plugin. Shipped inside the herdchestra package; not published on its own, because its modules import ../core and ../compose and only resolve inside the root tree.",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "//files": "A hand-written list drifted: it omitted plan-entry.mjs, handoff.mjs, plugin-session.mjs, role-fact.mjs, start-result.mjs, entry-path.mjs, fission.mjs, devops.mjs and README.md, so a package install that honours `files` dropped modules index.js imports. The directory is the unit; tests and `AGENTS.md` are repo-internal and do not ship (the root package excludes them the same way, and root §0.1 makes the root package the only installable unit). The glob must be `**/*`: `\".\"` and `\"./\"` pack only package.json and README.md (measured with `npm pack`).",
+  "files": [
+    "**/*",
+    "!**/*.test.mjs",
+    "!AGENTS.md"
+  ],
+  "cline": {
+    "plugins": [
+      {
+        "paths": ["./index.js"],
+        "capabilities": ["tools", "hooks", "rules"]
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@cline/core": "*"
+  },
+  "peerDependenciesMeta": {
+    "@cline/core": {
+      "optional": true
+    }
+  }
+}

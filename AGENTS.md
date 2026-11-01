@@ -86,9 +86,24 @@ Orchestration for agents that don't like being orchestrated.
 #### 底稿与 Plan 的工具边界
 - 唯一持久产物：`Plan` 的唯一产物是底稿，其路径由任务固定派生，系统会告知确切路径。`Plan` 只读写这一个文件（这是职责边界，不是运行时路径门禁）。
 - 首次评审前只读：每一任 `Plan` 在提交本任的第一次 `review` 之前，底稿对它是只读的（调用 `this.write` 会被拒绝）；第一次 `review` 之后才解锁写入。接力换人开启新任期后，底稿重新变为只读，迫使新任先读完评判，再动笔修改。
-- 极简编程面：`Plan` 只有五个能力：`this.cat`、`this.write`、`this.devops(intent)`、`this.ask(question)`、`review(findings)`。它没有 `glob`、`grep`、`exec`，也不得访问仓库其他文件：
+- 极简编程面：`Plan` 只有这些能力：`this.cat`、`this.write`、`this.devops(intent)`、`this.ask(question)`（仅 S1）、`this.unpark(name, value?)`、`review(findings)`。它没有 `glob`、`grep`、`exec`，也不得访问仓库其他文件：
   - 需要调查仓库事实时，一律调用 `this.devops(intent)` 同步取得；同一任务同时至多有一个未决的 `DevOps`，其完整调查记录原样返回，系统不做二次摘要。
-  - 需要向用户提问时，调用 `this.ask(question)`；程序随即挂起，本次 attempt 中断；待用户答复以真实 steer 到来后，同一任务从挂起点继续，不重开任期、也不制造评审。
+  - 需要向用户提问时，调用 `this.ask(question)`。它的语义就是 `this.park({ question })` + `interrupt`：挂起当前程序，并中断本轮模型回合，把控制权交还人类用户。用户在常规对话中输入答复后，控制权回到 AI，AI 在新程序中调用 `await this.unpark(name, answer)` 将用户答复注入挂起点，原程序即从 `this.ask` 处继续执行，不重开任期、也不制造评审。
+  - `this.ask(question)` **仅在 `S1`（需求分析）阶段可用**。`S2`、`S3`、`待执行` 阶段调用 `this.ask` 一律被拒绝（`ASK_FORBIDDEN_OUTSIDE_S1`）；此时程序并未挂起，系统不等待任何人。
+
+#### 无人值守：唯一的停止出口与防自然停止的 Nudge
+
+万象术的目标是**无人值守的长程稳定工作**。系统处于常授权模式：顶层代理自己决定、自己动手、自己验收，不等待用户决策，也不等待授权。
+
+面向用户的顶层代理（`Plan` 与 `Manager`）只有两个合法出口：
+1. **`S1` 的提问**：`Plan` 在 `S1` 阶段调用 `this.ask(question)`，程序挂起、回合中断，控制权交还用户。这是整场工作中唯一由人决定的时刻。
+2. **验收上一任合格后的终局停止**：`Plan` 由继任者在 `S3` 独立验收上一任合格、进入「待执行」并提交 `review([])` 完成向 `Manager` 的交接；`Manager` 在「收尾」阶段清空台账结案为「已完成」。
+
+除此以外，顶层代理**永远不可能自然停止**。若它在未到达出口、也未处于 `S1` 提问挂起时结束回合，系统拦截这次停止，并自动注入一条 **Nudge** 督促消息触发下一轮继续：
+- 列出当前 `review` 义务台账中尚未完成的全部待办项（`{ key, value }`）；若台账为空，则明确指出当前里程碑尚未完成评审、继任验收或交接；
+- 附上硬性口令：**「当前的 review 账本还有上述事项没有做，立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。」**
+
+这条不变量（「除非 `S1` 的 `ask`，否则绝不自然停止；只在验收上一任合格后停止」）由 `fast-check` 属性测试严格证明（`src/compose/nudge.test.mjs`）。
 
 #### Plan 向 Manager 的交接
 当 `Plan` 推进到「待执行」阶段后，不再接受非空台账（提交非空台账会被拒收）。此时：
@@ -101,6 +116,8 @@ Orchestration for agents that don't like being orchestrated.
 ### 2.3 执行阶段（Manager）：导演、派工与收尾
 
 `Manager` 拿到底稿后，以导演身份组织施工。它的里程碑依次为：「执行」 → 「收尾」 → 「已完成」。
+
+`Manager` 全程无人值守：它没有 `this.ask`（调用即 `ASK_FORBIDDEN_OUTSIDE_S1` 拒绝），不向用户请示，也不等待授权。它的唯一出口是「收尾」阶段清空台账结案为「已完成」；在到达该出口之前结束回合，会被系统注入 Nudge 督促继续（见 §2.2）。初任第一次 `review([])` 在 `Manager` 侧**不是**提问：它是对前任工作的独立验收（回执 `confirm`），绝不等待用户；下一次空账 `review` 才触发接力，由继任者自己那一次空账 `review` 把工作推进到「收尾」。
 
 #### 调度纪律
 - 任何时候保持恰好 1 名与道路绑定的 `DevOps` 和尽可能多的 `Coder`（对可拆解的大任务，通常同时调遣 10 名以上 worker；其余按实际需要派出）。
@@ -132,7 +149,7 @@ Orchestration for agents that don't like being orchestrated.
 - 调用后返回回执（表示已提交，或可提交下一次评审——这不是需要用 `join` 等待的异步结论）。
 
 #### 接力（Relay）与晋级（Promotion）的完整时序
-1. 初任首评为空（向用户请示）：如果第一任（初任）的第一次 `review` 时台账就是空的，这不算评审，也不触发接力。系统会代该任向用户提问 `「我需要干什么？」` 并等待真实答复；答复到来后，由同一任继续工作。
+1. 初任首评为空（向用户请示，仅 `Plan` 的 `S1`）：如果第一任（初任）的第一次 `review` 时台账就是空的，这不算评审，也不触发接力。**仅当这是 `Plan` 且处于 `S1` 阶段时**，系统代该任向用户提问 `「我需要干什么？」`——这与 `this.ask` 是同一语义：`this.park({ question })` + `interrupt`，控制权交还用户；用户在常规对话中答复后，控制权回到 AI，由 AI 在新程序中 `this.unpark(name, answer)` 恢复，同一任在同一任期继续工作，不重开任期、不制造评审。`Manager` 侧（以及 `Plan` 的 `S1` 之后）的初任空账**不提问**：它是对前任的独立验收，直接推进里程碑；系统绝不等待用户决策。
 2. 台账非空（正常工作期）：现任提交 `review` 后，如果计算出的台账非空，则处于正常工作期，由现任继续干活，补齐本里程碑的义务（台账非空时绝不允许边修边跨入下一里程碑）。
 3. 台账由非空变空（触发接力）：当现任把台账里的所有键都用 `null` 删空时，触发接力。系统在同一笔原子持久记录里同时完成三件事（三者不可分割，进程中断也不会留下半个任期）：
    - 将现任标记为退休（退休者不能因旧请求重放而再次动手）；
@@ -156,6 +173,8 @@ Orchestration for agents that don't like being orchestrated.
 
 凡是通过 `this.` 调用的方法一律写作 `this.xxx`，顶层原语直接写函数名。除下表列出的能力外，不存在任何隐式成员，也不设跨调用事务或二次校验：
 
+同一个工具只有一种调用写法，绝不同时以 `xxx` 与 `this.xxx` 两种形式存在。顶层原语（`fork`、`join`、`review`）只以裸函数名存在：程序实例上没有 `this.fork`、`this.join`、`this.review`。其余成员（`this.cat`、`this.stat`、`this.ls`、`this.write`、`this.mkdir`、`this.rm`、`this.mv`、`this.where`、`this.whereAll`、`this.call`、`this.devops`、`this.fission`、`this.park`、`this.unpark`、`this.ask`）只以 `this.xxx` 存在：作用域里没有同名裸函数，写 `cat(...)` 只会得到 `ReferenceError`。
+
 | 调用形式 | 语义说明 | `Plan` | `js-manager` (`Manager`) | `js-review` (`Manager` 评估期) | `js-worker` (`Coder` / `DevOps`) |
 |----------|----------|:------:|:------------------------:|:------------------------------:|:--------------------------------:|
 | `this.cat(path)` | 读取文件完整 UTF-8 文本 | 仅底稿 | - | 有 | 有 |
@@ -169,8 +188,8 @@ Orchestration for agents that don't like being orchestrated.
 | `this.devops(intent)` | `Plan` 专用的同步仓库调查通道（同任务至多 1 个未决，原样返回全记录） | 有 | - | - | - |
 | `this.fission(prompts)` | 将当前 worker 身份同时展开为多条并行 lane | - | - | - | 有 |
 | `this.park(payload)` | 显式将当前程序挂起，立即返回挂起回执 | - | 有 | 有 | 有 |
-| `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value` | - | 有 | 有 | 有 |
-| `this.ask(question)` | 向人类用户提问并挂起等待答复（唯一用户提问通道，子代理无此通道） | 有 | 有 | - | - |
+| `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value`（也用于恢复 `this.ask` 挂起的程序） | 有 | 有 | 有 | 有 |
+| `this.ask(question)` | 向人类用户提问（仅 `Plan` 的 `S1` 阶段可用）：语义即 `this.park({ question })` + `interrupt`（挂起当前程序并中断当前回合交还控制权给用户；用户输入后控制权回到 AI，由 AI 调用 `this.unpark(name, answer)` 恢复）（子代理无此通道） | 仅 S1 | - | - | - |
 | `fork(name, brief)` | 启动新 worker，或向同名在途 worker 投递新指令（steer） | - | 有 | - | 有（若允许再分派） |
 | `join()` | 等待第一个归来的子代理或结束的进程，返回其记录 | - | 有 | - | 有 |
 | `review(findings)` | 提交义务台账评审，台账清空时触发接力或推进阶段 | 有 | 有 | - | - |
@@ -211,13 +230,15 @@ Orchestration for agents that don't like being orchestrated.
     - 操作或命令完成后，自动回到 `running` 继续往下走。
   - 遇到需要外部介入的时刻（调用 `this.park`、`this.where` 命中数不为 1、调用 `this.ask`，或本次请求计时到期）：
     - 无论当时处于 `running` 还是 `waiting`，程序立即转入 `parked`（已挂起），并向模型返回一份挂起回执；
-    - 待后续另一个程序调用 `this.unpark(name, value?)` 恢复它（或用户回答了 `this.ask`），程序从刚才停下的那一行表达式重新回到 `running`。
+    - 待后续另一个程序调用 `this.unpark(name, value?)` 恢复它，程序从刚才停下的那一行表达式重新回到 `running`。
+  - 调用 `this.ask(question)`（仅 `Plan` 的 `S1` 阶段可用）：程序转入 `parked`，回执带 `reason: "ask"`、`payload: { question }` 与 `interrupt: true`，同时**中断本轮模型回合**（`interrupt`），控制权交还用户。用户在常规对话中答复后，控制权回到 AI，AI 在新程序中调用 `this.unpark(name, answer)`，挂起程序以该答复为 `this.ask` 的返回值回到 `running` 继续执行。
+    - 在 `S1` 之外（`Plan` 的 `S2`/`S3`/`待执行`、`Manager` 的全部阶段、所有子代理），调用 `this.ask` 直接被拒绝（`ASK_FORBIDDEN_OUTSIDE_S1`），程序不挂起、回合不中断，系统不等待任何人。
   - `run()` 方法执行完毕或抛出未捕获异常：
     - 程序先进入 `settling`（收尾过渡期，不再接受新的表达式推进）；
     - 收尾完毕后，正常返回则定格为 `completed`（已完成），异常终止则定格为 `failed`（已失败）。
 
 #### 挂起（`this.park`）的三条触发路径与回执
-无论是由 (1) 显式调用 `this.park(payload)`、(2) `this.where` 遇到零匹配或多匹配，还是 (3) 调用 `this.ask(question)` 触发，走的都是同一条内部通道：当前表达式等待的 Promise 被替换为内部信号 `__programPark`，程序立即转入 `parked`，本次工具调用不再阻塞等待，而是立刻向模型返回一份结构化回执：
+无论是由 (1) 显式调用 `this.park(payload)`、(2) `this.where` 遇到零匹配或多匹配，还是 (3) 调用 `this.ask(question)`（仅 `S1`）触发，走的都是同一条内部通道：当前表达式等待的 Promise 被替换为内部信号 `__programPark`，程序立即转入 `parked`，本次工具调用不再阻塞等待，而是立刻向模型返回一份结构化回执：
 
 ```js
 {
@@ -233,6 +254,10 @@ Orchestration for agents that don't like being orchestrated.
 }
 ```
 
+其中 `this.ask(question)` 的挂起与显式 `this.park` 完全同构，只是回执额外带两项控制事实：
+- `reason: "ask"`，`payload: { question }`；
+- `interrupt: true`：宿主必须中断本轮模型回合，把控制权交还用户（`this.ask` = `this.park` + `interrupt`）。
+
 挂起绝不冻结外部世界：程序转入 `parked` 时，它之前已经启动的命令继续在后台运行，标准输出与错误输出继续被收集；同时，本程序在当前工具请求上的计时期限被取消，等将来被恢复时，按控制请求的新期限继续计时，不会沿用或续期旧期限。
 
 #### 恢复（`this.unpark`）与防呆核验
@@ -243,8 +268,8 @@ Orchestration for agents that don't like being orchestrated.
 4. 能力集核验（`CAPABILITY_DENIED`）：控制者必须持有目标程序所需的能力集（防越权恢复）。
 
 四道核验全部通过后，宿主把目标程序从 `parked` 切回 `running`：
-- 对于显式 `this.park` 和 `this.where` 歧义挂起点，`this.unpark` 传入的 `value`（若省略 `value` 则等价于注入 `null`）会原样作为挂起表达式的返回值交给原程序（宿主不对注入的区间做二次校验，由程序自己保证切片有效）。
-- 对于 `this.call` 命令等待和 `this.ask` 提问挂起点，它们恢复时各自拿回命令真实结果或用户真实答复，不受 `this.unpark` 传入的 `value` 影响。
+- 对于显式 `this.park`、`this.where` 歧义挂起点 **以及 `this.ask` 提问挂起点**，`this.unpark` 传入的 `value`（若省略 `value` 则等价于注入 `null`）会原样作为挂起表达式的返回值交给原程序（宿主不对注入的区间做二次校验，由程序自己保证切片有效；对 `this.ask` 而言，`value` 就是用户的答复）。
+- 唯独 `this.call` 命令等待挂起点，恢复时拿回命令的真实执行结果，不受 `this.unpark` 传入的 `value` 影响。
 - 单次恢复保证：同一个挂起点只能被恢复一次。如果控制者之后再次对同一名字调用 `this.unpark`，而目标已经运行结束或已不在该挂起点，系统会返回 `STALE_CONTROL` 或目标的当前回执，绝不会隐式再恢复一次。
 
 #### 名字占用与重放幂等
@@ -428,11 +453,13 @@ class Js extends JsProgram {
 ```
 要点：`this.call` 漏写 `await` 也会停住本程序；每次调用启动一条 shell 命令，且在启动前会先等本程序既有的 SDK 操作结清。注意 `Coder` 的 bash 禁令是提示词约束，`this.call` 在 `js-worker` 工具面上始终存在并真实执行。
 
-例 7，`this.ask`：顶层代理唯一的用户提问通道：
+例 7，`this.ask`：`Plan` 在 `S1` 阶段唯一的用户提问通道（`this.park` + `interrupt`，答复由 `this.unpark` 注入）：
 
 ```js
 class Js extends JsProgram {
   async run() {
+    // S1 阶段：程序在此挂起（reason: "ask"，payload: { question }），本轮回合被中断，
+    // 控制权交还用户。程序名是本次工具调用的 callId，下文恢复时要用到它。
     const answer = await this.ask("要更新的是 docs/API.md 还是 src/api.mjs？");
     const targetPath = answer.includes(".md") ? "docs/API.md" : "src/api.mjs";
     const source = await this.cat(targetPath);
@@ -443,7 +470,18 @@ class Js extends JsProgram {
   }
 }
 ```
-要点：`this.ask` 把问题交给人类用户，程序在此处自动挂起，收到用户的真实答复后，`this.ask` 返回该答复字符串，程序继续往下跑；子代理没有这条通道。
+
+用户随后在常规对话中回复「docs/API.md」。控制权回到 AI，AI 在新命名程序里把答复注入原挂起点（设原程序名为 `"ask-target"`）：
+
+```js
+class Js extends JsProgram {
+  async run() {
+    // 注入用户答复；原程序从 this.ask 处继续，写完 docs/API.md 后返回其终局回执。
+    return await this.unpark("ask-target", "docs/API.md");
+  }
+}
+```
+要点：`this.ask` 不是另一条通道，它就是 `this.park({ question })` + `interrupt`。程序在此处挂起、回合中断、控制权交还用户；用户在常规对话中答复后，AI 用 `this.unpark(name, answer)` 恢复，原程序以该答复作为 `this.ask` 的返回值继续执行，写完 `docs/API.md` 并返回 `{ updatedPath: "docs/API.md" }`。不重开任期、不制造评审。仅 `S1` 可用；子代理没有这条通道。
 
 例 8，挂起后由另一个程序恢复（先因歧义挂起，再由新程序调用 `this.unpark` 注入结果）：
 
@@ -585,6 +623,8 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 宿主怎么在磁盘上存聊天记录，万象术并不关心，也绝不修改宿主的持久历史或用户原文。万象术只在每次向大模型发送请求前，对出站请求副本（Request Copy）做两件干净的改写：用 Pair Hint 注入语言要求、`AGENTS.md` 防忘记口诀与运行预算校准，用 Scope 修剪过期的工具调用与思考噪音。
 
+- 标题与范围：下面除了 §6.1 Pair Hint 与 §6.2 Scope 之外，§6.3 规定所有发给 LLM 看的结构化数据（含提示词注入载荷与工具返回值）的排版格式。
+
 ### 6.1 Pair Hint：双语结对、`AGENTS.md` 防忘记口诀与前缀稳定
 
 大模型在长任务里常常写着写着就从中文切回英文、把 `AGENTS.md` 里的关键规矩抛之脑后，或者对当前花了多少时间、剩多少窗口一无所知。Pair Hint 通过在出站请求副本里定期注入合成提示来解决这些问题。
@@ -651,6 +691,19 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 - 冷启保护：进程重启后，持久事实文件里记录的历史 `resetScope` 只证明过去发生过该事件，不能代表当前内存里的剩余预算。在模型重新确证当前预算之前，系统会持续提示模型重新执行 `resetScope`，绝不把内存默认值误当成“已耗尽额度”而锁死工具调用。
 - 与 Pair Hint 互不干扰：Pair Hint 只管双语提示、口诀提醒与预算呈现，不修改 `retention`；`retention` 只由 `scope` 注解改变。两者共同作用于出站请求副本。
 
+### 6.3 面向大模型的结构化数据呈现：一律使用 CUE Pretty Print（禁止裸 JSON）
+
+大模型也是外貌协会：传统 `JSON.stringify` 制造的裸 JSON 充斥着 `\"`、`\\`、`\n` 等转义噪音，一旦工具返回源码、命令输出或挂起回执（如含带行号 `source` 的 `this.park` 回执），层层转义会让模型阅读费力、切错行号甚至算错偏移。
+
+因此，凡是可能进入 LLM 视野的结构化数据（LLM-facing JSON Dump，包括但不限于 prompt 注入载荷、合成提示、工具返回值、回执与错误详情），**一律不得直接投喂 raw JSON，必须转换为排版工整的 CUE 格式（Pretty Print）后再呈现给大模型**（注：仅落盘供机器自己读写的 `.Herdchestra/{session}.jsonl` 等内部持久存储不在此列）：
+
+1. 字符串零转义污染（阶梯选择）：
+   - 单行无转义冲突的短文本：优先使用普通行内字符串（`"..."`），若含双引号或反斜杠则包一层或多层 `#`（`#"..."#`、`##"..."##`）消除转义；
+   - 多行文本（如源码片段、`stdout`/`stderr`、多行提示词）：使用 CUE 多行字符串（`"""` ... `"""`）；
+   - 内容自身含有 `"""`、`\` 或插值序列 `\(...)` 时：使用 CUE 变长原始多行字符串（`#"""` ... `"""#`、`##"""` ... `"""##` 等，动态增加外围 `#` 的数量直至包裹内容无需任何转义）。
+2. 缩进对齐与自动剥离公共缩进：
+   - CUE 多行字符串会根据结束符 `"""`（或 `"""#`）的缩进位置，自动剥离内容左侧的公共缩进。生成多行块时，将正文每行与结束符对齐到当前字段的缩进层级，使嵌套代码块在视觉上层次分明、排版极其工整，同时完全保真原始换行与相对缩进。
+
 ---
 
 ## 7 三大宿主适配方案与设计渊源
@@ -694,6 +747,16 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
   - `fork` 通过宿主的异步 `task`（开启 `async.enabled = true`，每次 spawn 作为后台 job 运行，完成后结果自动投递回父会话）或 `ctx.invokeTool` 实现，并在扩展加载时抬高或绕过宿主默认的 `task.maxRecursionDepth`（默认值为 2）；`join` 等待第一个后台 job 完成。worker 之间不使用宿主的 peer messaging 作为控制面。
 - 消息投影钩子：`before_agent_start` 返回整段替换的最终 `systemPrompt`；`context` 钩子返回 `{ messages }` 改写当次出站请求副本；`tool_call` 用于 `block` 或改写 `input`；`tool_result` 用于改写返回内容；`tool_execution_*` 仅作观察；`assistant_message` 可替换最终文本。
 
+**提问与无人值守在三家宿主上的落地（根 §2.2）。** `this.ask(question)` 就是 `this.park({ question })` + `interrupt`，三家宿主都不得以「没有提问通道」为由拒绝：
+
+| 宿主 | 挂起 | 中断（交还控制权） | 恢复 |
+|------|------|--------------------|------|
+| OpenCode | `spec/park-table.mjs` 保留续体的 promise | 回执带 `interrupt: true`，并调宿主的 `Session.interrupt({ sessionID })` | `session.hook("prompt")` 把操作员的下一则 prompt 交给 `unpark` |
+| Cline | `execution.mjs` 的 `ParkTable` | 工具回执带 `interrupt: true`，本回合没有后续动作，run 收尾即交还控制权 | `beforeModel` 的 `SessionState.resumeAsked` 消费挂起点并注入答复 |
+| Oh My Pi | `program.mjs` 的 `ParkTable` | 回执带 `interrupt: true`，并调本事件自己的 `ctx.abort()` | 同一会话的新程序 `this.unpark(name, answer)` |
+
+**自然停止的拦截（根 §2.2）。** 规则只有一份（`src/compose/nudge.mjs` 的 `evaluateTurnExit` / `buildNudgeMessage`），三家宿主各自只做「把文本送进下一次请求」：OpenCode 在 `session.execution.*` 上经 `spec/turn-nudge.mjs` 用 `sessions.prompt({ delivery: "queue" })` 投递；Cline 在 `afterModel`/`beforeModel`/`afterRun` 三处经 `guard.mjs` 用会话自己的输入通道继续；Oh My Pi 在 `agent_end` 经 `host-omp/nudge.mjs` 用 `pi.sendUserMessage(..., { deliverAs: "followUp" })` 投递。每个回合只投递一次，投递失败如实报告，不重试、不伪造。
+
 ### 7.4 与 Oh My Pi 内建 Vibe Mode 的设计取舍对照
 
 万象术受 Oh My Pi 的 Vibe Mode 启发，但做了根本性的精简与强化（且绝不引用宿主的 `/vibe`、`vibe_*`、`sessionModes`、`vibe-mode-active.md`、`vibe-mode-context` 等内部标识符）：
@@ -730,3 +793,4 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 4. 面向对象与自治内部状态：采用带内部可变状态的面向对象风格（受 Smalltalk 与 Actor 模型启发，通过消息传递协作），而不是纯函数式风格。
 5. 组合优于继承，Mise en place 布局：遵循 Gall 定律与备料（Mise en place）原则，先准备好职责完整、彼此独立的最小部件，再显式把它们组合起来；用可拆卸的装饰器增强功能。
 6. 结构化程序设计：遵循 Dijkstra 结构化程序设计原则，用清晰的自然控制流表达生命周期，严禁在程序中显式存储程序计数器（Program Counter）或其变种。
+7. 面向 LLM 的 CUE 格式化呈现：任何面向 LLM 的结构化数据（含 prompt 与工具返回值等）严禁输出 raw JSON，必须转为 CUE Pretty Print 格式（单行优先行内字符串，多行用 CUE 变长多行字符串 `"""` / `#"""..."""#` 并按结束符缩进对齐，彻底杜绝 escape 污染；详见 §6.3）。
