@@ -360,8 +360,9 @@ export class ReviewLedger {
 
     // Manager side. An unattended Manager never asks: an empty first review is
     // a claim that the first tenure verified the inherited work, which is the
-    // `confirm` step — it advances the milestone like any other successor's
-    // empty review.
+    // `confirm` step. It does NOT advance the milestone (根 §2.4 第 1 步): the
+    // next empty review relays, and only the successor's own empty review
+    // advances it. A first tenure never certifies its own work.
     if (isFirst) return this.#receipt(REVIEW_KINDS.CONFIRM, after);
     if (this.#successor) {
       this.#milestone += 1;

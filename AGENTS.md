@@ -149,7 +149,7 @@ Orchestration for agents that don't like being orchestrated.
 - 调用后返回回执（表示已提交，或可提交下一次评审——这不是需要用 `join` 等待的异步结论）。
 
 #### 接力（Relay）与晋级（Promotion）的完整时序
-1. 初任首评为空（向用户请示，仅 `Plan` 的 `S1`）：如果第一任（初任）的第一次 `review` 时台账就是空的，这不算评审，也不触发接力。**仅当这是 `Plan` 且处于 `S1` 阶段时**，系统代该任向用户提问 `「我需要干什么？」`——这与 `this.ask` 是同一语义：`this.park({ question })` + `interrupt`，控制权交还用户；用户在常规对话中答复后，控制权回到 AI，由 AI 在新程序中 `this.unpark(name, answer)` 恢复，同一任在同一任期继续工作，不重开任期、不制造评审。`Manager` 侧（以及 `Plan` 的 `S1` 之后）的初任空账**不提问**：它是对前任的独立验收，直接推进里程碑；系统绝不等待用户决策。
+1. 初任首评为空（向用户请示，仅 `Plan` 的 `S1`）：如果第一任（初任）的第一次 `review` 时台账就是空的，这不算评审，也不触发接力。**仅当这是 `Plan` 且处于 `S1` 阶段时**，系统代该任向用户提问 `「我需要干什么？」`——这与 `this.ask` 是同一语义：`this.park({ question })` + `interrupt`，控制权交还用户；用户在常规对话中答复后，控制权回到 AI，由 AI 在新程序中 `this.unpark(name, answer)` 恢复，同一任在同一任期继续工作，不重开任期、不制造评审。`Manager` 侧的初任首次空账**不提问**：它是对前任工作的独立验收（回执 `confirm`，里程碑保持在「执行」），系统绝不等待用户决策；下一次空账 `review` 才触发接力，由继任者自己那一次空账 `review` 把工作推进到「收尾」（与 §2.3 一致）。
 2. 台账非空（正常工作期）：现任提交 `review` 后，如果计算出的台账非空，则处于正常工作期，由现任继续干活，补齐本里程碑的义务（台账非空时绝不允许边修边跨入下一里程碑）。
 3. 台账由非空变空（触发接力）：当现任把台账里的所有键都用 `null` 删空时，触发接力。系统在同一笔原子持久记录里同时完成三件事（三者不可分割，进程中断也不会留下半个任期）：
    - 将现任标记为退休（退休者不能因旧请求重放而再次动手）；
@@ -187,8 +187,8 @@ Orchestration for agents that don't like being orchestrated.
 | `this.call(command)` | 执行 bash 命令（`Coder` 在任务提示词中被禁调，但工具面仍保留） | - | - | - | 有 |
 | `this.devops(intent)` | `Plan` 专用的同步仓库调查通道（同任务至多 1 个未决，原样返回全记录） | 有 | - | - | - |
 | `this.fission(prompts)` | 将当前 worker 身份同时展开为多条并行 lane | - | - | - | 有 |
-| `this.park(payload)` | 显式将当前程序挂起，立即返回挂起回执 | - | 有 | 有 | 有 |
-| `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value`（也用于恢复 `this.ask` 挂起的程序） | 有 | 有 | 有 | 有 |
+| `this.park(payload)` | 显式将当前程序挂起，立即返回挂起回执 | - | 有 | - | 有 |
+| `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value`（也用于恢复 `this.ask` 挂起的程序） | 有 | 有 | - | 有 |
 | `this.ask(question)` | 向人类用户提问（仅 `Plan` 的 `S1` 阶段可用）：语义即 `this.park({ question })` + `interrupt`（挂起当前程序并中断当前回合交还控制权给用户；用户输入后控制权回到 AI，由 AI 调用 `this.unpark(name, answer)` 恢复）（子代理无此通道） | 仅 S1 | - | - | - |
 | `fork(name, brief)` | 启动新 worker，或向同名在途 worker 投递新指令（steer） | - | 有 | - | 有（若允许再分派） |
 | `join()` | 等待第一个归来的子代理或结束的进程，返回其记录 | - | 有 | - | 有 |
@@ -617,6 +617,30 @@ When leading a real multi-agent team, maintain exactly one DevOps subagent and a
 Read generously whenever context permits. Do not let head, tail, narrow grep patterns, or arbitrary truncation dictate what you are allowed to understand. Examine the relevant whole: callers, callees, side effects, lifetimes, shared state, and implicit contracts. A few tokens saved by hiding the middle of a function may conceal the very fact on which its correctness depends. Read enough to grasp a coherent boundary, then write, inspect, and advance in small, complete steps. Prefer static reasoning and inspection; use DevOps for runtime reproduction, focused checks, and experiments only as a last resort. Minimize formatting, linting, builds, and broad tests, since subsequent changes invalidate earlier results. Never become addicted to verification or certification when something is already obvious. Main agent verifies once after all subagents land; parallel runs storm the CPU and trip on siblings' half-finished edits. Changes complete → yield; verification is main agent's job. NEVER run it yourself unless your assignment explicitly instructs it. NEVER verify your changes (builds, tests, linters, formatters, smoke runs) unless your assignment explicitly instructs it. Never depend on user intervention; overcome obstacles yourself, whatever stands in the way.
 ```
 
+### 5.4 `<vibe-mode>` 导演消息全文
+
+```text
+<vibe-mode>
+工作语义只有一种：你是 Manager。你是 DIRECTOR：调遣尽可能多的 worker，它们是有完整工具面的编码代理；你自己 NEVER edit、run、grep、build。你也不读文件——工具面里没有。
+工具面：顶层原语 `fork`、`join`、`review` 直接写函数名；成员 `this.park`、`this.unpark` 只写 `this.xxx`。一个能力只有一种写法，没有 `this.fork`，也没有裸 `park(...)`。
+# 无人值守
+你没有 `ask`：调用 `this.ask` 会被拒绝（ASK_FORBIDDEN_OUTSIDE_S1），提问只属于 Plan 的 S1 阶段。
+系统是无人值守的常授权模式：禁止等待用户决策或授权，禁止半途而废。你自己决定、自己动手、自己验收。
+你唯一的停止出口是「收尾」阶段清空台账结案为「已完成」；在到达之前结束回合，系统会拦截并注入 Nudge，列出当前 review 账本尚未完成的全部待办，要求你立刻去做。
+# Workers
+- `devops`：执行真实命令（bash、构建、测试、进程、git）。同一时刻恰好一名。
+- `coder`：本地事实调查与源码修改。任务描述里必须明确禁止使用 bash 工具；工具面照常含 `call`，禁令只是提示词约束。
+每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述必须自足：目标、约束、接口、验收依据、返回时该报什么。
+# Direction
+1. 把请求切成彼此独立的工作流。
+2. 每路 `fork` 一次，附一份完整自足的说明。
+3. fork 立即返回；结果在 worker 结束这一回合时自己送到。期间继续调遣别的 worker；`join` 只等到最先归来的一个，只在无法继续推进时用。
+4. On each result, decide corrections, next step, or review request; send them with `fork`. Reusing a live worker's name steers that worker instead of starting a new session; the receipt says which one happened——`steered: true` 是追加到既有 worker，`steered: false` 是新建。以回执为准，不靠名字相同去推断。
+5. 按难度分配：机械、规格明确的工作给 `coder`；需要真实执行、构建、测试、进程的给 `devops`。
+Run independent workstreams concurrently. For substantial decomposable work, normally use 10+ workers; otherwise use the number the work actually needs. Final outcome yours: do not take a worker's word for it.
+</vibe-mode>
+```
+
 ---
 
 ## 6 消息投影（下）：Pair Hint 与 Scope 上下文管理
@@ -648,7 +672,7 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 注入形态与字节前缀稳定：
 - 提示内容在每轮作为一对配对的合成工具调用与工具结果（synthetic skill，工具名为空字符串 `""`）插入出站请求副本，插入位置由持久事实决定；同一位置重复处理时只原样重放已有那对，不新增。
-- 同一 Epoch 内的字节前缀法则：在同一个 epoch 内，后一次出站请求的字节序列必须以前一次出站请求的字节序列为严格前缀（以保证 LLM Provider 的 Prefix Cache 100% 命中）；重试、失败、压缩、苏醒都不得改动已经向模型呈现过的字节。如果确实需要改写过往呈现，只能开启新的 epoch，绝不能篡改旧前缀。
+- 同一 Epoch 内的字节前缀法则：在同一个 epoch 内，后一次出站请求的字节序列必须以前一次出站请求的字节序列为严格前缀（以保证 LLM Provider 的 Prefix Cache 100% 命中）；重试、失败、压缩、苏醒都不得改动已经向模型呈现过的字节。如果确实需要改写过往呈现，除接力屏障（relay）、Scope 裁剪/抹除（scope-reset / scope-remove）与宿主历史压缩（history-compacted）这四类规范自有的投影重锚定边界外，只能开启新的 epoch，绝不能篡改旧前缀。
 - 冷启重建与防呆边界：进程重启后，直接从我们自己的持久事实重建出站呈现，保证与重启前分毫不差，不依赖宿主历史。防呆检查只做形式合规核验（语言非法即失败、资源成对、字节前缀不漂移），不在运行时用程序检测模型输出了哪种自然语言，也不因此拦截请求。
 
 ### 6.2 Scope：长程委托的因果保留与记忆修剪

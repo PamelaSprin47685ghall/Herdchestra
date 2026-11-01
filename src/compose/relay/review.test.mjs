@@ -152,12 +152,14 @@ test("Plan's first empty review in S1 asks the operator; a Manager's never does"
   assert.equal(receipt.interrupt, true);
   assert.deepEqual(planPort.calls, [["askOperator", "我需要干什么？"]]);
 
-  // A Manager runs unattended: its first empty review verifies and advances,
-  // and no question is put to anyone.
+  // A Manager runs unattended: its first empty review is an independent
+  // verification (`confirm`) that leaves the milestone at `execute`, and no
+  // question is put to anyone.
   const managerPort = recorder();
   const manager = member("manager", managerPort);
   const verified = await manager.review([]);
   assert.equal(verified.kind, "confirm");
+  assert.equal(manager.ledger.milestone, "execute");
   assert.deepEqual(managerPort.calls, []);
 });
 

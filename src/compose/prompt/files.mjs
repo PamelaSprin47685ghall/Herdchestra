@@ -11,8 +11,9 @@
 //
 // What the root gives, and nothing else:
 //
-//   Manager       = COMMON + MANAGER   (plus the director message, which §5
-//                                       names but gives no subsection body)
+//   Manager       = COMMON + MANAGER   (plus the director message, whose own
+//                                       segment §5.4 gives and director.mjs
+//                                       copies)
 //   Coder, DevOps = COMMON + WORKER    (byte-identical to each other)
 
 // §5.1 `common`, paragraphs 1-5.

@@ -136,8 +136,10 @@
 //    `recorded`, `relay`, `confirm`, `closed`, `askUser`, `handoff`,
 //    `nextReview`, `reopened`, `rejected`. Plan's milestones are `S1`, `S2`,
 //    `S3`, `待执行`. Plan relays exactly like Manager: an incumbent's empty
-//    review below 「待执行」 relays, a successor's first empty review advances one
-//    milestone (`confirm`), and an empty review at 「待执行」 is the handoff
+//    review below 「待执行」 relays (the first tenure's first review is the
+//    exception — it asks on Plan's `S1` and verifies in place on the Manager
+//    side), a successor's first empty review advances one milestone
+//    (`confirm`), and an empty review at 「待执行」 is the handoff
 //    (`review(findings, source?)`). The review carries no text:
 //    `source` is the saved draft read from the canonical path, and the handoff
 //    sends it byte for byte. A handoff with no draft, an empty one, or a source
@@ -152,7 +154,8 @@
 //    `interrupt: true` (root §2.4 第 1 步). `askAllowed(ledger)` is the same
 //    predicate the surface uses to refuse `this.ask` elsewhere
 //    (`ASK_FORBIDDEN_OUTSIDE_S1`). A `manager` ledger's first empty review is
-//    `confirm`: an unattended Manager verifies and advances, it never asks.
+//    `confirm`: an unattended Manager verifies without moving the milestone
+//    (it stays at `execute`), and it never asks.
 // 9. **A refused review changes nothing.** `DRAFT_MISSING` and `ALREADY_DONE`
 //    are decided before any counter or milestone moves, so a Plan that reaches
 //    「待执行」 and hands off without a draft keeps its first-review credit, and

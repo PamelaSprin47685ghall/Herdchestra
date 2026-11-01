@@ -119,12 +119,13 @@ const viewOf = (ledger) => {
 // follows. The ledger only reaches it through `review([])` after the resources
 // settled, so the state IS the proof.
 //
-// Manager at `execute` is NOT an exit even when the ledger is empty. An empty
-// `execute` review relays (`retire`, `openSuccessor`, `barrier`), and the
-// successor that judges the tenure advances on its own empty review. Leaving at
-// `execute` would end the work on the first tenure's own word — the one thing
-// the relay exists to prevent — so the successor must record that judgement
-// through `review` before any turn may stop.
+// Manager at `execute` is NOT an exit even when the ledger is empty. The first
+// tenure's first empty review is a `confirm` that leaves the milestone where it
+// is; its next empty review relays (`retire`, `openSuccessor`, `barrier`), and
+// the successor that judges the tenure advances on its own empty review.
+// Leaving at `execute` would end the work on the first tenure's own word — the
+// one thing the relay exists to prevent — so the successor must record that
+// judgement through `review` before any turn may stop.
 export const verifiedCompletion = ({ kind, milestone, tenure, obligations }, { handedOff = false } = {}) => {
   // 根 §2.2/§2.3: the exit is reached only after the ledger is empty. A `done`
   // Manager or a `待执行` Plan that still owes an obligation has not finished

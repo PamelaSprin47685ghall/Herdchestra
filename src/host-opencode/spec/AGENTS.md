@@ -259,8 +259,9 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
 拒绝原样交给宿主（程序失败，`error.message` 以该码开头）。
 
 `Plan` 的初任在 `S1` 提交空账 `review([])` 时，台账回 `askUser` + `我需要干什么？` + `interrupt`，
-经 `askOperator` 走同一条 synthetic + 下一则 prompt 的通道；`Manager` 侧（以及 `S1` 之后的 Plan）
-的空账不提问，直接推进里程碑。
+经 `askOperator` 走同一条 synthetic + 下一则 prompt 的通道；`Manager` 侧的初任空账不提问，
+回执 `confirm`，里程碑留在「执行」（根 §2.4 第 1 步）——推进里程碑的只有继任者的第一次空账
+`confirm`，下一次空账才触发接力。
 
 ### 8.2 自然停止的拦截与 Nudge（根 §2.2 唯一出口）
 

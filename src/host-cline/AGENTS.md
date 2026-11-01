@@ -326,7 +326,7 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 - `relay.askOperator(question)` 经 `operator.mjs` 的 seam：它**永远**回
   `{ ok: true, asked: true, question, interrupt: true }`（`askedReceipt`），不再有「没有通道」这种拒绝。
   `this.ask` 就是 `this.park({ question })` + `interrupt`：挂起与中断本身就是通道。初任空账 review
-  仅在 Plan 的 S1 出现；Manager 侧的初任空账是 `confirm`，不提问。
+  的**提问**仅在 Plan 的 S1 出现；Manager 侧的初任空账是 `confirm`（独立验收，里程碑留在「执行」），不提问。
 - `fork` 对在途 worker 是**真中途 steer**：brief 进运行时自己的待输入通道
   （`consumePendingUserMessage`，`agent-runtime.ts:1689` 每个请求边界读一次），由**正在运行的那个回合**
   在下一个请求边界取走，见 §7 第 3 条与 HACK.md「a steered brief rides the turn that is running」。

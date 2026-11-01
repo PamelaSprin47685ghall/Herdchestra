@@ -13,7 +13,7 @@
 
 | 目录 | 职责 |
 |------|------|
-| `prompt/` | 三个提示词文件 `common`/`manager`/`worker` 与两种拼接；导演消息（根 §5 点名、无小节正文）；Plan 的角色段。 |
+| `prompt/` | 三个提示词文件 `common`/`manager`/`worker` 与两种拼接；导演消息全文（根 §5.4）；Plan 的角色段。 |
 | `program/` | 一个程序对模型呈现的成员表与成员绑定。 |
 | `fission/` | lane 组：准入、整组回滚、收敛条件、终局一次性。 |
 | `relay/` | `review` 的台账判决与宿主副作用（接力、启动 Manager、代问用户）。 |
@@ -26,11 +26,11 @@
 
 ## 2 提示词投影（根 §5）
 
-1. 根 §5 直接给出三份全文：§5.1 `common`、§5.2 `manager`、§5.3 `worker`。`prompt/files.mjs` 的 `COMMON`、`MANAGER`、`WORKER` 就是这三份全文，**逐字节相同**，不做句子取舍、不含标记、过滤或分支。
+1. 根 §5 直接给出四份全文：§5.1 `common`、§5.2 `manager`、§5.3 `worker`、§5.4 导演消息。`prompt/files.mjs` 的 `COMMON`、`MANAGER`、`WORKER` 就是前三份全文，**逐字节相同**，不做句子取舍、不含标记、过滤或分支。
 2. 拼接只有两种：`COMMON + MANAGER`（Manager），`COMMON + WORKER`（coder 与 devops）。coder 与 devops 拿到逐字相同的一串；身份差别只由 `<vibe-mode>` 与 `fork` 的任务描述承担。
-3. 导演消息 `<vibe-mode>…</vibe-mode>` 是独立的角色段，不进这两个文件，也不由它们拼出。根 §5 开头提到「另单独投影 §5.4 的导演消息」，但根里**没有 §5.4 正文**（根 §5 只有 5.1–5.3）；因此该文本是本仓库的产品文本，不是抄录。**不要用 §5.4 指别的段落**：根里没有这个编号，任何 §5.4/§5.5 引用都指不到东西。根若补上该正文，`prompt/director.mjs` 必须改成逐字抄录，与 `files.mjs` 抄录 §5.1–§5.3 的方式一致。
-4. 测试 `prompt/projection.test.mjs` **直接读根 `AGENTS.md`**，取出 §5 的三个 ```text 块，要求 `COMMON`/`MANAGER`/`WORKER` 与之一字不差。根改了而代码没跟，测试失败；不在测试里另抄一份句子清单，因为第二份抄本只会与代码一起漂移。
-5. **这条测试只覆盖 §5 的四份里的三份。** §5.1–§5.3 逐字节核对；导演消息只做结构核对（一个 `<vibe-mode>` 包裹、不在两份组合内），因为根里没有可抄的正文。绿灯不等于「整个 §5 投影已逐字验证」，只等于「三份全文已逐字验证」。
+3. 导演消息 `<vibe-mode>…</vibe-mode>` 是独立的角色段，不进这两个文件，也不由它们拼出。根 §5.4 给出它的全文；`prompt/director.mjs` 的 `DIRECTOR_MESSAGE` 就是这份全文，**逐字节相同**，抄录方式与 `files.mjs` 抄录 §5.1–§5.3 一致。§5.4 是根里唯一属于导演消息的编号：**不要用 §5.4 指别的段落**，也不要再声称根里没有这份正文。
+4. 测试 `prompt/projection.test.mjs` **直接读根 `AGENTS.md`**，取出 §5.1–§5.3 的三个 ```text 块（扫描在 `### 5.4` 处停下），要求 `COMMON`/`MANAGER`/`WORKER` 与之一字不差。`prompt/dispatch.test.mjs` 同样直接读根 §5.4 的那个 ```text 块，要求 `DIRECTOR_MESSAGE` 与之一字不差。根改了而代码没跟，测试失败；不在测试里另抄一份句子清单，因为第二份抄本只会与代码一起漂移。
+5. **§5 的四份全部逐字节核对，分居两个测试。** §5.1–§5.3 由 `projection.test.mjs` 核对；§5.4 由 `dispatch.test.mjs` 核对，方式相同。`projection.test.mjs` 的扫描止于 `### 5.4`，因为导演消息不是第四份文件、不参与两种拼接；把它计进「三个文件」会让计数与代码不符。
 6. **审计者是测试，不是读者。** `files.mjs` 与根 §5 都只能经工具渲染来读，而渲染既截断、又会插入省略号，肉眼比对两边都不可靠。任何关于根 `AGENTS.md` 的字符级断言（逐字节、前缀稳定、行尾）一律由解析文件得出，绝不从渲染结果转写。同理，`prompt/dispatch.test.mjs` 经真实的 `SessionState.systemPrompt` 核对每个角色拿到的组合：角色决定提示词，不是「是否顶层」决定——顶层却被标成 `coder`/`devops` 的会话必须拿 `COMMON + WORKER`，只有 Manager 带导演消息。
 7. **分派只认角色。** 宿主侧唯一的角色→组合映射点是 `SessionState.systemPrompt(role)`：`plan` 给 `PLAN_PROMPT`，`manager` 给 `COMMON + MANAGER` 加导演消息，其余交给 `systemPromptFor(role)`。`systemPromptFor` 只接受 coder 与 devops，别的一律拒绝（`UNKNOWN_ROLE`；`plan` 报 `PLAN_OUTSIDE_PROJECTION`）。**绝不把未知角色默认成 `coder`**：默认会让写错的角色串看起来像一个健康的 worker 会话。组合层不提供「按顶层与否挑提示词」的开关，宿主要这个语义就自己按角色分派，组合层只回答角色对应哪份文本。
 8. **性质测试守住这几条不变量**（`prompt/dispatch.test.mjs`，用 fast-check）：角色唯一决定组合，与会话 id 无关；导演消息当且仅当角色是 Manager 时出现，且只出现一次；coder 与 devops 逐字节相同；未知角色被拒而不是降级成 worker。
@@ -109,7 +109,7 @@
 - **一次物理调用只记一次账（§2.4 第 6 步）。** `review` 从 surface 收到本程序的 `name`（即宿主 call id），交给 `ReviewMember.review(findings, source, { callId })`，再交给 `ReviewLedger.review`。重放命中时账本直接回原回执（`replayed: true`），**不执行任何副作用**：不二次接力、不二次启动 Manager、不二次落盘、不二次关评估窗口。同一 callId 换载荷立即 `REPLAY_MISMATCH`。**重放是无条件的**：同一 callId 无论账本后来怎样（别的调用加了义务、接力换了任期、里程碑推进），都只回它当初那份回执，并带 `replayed: true`；回执里的任期与里程碑就是那次调用的，不是对当前账本的描述。绝不在重放时重新判决、重新记账或重新执行副作用。
 - **同一 `ReviewMember` 的 review 串行执行。** 台账先判决、宿主后动手，两条并发的 review 会读到同一份空台账：两条都 `relay`，第二条会退休掉第一条刚开启的继任。排队让判决与副作用保持一步。
 - `handoff`：调 `port.startManager(draft)`；`draft` 只有一处来源——`draft` 端口在规范路径上读到的已保存底稿。review 不带任何文本（`review(findings, source = null)`，`source` 就是这份字节），没有 note、没有回退、没有替身。端口报告 `ok:false` 或没有回执时，本次 review 是 `{ok:false, kind:"handoff", rejection:"HANDOFF_UNAVAILABLE"}`：根 §2.2 要求「启动 Manager 会话」真的发生，Plan 停在「待执行」，下一次空账 review 重试。
-- `askUser`：只在 Plan 的 `S1` 出现（初任首评为空）。调 `port.askOperator(question)`，回执带 `interrupt: true`，本轮回合结束、控制权交还用户；用户的答复在下一轮由 AI 以 `this.unpark(name, answer)` 注入。`Manager` 侧初任空账不是 `askUser`，而是 `confirm`：无人值守，不等人。
+- `askUser`：只在 Plan 的 `S1` 出现（初任首评为空）。调 `port.askOperator(question)`，回执带 `interrupt: true`，本轮回合结束、控制权交还用户；用户的答复在下一轮由 AI 以 `this.unpark(name, answer)` 注入。`Manager` 侧初任空账不是 `askUser`，而是 `confirm`（独立验收，里程碑留在「执行」）：无人值守，不等人。
 
 退休、屏障、继任开启是同一笔记录（根 §2.4 第 3 步），三者不可分开出现：宿主只做完其中一部分也按失败处理，组合层不补上剩下的部分，也不留下半个任期。宿主做不了某件事时，该次 review 失败，不得假装完成。
 

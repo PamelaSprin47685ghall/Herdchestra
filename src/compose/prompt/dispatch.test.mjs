@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 
 import { COMMON, MANAGER, WORKER } from "./files.mjs";
@@ -13,6 +15,25 @@ import { PLAN_PROMPT } from "./plan.mjs";
 // `plan` because Plan is outside the projection, so it cannot supply it here.
 import { ROLES } from "../program/surface.mjs";
 import { fcRuns } from "../../core/test-runs.mjs";
+
+// Root §5.4 is the only source of truth for the director segment, exactly as
+// §5.1-§5.3 are for the three files. `projection.test.mjs` stops at §5.4 so the
+// three files stay three; this file owns the fourth part and reads it here, so a
+// root revision fails a test instead of silently disagreeing with the code.
+const ROOT = fileURLToPath(new URL("../../../AGENTS.md", import.meta.url));
+
+const rootDirectorBlock = () => {
+  const lines = readFileSync(ROOT, "utf8").split("\n");
+  const start = lines.findIndex((line) => line.startsWith("### 5.4 "));
+  assert.notEqual(start, -1, "root AGENTS.md must keep a `### 5.4 ` heading");
+  const fence = lines.findIndex((line, index) => index > start && line === "```text");
+  assert.notEqual(fence, -1, "root §5.4 must open a ```text block");
+  const body = [];
+  let j = fence + 1;
+  while (j < lines.length && lines[j] !== "```") body.push(lines[j++]);
+  assert.ok(j < lines.length, "root §5.4 has an unterminated ```text block");
+  return body.join("\n");
+};
 
 // Which composition each role receives, checked through the seam that actually
 // hands prompts to the host (`SessionState.systemPrompt`), not only through the
@@ -43,6 +64,10 @@ test("the Manager session receives common + manager plus the director message", 
   await withSession(ROLES.MANAGER, async (session) => {
     assert.equal(await session.systemPrompt(), directorPromptFor(COMMON + MANAGER));
   });
+});
+
+test("the director message is byte-identical to root §5.4", () => {
+  assert.equal(DIRECTOR_MESSAGE, rootDirectorBlock());
 });
 
 test("a coder session receives common + worker, never the manager composition", async () => {

@@ -4,18 +4,11 @@
 // host implementation. It is a role segment, so it is not part of the system
 // prompt composition in `projection.mjs`.
 //
-// The root specification names this segment in its §5 intro (`另单独投影 §5.4
-// 的 <vibe-mode> 导演消息`) but carries no §5.4 body — root §5 has 5.1 to 5.3 and
-// nothing else — so the text below is the repository's own product text, not a
-// transcription. No root section number is claimed for it here: 根 §2.3 and
-// §2.4 are the Manager's milestones and the relay, not this message.
-//
-// The projection test therefore verifies §5.1-§5.3 byte for byte and this
-// segment only structurally (one `<vibe-mode>` wrapper, outside both
-// compositions). A green prompt suite does not mean all of §5 is copied: three
-// of its four parts are, because only three exist in the root. If the root
-// gains a §5.4 body, this constant must become a verbatim copy of it, the way
-// `files.mjs` copies §5.1-§5.3, and the test must cover it too.
+// Root §5.4 (`### 5.4 <vibe-mode> 导演消息全文`) carries this text, the way
+// §5.1-§5.3 carry the three files, and the constant below is a byte-for-byte
+// copy of it. `dispatch.test.mjs` reads root §5.4 and asserts equality;
+// `projection.test.mjs` scans §5.1-§5.3 only, because the director segment is
+// not a fourth file. A revision on either side without the other fails a test.
 
 export const DIRECTOR_MESSAGE = `<vibe-mode>
 工作语义只有一种：你是 Manager。你是 DIRECTOR：调遣尽可能多的 worker，它们是有完整工具面的编码代理；你自己 NEVER edit、run、grep、build。你也不读文件——工具面里没有。

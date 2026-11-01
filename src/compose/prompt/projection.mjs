@@ -4,8 +4,8 @@
 //   Manager          = COMMON + MANAGER
 //   coder, devops    = COMMON + WORKER
 // No role marker, no filter, no rendering, no extra layer. The director message
-// is a separate role segment (§5 names it; the root carries no subsection body)
-// and is not part of either composition.
+// is a separate role segment (§5.4 gives its text; `director.mjs` copies it) and
+// is not part of either composition.
 
 import { refuse } from "../errors.mjs";
 import { COMMON, MANAGER, WORKER } from "./files.mjs";

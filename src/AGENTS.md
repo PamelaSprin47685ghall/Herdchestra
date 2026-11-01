@@ -178,7 +178,7 @@ append——那是日志本来就有的限制（一个会话一个驱动）。
 | `prompt/files.mjs` | `common`/`manager`/`worker` 三段连续字符串（唯一原文） |
 | `prompt/projection.mjs` | 只有两种拼接：`COMMON+MANAGER`、`COMMON+WORKER`；`systemPromptFor("plan")` 抛 `PLAN_OUTSIDE_PROJECTION` |
 | `prompt/plan.mjs` | `PLAN_PROMPT`：Plan 自己的角色段，与上面两种组合互斥 |
-| `prompt/director.mjs` | `<vibe-mode>` 导演消息：独立角色段，不进系统提示组合 |
+| `prompt/director.mjs` | `<vibe-mode>` 导演消息：独立角色段（根 §5.4 全文的逐字节抄本），不进系统提示组合 |
 | `program/surface.mjs` | `SURFACE_MEMBERS`（唯一成员表）、`ProgramSurface`、`ROLES` |
 | `program/members.mjs` | 成员实现：`coreMembers`（文件、文本、`call`）、`reviewMembers`（`park`、`unpark`、`review`、`ask`、`fork`、`join`、`fission`、`devops` 的端口转发） |
 | `program/role-brief.mjs` | `roleOfBrief`：从 `brief` 的显式声明解析 worker 身份（`coder`/`devops`），无声明或声明两者一律拒绝 |
@@ -445,8 +445,8 @@ OMP 上同一个接力事实有两份**各自独立、各自原子**的持久视
 
 | 命令 | 回答什么 | 用例数 | 参考耗时（16 核，2026-11-01 审计后快照） |
 |---|---|---|---|
-| `npm test` | 全量属性测试，每个用例按自己声明的次数跑 | 1127 | 约 3.7–3.9 秒 |
-| `npm run test:quick` | 同一组用例，属性测试每例至多 20 次（`HC_FC_RUNS=20`），并行度 `$(nproc)` | 1127 | 约 3.4–3.5 秒 |
+| `npm test` | 全量属性测试，每个用例按自己声明的次数跑 | 1128 | 约 3.5–3.9 秒 |
+| `npm run test:quick` | 同一组用例，属性测试每例至多 20 次（`HC_FC_RUNS=20`），并行度 `$(nproc)` | 1128 | 约 3.4–3.5 秒 |
 | `npm run smoke:omp` | 真机 OMP：3 个回合，中间一回合调 `js-manager` | —（3 个真机回合） | 约 5 分钟（324 秒；区间 2–8 分钟） |
 | `npm run smoke:opencode` | 真机 OpenCode v2（`opencode run --standalone`，隔离 `OPENCODE_CONFIG_DIR`） | —（3 个真机回合） | 约 12 秒 |
 | `npm run smoke:cline` | 真机 Cline（`@cline/core` SDK，隔离 `CLINE_DIR`） | —（3 个真机回合 + 1 个 park 回合） | 约 15 秒 |
@@ -454,8 +454,8 @@ OMP 上同一个接力事实有两份**各自独立、各自原子**的持久视
 
 - **这是一份 2026-11-01 的快照**（1.0.0 审计修复后，同一棵树、16 核），不是长期契约：条数与耗时都随并行
   编辑和网络变动，引用时连同“哪棵树、哪台机器、什么时候”一起引用。
-- 分层实测（同一次快照）：`core` 264 例 1.2 秒、`compose` 176 例 1.5 秒、
-  `host-omp` 271 例 2.4 秒、`host-opencode` 219 例 1.8 秒、`host-cline` 197 例 2.5 秒；合计 1127 例。
+- 分层实测（同一次快照）：`core` 264 例 1.2 秒、`compose` 177 例 1.5 秒、
+  `host-omp` 271 例 2.4 秒、`host-opencode` 219 例 1.8 秒、`host-cline` 197 例 2.5 秒；合计 1128 例。
   `host-cline` 的 devops 连接用例注入工厂，不启动真机运行时；此前它会让该层多等一次约 46 秒的网络超时。
 - 时间只作量级参考：本仓库长期多写者并行编辑，引用时连同“哪台机器、什么时候”一起引用。
 - 每个 smoke 建一个 `/tmp/hc-smoke-<host>-<随机>/` 根，跑完即删；`--keep` 保留，`--verbose` 打出宿主输出。

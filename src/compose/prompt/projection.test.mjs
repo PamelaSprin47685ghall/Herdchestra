@@ -12,14 +12,20 @@ import { DIRECTOR_MESSAGE, directorPromptFor } from "./director.mjs";
 // root revision fails this test instead of silently disagreeing with the code.
 const ROOT = fileURLToPath(new URL("../../../AGENTS.md", import.meta.url));
 
-// The three ```text blocks of root §5, in document order: common, manager,
-// worker (§5.1, §5.2, §5.3). §5 ends at the next `## ` heading.
+// The three ```text blocks of root §5.1-§5.3, in document order: common,
+// manager, worker. The scan stops at §5.4: the director message is its own role
+// segment, not a fourth file, and `dispatch.test.mjs` checks it byte for byte
+// against the same root file. Counting it here would turn "three files" into a
+// claim the code does not make.
 const rootPromptBlocks = () => {
   const lines = readFileSync(ROOT, "utf8").split("\n");
   const start = lines.findIndex((line) => line.startsWith("## 5 "));
   assert.notEqual(start, -1, "root AGENTS.md must keep a `## 5` heading");
-  const end = lines.findIndex((line, index) => index > start && line.startsWith("## "));
-  assert.notEqual(end, -1, "root §5 must be followed by another `## ` heading");
+  const sectionEnd = lines.findIndex((line, index) => index > start && line.startsWith("## "));
+  assert.notEqual(sectionEnd, -1, "root §5 must be followed by another `## ` heading");
+  const director = lines.findIndex((line, index) => index > start && line.startsWith("### 5.4 "));
+  assert.notEqual(director, -1, "root §5 must keep a `### 5.4 ` heading");
+  const end = Math.min(sectionEnd, director);
 
   const blocks = [];
   for (let i = start; i < end; i++) {

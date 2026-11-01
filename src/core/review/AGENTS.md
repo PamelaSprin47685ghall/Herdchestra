@@ -25,7 +25,7 @@
 // | ledger non-empty                             | `recorded`   | tenure continues, milestone never moves |
 // | non-empty, first review of a successor tenure | `recorded`  | normal working period; the successor flag clears, so the next empty review relays |
 // | empty, Plan `S1`, first review of first tenure | `askUser`  | system asks "我需要干什么？" (`interrupt: true`) |
-// | empty, Manager, first review of first tenure | `confirm`    | milestone advances, no question |
+// | empty, Manager, first review of first tenure | `confirm`    | milestone stays at `execute`, no question |
 // | empty, first review of a successor tenure    | `confirm`    | milestone advances, no new tenure |
 // | empty, any other tenure, below the last milestone | `relay` | retire + barrier + successor at the SAME milestone |
 // | empty, Plan at `待执行`, draft missing/empty | `rejected`   | `DRAFT_MISSING`              |
@@ -37,9 +37,10 @@
 //
 // **Plan relays exactly like Manager.** The one asymmetry is the first empty
 // review of the first tenure: at `S1` it asks the operator (根 §2.2, §2.4 第 1
-// 步), everywhere else it is an ordinary verification. A Plan's first tenure
-// therefore cannot advance on its own word — its second empty review RELAYS, and
-// the milestone only moves when the successor that relay opened makes its own
+// 步); on the Manager side it is an independent verification (`confirm`) that
+// leaves the milestone at `execute`. A first tenure therefore cannot advance on
+// its own word on either side — its second empty review RELAYS, and the
+// milestone only moves when the successor that relay opened makes its own
 // first empty review (`confirm`). `待执行` is reached by a successor's promotion
 // out of `S3` and by nothing else, which is what makes Plan's exit meaningful:
 // the tenure that did the work never certifies it.
