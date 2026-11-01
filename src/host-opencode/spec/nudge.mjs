@@ -24,7 +24,7 @@
 // record this build cannot read) is not silently read as "nothing owed": the
 // nudge says the ledger could not be read, which is the truth the model needs.
 
-import { PLAN_MILESTONES } from "../../core/review.mjs";
+import { MANAGER_MILESTONES, PLAN_MILESTONES } from "../../core/review.mjs";
 import { STOP_REASONS, evaluateTurnExit, verifiedCompletion } from "../../compose/nudge.mjs";
 
 // Plan's `S1`: the one milestone an `ask` belongs to (根 §2.2).
@@ -43,17 +43,25 @@ export const HOLD_REASONS = Object.freeze({
 const text = (value) => (typeof value === "string" ? value : null);
 
 // The milestone of a completion event that says where the turn ended, or null.
-// The host reports a failure's cause and an interrupt's reason under one key,
-// so both spellings are read rather than one being assumed.
-export const eventMilestone = (event) => {
+//
+// The host reports a failure's cause and an interrupt's reason under the same
+// key it uses for a milestone (`data.reason`), so both spellings are read —
+// and the value is then VALIDATED against the role's own milestone list. A
+// failure's cause is a sentence, not a milestone: letting it through made the
+// nudge's `milestone` fact an error string and could turn an earned completion
+// into a nudge.
+export const eventMilestone = (event, role = null) => {
   if (event === null || typeof event !== "object") return null;
-  return (
+  const named =
     text(event.milestone) ??
     text(event.data?.milestone) ??
     text(event.data?.reason) ??
     text(event.reason) ??
-    null
-  );
+    null;
+  if (named === null) return null;
+  const known = role === "plan" ? PLAN_MILESTONES : role === "manager" ? MANAGER_MILESTONES : null;
+  if (known === null) return null;
+  return known.includes(named) ? named : null;
 };
 
 // The obligations a ledger still owes, as `{ key, value }` pairs.
@@ -113,6 +121,9 @@ export const ledgerViewOf = ({ ledger = null, row = null, milestone = null } = {
 //   row      the durable record of the same ledger, for a ledger not open yet
 //   event    the host's completion event: `{ id?, messageID?, milestone? }`
 //   asked    a legal `S1` `ask` of this session is still pending
+//   handedOff  a durable fact says this Plan tenure handed its draft to a
+//              Manager (written by the hand-off itself, never inferred from the
+//              milestone: a successor's `confirm` also reaches 待执行)
 //   lastRound  the round the previous exit of this session was booked under
 //
 // Returns `{ hold, round, stopAllowed, reason, nudge }`. `hold` says no exit was
@@ -124,6 +135,7 @@ export const turnExit = ({
   row = null,
   event = null,
   asked = false,
+  handedOff = false,
   lastRound = null,
 } = {}) => {
   // A blank id is not a name: the host sometimes reports whitespace where it
@@ -150,7 +162,7 @@ export const turnExit = ({
   if (round !== null && round === lastRound) {
     return { hold: HOLD_REASONS.ROUND_UNDECIDED, round, stopAllowed: true, reason: STOP_REASONS.IN_FLIGHT, nudge: null };
   }
-  const view = ledgerViewOf({ ledger, row, milestone: eventMilestone(event) });
+  const view = ledgerViewOf({ ledger, row, milestone: eventMilestone(event, role) });
   // The gate is the ledger's answer, not the caller's flag. A question only
   // exists in Plan's `S1` (根 §2.2), so a session that reports one anywhere else
   // is not holding a legal ask — and holding the exit for it would silently
@@ -162,9 +174,11 @@ export const turnExit = ({
     role,
     ledger: view,
     // Plan's exit is the hand-off: the `待执行` empty review that starts the
-    // Manager. That review is a `handoff` receipt, and the host records it, so
-    // the same row proves the hand-off was submitted.
-    handedOff: view !== null && view.kind === "plan" && verifiedCompletion(view, { handedOff: true }),
+    // Manager. The fact comes from the hand-off itself (the durable record or
+    // the Plan's own row), never from "the milestone is the last one": a Plan
+    // promoted there by a successor's `confirm`, or one whose hand-off was
+    // refused `DRAFT_MISSING`, must not read as an earned exit.
+    handedOff: view !== null && view.kind === "plan" && handedOff === true,
     // An execution the OPERATOR stopped is control taken, not work abandoned.
     // The host says so in the event TYPE (`session.execution.interrupted`), which
     // `compose/nudge.mjs` `operatorInterruptOf` reads; the event's payload is not

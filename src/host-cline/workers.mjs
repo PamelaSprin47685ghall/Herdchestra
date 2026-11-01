@@ -331,6 +331,10 @@ export class WorkerTable {
     const known = new Set();
     for (const completion of roster.completions) {
       if (!isName(completion?.name)) continue;
+      // A lane's settled turn is its DELIVERY to its group (§4.2 step 8), never
+      // a `join` completion: a restored table that queued one would hand a
+      // lane's record to `join` as if a fork worker had finished.
+      if (completion.lane === true) continue;
       const id = typeof completion.id === "string" ? completion.id : `${completion.name}#${countOf(completion.turn)}`;
       if (this.#claims.has(id) || known.has(id)) continue;
       known.add(id);
@@ -472,7 +476,42 @@ export class WorkerTable {
     if (role !== "coder" && role !== "devops") {
       return { name, steered: false, started: false, rejection: "UNDECLARED_ROLE" };
     }
+    // 根 §2.1/§2.3: exactly one DevOps at a time. All real command execution is
+    // serialized through that one worker, so a second live (or turn-owing)
+    // devops is refused by name; the caller steers the existing one instead.
+    // The same name is not a second worker: a same-name `fork` is a steer.
+    if (role === "devops") {
+      const active = [...this.#workers.values()].find(
+        (worker) =>
+          worker.name !== name &&
+          worker.role === "devops" &&
+          worker.state !== DEAD &&
+          (worker.state === LIVE || worker.admitted > worker.settled),
+      );
+      if (active !== undefined) {
+        return {
+          name,
+          steered: false,
+          started: false,
+          rejection: "DEVOPS_ALREADY_ACTIVE",
+          message: `devops worker ${active.name} is still active; steer it instead of starting a second one`,
+          detail: { name: active.name },
+        };
+      }
+    }
     const existing = this.#workers.get(name);
+    // A present fission replaced produces no further turn (§4.2 step 6). A
+    // same-name fork must not resurrect it: the present the group silenced would
+    // start running again on an ordinary steer.
+    if (existing !== undefined && existing.state === REPLACED) {
+      return {
+        name,
+        steered: false,
+        started: false,
+        rejection: "WORKER_REPLACED",
+        message: `worker ${name} was replaced by a fission group and produces no further turn`,
+      };
+    }
     if (existing !== undefined && existing.state !== DEAD && (existing.handle !== null || existing.admitted > existing.settled)) {
       // In flight: the brief goes into the turn that is running. Idle: it
       // starts the next turn now. A restored worker with no handle in this
@@ -588,6 +627,10 @@ export class WorkerTable {
     // The roster reaches the disk before the runtime can report: a reload
     // between the two steps must still know this worker exists.
     this.#record({ type: WORKER_RECORD_TYPES.FORK, name, role, state: LIVE, lane: false, admitted: entry.admitted, settled: entry.settled });
+    // Only NOW does the table listen: `onSettled` replays a turn that settled
+    // while `#create` was awaited, and a SETTLE written before the FORK would be
+    // dropped by `restoreRoster` (it ignores a SETTLE for an unknown name).
+    this.#observe(entry);
     return { name, steered: false, started: true };
   }
 
@@ -609,6 +652,7 @@ export class WorkerTable {
     if (built?.started === false) return built;
     const entry = this.#entryFor({ name, role, handle: built.handle ?? built, lane: true, brief });
     this.#record({ type: WORKER_RECORD_TYPES.FORK, name, role, state: LIVE, lane: true, admitted: entry.admitted, settled: 0 });
+    this.#observe(entry);
     return { started: true, name, entry, pending: built.pending === true };
   }
 
@@ -654,11 +698,15 @@ export class WorkerTable {
       restored: false,
     };
     this.#workers.set(name, entry);
-    // One settlement path for workers and lanes alike: `#settle` decides what
-    // the report means (a `join` completion, or a lane's delivery to its group).
-    // One settlement path for workers and lanes alike: `#settle` decides what
-    // the report means (a `join` completion, or a lane's delivery to its group).
-    handle.onSettled?.((record) => this.#settle(entry, record));
+    return entry;
+  }
+
+  // Watch one entry's runtime. One settlement path for workers and lanes alike:
+  // `#settle` decides what the report means (a `join` completion, or a lane's
+  // delivery to its group). Split from `#entryFor` so the FORK record is on disk
+  // before a buffered report can reach the journal.
+  #observe(entry) {
+    entry.handle?.onSettled?.((record) => this.#settle(entry, record));
     return entry;
   }
 
@@ -709,8 +757,17 @@ export class WorkerTable {
     // (`runtime.mjs`) and the loop answers once, with the last steer's text. So
     // one settlement clears the carrier and the steers it carried, and each of
     // them is a record `join` may hand over.
-    const carried = Math.min(entry.steered ?? 0, Math.max(0, entry.admitted - entry.settled - 1));
-    if (carried > 0) entry.steered = 0;
+    // How many steered briefs this turn actually READ. The runtime reports it
+    // (`runtime.mjs` counts the queue reads); the table's own count is what it
+    // HANDED over, and a turn can end without another request boundary, so the
+    // two differ exactly when a brief was not delivered. Settling every queued
+    // steer on the carrier's report handed `join` work nobody did.
+    const queued = entry.steered ?? 0;
+    const read = Number.isInteger(record?.steered) && record.steered >= 0 ? record.steered : queued;
+    const carried = Math.min(queued, read, Math.max(0, entry.admitted - entry.settled - 1));
+    // Only the ones that ran leave the queue: a brief the turn did not read is
+    // still the runtime's pending input, and it is delivered by the next turn.
+    if (carried > 0) entry.steered = queued - carried;
     const carrier = Math.min(entry.admitted, entry.settled + 1);
     entry.settled = Math.min(entry.admitted, carrier + carried);
     const turn = entry.settled;
@@ -736,7 +793,9 @@ export class WorkerTable {
       this.#wake();
       return true;
     }
-    entry.state = IDLE;
+    // A present fission replaced stays replaced: its turn is over, and marking
+    // it idle would let a same-name fork restart it.
+    if (entry.state !== REPLACED) entry.state = IDLE;
     if (entry.lane) {
       this.#deliverLane(entry, turn, record);
       return true;
@@ -784,6 +843,9 @@ export class WorkerTable {
   }
 
   async #runTurn(entry, brief) {
+    // A replaced present produces no further turn (§4.2 step 6), whatever path
+    // reached here.
+    if (entry.state === REPLACED) return;
     // The turn is already admitted: it was counted when the brief was accepted,
     // by `fork` (live), by `beginLane` (a lane's first turn), or by `#settle`
     // (a queued steer).
@@ -974,8 +1036,14 @@ export class WorkerTable {
   // that will not happen.
   replacePresent(name) {
     const worker = this.#workers.get(name);
-    if (worker === undefined) return { replaced: false, reason: "OWNER_UNKNOWN", owner: name };
-    if (worker.state !== LIVE) return { replaced: true, owner: name, stoppedNow: true, deferredAbort: false, reason: "NO_LIVE_PRESENT" };
+    // Every failure carries `ok: false`: compose's `portRefused` reads that
+    // field, and a refusal reported only as `replaced: false` was read as a
+    // successful replacement — the group went live while the old present kept
+    // producing turns.
+    if (worker === undefined) return { ok: false, replaced: false, reason: "OWNER_UNKNOWN", owner: name };
+    if (worker.state !== LIVE) {
+      return { ok: true, replaced: true, owner: name, stoppedNow: true, deferredAbort: false, reason: "NO_LIVE_PRESENT" };
+    }
     // Every brief that has not started is dropped: the owner is not producing
     // turns any more, and a queued turn would produce one.
     worker.pending.length = 0;
@@ -990,18 +1058,18 @@ export class WorkerTable {
             // abort that throws here has nothing left to stop.
           }
         });
-        if (armed === false) return { replaced: false, reason: "ABORT_NOT_ARMED", owner: name };
+        if (armed === false) return { ok: false, replaced: false, reason: "ABORT_NOT_ARMED", owner: name };
         worker.state = REPLACED;
-        return { replaced: true, owner: name, stoppedNow: false, deferredAbort: true };
+        return { ok: true, replaced: true, owner: name, stoppedNow: false, deferredAbort: true };
       }
       // A runtime with no turn in flight has no tool call waiting on it, so the
       // abort is safe now.
-      if (typeof handle?.abort !== "function") return { replaced: false, reason: "NO_ABORT_SURFACE", owner: name };
+      if (typeof handle?.abort !== "function") return { ok: false, replaced: false, reason: "NO_ABORT_SURFACE", owner: name };
       handle.abort();
       worker.state = REPLACED;
-      return { replaced: true, owner: name, stoppedNow: true, deferredAbort: false };
+      return { ok: true, replaced: true, owner: name, stoppedNow: true, deferredAbort: false };
     } catch (error) {
-      return { replaced: false, reason: "ABORT_FAILED", owner: name, message: String(error?.message ?? error) };
+      return { ok: false, replaced: false, reason: "ABORT_FAILED", owner: name, message: String(error?.message ?? error) };
     }
   }
 

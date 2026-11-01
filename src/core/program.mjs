@@ -16,6 +16,12 @@ import { stableJson } from "./util.mjs";
 // a word, not a table.
 const EXPIRED_REASON = "explicit";
 
+// The four site reasons `core/receipt.mjs` spells. Written here for the same
+// reason as `EXPIRED_REASON`: `receipt.mjs` reads `STATES` from this module, and
+// `park` must validate a site without importing the receipt shape. A test walks
+// `PARK_REASONS` against this list, so the two spellings cannot drift apart.
+const SITE_REASONS = Object.freeze(["explicit", "ask", "command", "sdk"]);
+
 export const STATES = Object.freeze({
   RUNNING: "running",
   WAITING: "waiting",
@@ -238,24 +244,48 @@ export class ProgramState {
   // Move to a state. A finished run owns its terminal state, so a transition out
   // of it is a no-op that returns the current state: an operation that settled
   // late may still run its `finally`, and that must not reopen a closed run.
-  // `parked` and `waiting` are reachable both ways, as they always were; hosts
-  // that move a resumed program back to `running` keep working.
+  //
+  // Only `running` and `waiting` are targets. A terminal state is reached
+  // through `finish`, which records the result, cancels the deadline and
+  // releases the drain waiters; `parked` is reached through `park(site)`, which
+  // stores the site a controller resumes. A bare `moveTo("parked")` would wedge
+  // the program with no site to consume, so both are refused. Moving OUT of
+  // `parked` stays allowed: a host that released its own park promise may put a
+  // resumed program back to `running`.
   moveTo(next) {
     assertState(next);
-    if (this.isTerminal() || this.#state === next) return this.#state;
+    if (this.isTerminal()) return this.#state;
+    if (isTerminal(next)) {
+      throw invalidArgument(`program ${this.#name} finishes through finish, not moveTo(${next})`);
+    }
+    if (next === STATES.PARKED) {
+      throw invalidArgument(`program ${this.#name} parks through park(site), not moveTo`);
+    }
+    if (this.#state === next) return this.#state;
     this.#state = next;
-    if (next !== STATES.PARKED) this.#site = null;
+    this.#site = null;
     return next;
   }
 
   // Park the program. A program with an unsettled site cannot park twice, and a
-  // finished one accepts no new park. Parking cancels this run's deadline.
+  // finished one accepts no new park. The site must be an object with one of the
+  // four reasons a receipt knows; a null or reason-less site would leave the
+  // program parked with nothing a resume could consume or report. Parking
+  // cancels this run's deadline.
   park(site) {
     if (this.isTerminal()) {
       throw invalidArgument(`program ${this.#name} is ${this.#state}`);
     }
     if (this.#site !== null) {
       throw invalidArgument(`program ${this.#name} already has a parked site`);
+    }
+    if (
+      site === null ||
+      typeof site !== "object" ||
+      Array.isArray(site) ||
+      !SITE_REASONS.includes(site.reason)
+    ) {
+      throw invalidArgument("a parked site must be an object with a known reason");
     }
     this.#site = site;
     this.#state = STATES.PARKED;
@@ -266,7 +296,9 @@ export class ProgramState {
   }
 
   // Consume the parked site exactly once; a second call is STALE_CONTROL.
-  // `deadline` is the controlling request's deadline for the resumed run.
+  // `deadline` is the controlling request's deadline for the resumed run. A
+  // resume that names none starts a run with no deadline: keeping the old one
+  // would re-expire at once when it is already spent (its signal has aborted).
   takeSite({ deadline = null } = {}) {
     if (this.#state !== STATES.PARKED || this.#site === null) {
       throw new CoreError(CODES.STALE_CONTROL, `program ${this.#name} is not parked`);
@@ -275,7 +307,12 @@ export class ProgramState {
     this.#site = null;
     this.#state = STATES.RUNNING;
     this.#expired = false;
-    if (deadline !== null) this.#deadline = deadline;
+    if (deadline !== null) {
+      this.#deadline = deadline;
+    } else if (this.#deadline !== null) {
+      this.#deadline.cancel();
+      this.#deadline = null;
+    }
     return site;
   }
 
@@ -410,6 +447,10 @@ export class ProgramRegistry {
 
   constructor() {
     this.#programs = new Map();
+    // name -> every retired generation of that name, oldest first. A name is
+    // reusable once its program is terminal, and reusing it must not lose the
+    // earlier generation's replay records: §3.3 says an old receipt still
+    // replays after its name was taken again.
     this.#retired = new Map();
   }
 
@@ -433,14 +474,20 @@ export class ProgramRegistry {
   // live nor a retired program ever saw that callId.
   replayRetired(callId, payload) {
     const key = String(callId);
-    for (const program of this.#retired.values()) {
-      if (program.hasReplay(key)) return program.replay(key, payload, () => null);
+    // Newest generation first: a call id used again under a reused name answers
+    // from the most recent run that booked it, and an older generation's ids
+    // stay reachable when the newer one never saw them.
+    for (const generations of this.#retired.values()) {
+      for (let index = generations.length - 1; index >= 0; index -= 1) {
+        const program = generations[index];
+        if (program.hasReplay(key)) return program.replay(key, payload, () => null);
+      }
     }
     throw new CoreError(CODES.PROGRAM_UNKNOWN, `callId ${key} is unknown`, { callId: key });
   }
 
   get(name) {
-    return this.#programs.get(name) ?? this.#retired.get(name) ?? null;
+    return this.#programs.get(name) ?? this.#retired.get(name)?.at(-1) ?? null;
   }
 
   live(name) {
@@ -456,11 +503,15 @@ export class ProgramRegistry {
   }
 
   // Move a terminal program out of the live table so its name can be reused.
+  // The generation keeps its replay records beside every later one retired
+  // under the same name.
   retire(name) {
     const program = this.#programs.get(name);
     if (program === undefined || !program.terminal) return null;
     this.#programs.delete(name);
-    this.#retired.set(name, program);
+    const generations = this.#retired.get(name) ?? [];
+    generations.push(program);
+    this.#retired.set(name, generations);
     return program;
   }
 
@@ -484,7 +535,11 @@ export class ProgramRegistry {
     if (this.#programs.has(program.name)) {
       throw new CoreError(CODES.NAME_TAKEN, `name ${program.name} is live`, { name: program.name });
     }
-    this.#retired.set(program.name, program);
+    // A restored generation joins the list; restoring the same object twice is
+    // a no-op, and a later generation never hides the earlier one.
+    const generations = this.#retired.get(program.name) ?? [];
+    if (!generations.includes(program)) generations.push(program);
+    this.#retired.set(program.name, generations);
     return program;
   }
 

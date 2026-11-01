@@ -21,15 +21,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 import fc from "fast-check";
 
 import { WorkerTable, restoreRoster, settledOutcomeOf } from "./worker-sessions.mjs";
 import { SessionState, stateFile } from "./session-state.mjs";
-import { makeActivation, workerTableOf } from "./activation.mjs";
+import { devopsRoadOf, makeActivation, workerTableOf } from "./activation.mjs";
 import { fcRuns } from "../../core/test-runs.mjs";
+import { removeRoot, tempRoot as tempRootDir } from "./test-temp.mjs";
+
+// One workspace per test or scenario; the registry removes it when the process
+// exits, so no file can forget one.
+const tempRoot = (prefix) => tempRootDir(prefix);
 
 const MANAGER = "ses_manager";
 
@@ -166,7 +169,7 @@ const tableOf = ({ host, root, records = null }) => {
   return { activation, state, table: workerTableOf(activation, MANAGER) };
 };
 
-const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "herd-roster-"));
+
 
 // A join that must not answer yet. `quiet(join)` reports whether it answered
 // within a few macrotasks, and `within(promise)` bounds the eventual answer so a
@@ -355,25 +358,25 @@ test("the road-bound devops is restored, and released once it finished", async (
     parentID: MANAGER,
     title: "devops",
   });
-  first.activation.devopsInFlight.add("devops");
+  devopsRoadOf(first.activation, MANAGER).add("devops");
 
   // A reload while it runs: the road is still held, and the journal says so.
   const running = tableOf({ host, root });
-  assert.equal(running.activation.devopsInFlight.has("devops"), true, "a running devops still holds the road");
+  assert.equal(devopsRoadOf(running.activation, MANAGER).has("devops"), true, "a running devops still holds the road");
 
   // It finishes while no plugin is loaded. The journal still says "running";
   // the host is the authority, and the reloaded activation asks it.
   host.complete(devops.sessionID, "succeeded");
   const finished = tableOf({ host, root });
-  assert.equal(finished.activation.devopsInFlight.has("devops"), true, "the journal alone still says running");
+  assert.equal(devopsRoadOf(finished.activation, MANAGER).has("devops"), true, "the journal alone still says running");
   await finished.table.reconcile();
   // Reconciliation is what the activation binds from; ask it to bind again the
   // way `fork` does before it admits a second devops.
   const table = workerTableOf(finished.activation, MANAGER);
   for (const worker of table.rosterEntries()) {
-    if (worker.role === "devops" && worker.state === "idle") finished.activation.devopsInFlight.delete(worker.name);
+    if (worker.role === "devops" && worker.state === "idle") devopsRoadOf(finished.activation, MANAGER).delete(worker.name);
   }
-  assert.equal(finished.activation.devopsInFlight.has("devops"), false, "a finished devops has released the road");
+  assert.equal(devopsRoadOf(finished.activation, MANAGER).has("devops"), false, "a finished devops has released the road");
 });
 
 test("restoreRoster replays fork, settle, steer, claim and release in order", () => {
@@ -562,6 +565,9 @@ const runScenario = async (steps) => {
   }
   const owedAfter = [...new Set(byName.values())].filter((sessionID) => !claimed.has(sessionID));
   assert.deepEqual(owedAfter, [], "a forked worker was never claimed");
+  // One workspace per scenario: the property runs ~60 times, and a root per run
+  // would leave a directory per run behind (the exit registry is the backstop).
+  removeRoot(root);
   return { byName, claimed };
 };
 

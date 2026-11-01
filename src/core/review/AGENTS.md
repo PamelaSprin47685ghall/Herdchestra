@@ -23,6 +23,7 @@
 // | situation                                    | kind         | effect                       |
 // |----------------------------------------------|--------------|------------------------------|
 // | ledger non-empty                             | `recorded`   | tenure continues, milestone never moves |
+// | non-empty, first review of a successor tenure | `recorded`  | normal working period; the successor flag clears, so the next empty review relays |
 // | empty, Plan `S1`, first review of first tenure | `askUser`  | system asks "我需要干什么？" (`interrupt: true`) |
 // | empty, Manager, first review of first tenure | `confirm`    | milestone advances, no question |
 // | empty, first review of a successor tenure    | `confirm`    | milestone advances, no new tenure |
@@ -58,19 +59,23 @@
 //
 // ## Relay and the successor flag
 //
-// A relay hands over to a successor at the same milestone, on BOTH sides. That
-// tenure is the successor until its **first empty review**, which advances the
-// milestone (`confirm`, or `closed` when the milestone was `close`). A non-empty
-// review before that is a normal working period (根 §2.3): it records
-// obligations and leaves the successor flag set, so the tenure advances instead
-// of relaying again. Clearing the flag on any recorded review would make a
-// successor that found one more obligation relay twice.
+// A relay hands over to a successor at the same milestone, on BOTH sides. The
+// successor flag lives only until that tenure's **first review** (根 §2.4 第 5
+// 步):
 //
-// The flag is therefore true only BEFORE the promotion. Anything that asks "was
-// this milestone verified?" must read the tenure instead (`tenure >= 1` on a
-// plan ledger, or `done` on a manager ledger), because the promotion that
-// proves the verification is the very review that clears the flag. A predicate
-// written as `successor === true` describes a state the ledger cannot hold.
+// - an empty first review advances the milestone (`confirm`, or `closed` when
+//   the milestone was `close`) and clears the flag;
+// - a non-empty first review is a normal working period: it records its
+//   obligations, clears the flag and changes no milestone. When that tenure
+//   later empties the ledger, the empty review RELAYS again instead of
+//   promoting — 「等它修完再次清空台账时，依然是触发下一次接力，而不是直接晋级」.
+//
+// The flag therefore answers exactly one question: "has this successor not
+// judged yet?" Anything that asks "was this milestone verified?" must read the
+// tenure instead (`tenure >= 1` on a plan ledger, or `done` on a manager
+// ledger), because the promotion that proves the verification is the very
+// review that clears the flag. A predicate written as `successor === true`
+// describes a state the ledger cannot hold.
 //
 // A relay never happens at the LAST milestone: Manager closes there, and a Plan
 // hands its draft over instead of retiring. `openSuccessor()` and
@@ -92,9 +97,11 @@
 // the ledger and marks the tenure as a successor; a finished work has no
 // successor and throws `INVALID_ARGUMENT` **before writing anything**, so a
 // refused successor leaves the ledger as it was. `reopen({ operator })` moves a
-// finished work back one milestone only for a real operator message
-// (`AGENT_MESSAGE` otherwise, `NOT_FINISHED` when the work is not done). Reopen
-// is one-shot: once the work is back in progress a second message answers
+// finished **Manager** work back one milestone only for a real operator message
+// (`AGENT_MESSAGE` otherwise, `NOT_FINISHED` when the work is not done). A Plan
+// at `待执行` is never reopened: §2.2 keeps it there, and a message for a Plan is
+// a new planning task, not a mutation of the standing ledger. Reopen is
+// one-shot: once the work is back in progress a second message answers
 // `NOT_FINISHED` instead of erasing the obligations the reopened tenure recorded.
 //
 // `draftWritable(ledger)` is false until the tenure's first review.

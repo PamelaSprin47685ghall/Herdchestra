@@ -73,12 +73,12 @@ Scope 不碰宿主的持久历史。它只产出请求副本（§6.2）。
 | kind | 字段 | 保留规则 |
 |---|---|---|
 | `message` | `role`（`operator` / `assistant` / 其他）、`text` | 边界之后原样保留；之前保留操作员消息与带正文的 assistant 消息 |
-| `toolCall` / `toolResult` | `member`、`callId`、`scope?` | 之后保留；之前只保留边界那一拍与钉住成员（`assume`、`negotiate`、`askPreviousScope`） |
+| `toolCall` / `toolResult` | `member`、`callId`、`scope?` | 之后保留；之前只保留**历次** `resetScope` 调用及其配对结果、边界那一拍与钉住成员（`assume`、`negotiate`、`askPreviousScope`） |
 | `thinking` | — | 之后保留；之前移除 |
 | `provider` | — | 已观测 provider 原文，无论位置都保留 |
 | 其他 | — | 不抛异常：边界之后保留，之前丢弃 |
 
-- **边界**：`resetCallId`（最新结算的 reset）是权威事实——命中即边界；**给了它却在请求里找不到，就是没有边界**（整份副本都属于当前 Scope），不退回注解。只有调用方完全没有结算事实（例如尚未接上 `settle` 的冷启动）才退回「请求里最新一个带 `resetScope` 注解的调用」，结果条目上的注解会被归到它的配对调用。边界那一拍与其配对结果原样保留。
+- **边界**：`resetCallId`（最新结算的 reset）是权威事实——命中即边界；**给了它却在请求里找不到，就是没有边界**（整份副本都属于当前 Scope），不退回注解。只有调用方完全没有结算事实（例如尚未接上 `settle` 的冷启动）才退回「请求里最新一个带 `resetScope` 注解的调用」，结果条目上的注解会被归到它的配对调用。边界那一拍与其配对结果原样保留；边界**之前**历次 `resetScope` 调用及其配对结果也保留（§6.2 第 2 项）——模型要能看见自己走过的每一次闭环，不只是最新一次。
 - 配对是位置性的：`toolCall` 后紧跟的 `toolResult` 即其配对结果；两者保留结论不一致时返回 `SCOPE_FIELD_INVALID` 拒收（宿主钩子不能因为一份坏条目丢掉整次请求）。
 - 没有边界时全部按"之后"处理。
 - **钉住名单可加，不可减。** `project(items, { pinned })` 的默认值是 `DEFAULT_PINNED_MEMBERS`（`assume`、`negotiate`、`askPreviousScope`）；宿主传入自己的名单时**整体替换**默认值，所以必须自己并上默认值再加自己的名字。两个适配器都加了同样的两项：空字符串 `""`（Pair Hint 的合成对，§6.1，工具名为空）与 `SURFACE_MEMBERS["js-review"]`（评估面，§2.3）。不加的后果是 `resetScope` 把这对或评估面的调用从副本里裁掉，下一次请求的呈现位置随之漂移——模型没有做错任何事，却要承担 `PREFIX_DRIFT`。名单按 `member` 精确匹配：`js-review` 这个工具名本身不是成员名，能钉住的是它可调用的成员（`cat`、`stat` 等）。

@@ -5,10 +5,12 @@
 // becoming empty is the decision point, and BOTH sides run the same timeline
 // (§2.4): the first tenure's first empty review asks (Plan `S1`) or verifies
 // (Manager); any later empty review RELAYS — retirement, barrier and a
-// successor at the same milestone; the successor's first empty review promotes
-// it one milestone. Only the last milestone differs: Plan hands its draft over
-// instead of retiring, Manager closes. The decision is a receipt; the host
-// performs the session handover.
+// successor at the same milestone. The successor's FIRST review decides: an
+// empty one promotes it one milestone, and a non-empty one is a normal working
+// period that clears the flag, so the empty review that later follows relays
+// again instead of promoting (根 §2.4 第 5 步). Only the last milestone differs:
+// Plan hands its draft over instead of retiring, Manager closes. The decision is
+// a receipt; the host performs the session handover.
 //
 // The review carries no note. A Plan handoff sends the canonical saved draft
 // (spec §2.2) and nothing else, so the only text a Manager can start from is
@@ -320,10 +322,13 @@ export class ReviewLedger {
     const isFirst = this.#tenure === 0 && this.#reviews === 1;
 
     if (after > 0) {
-      // A relayed successor that records obligations is still the successor:
-      // 根 §2.4 says a non-empty review is a normal working period, and the first
-      // empty review that follows advances the milestone. Clearing the flag
-      // here would relay again instead of advancing.
+      // A relayed successor that records obligations has made its first
+      // judgement: the non-empty review is the normal working period (根 §2.4
+      // 第 5 步), so the successor flag is spent here. When this tenure later
+      // empties the ledger, that empty review RELAYS again — it does not
+      // promote, because the tenure that found the work never certifies it
+      // (「等它修完再次清空台账时，依然是触发下一次接力，而不是直接晋级」).
+      this.#successor = false;
       return this.#receipt(REVIEW_KINDS.RECORDED, after, { added: after - before });
     }
 
@@ -332,7 +337,7 @@ export class ReviewLedger {
       // asks the operator what to do and the same tenure continues. The
       // question is an `ask` — park + interrupt — and it exists only in `S1`
       // (根 §2.2, §2.4 第 1 步).
-      if (isFirst) {
+      if (isFirst && this.#milestone === 0) {
         return this.#receipt(REVIEW_KINDS.ASK_USER, after, {
           question: INITIAL_EMPTY_QUESTION,
           interrupt: true,
@@ -433,11 +438,17 @@ export class ReviewLedger {
 
   // A finished work reopens only for a real operator message.
   //
+  // Only a Manager has a finished work: `done` is the state an operator message
+  // may reopen. A Plan at `待执行` is not finished — §2.2 keeps it there and
+  // says a new empty review starts an independent Manager session — so a
+  // message for a Plan is a new planning task, never a mutation of the standing
+  // ledger.
+  //
   // One message reopens one work: `reopen` also empties the ledger, so a second
   // operator message while the work is already back in progress would erase the
   // obligations the reopened tenure just recorded.
   reopen({ operator } = {}) {
-    if (this.#milestone !== this.#milestones.length - 1) {
+    if (this.#kind !== "manager" || this.#milestone !== this.#milestones.length - 1) {
       return { ok: false, rejection: REVIEW_REJECTIONS.NOT_FINISHED };
     }
     if (operator !== true) return { ok: false, rejection: REVIEW_REJECTIONS.AGENT_MESSAGE };

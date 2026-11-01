@@ -65,18 +65,30 @@ const firstItemDifference = (previous, next) => {
 };
 
 
+// The identity of the MESSAGE an item describes: the host message object it
+// kept (`source`), or the projection-written item's `erasedCallId`. Two items
+// of one assistant message share one source and are one message; two distinct
+// messages are two, even when their bytes are identical.
+const messageIdentity = (item) => {
+  if (item === null || typeof item !== "object") return item;
+  if (item.erasedCallId !== undefined) return `erased:${String(item.erasedCallId)}`;
+  if (item.source !== undefined && item.source !== null) return item.source;
+  return item;
+};
+
 // The messages an item list describes, in order and without repeats. One
 // assistant message may contribute several items (its prose and its calls); the
-// model reads it once.
+// model reads it once. Dedupe is by IDENTITY, not by value: two genuinely
+// distinct host messages that happen to be byte-identical must stay two, or a
+// reset boundary that pruned one of them would look like no change at all.
 const distinctMessages = (items) => {
   const seen = new Set();
   const out = [];
   for (const item of items) {
-    const message = itemMessage(item);
-    const key = message === null || typeof message !== "object" ? message : JSON.stringify(message);
+    const key = messageIdentity(item);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(message);
+    out.push(itemMessage(item));
   }
   return out;
 };
@@ -101,8 +113,6 @@ const isSubsequence = (previous, next) => {
 //   incoming    the copy the projection was GIVEN (the host's own request)
 //   givenItems  the item list the projection was HANDED (its input)
 //   answeredItems the item list it answered
-//   projectedBy the copy the projection ANSWERED, before the adapter's own
-//               filter ran
 //   filtered    what the adapter's filter kept of that answer. When both are
 //               given, the filter must have kept EVERYTHING the projection
 //               answered: an adapter that drops a message on its own (half a
@@ -276,6 +286,17 @@ export const projectionBoundary = ({
   // supply `givenItems` is accepting that weaker evidence.
   const before = pairFree(presented);
   const after = pairFree(projected);
+  // Even the weaker branch must prove that the PROJECTION made the change: the
+  // copy it answered has to differ from the copy it was given. Without
+  // `incoming` (or with an unchanged one) a difference between `presented` and
+  // `projected` could be the adapter's own rewrite, and re-basing there would
+  // bless exactly the mutation §6.1 refuses.
+  if (incoming === null || incoming === undefined) {
+    return Object.freeze({ replaced: false, shared: 0, reason: "unchanged" });
+  }
+  if (divergenceAt(pairFree(incoming), after) < 0) {
+    return Object.freeze({ replaced: false, shared: 0, reason: "unchanged" });
+  }
   const at = divergenceAt(before, after);
   if (at < 0) return Object.freeze({ replaced: false, shared: before.length, reason: null });
   if (after.length < before.length) {

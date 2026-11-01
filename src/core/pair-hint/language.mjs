@@ -61,7 +61,13 @@ export const parseExplicitLanguage = (value) => {
 const TRADITIONAL_SCRIPT = new Set(["hant", "tw", "hk", "mo"]);
 
 const languageFromTag = (tag) => {
-  const parts = tag.toLowerCase().split("-");
+  // A POSIX locale carries a codeset and a modifier that are not part of the
+  // BCP 47 tag: `zh_TW.UTF-8` names the same region as `zh-TW`, and
+  // `zh.UTF-8@euro` the same language as `zh`. Both are stripped before the
+  // subtags are read, or the codeset would hide the script/region the tag
+  // names — `zh_TW.UTF-8` would pass as Simplified Chinese.
+  const core = tag.split("@")[0].split(".")[0].toLowerCase();
+  const parts = core.split(/[-_]/);
   const language = parts[0];
   if (language === "en") return LANGUAGES.ENGLISH;
   if (language !== "zh") return null;
@@ -73,7 +79,7 @@ export const languageFromLocale = (locale) => {
   if (typeof locale !== "string" || locale.trim() === "") return null;
   const tags = locale.trim().split(/[,\s]+/).filter((tag) => tag !== "");
   for (const tag of tags) {
-    const language = languageFromTag(tag.replace(/_/g, "-"));
+    const language = languageFromTag(tag);
     if (language !== null) return language;
   }
   return null;

@@ -165,6 +165,7 @@ class Session {
   #sent;
   #issued = new Set();
   #answered = new Set();
+  #multi = 0;
 
   constructor({ host, sessionId }) {
     this.#host = host;
@@ -537,6 +538,15 @@ class Session {
     for (const id of ids) this.#issued.add(id);
   }
 
+  // The call ids for one multi-tool turn. A tool-call id names ONE call; a
+  // later turn reusing `m0` would make an old result look paired with a new
+  // call, a conversation no host sends. The base advances once per turn.
+  multiCallIds(count) {
+    const base = this.#multi;
+    this.#multi += 1;
+    return Array.from({ length: count }, (_, n) => `m${base}-${n}`);
+  }
+
   issued() {
     return [...this.#issued];
   }
@@ -679,7 +689,7 @@ const TURNS = Object.freeze({
   multiCall: (count) => ({
     name: "multiCall",
     apply: (session) => {
-      const ids = Array.from({ length: count }, (_, n) => `m${n}`);
+      const ids = session.multiCallIds(count);
       session.grow({
         role: "assistant",
         content: [
@@ -884,9 +894,12 @@ const noteTurn = (spec, state) => {
   if (spec.kind === "erase" || spec.kind === "reset") state.used.add(spec.id);
   if (spec.kind === "call" || spec.kind === "failed" || spec.kind === "finalise") state.issued.add(spec.id);
   // A multi-tool turn issues several calls at once; its results may answer any
-  // of them.
+  // of them. The base advances once per turn, exactly as `Session` does, so the
+  // ids the driver records are the ids the host really issued.
   if (spec.kind === "multiCall") {
-    for (let n = 0; n < spec.count; n += 1) state.issued.add(`m${n}`);
+    const base = state.multi;
+    state.multi += 1;
+    for (let n = 0; n < spec.count; n += 1) state.issued.add(`m${base}-${n}`);
   }
   // A result answers its call: answering it twice is not a shape a host sends,
   // and neither is answering a call the reset pruned.
@@ -1021,7 +1034,14 @@ const drive = async ({ host, sessionId, turns }) => {
   let expectedAfterMutation = false;
   const issued = new Set();
 
-  const state = { issued: new Set(), answered: new Set(), pruned: new Set(), used: new Set(), budget: false };
+  const state = {
+    issued: new Set(),
+    answered: new Set(),
+    pruned: new Set(),
+    used: new Set(),
+    budget: false,
+    multi: 0,
+  };
   for (const spec of turns) {
     if (!legalTurn(spec, state)) continue;
     noteTurn(spec, state);
@@ -1138,6 +1158,105 @@ test("a semantic mutation with no projection behind it is ALWAYS refused", async
       }
     }
   }
+});
+
+// The same invariant over GENERATED conversations, not five fixed shapes: any
+// message that survives the projection and still reaches the chain must be
+// protected, whatever mix of prose, single calls, multi-tool turns and results
+// the session produced.
+const mutationSpecArb = fc.oneof(
+  fc.record({ kind: fc.constant("user"), text: fc.stringMatching(/^[a-z ]{1,10}$/) }),
+  fc.record({ kind: fc.constant("assistant"), text: fc.stringMatching(/^[a-z ]{1,10}$/) }),
+  fc.record({ kind: fc.constant("call"), id: fc.stringMatching(/^c[0-9]$/) }),
+  fc.record({ kind: fc.constant("result"), id: fc.stringMatching(/^c[0-9]$/), value: fc.stringMatching(/^[a-z ]{0,8}$/) }),
+  fc.record({ kind: fc.constant("multiCall"), count: fc.integer({ min: 2, max: 3 }) }),
+  fc.record({ kind: fc.constant("multiResult"), count: fc.integer({ min: 1, max: 3 }) }),
+);
+
+// A legal host history from the specs: a result only answers a call that was
+// already issued, and only once.
+const historyOfSpecs = (specs) => {
+  const history = [];
+  const issued = new Set();
+  const answered = new Set();
+  let multi = 0;
+  for (const spec of specs) {
+    if (spec.kind === "user") {
+      history.push({ role: "user", content: [{ type: "text", text: spec.text }] });
+    } else if (spec.kind === "assistant") {
+      history.push({ role: "assistant", content: [{ type: "text", text: spec.text }] });
+    } else if (spec.kind === "call") {
+      history.push({
+        role: "assistant",
+        content: [{ type: "tool-call", toolName: "js-worker", toolCallId: spec.id, input: { id: spec.id } }],
+      });
+      issued.add(spec.id);
+    } else if (spec.kind === "result") {
+      if (!issued.has(spec.id) || answered.has(spec.id)) continue;
+      history.push({
+        role: "tool",
+        content: [
+          { type: "tool-result", toolName: "js-worker", toolCallId: spec.id, output: { type: "text", value: spec.value } },
+        ],
+      });
+      answered.add(spec.id);
+    } else if (spec.kind === "multiCall") {
+      const ids = Array.from({ length: spec.count }, (_, n) => `m${multi}-${n}`);
+      multi += 1;
+      history.push({
+        role: "assistant",
+        content: ids.map((id) => ({ type: "tool-call", toolName: "js-worker", toolCallId: id, input: { id } })),
+      });
+      for (const id of ids) issued.add(id);
+    } else if (spec.kind === "multiResult") {
+      const ids = [...issued].filter((id) => id.startsWith("m") && !answered.has(id)).slice(0, spec.count);
+      if (ids.length === 0) continue;
+      for (const id of ids) {
+        history.push({
+          role: "tool",
+          content: [{ type: "tool-result", toolName: "js-worker", toolCallId: id, output: { type: "text", value: "ok" } }],
+        });
+        answered.add(id);
+      }
+    }
+  }
+  return history;
+};
+
+test("property: any semantic mutation of a carried message is refused", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.constantFrom(...HOST_NAMES),
+      fc.array(mutationSpecArb, { minLength: 1, maxLength: 6 }),
+      fc.nat({ max: 8 }),
+      async (hostName, specs, pick) => {
+        const history = historyOfSpecs(specs);
+        if (history.length === 0) return;
+        const session = await new Session({ host: HOSTS[hostName], sessionId: `mut-prop-${hostName}` }).begin();
+        session.history = history;
+        try {
+          await session.request();
+        } catch {
+          // A shape this host refuses is not a chain to protect.
+          return;
+        }
+        const targets = session
+          .survivingIndices()
+          .filter((at) => session.unchangedByProjection(at) && session.survivesMutation(at));
+        if (targets.length === 0) return;
+        const at = targets[pick % targets.length];
+        session.history = session.history.map((message, position) =>
+          position === at ? { ...message, content: [{ type: "text", text: "REWRITTEN BY NOBODY" }] } : message,
+        );
+        await assert.rejects(
+          session.request(),
+          (error) => error?.code === "PREFIX_DRIFT",
+          `${hostName}: a generated mutation at ${at} was NOT refused\nturns: ${JSON.stringify(specs)}`,
+        );
+      },
+    ),
+    { ...fcRuns(80) },
+  );
 });
 
 test("a re-base happens only when a projection replaced the copy, and names the fact", async () => {

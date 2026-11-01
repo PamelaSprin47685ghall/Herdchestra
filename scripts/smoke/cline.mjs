@@ -1,22 +1,24 @@
 // Real-host smoke: Cline, through the `@cline/core` SDK the host itself loads.
 //
 // Cline's CLI is not installed here, and the Desktop binary starts a TUI. The
-// SDK path is what this repository's own host-cline tests use (`ClineCore` from
-// the plugin runtime's `@cline/core`), and it is the faster route: no terminal,
-// no hub handshake, one in-process host for all three turns.
+// SDK is resolved through `src/host-cline/host-modules.mjs` — the adapter's own
+// ladder — with the known Linux install as the fallback. It is the faster route:
+// no terminal, no hub handshake, one in-process host for the whole run.
 //
 // Isolation: `CLINE_DIR` points at a temporary root, so sessions, settings and
 // logs land there instead of `~/.cline`. The provider block is copied from the
 // operator's own `providers.json` — read to be handed to the host, never
-// printed — and the workspace is a fresh git directory under the same root.
+// printed — and the workspace is a fresh directory under the same root.
 //
-// Three turns on one session: two plain, the middle one asking for
-// `js-manager`. The tool result is read from the host's own display messages,
-// which carry the tool's `content` exactly as the model received it.
+// Three turns, each its own session (a second prompt on a live session is not
+// reachable through this SDK): two plain, the middle one asking for
+// `js-manager`. A fourth Plan session drives the `ask` park. The tool result is
+// read from the adapter's `presented` journal and from the host's provider
+// capture, which is what the model actually received.
 
 import { cp, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 import {
@@ -25,10 +27,12 @@ import {
   clineSettingsDir,
   createTable,
   exists,
+  FORBIDDEN_CODES,
   isCue,
   makeRoot,
   makeWorkspace,
   parseArgs,
+  programRefusalsOf,
   readRecords,
   refusalsOf,
   until,
@@ -37,9 +41,30 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
 const ENTRY = path.join(REPO, "src/host-cline/index.js");
-const CORE = "/usr/lib/Cline/bin/desktop-backend/plugin-runtime/node_modules/@cline/core/dist/index.js";
+const CORE_FALLBACK = "/usr/lib/Cline/bin/desktop-backend/plugin-runtime/node_modules/@cline/core/dist/index.js";
 
-const FORBIDDEN = Object.freeze(["PREFIX_DRIFT", "CONTEXT_PROJECTION_FAILED", "REQUEST_GATE_UNWRITABLE"]);
+// The SDK the adapter itself would resolve, not a path this script guesses. The
+// ladder is `host-modules.mjs`'s; the known Linux install is the fallback for a
+// machine where the ladder finds nothing (for example a source checkout that has
+// not been built). `hostModuleSource()` names the step that answered.
+const loadCore = async () => {
+  let source = null;
+  try {
+    const hostModules = await import(pathToFileURL(path.join(REPO, "src/host-cline/host-modules.mjs")).href);
+    const api = await hostModules.sessionHostApi();
+    source = await hostModules.hostModuleSource();
+    if (api?.kind === "clineCore" && typeof api.mod?.ClineCore?.create === "function") {
+      return { ClineCore: api.mod.ClineCore, source };
+    }
+  } catch {
+    // Fall through to the known layout; the failure note below reports both.
+  }
+  if (await exists(CORE_FALLBACK)) {
+    const mod = await import(pathToFileURL(CORE_FALLBACK).href);
+    if (typeof mod.ClineCore?.create === "function") return { ClineCore: mod.ClineCore, source: CORE_FALLBACK };
+  }
+  throw new Error(`@cline/core is not reachable (host-modules: ${source ?? "none"}; fallback: ${CORE_FALLBACK})`);
+};
 
 // The js-manager turn names the tool's REAL arguments: `code` and `scope`
 // (`src/host-cline/adapter.mjs`, `CODE_SCHEMA`). It said `source` once, and the
@@ -152,6 +177,9 @@ const capturedRequests = async (dir) => {
       if (payload === null || typeof payload !== "object") continue;
       out.push({
         name,
+        timestamp: typeof record.timestamp === "string" ? record.timestamp : "",
+        sessionId: typeof record.correlation?.sessionId === "string" ? record.correlation.sessionId : null,
+        runId: typeof record.correlation?.runId === "string" ? record.correlation.runId : null,
         system: typeof payload.system === "string" ? payload.system : "",
         messages: Array.isArray(payload.messages) ? payload.messages : [],
         tools: Object.keys(payload.tools ?? {}),
@@ -427,8 +455,15 @@ const main = async () => {
   let captureIsTemporary = false;
 
   try {
-    if (!(await exists(CORE))) throw new Error(`@cline/core not installed at ${CORE}`);
     const workspace = await makeWorkspace(root);
+    // The local backend inherits this process's cwd, and a session context that
+    // carries no `workspaceInfo` resolves its root from it. Without the
+    // explicit root, a worker's late roster snapshot lands in the operator's
+    // own project (measured: `.Herdchestra/cline-session-1.workers.restored.json`
+    // in the repository). The root is this run's workspace, so every session it
+    // starts — and any write that outlives the turn — stays inside the
+    // temporary tree the run removes.
+    process.env.HERDCHESTRA_PROJECT_ROOT = workspace;
     // The host's own home for this run: settings copied read-only, sessions
     // written under the temporary root.
     const home = path.join(root, "cline-home");
@@ -447,7 +482,9 @@ const main = async () => {
     process.env.CLINE_CAPTURE_PROVIDER_REQUEST = "full";
     process.env.CLINE_CAPTURE_DIR = capture;
 
-    const { ClineCore } = await import(CORE);
+    // Resolved only after CLINE_DIR and the capture variables are set: the host
+    // reads them when its module starts, and `loadCore` imports the SDK.
+    const { ClineCore, source: coreSource } = await loadCore();
     cline = await ClineCore.create({ backendMode: "local" });
     const { providerId, modelId } = modelOf();
 
@@ -490,9 +527,9 @@ const main = async () => {
     // 2. No refusal code in the records or in what the model was shown.
     const records = await readRecords(workspace);
     const refused = refusalsOf(records).map((record) => record.code ?? record.failure?.code ?? record.kind ?? "refused");
-    const inRecords = FORBIDDEN.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
+    const inRecords = FORBIDDEN_CODES.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
     const shown = runs.flatMap((run) => partsOf(run.messages)).map((part) => (typeof part.content === "string" ? part.content : JSON.stringify(part)));
-    const inStream = FORBIDDEN.filter((code) => shown.some((text) => text.includes(code)));
+    const inStream = FORBIDDEN_CODES.filter((code) => shown.some((text) => text.includes(code)));
     check("no refusal codes", inRecords.length === 0 && inStream.length === 0 && refused.length === 0, [
       inRecords.length > 0 ? `records: ${inRecords.join(",")}` : "",
       inStream.length > 0 ? `model saw: ${inStream.join(",")}` : "",
@@ -524,39 +561,83 @@ const main = async () => {
     } else {
       check("tool output is CUE", false, "no js-* tool result reached a provider request");
     }
+    const programRefusals = [
+      ...new Set([...presented.map((result) => result.text), ...seen].flatMap((text) => programRefusalsOf(text))),
+    ];
+    check(
+      "js tool did not refuse",
+      (presented.length > 0 || seen.length > 0) && programRefusals.length === 0,
+      programRefusals.length > 0
+        ? `program refusal: ${programRefusals.join(",")}`
+        : presented.length === 0 && seen.length === 0
+          ? "no js-* tool result to read"
+          : undefined,
+    );
 
     // 3b. The provider request itself: the host's capture of what it sent.
     //
     //     The checks above read the adapter's own record of the copy it built.
     //     This one reads the host's capture, so "the role prompt reached the
     //     provider" is a measurement of the request, not of the adapter's
-    //     intent. Every captured request of this run must carry the role rule
-    //     and the Pair Hint pair; a request without them is the failure.
+    //     intent. Every request AFTER a session's cold start must carry the role
+    //     rule and the Pair Hint pair; the host composes the first request of a
+    //     session before the rule runs, so that one legitimately carries
+    //     neither (HACK.md "Cline request rewrite").
     const captured = await capturedRequests(capture);
-    const marked = captured.map((request) => markersOf(request));
+    const allMarked = captured.map((request) => markersOf(request));
+    const sessionKeyOf = (request) => {
+      if (request.sessionId !== null) return `session:${request.sessionId}`;
+      if (request.runId !== null) return `run:${request.runId}`;
+      // No correlation id: the first user message is the prompt that opened the
+      // session, so equal prompts belong to the same cold-start group.
+      const firstUser = request.messages.find((message) => message?.role === "user");
+      const text = typeof firstUser?.content === "string" ? firstUser.content : JSON.stringify(firstUser?.content ?? null);
+      return `messages:${text.slice(0, 200)}`;
+    };
+    const bySession = new Map();
+    for (const [index, request] of captured.entries()) {
+      const key = sessionKeyOf(request);
+      const list = bySession.get(key) ?? [];
+      list.push({ request, markers: allMarked[index] });
+      bySession.set(key, list);
+    }
+    const projected = [];
+    let coldStarts = 0;
+    for (const list of bySession.values()) {
+      list.sort((a, b) => (a.request.timestamp || a.request.name).localeCompare(b.request.timestamp || b.request.name));
+      // The first request of a session is the cold-start one the host composes
+      // before the rule runs; it is allowed to carry neither the rule nor the
+      // pair. Every request after it is a projected copy and must carry both.
+      const [, ...afterFirst] = list;
+      coldStarts += 1;
+      projected.push(...afterFirst);
+    }
+    const marked = projected.map((entry) => entry.markers);
     const ruleOk = marked.length > 0 && marked.every((m) => m.roleRule.every((entry) => entry.count >= 1));
     const pairOk = marked.length > 0 && marked.every((m) => m.pairCall >= 1 && m.pairResult >= 1);
     // The request copy's other two jobs, measured on the same captures: the
     // provider got the pair ONCE (a copy that carries it twice is the drift the
     // chain refuses), and a `js-*` result it received is CUE, not JSON (§6.3).
     const pairOnce = pairOk && marked.every((m) => m.pairCall === 1 && m.pairResult === 1);
-    const cueResults = marked.reduce((sum, m) => sum + m.cueResults, 0);
-    const jsResults = marked.reduce((sum, m) => sum + m.jsResults, 0);
+    const cueResults = allMarked.reduce((sum, m) => sum + m.cueResults, 0);
+    const jsResults = allMarked.reduce((sum, m) => sum + m.jsResults, 0);
+    const projectedNote = (text) =>
+      marked.length === 0 ? `no projected request after ${coldStarts} cold start(s)` : `${captured.length} request(s), ${coldStarts} cold start(s) skipped: ${text}`;
     check(
       "provider request has the role rule",
       ruleOk,
-      marked.length === 0
+      captured.length === 0
         ? `no capture in ${capture}`
-        : `${marked.length} request(s): ${marked
-            .map((m) => m.roleRule.map((entry) => `${entry.marker}=${entry.count}`).join(" "))
-            .join(" | ")}`,
+        : projectedNote(marked.map((m) => m.roleRule.map((entry) => `${entry.marker}=${entry.count}`).join(" ")).join(" | ")),
     );
     check(
       "provider request has the pair hint",
       pairOk,
-      marked.length === 0 ? `no capture in ${capture}` : marked.map((m) => `call=${m.pairCall} result=${m.pairResult} text=${m.pairInMessages}`).join(" | "),
+      captured.length === 0
+        ? `no capture in ${capture}`
+        : projectedNote(marked.map((m) => `call=${m.pairCall} result=${m.pairResult} text=${m.pairInMessages}`).join(" | ")),
     );
-    check("provider request carries the pair once", pairOnce, `${marked.filter((m) => m.pairCall === 1 && m.pairResult === 1).length}/${marked.length} request(s)`);
+    check("provider request carries the pair once", pairOnce, `${marked.filter((m) => m.pairCall === 1 && m.pairResult === 1).length}/${marked.length} projected request(s)`);
     check(
       "provider request has a CUE tool result",
       jsResults > 0 && cueResults > 0,
@@ -589,7 +670,7 @@ const main = async () => {
       parked.ok !== true ? `the Plan session did not start: ${parked.reason}` : parked.text.length === 0 ? "no assistant text" : `${parked.text.length} chars of assistant text, no nudge`,
     );
 
-    if (args.verbose) console.log(JSON.stringify({ records: records.length, names, capture }, null, 2));
+    if (args.verbose) console.log(JSON.stringify({ records: records.length, names, capture, coreSource }, null, 2));
   } catch (error) {
     failed += 1;
     table.record({ phase: "harness", ms: 0, ok: false, note: error.message });
@@ -602,6 +683,11 @@ const main = async () => {
       /* the host is going away with the process */
     }
     table.print();
+    // A kept root is evidence, not a credential store: the copied provider
+    // settings are removed before the root is left behind.
+    if (args.keep) {
+      await rm(path.join(root, "cline-home", "data", "settings", "providers.json"), { force: true });
+    }
     await cleanupRoot(root, args.keep);
     // The capture sits outside the root: without this it outlives the run that
     // wrote it, together with the whole provider payload it holds.

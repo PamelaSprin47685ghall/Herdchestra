@@ -58,7 +58,14 @@ import { RoleSession, surfaceAllowed, roleForSurface } from "./surface.mjs";
 import { languageLadder, SessionState } from "./session-state.mjs";
 import { fcRuns } from "../core/test-runs.mjs";
 
-const tmpRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "host-omp-"));
+const tmpRoot = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "host-omp-"));
+  // Every root this file creates is tracked, including the many tests that
+  // call `tmpRoot()` directly rather than through `withRoot`. The exit sweep
+  // below removes them.
+  SESSION_ROOTS.push(root);
+  return root;
+};
 
 // Every RoleSession a test builds directly owns a temp root. A construction with
 // a ctx and no state used `projectRoot()` — the working directory — and wrote
@@ -611,11 +618,11 @@ test("buildSurface refuses a js-review program through a shut window", async () 
   });
 });
 
-test("before_agent_start is idempotent: same prompt twice, and no second setActiveTools in one round", async () => {
-  // §7.3: the hook's `systemPrompt` must be byte-identical on every call, and
-  // `setActiveTools` inside it makes the host re-run policy preparation — so a
-  // repeat of the SAME round must not write the tool set again. Both facts are
-  // asserted on the real handler the extension registers.
+test("turn_start opens the round; before_agent_start is idempotent and never calls setActiveTools", async () => {
+  // §7.3: `before_agent_start` must NOT call `setActiveTools` (it makes the
+  // host re-run policy preparation). §2.3's round therefore opens at the
+  // host's model-turn boundary (`turn_start`), once per round. The prompt the
+  // request hook returns is still byte-identical on every call.
   await withRoot(async () => {
     const hooks = new Map();
     const activeWrites = [];
@@ -640,24 +647,30 @@ test("before_agent_start is idempotent: same prompt twice, and no second setActi
       agent: { kind: "main", id: "Main", name: "main", depth: 0 },
       sessionManager: { getSessionId: () => sessionId, getEntries: () => [] },
     };
+    const turn = hooks.get("turn_start")[0];
     const start = hooks.get("before_agent_start")[0];
+    // The round opens at the model-turn boundary, and the review face becomes
+    // visible there.
+    await turn({ type: "turn_start", turnIndex: 0, timestamp: Date.now() }, ctx);
+    const writesAfterTurn = activeWrites.length;
+    assert.ok(writesAfterTurn >= 1, "the first turn of a session narrows at least once");
+    assert.equal(activeWrites.at(-1).includes("js-review"), true, "the round's face is visible after turn_start");
     const first = await start({ type: "before_agent_start", reason: "prompt", prompt: "hi", systemPrompt: [] }, ctx);
-    const writesAfterFirst = activeWrites.length;
-    // The round's first request narrows once. (`installHooks` may also have
-    // narrowed when the session first bound; what matters below is that no
-    // further write happens for the SAME round.)
-    assert.ok(writesAfterFirst >= 1, "the first request of a session narrows at least once");
-    assert.equal(activeWrites.at(-1).includes("js-review"), true, "the round's face is visible after the first request");
+    // The request hook itself writes the tool set ZERO times.
+    assert.equal(activeWrites.length, writesAfterTurn, "before_agent_start must not call setActiveTools");
     const second = await start({ type: "before_agent_start", reason: "prompt", prompt: "hi", systemPrompt: [] }, ctx);
     // Same bytes, every time: the prompt is a pure function of the role.
     assert.deepEqual(second, first);
     assert.equal(second.systemPrompt.length, 1);
-    // A second preparation of the same round writes the tool set ZERO more
-    // times: §7.3's policy-preparation re-run must not be paid again.
-    assert.equal(activeWrites.length, writesAfterFirst, "a repeated round must not call setActiveTools again");
+    // A second preparation of the same request writes the tool set ZERO more
+    // times.
+    assert.equal(activeWrites.length, writesAfterTurn, "a repeated request must not call setActiveTools again");
     // And a third, for good measure: still nothing.
     await start({ type: "before_agent_start", reason: "prompt", prompt: "hi", systemPrompt: [] }, ctx);
-    assert.equal(activeWrites.length, writesAfterFirst);
+    assert.equal(activeWrites.length, writesAfterTurn);
+    // A second turn of the SAME round (no review accepted) also writes nothing.
+    await turn({ type: "turn_start", turnIndex: 1, timestamp: Date.now() }, ctx);
+    assert.equal(activeWrites.length, writesAfterTurn, "a repeated round must not call setActiveTools again");
     // The review face is visible exactly while the round is open.
     assert.equal(active.includes("js-review"), true);
     // The adapter registry is process-wide; a unique session id keeps this test
@@ -1356,6 +1369,78 @@ test("ask without a UI is still a question, never a refusal", async () => {
   assert.equal(receipt.interrupt, true);
   assert.equal(receipt.question, "which file?");
   assert.equal(receipt.reason, undefined);
+});
+
+test("a Plan's this.ask parks with interrupt:true, aborts once, and unpark resumes the same body", async () => {
+  // §7.3 / §3.3 example 7: `this.ask` is `park + interrupt`. The program's tool
+  // call answers the park receipt with `interrupt: true`, the live turn's own
+  // `ctx.abort` is called exactly once, and a later program of the SAME session
+  // resumes the suspended body with `this.unpark(name, answer)`. The resumed
+  // expression receives the answer; nothing is re-run, no new tenure opens, and
+  // no second abort is issued.
+  await withRoot(async () => {
+    const aborts = [];
+    const sessionId = `sess-plan-ask-${Date.now().toString(36)}`;
+    const ctx = {
+      agent: { kind: "main", id: "plan-agent", name: "plan", depth: 0 },
+      sessionManager: { getSessionId: () => sessionId, getEntries: () => [] },
+      abort: async (options) => {
+        aborts.push(options);
+      },
+    };
+    const host = new HostAdapter({
+      pi: { registerTool: () => {}, getActiveTools: () => [], setActiveTools: async () => {} },
+      ctx,
+    });
+    const plan = host.session;
+    const tool = host.tools().find((candidate) => candidate.name === "plan");
+    assert.notEqual(tool, undefined);
+    const first = await tool.execute(
+      "call-ask",
+      {
+        source:
+          "class Js extends JsProgram { async run() { const answer = await this.ask(\"which file?\"); return { answer }; } }",
+        scope: { kind: "resetScope", newScopeGoal: "find the file", newScopeRetentionBudget: 5 },
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const parked = receiptOf(first);
+    assert.equal(parked.reason, "ask", JSON.stringify(parked));
+    assert.deepEqual(parked.payload, { question: "which file?" });
+    assert.equal(parked.interrupt, true, "the model must read the control fact on the park receipt");
+    assert.equal(aborts.length, 1, "the live turn is interrupted exactly once");
+    assert.equal(plan.state.askedInS1.question, "which file?");
+    assert.deepEqual(plan.state.parkedNames(), ["call-ask"], "the parked handle is the Pair Hint's idle list");
+    const tenure = plan.state.ledger.tenure;
+    const second = await tool.execute(
+      "call-answer",
+      {
+        source:
+          "class Js extends JsProgram { async run() { return { resumed: this.unpark(\"call-ask\", \"src/a.mjs\") }; } }",
+        scope: { kind: "keepLast" },
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const answered = receiptOf(second);
+    assert.equal(answered.error, null, JSON.stringify(answered));
+    // Core's unpark receipt names the resumed program and the value its parked
+    // expression received; it has no `ok` field of its own.
+    assert.equal(answered.value.resumed.state, "running", JSON.stringify(answered.value.resumed));
+    assert.equal(answered.value.resumed.value, "src/a.mjs", "the resumed expression receives the operator's answer");
+    assert.equal(plan.state.ledger.tenure, tenure, "an ask is not a relay");
+    assert.equal(aborts.length, 1, "the resume does not interrupt a second turn");
+    // The resumed body finished, so its handle leaves the idle list.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(plan.state.parkedNames(), []);
+    // The turn that asked consumed the marker when it ended; a later stop earns
+    // its own exit instead of reading as another S1 ask.
+    plan.turnExit();
+    assert.equal(plan.state.askedInS1, null);
+  });
 });
 
 test("the devops port returns the whole investigation report", async () => {
@@ -2962,7 +3047,9 @@ test("a sealed boundary finds the carried record in the transcript file, not the
   //
   // The file is the durable view at that boundary, so it must be able to answer.
   await withRoot(async () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sealed-")), "inc.jsonl");
+    const sealedDir = fs.mkdtempSync(path.join(os.tmpdir(), "sealed-"));
+    SESSION_ROOTS.push(sealedDir);
+    const file = path.join(sealedDir, "inc.jsonl");
     const entries = [{ type: "message", message: { role: "user", content: "go" } }];
     const flush = () => fs.writeFileSync(file, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
     flush();
@@ -4116,6 +4203,32 @@ test("context leaves the request alone when nothing changes", async () => {
     pairHintProject: async (current) => current,
   });
   assert.equal(await handler({ messages }), undefined);
+});
+
+test("a result whose call the host spells with id is not dropped as an orphan", () => {
+  // OMP's assistant parts name the call `id` (`{type:"toolCall", id:"call_…"}`,
+  // measured on 18.14.2); the hint's own dialect uses `toolCallId`. `toItems`
+  // reads both, so the half-pair rule must read both too: reading one spelling
+  // left `surviving` empty and dropped the result the projection kept, which
+  // made the ADAPTER the author of a shortened copy. `projectionBoundary` then
+  // answered `filtered`, no re-base happened, and the next request drifted.
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "toolCall", id: "call_1", name: "js-manager" }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId: "call_1", output: {} }] },
+  ];
+  assert.deepEqual(selectKept(messages, toItems(messages)), messages);
+  // The same pair in the hint's dialect (the pair hint's own shape) stays whole.
+  const hint = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "tool-call", toolCallId: "pair-hint:0", input: {} }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId: "pair-hint:0", output: {} }] },
+  ];
+  assert.deepEqual(selectKept(hint, toItems(hint)), hint);
+  // A result whose call is really gone still leaves: the orphan rule is not
+  // weakened, only taught the second spelling.
+  const items = toItems(messages);
+  assert.deepEqual(selectKept(messages, [items[0], items[2]]), [messages[0]]);
 });
 
 test("the relay barrier keeps the operator's input and the succession notice only", async () => {
@@ -6472,6 +6585,24 @@ test("a non-forked session refuses fission under any program name", async () => 
     // own fact decides, not the name.
     assert.deepEqual(await host.fission.fission("w1", ["a", "b"]), { ok: false, rejection: "InvalidOrigin" });
     assert.equal(api.created.length, 0);
+  });
+});
+
+test("a fission lane cannot fission again, even though its creator was a forked worker", async () => {
+  // §4.2 `InvalidOrigin`: a lane is a parallel PRESENT, not a worker `fork`
+  // started. It carries `forked: true` (its session was created by a forked
+  // worker) but also the lane fact, and only the second closes the door.
+  await withRoot(async () => {
+    const session = fakeSession({ agentId: "lane-1" });
+    const api = fakeApi([]);
+    const build = workerSessionTools(
+      { registerTool: () => {}, pi: api.pi },
+      { lanes: trackedLaneTable(new LaneTable({ api })), forked: true, fissionLane: true },
+    );
+    await build.install(session);
+    const refused = await build.adapter.session.fission.fission("call-lane", ["a", "b"]);
+    assert.deepEqual(refused, { ok: false, rejection: "InvalidOrigin" });
+    assert.equal(api.created.length, 0, "a refused lane creates no session");
   });
 });
 

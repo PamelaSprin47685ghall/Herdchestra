@@ -52,8 +52,9 @@
 //    `NAME_TAKEN` for a live name. Replay is a separate step: `record(program,
 //    callId, payload, compute)` returns the stored receipt for the same callId
 //    and payload, and throws `CALL_REPLAY_MISMATCH` for a different payload. A
-//    retired program keeps its records; `replayRetired` answers from them or
-//    throws `PROGRAM_UNKNOWN`.
+//    retired program keeps its records, every generation retired under a reused
+//    name keeps its own, and `replayRetired` answers from the newest generation
+//    that booked the call id or throws `PROGRAM_UNKNOWN`.
 // 5. **Draining** is a transition, not a stored state, and it GATES admission.
 //    `program.beginOperation()` registers one operation and returns its **id**;
 //    `program.endOperation(id)` settles exactly that id and requires it: no
@@ -75,13 +76,18 @@
 //    new expression and nothing it waits for can still arrive. `endOperation`
 //    after `finish` is allowed, because an operation that started earlier still
 //    has to settle.
-// 5a. **Lifecycle**: `moveTo` accepts only non-terminal states; on a terminal
-//    program it is a no-op that returns the current state, so a late `finally`
-//    cannot reopen a finished run. `park` on a terminal program throws
-//    `INVALID_ARGUMENT`; `finish` on a terminal program throws as well.
+// 5a. **Lifecycle**: `moveTo` moves between `running` and `waiting` only; a
+//    terminal target and `parked` are refused (`INVALID_ARGUMENT`), because a
+//    terminal state is reached through `finish` and `parked` through
+//    `park(site)`. On a terminal program it is a no-op that returns the current
+//    state, so a late `finally` cannot reopen a finished run. `park` on a
+//    terminal program throws, and it requires a non-null object site with one of
+//    the four known `reason` values; `finish` on a terminal program throws as
+//    well.
 // 5b. **Deadline**: `begin(name, { deadline })` gives the run one `Deadline`
 //    fixed at admission. `park` cancels it, `takeSite({ deadline })` replaces it
-//    with the controlling request's, and `finish` cancels it.
+//    with the controlling request's — or clears it when the resume names none,
+//    so a spent deadline cannot re-expire at once — and `finish` cancels it.
 //    `remainingWaitMs()` is null when there is none; receipts then report 0.
 // 6. **Resume is single-shot.** `ControlSurface.unpark` checks, in order:
 //    observation (`STALE_CONTROL`), self-target (`INVALID_ARGUMENT`), existence
@@ -129,9 +135,10 @@
 //    ledger (`#calls`); that map never affects a decision. Kinds:
 //    `recorded`, `relay`, `confirm`, `closed`, `askUser`, `handoff`,
 //    `nextReview`, `reopened`, `rejected`. Plan's milestones are `S1`, `S2`,
-//    `S3`, `待执行`; it has no relay, so each empty review below 「待执行」
-//    advances one milestone (`confirm`), and an empty review at 「待执行」 is the
-//    handoff (`review(findings, source?)`). The review carries no text:
+//    `S3`, `待执行`. Plan relays exactly like Manager: an incumbent's empty
+//    review below 「待执行」 relays, a successor's first empty review advances one
+//    milestone (`confirm`), and an empty review at 「待执行」 is the handoff
+//    (`review(findings, source?)`). The review carries no text:
 //    `source` is the saved draft read from the canonical path, and the handoff
 //    sends it byte for byte. A handoff with no draft, an empty one, or a source
 //    that is not a string is rejected with `DRAFT_MISSING`; nothing is
@@ -150,12 +157,15 @@
 //    are decided before any counter or milestone moves, so a Plan that reaches
 //    「待执行」 and hands off without a draft keeps its first-review credit, and
 //    the handoff itself never consumes a review (the Plan stays at 「待执行」).
-// 10. **The successor flag survives a working period.** A relayed tenure stays
-//    the successor until its first empty review advances the milestone; a
-//    non-empty review is a normal working period (根 §2.3) and does not relay
-//    again. `openSuccessor()` validates before it writes, so a refused successor
-//    leaves the ledger untouched, and `reopen` is one-shot: once the work is
-//    back in progress it answers `NOT_FINISHED` instead of erasing the ledger.
+// 10. **The successor flag lives only until the successor's first review.** An
+//    empty first review advances the milestone; a non-empty one is the normal
+//    working period, clears the flag and changes no milestone. When that tenure
+//    later empties the ledger, the empty review RELAYS again rather than
+//    promoting (根 §2.4 第 5 步). `openSuccessor()` validates before it writes,
+//    so a refused successor leaves the ledger untouched, and `reopen` is
+//    one-shot and Manager-only: a Plan at 「待执行」 is never reopened, and once a
+//    Manager work is back in progress a second message answers `NOT_FINISHED`
+//    instead of erasing the ledger.
 // 11. **The evaluation window's `open` is a getter, never a method.**
 //    `ReviewWindow.open` answers a boolean and is the gate every adapter reads;
 //    a method of the same name would share the property key and shadow it, so

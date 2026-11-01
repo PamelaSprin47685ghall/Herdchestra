@@ -57,6 +57,7 @@ import { systemPromptFor } from "../compose/prompt/projection.mjs";
 import { directorPromptFor } from "../compose/prompt/director.mjs";
 import { PLAN_PROMPT } from "../compose/prompt/plan.mjs";
 import { ROLES } from "../compose/program/surface.mjs";
+import { toCueToolResults } from "./request.mjs";
 
 // The system prompt one role's requests carry (根 §5, §2.2).
 //
@@ -103,14 +104,24 @@ export const systemPromptRule = ({ id = "herdchestra-system-prompt", source = "h
 //
 // A request that carries no message list is answered unchanged. A projector
 // that throws must not take the request down with it: the host would fail the
-// whole request, so the honest answer is the request the host already had.
+// whole request, so the hook answers a copy instead of throwing.
+//
+// The fallback is the CUE rendering, never the raw host messages. Returning the
+// host's copy unchanged sent JSON tool results (§6.3 forbids the escape noise the
+// model then misreads) and no Pair Hint, and nothing said the projection had not
+// run. The CUE rewrite is the one rule that needs no book, so it is the one that
+// can still be applied; a copy that cannot even be rendered is the host's own.
 export const requestRewrite = ({ project }) => async (messages) => {
   if (!Array.isArray(messages)) return messages;
   try {
     const projected = await project(messages);
     return Array.isArray(projected) ? projected : messages;
   } catch {
-    return messages;
+    try {
+      return toCueToolResults(messages);
+    } catch {
+      return messages;
+    }
   }
 };
 

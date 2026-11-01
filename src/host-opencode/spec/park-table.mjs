@@ -6,11 +6,11 @@
 // registry has no place for that promise, so this table holds it, keyed by the
 // program name.
 //
-// The evaluation never blocks on it either: the surface's `park` throws
-// `ProgramParked` once the promise is registered, so the call answers with the
-// receipt at once. On resume the table settles the promise, and a parked
-// program's body is started again from its source with the injected value
-// recorded, because the unwound body cannot be continued in place.
+// The evaluation never blocks on it either: the member call returns the pending
+// promise, the body's `await` stays suspended, and the call answers with the
+// park receipt at once (`program-execution.mjs`). On resume `settle` resolves
+// that promise, so the ORIGINAL async stack continues in place with the
+// injected value; the body is never started again (§3.3: 恢复不是重跑).
 
 import { CoreError, CODES } from "../../core/errors.mjs";
 

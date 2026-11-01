@@ -5,9 +5,10 @@
 // would send and returns a filtered copy:
 //
 // - everything after the beat that opened the current Scope is kept as it is;
-// - before it, operator messages, that beat and its paired result, pinned
-//   members (`assume`, `negotiate`, `askPreviousScope`) and their paired
-//   results, assistant prose and observed provider output are kept;
+// - before it, operator messages, every `resetScope` beat and its paired
+//   result, pinned members (`assume`, `negotiate`, `askPreviousScope`) and
+//   their paired results, assistant prose and observed provider output are
+//   kept;
 // - ordinary tool calls and results of an old Scope are removed, together with
 //   their thinking/reasoning;
 // - an erased beat becomes one assistant message whose text is the
@@ -24,7 +25,14 @@
 // throws for a host item it does not recognize: an unknown kind is kept when it
 // is after the boundary and dropped when it is before it.
 
-import { DEFAULT_PINNED_MEMBERS, REMOVE_MEMBER, SCOPE_CODES, SCOPE_KINDS, refuse } from "./errors.mjs";
+import {
+  DEFAULT_PINNED_MEMBERS,
+  REMOVE_MEMBER,
+  RESET_MEMBER,
+  SCOPE_CODES,
+  SCOPE_KINDS,
+  refuse,
+} from "./errors.mjs";
 
 export const ITEM = Object.freeze({
   MESSAGE: "message",
@@ -55,14 +63,37 @@ const isProvider = (item) => kindOf(item) === ITEM.PROVIDER;
 // call and on its result; both count, because a request can hold either.
 const isResetCarrier = (item) => isObject(item) && item.scope?.kind === SCOPE_KINDS.RESET;
 
-// True for the call that carried a `removeLast` annotation.
-const isEraseCarrier = (item) =>
-  isObject(item) && (item.scope?.kind === SCOPE_KINDS.REMOVE || item.member === REMOVE_MEMBER);
-
 const isPinned = (item, pinned) =>
   (kindOf(item) === ITEM.TOOL_CALL || kindOf(item) === ITEM.TOOL_RESULT) &&
   typeof item.member === "string" &&
   pinned.has(item.member);
+
+// A `resetScope` beat of an older Scope. Spec §6.2 keeps every historical reset
+// call and its paired result in the copy, not only the newest boundary: the
+// model must be able to read the closed loops it walked through. The member
+// name is the settled form; the annotation is the fallback a caller that passes
+// no records leaves on the items.
+const isResetItem = (item) =>
+  item.member === RESET_MEMBER || item.scope?.kind === SCOPE_KINDS.RESET;
+
+// The call/result pair that carries a reset marker, from either side. A host may
+// annotate only the call or only the result (the boundary reader accepts both),
+// so the pair is kept together: dropping one side would be refused as a
+// disagreement, and §6.2 keeps 「调用及其配对结果」 as one fact.
+const isResetPair = (items, item, index) => {
+  if (isResetItem(item)) return true;
+  const kind = kindOf(item);
+  if (kind !== ITEM.TOOL_CALL && kind !== ITEM.TOOL_RESULT) return false;
+  const partner = kind === ITEM.TOOL_CALL ? items[index + 1] : items[index - 1];
+  if (partner === undefined) return false;
+  const partnerKind = kindOf(partner);
+  if (kind === ITEM.TOOL_CALL && partnerKind !== ITEM.TOOL_RESULT) return false;
+  if (kind === ITEM.TOOL_RESULT && partnerKind !== ITEM.TOOL_CALL) return false;
+  if (item.callId !== undefined && partner.callId !== undefined && item.callId !== partner.callId) {
+    return false;
+  }
+  return isResetItem(partner);
+};
 
 // The call an annotation carrier stands for. A host may attach `scope` to the
 // result instead of (or besides) the call; the boundary is still the call.
@@ -156,7 +187,7 @@ export const projectRequest = (
         return isOperatorMessage(item) || isAssistantProse(item);
       case ITEM.TOOL_CALL:
       case ITEM.TOOL_RESULT:
-        return isPinned(item, pinnedSet);
+        return isPinned(item, pinnedSet) || isResetPair(items, item, index);
       case ITEM.THINKING:
         return false;
       default:

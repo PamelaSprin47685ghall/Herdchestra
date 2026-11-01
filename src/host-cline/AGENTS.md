@@ -317,6 +317,12 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
   `localRuntime.pluginPaths` 指向本插件入口，`config.sessionId` 与角色事实在启动前写好（§2.3），
   首个提示就是底稿字节。§2.2 的交接只**新开**一个 Manager 会话：Plan 不因此结束，也不被替换。
   半开的 Manager（起了会话但没投递）由 `stopManager` 停掉，回执里 `discarded` 如实报告。
+  **交接的成功由端口本身记账**：`SessionState.#relayPort()` 包住 `startManager`，回执成功
+  （`ok: true` 且带 `sessionId`）时调 `session.noteHandoff(result)`。程序面的 `review([])`
+  经 `ReviewMember` 直达端口，从不经过 `reviewFor`；不在端口记账，`guard.verifiedCompletion`
+  永远看不到 `handedOff: true`，Plan 的合法停机就被拒绝并被 Nudge 去再开一个 Manager。
+  `noteHandoff` 同时认两种回执形状：端口自己的 `{ ok, sessionId }`，以及 review 回执里嵌在
+  `started` 下的那一份。
 - `relay.askOperator(question)` 经 `operator.mjs` 的 seam：它**永远**回
   `{ ok: true, asked: true, question, interrupt: true }`（`askedReceipt`），不再有「没有通道」这种拒绝。
   `this.ask` 就是 `this.park({ question })` + `interrupt`：挂起与中断本身就是通道。初任空账 review
@@ -327,6 +333,21 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
   回执恒为 `{ name, steered, started }`，成功里没有 rejection。一个 brief 被 admitted 时同时记成
   「被某回合承载」（`steered`）：承载它的那一个上报同时结算承载回合与被承载的 brief，两者各是一条
   `join` 记录（`#settle`）。宿主 handle 没有这条通道时，brief 排到该 worker 的下一回合（`pending`）。
+  **结算只看运行时实际读到的条数**：`#settle` 用 `record.steered`（`runtime.mjs` 在每个请求边界
+  计数）作为权威读数，`carried = min(表记 steered, record.steered, admitted − settled − 1)`。
+  回合结束时若一条也没读（模型直接给了最终答复），那条 brief 不被结算成「已完成的工作」，
+  它仍在运行时队列里，由下一回合取走。表只在结算后扣掉真正跑过的那几条。
+  **同名 fork 不能复活被 fission 替换的 present**：`state === REPLACED` 的条目回
+  `WORKER_REPLACED`，`#runTurn` 也不启动它（§4.2 第 6 步）。
+  **一个会话同时只有一个活跃 DevOps**：`role === "devops"` 且表里另有非 DEAD、正在运行或欠回合的
+  devops（且不是同名的这一条）时，回 `DEVOPS_ALREADY_ACTIVE` 并点名该 worker；调用方应 steer 它。
+  **`FORK` 记录先于监听注册**：`#entryFor` 只建条目，`#observe` 在 `FORK` 落盘后才挂
+  `onSettled`。首回合可能在 `create` 等待期间就结算，先挂监听会写出 SETTLE→FORK 的顺序，
+  重放时 SETTLE 因名字未知被丢弃，下一次加载便永远等一份不会来的结果。
+  **重载不把 lane 的结算当成 `join` 完成**：`#restore` 跳过 `completion.lane === true`。
+  **`replacePresent` 的每种失败都带 `ok: false`**（`OWNER_UNKNOWN` / `ABORT_NOT_ARMED` /
+  `NO_ABORT_SURFACE` / `ABORT_FAILED`）：组合层的 `portRefused` 只认这个字段，只写
+  `replaced: false` 会被读成「替换成功」，整组不回滚而旧 present 继续出回合。
 - **`join` 的会计按「回合」记账，不按「名字」**（`workers.mjs`）。一个 worker 可以有好几个回合：
   排在运行中回合后面的 steer，或者在它已经结算过一次之后又收到的 brief。每个回合在被接受时
   `admitted += 1`，被结算时 `settled += 1`，只有「已结算且无人认领」的回合才是可交付的完成记录：
@@ -368,6 +389,10 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
   会话本身不在 worker 表里，所以顶层调用者得到 `InvalidOrigin`。`ownerName()` 是会话 id。
   lane 起始文本的总泳道数读 `lane.laneCount`（组合层在 `lanesOf` 里一次性写进每条 lane，根 §4.2 第 3 步）；
   `createLane` 拿不到整数 `laneCount` 时以 `LANE_COUNT_MISSING` 抛错，让整组回滚，绝不印出 `undefined`。
+  **lane 的归属按 laneId 记账**：`SessionFission.#lanes` 存 `{ owner, index }`，结算时用 lane 自己的
+  owner 去找组，而不是一个会话级的 `#owner` 槽。两个 worker 各自 fission，或第二个 worker 的
+  fission 被拒时，单槽会把第一条 lane 的结算送到别人的组（该组返回 null），
+  于是它永远到不了 `ConvergenceReady`、takeover lane 也不宣告。回滚时（`abortLanes`）对应条目一并删除。
 
 ### 5.1 操作员通道（`operator.mjs`）
 
@@ -429,6 +454,14 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 因此 `await this.unpark(name, answer)` 的值是**续体的真实结局**，不是 core 在 `running` 时刻的视图；
 `value` 仍是挂起表达式收到的那个值（core 的 `resumeValue` 决定）。
 
+**操作员的答复走同一个收尾入口，而且必须把程序从 `parked` 切回 `running`。**
+`session.resume(name, answer)` 先 `ProgramState#takeSite`（与 core 的 `unpark` 同一步），
+再唤醒、再等续体；续体结束就 `settleContinuation`（程序进终局、名字退休）、`tenure.noteFinished`、
+`parks.close`。少了任何一步，被操作员答复的程序会永远留在 `parkedNames()` 里，名字也不再可用。
+`ProgramCall` 不再提供自己的 `resume`/`settle` 捷径：只留一条收尾路径，绕不过去。
+续体第二次 `ask` 时，新问题与第一次走同一处记账（`#recordAsk`）：`#askedInTurn = true`、
+`#parkStopOwed = true`，所以第二个问题同样中断它所在的 run。
+
 能力集（`adapter.mjs#CAPABILITIES_FOR`，根 §3.3 的「控制者须持有目标的能力集」）：
 
 | 程序身份 | 注册的能力集 | 因此可以恢复 |
@@ -460,6 +493,9 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 - `afterRun` → `runExit`：run 还是结束了（宿主没注册守卫、同一 run 里守卫被更早一轮消费）。
   此时用 `steer_message` 投一条真实提示续跑，回执如实报告 `continued` 与 `delivery`；
   通道缺失时是 `NO_CONTINUATION_CHANNEL`，不是假的成功。
+  **`runExit` 判 `stopAllowed` 时先 `session.clearNudge()`**（`afterRun` 的允许分支同样）。
+  否则同一 run 里更早一轮记下的 Nudge 会活过一次操作员中断或宿主失败，在下一次请求里
+  被 `requestNotice` 重放——那是对操作员自己的停机说「你未完成就想停」。
 
 Nudge 文本由 `compose/nudge.mjs#buildNudgeMessage` 生成：当前台账的全部 `{ key, value }`
 （空账则明说本阶段尚未完成评审/继任验收/交接），加上根 §2.2 的硬口令原文。
@@ -471,7 +507,8 @@ run 失败或被取消是宿主的报告（`run-failed` / `run-cancelled`）；�
 
 - **闭回合**：`beforeModel` 在 `resumeAsked` 之前就 `closeTurn()` 了。这是对的——挂起那一回合的全部工具
   都已结算，`closeTurn` 只拒「整回合只有 `meToo`」；恢复本身不产生 Scope 记录。
-- **`resumeAsked` 只取最后一条 user 消息**（`request.mjs#lastOperatorText`）。宿主会把钩子上下文
+- **`resumeAsked` 取最后一条**是操作员**原话**的 user 消息（`request.mjs#lastOperatorText`）：
+  工具结果消息与空文本/仅图片的消息都被跳过，扫描继续往前，不会因为末尾一条结果就让 `ask` 失去答复。宿主会把钩子上下文
   （`source="RunStart"` / `PreToolUse` / `PostToolUse`）作为一条 `role: "user"` 的消息追加在末尾
   （`agent-runtime.ts:1100-1124`，`displayRole: "system"` 只影响展示，不改 role），所以若那条上下文
   排在操作员消息之后，恢复用的就是**上下文而不是原话**。今天 `RunStart` 的上下文在同一次 run 的开头
@@ -548,6 +585,10 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
 - `registerRule` 用 `whenToolAvailable: "js-plan"` 把底稿路径告诉 Plan，模型不能自选路径。
 - `devops(intent)` 用与 `fork` 同一个 `createDelegatedAgent` 起一个 devops 运行时并等它的
   单次结果（`devops.mjs`）；同一时刻至多一个在飞，第二次回 `DEVOPS_ALREADY_IN_FLIGHT`。
+  **准入是同步的单飞 promise**：`inFlight` 在第一个 `await` 之前就赋值（以前要等 SDK 与连接
+  解析完才赋值，两个同拍调用会都读到 `null` 并各起一个运行时），结束时按 promise 身份清空。
+  `fork` 侧另有一条：一个会话同时只允许一个非 DEAD、正在运行或欠回合的 devops
+  （`DEVOPS_ALREADY_ACTIVE`，点名该 worker），同名 `fork` 仍是 steer。
   工厂不可达时回 `HOST_HAS_NO_DELEGATED_AGENT`，**不**编造调查结论。
 - 底稿在本任第一次 `review` 之前只读（§2.2）：`js-plan` 的 `write` 在 `reviewCount === 0` 时抛
   `DRAFT_READ_ONLY`，第一次 review 之后才可写。
@@ -566,12 +607,12 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
 
 | 钩子 | 行为 |
 |---|---|
-| `beforeRun` | 只开 run（`#run += 1`），**不**开模型回合；把 Scope 冷启通知作为钩子上下文交给宿主 |
-| `beforeModel` | **先关上一回合**（`session.closeTurn()`，全 `meToo` 的拒收写进钩子上下文），再开新回合（`session.openTurn()`），再 `resolveRole()`；随后做请求副本：接力栅栏 → Scope 投影 → Pair Hint；第一次请求整段替换本角色的提示。Scope 投影传 `pinned: PINNED_MEMBERS`（`request.mjs`：core 默认值 + 空字符串 + `SURFACE_MEMBERS["js-review"]`），与 opencode 同集；不传时 Pair Hint 的合成对会在 `resetScope` 之后被裁掉，下一次呈现随之漂移。Pair Hint 三件事都在 `session.mjs#projectMessages`：栅栏切过副本时由 `tenure.anchorOfFence()` 对**本条栅栏**锚一次（冻结文本、epoch、handles 不动），冻结的 handles 与当前未结清 park 名不等时开新 epoch，相等时不动前缀 |
-| `beforeTool` | 角色面门禁（`callRole`）、Scope 准入 |
-| `afterTool` | Scope 结算；拒收写进钩子上下文，不抛异常 |
-| `afterModel` | **不关回合**：宿主在这一刻还没跑本回合的工具 |
-| `afterRun` / `onEvent` | 收尾与观察；都不改 turn id |
+| `beforeRun` | 只开 run（`#run += 1`），**不**开模型回合；把 Scope 冷启通知作为钩子上下文交给宿主。**子运行时的 run 直接返回**（`delegatedRuntime`）：它不推进父会话的 run 计数，也不清父会话的 park stop |
+| `beforeModel` | **先关上一回合**（`session.closeTurn()`，全 `meToo` 的拒收写进钩子上下文），再开新回合（`session.openTurn()`），再 `resolveRole()`；随后做请求副本：接力栅栏 → Scope 投影 → Pair Hint；第一次请求整段替换本角色的提示。Scope 投影传 `pinned: PINNED_MEMBERS`（`request.mjs`：core 默认值 + 空字符串 + **`"js-review"`（工具名）** + `SURFACE_MEMBERS["js-review"]`），与 opencode 同集；不传时 Pair Hint 的合成对与评测通道会在 `resetScope` 之后被裁掉，下一次呈现随之漂移。Pair Hint 三件事都在 `session.mjs#projectMessages`：栅栏切过副本时由 `tenure.anchorOfFence()` 对**本条栅栏**锚一次（冻结文本、epoch、handles 不动），冻结的 handles 与当前未结清 park 名不等时开新 epoch，相等时不动前缀。**子运行时的请求只做副本**：`parkStop` / `beginRound` / `closeTurn` / `openTurn` / `resumeAsked` / `noteModel` / `requestNotice` 一概不跑，否则 worker 的首条 brief（一条 user 消息）会被 `resumeAsked` 当成操作员对父会话 `ask` 的答复 |
+| `beforeTool` | 角色面门禁（`callRole`）、Scope 准入。准入集合是 `SCOPE_TOOLS = FACE_TOOLS ∪ {fork, join}`：两者模式都要求 `scope`，属非豁免工具（§6.2），漏掉它们会让只有 `fork`/`join` 的回合以 `SCOPE_METOO_ONLY` 收尾，注解也从不入账 |
+| `afterTool` | Scope 结算（同一 `SCOPE_TOOLS` 集合）；拒收写进钩子上下文，不抛异常 |
+| `afterModel` | **不关回合**：宿主在这一刻还没跑本回合的工具。子运行时的 assistant 消息不参与父会话的自然停止判定 |
+| `afterRun` / `onEvent` | 收尾与观察；都不改 turn id。子运行时的 run 结束不触发父会话的 Nudge/续跑 |
 
 **回合边界是模型请求，不是整个 run，也不是 `afterModel`。** 宿主一次迭代的顺序是
 `beforeModel` → `afterModel`（`agent-runtime.ts:2079`）→ `beforeTool`/`afterTool`（`executeToolCalls`，:974）。
@@ -614,6 +655,29 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
 工具**返回值**本身仍是结构化对象：宿主把它序列化给模型之前就被这里换掉了，
 `host-omp`/`host-opencode` 的「结构化输出」契约与它不冲突。
 
+**只解包宿主自己的两种信封。** `structuredValueOf` 与 `toolResultText` 只把
+`type === "json"` / `type === "text"` 当成信封，裸对象整体渲染。旧规则「有 `value` 字段就解包」
+把 `js-*` 回执削成 `{ ok, value }`，模型因此看不到 `name`、`state`、`source`（§3.3 要求回执带源）。
+工具自己写出的 JSON（命令 stdout 的 `{"type":"event","value":1}`）按原始字节送出，不会被解包成 `1`。
+
+**混合 user 消息两个方向都要读。** provider 形状的 `role: "user"` 消息可以同时带文本与
+`tool_result` 块：`toItems` 为每个结果发一条 `toolResult` 条目、文本照旧发消息条目；
+`toCueToolResults` 在**任何**带结果部件的消息里做 CUE，并按部件自己的 `output`/`content`
+判形状而不是按消息 role。`lastOperatorText` 跳过工具结果消息与空文本消息继续往前找，
+一条空的或 image-only 的 user 消息不再让 `ask` 失去答复。
+
+**结果与调用必须成对。** `selectKept` 以「这条结果回答的调用还在不在副本里」判两个方向：
+投影丢掉了结果、但它回答的调用仍在副本中时，结果被补回（provider 拒绝没有结果的调用）；
+保留的结果若其调用已被裁掉，则只保留消息自己的文字，孤儿结果离开。助手消息仍保留它读过的
+每一个 `tool-call`。`selectKept` 的答案是**投影的答案**，与长度无关：`removeLast` 的替换
+可以等长，等长也是改写，必须落到副本上。
+
+**投影拒绝要留证据。** `scope.project` 回 `{ ok: false }` 时，请求仍发 CUE/接力副本
+（绝不发未投影的宿主原文），同时往 `.Herdchestra/<session>.requests.jsonl` 追加一行
+`kind: "scopeProjectionRefused"`：code、message、逐条 item 的 kind/role/member/callId、
+长度与 SHA-256 摘要。不记正文。接力栅栏的切点是「最后一条操作员回合的下标」，
+**`0` 是合法切点**（`-1` 才是「没有」）：写成 `cut > 0` 会把继承者自己的第一句话丢掉。
+
 ## 7 缺口（不得假装已解决）
 
 1. 宿主没有按角色禁用工具的接口，Manager 的「无读权限」只能由 `beforeTool` 返回 `{ skip: true }`。
@@ -622,7 +686,9 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
    从 `argv[1]`/`argv[0]`/`execPath`/`cwd`/插件目录向上找 `node_modules/@cline/core` →
    已知安装布局（`/usr/lib/Cline/bin/desktop-backend/plugin-runtime/node_modules/@cline/core`、
    `/opt/Cline/...`、macOS bundle、Windows 安装）→ `../cline` 源码树（`packages/core`、
-   `sdk/packages/core`）。候选先 `stat` 再 import，只接受导出本适配器所需条目的模块，结果按进程缓存，
+   `sdk/packages/core`）。候选先 `stat` 再 import，只接受导出本适配器所需条目的模块。
+   **只缓存成功**：一次没找到的遍历（安装器还在写文件、瞬时 import 失败）不写入缓存，
+   下一次调用重新爬梯子；否则一次失败会让 `fork`/`fission`/`devops` 在本进程里永久不可用。
    `hostModuleSource()` 报出命中哪一级。
    **实测依据**：worker 里 `require.resolve("@cline/core")` 是 `MODULE_NOT_FOUND`，但按绝对路径
    import 宿主的 `dist/index.js` 可用（612 ms，两个工厂都在）；worker 拿到的是独立模块实例，
@@ -694,3 +760,25 @@ Scope 的投影按条目取舍，宿主必须把它还原成自己的消息。�
 - **不加**：模型没读过的调用不能凭空出现。
 
 只有「结果的对调用已经不在副本里」的那一半仍然丢弃——provider 会拒绝一个它没请求过的结果。一条消息的所有条目都被丢掉时，整条消息照旧离开副本（§6.2 的旧 Scope 修剪不受影响）。`selectKept` 是这条规则的唯一落点（`src/host-omp/request.mjs`、`src/host-cline/request.mjs`）。
+
+## 8 本轮修正（按文件核对）
+
+审计（`agent://audit-cline-1`、`agent://audit-cline-2`）确认的缺陷，逐条落点如下；
+每条都有测试固定，测试文件是本目录下的 `*.test.mjs`。
+
+| 文件 | 修正 |
+|---|---|
+| `execution.mjs` | `compile` 只把**成员**交给 `__surface`（`{ ...instance }`），三个顶层原语只作参数；`JsProgram` 的 `this` 上不再有 `this.fork`/`this.join`/`this.review`。`ProgramCall` 删掉了与 park 表重复的 `resume`/`settle` 捷径 |
+| `hooks.mjs` | `delegatedRuntime()` 守卫子运行时的四个钩子（run/turn/ask/park stop/nudge 都不动父会话）；`SCOPE_TOOLS = FACE_TOOLS ∪ {fork, join}` 用于准入与结算；`traceGate` 的 `describeContext` 与序列化移进 `try` |
+| `request.mjs` | 只解包 `json`/`text` 两种宿主信封；混合 user 消息的文本与结果分别成条目并各自 CUE；`lastOperatorText` 跳过结果与空文本；`selectKept` 双向保证调用/结果成对；`PINNED_MEMBERS` 加 `"js-review"`（工具名） |
+| `session.mjs` | 接力切点 `cut >= 0`；投影答案无条件落到副本（等长替换也算改写）；Scope 拒绝写 `.requests.jsonl`；`#recordAsk` 统一三处 `ask` 记账；`noteHandoff` 认 `started.sessionId`；`#relayPort` 在端口处记交接；`resume` 走 `takeSite` 并完成 `settleContinuation`/`noteFinished`/`close` |
+| `rewrite.mjs` | 投影抛错时退回 **CUE 渲染**的副本，绝不把宿主原文（JSON 工具结果、无 Pair Hint）发出去 |
+| `adapter.mjs` | `compile`+`run` 包在 `try/finally`：语法错误也关控制账、让程序进终局并退休名字，回 `PROGRAM_COMPILE_FAILED`；委派运行时的工具表只有 `js-worker`；`ask` 的答复走 `session.resume` |
+| `tenure.mjs` | `restore` 按 `kind` 选 `PLAN_MILESTONES`/`MANAGER_MILESTONES`，且先评估栅栏的 `adoptSuccessor` 再找里程碑 |
+| `workers.mjs` | 单活跃 DevOps（`DEVOPS_ALREADY_ACTIVE`）；`REPLACED` 不可被同名 `fork` 复活；`#settle` 用 `record.steered`；`FORK` 先于 `onSettled`；`#restore` 过滤 lane 完成记录；`replacePresent` 失败一律带 `ok: false` |
+| `fission.mjs` | lane 归属按 laneId 存 `{ owner, index }`，结算用 lane 自己的 owner；回滚删除条目 |
+| `runtime.mjs` | config provider 的 `consumePendingUserMessage` 先排本适配器队列，再链到宿主自己的消费者 |
+| `devops.mjs` | `inFlight` 在第一个 `await` 之前同步赋值（单飞 promise） |
+| `guard.mjs` | `runExit` 判 `stopAllowed` 时 `clearNudge()` |
+| `host-modules.mjs` | 解析失败不缓存，后续调用重试 |
+| `README.md` | 删掉过时的 `NO_PER_RUNTIME_STEER` 说法（第 6 条改为运行时自己的待输入通道） |

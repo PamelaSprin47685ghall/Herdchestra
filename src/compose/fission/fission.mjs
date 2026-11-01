@@ -40,6 +40,9 @@ const step = (port, name) => (typeof port?.[name] === "function" ? port[name].bi
 // it, and a session that never fissions must not keep every turn it ever ran.
 const PENDING_LIMIT = 256;
 
+const isTerminalGroup = (group) =>
+  group.phase === GROUP_STATES.CONVERGED || group.phase === GROUP_STATES.FAILED;
+
 // There is no time limit on a build step. Time in this system comes from one
 // place only: the request deadline fixed from `intent` at admission (spec §3.3).
 // A step that never answers is a host that never answers; the composition layer
@@ -53,6 +56,7 @@ export class Fission {
   #capacity;
   #groups;
   #building;
+  #buildingGroups;
   #ids;
   #sequence;
   // The settled turns no group has taken yet, in settlement order (step 7).
@@ -70,6 +74,11 @@ export class Fission {
     this.#capacity = capacity;
     this.#groups = new Map();
     this.#building = new Set();
+    // The group a build has created but not yet committed. A one-step host's
+    // lane can finish inside `createLane`/`startLane`, before the group reaches
+    // `#groups`; `settle`/`deliver`/`#take` read this map so that delivery is
+    // not lost.
+    this.#buildingGroups = new Map();
     // Every group id this instance has handed out, so a second group of one
     // owner never reuses an id a host may still hold.
     this.#ids = new Set();
@@ -82,10 +91,17 @@ export class Fission {
     return this.#groups.get(owner) ?? null;
   }
 
-  // The groups that are not terminal, in the order they were admitted. A
-  // completion captured before fission belongs to every one of them.
-  #openGroups() {
-    return [...this.#groups.values()].filter((group) => group.phase !== GROUP_STATES.CONVERGED && group.phase !== GROUP_STATES.FAILED);
+  // The groups that are not terminal, in the order they were admitted, plus
+  // any group still being built. A completion captured before fission belongs
+  // to every one of them.
+  #liveGroups() {
+    const groups = [...this.#buildingGroups.values()];
+    for (const group of this.#groups.values()) {
+      if (groups.includes(group)) continue;
+      if (isTerminalGroup(group)) continue;
+      groups.push(group);
+    }
+    return groups;
   }
 
   // One settled turn that no group has taken, as it reaches a group.
@@ -95,19 +111,21 @@ export class Fission {
   // the lane it belongs to, and that name is the lane id of a group this
   // instance built; anything else is a `fork` worker's turn.
   #take(completion) {
-    for (const group of this.#openGroups()) {
+    for (const group of this.#liveGroups()) {
       const lane = group.lanes.find((candidate) => candidate.laneId === completion?.name);
       if (lane === undefined) continue;
       const index = lane.index;
       const ready = group.deliver(index);
-      // §4.2 step 10: the takeover lane (n−1) announces the end, and only it.
-      // Every other lane's delivery is reported to the host, which is where
-      // that lane's own turn ends.
-      if (index === group.terminalLane && ready) {
-        const receipt = group.converge({ lane: index, result: completion?.text ?? null });
+      // §4.2 step 10: the takeover lane announces, exactly as a settlement
+      // does, and the announced result is that lane's own stored report. The
+      // conjunction may be completed by any lane's delivery or by a broadcast
+      // claim, so the announcement is asked for, never inferred from the index.
+      const announcement = group.announcement();
+      if (announcement !== null) {
+        const receipt = group.converge({ lane: announcement.lane, result: announcement.result });
         return { groupId: group.groupId, owner: group.owner, lane: index, converged: receipt };
       }
-      return { groupId: group.groupId, owner: group.owner, lane: index, delivered: true };
+      return { groupId: group.groupId, owner: group.owner, lane: index, delivered: true, ready };
     }
     this.#pending.push(completion);
     return null;
@@ -154,8 +172,12 @@ export class Fission {
 
   async fission(owner, prompts) {
     if (!this.#origins(owner)) return refusal(REJECTIONS.InvalidOrigin);
-    if (this.#groups.has(owner)) {
-      // Spec §4.2: no recursive fission and no replacement group, ever.
+    const current = this.#groups.get(owner);
+    if (current !== undefined && !isTerminalGroup(current)) {
+      // Spec §4.2: no recursive fission and no replacement group while a group
+      // is ACTIVE. A converged/failed group is not active — step 10 restored
+      // the owner to a single present — so the owner may fission again; the
+      // finished record stays addressable until the new group replaces it.
       return refusal(REJECTIONS.AlreadyActive);
     }
     if (this.#building.has(owner)) return refusal(REJECTIONS.ConflictingGroup);
@@ -177,6 +199,11 @@ export class Fission {
     // host prints the same number and none of them counts lanes to find it.
     const lanes = lanesOf(groupId, prompts);
     const group = new LaneGroup({ groupId, owner, lanes });
+    // The group becomes visible to `settle`/`deliver`/`#take` BEFORE any host
+    // step can run a lane. A one-step host's lane IS its first turn, so without
+    // this its settlement would find no group and its delivery would be lost.
+    // A successful build moves it into `#groups`; a rollback deletes it.
+    this.#buildingGroups.set(owner, group);
     // The completions this group was handed (step 7). They are the turns that
     // settled before it existed; they reach every lane after the group is live.
     const captured = this.#pending;
@@ -226,11 +253,44 @@ export class Fission {
       const replaced = await this.#port.replacePresent({ groupId, owner, lanes });
       if (portRefused(replaced)) throw portFailure("replacePresent", replaced);
       group.replace();
+      // A lane may have delivered during the build (a synchronous host). The
+      // conjunction is complete only now, after `replace`, so the takeover lane
+      // announces here exactly as it would from a settlement.
+      const announcement = group.announcement();
+      if (announcement !== null) {
+        group.converge({ lane: announcement.lane, result: announcement.result });
+      }
       // Step 7: every completion captured before fission reaches every lane,
       // once per lane (single-flight claim). It is delivered after the group is
       // live, because a lane can only take a broadcast of a group that exists.
-      for (const completion of captured) group.broadcast(completion);
+      // A group that already converged during the build took every claim it
+      // needed (condition B is part of the conjunction), so re-broadcasting
+      // would be a write to a terminal group.
+      if (!isTerminalGroup(group)) {
+        for (const completion of captured) group.broadcast(completion);
+        // The broadcasts may be what completes condition B for lanes that
+        // already delivered during the build. The takeover lane announces here
+        // for the same reason `settle` does after every delivery.
+        const settledAnnouncement = group.announcement();
+        if (settledAnnouncement !== null) {
+          group.converge({ lane: settledAnnouncement.lane, result: settledAnnouncement.result });
+        }
+      }
     } catch (error) {
+      // The build did not happen. The completions it captured are still facts
+      // no group has delivered, so they go back to the FRONT of the pending
+      // queue (deduped, newest name wins) for the next group to inherit.
+      // Dropping them would silently compute condition B over an incomplete
+      // set.
+      const seen = new Set();
+      const restored = [];
+      for (const entry of [...captured, ...this.#pending]) {
+        const key = String(entry?.name);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        restored.push(entry);
+      }
+      this.#pending = restored.slice(-PENDING_LIMIT);
       // Whole-group rollback: the group record is withdrawn first (the group is
       // about to not exist), then every lane this call built is handed back.
       // What the rollback did is attached to the refusal, because a caller
@@ -266,6 +326,7 @@ export class Fission {
       throw error;
     } finally {
       this.#building.delete(owner);
+      this.#buildingGroups.delete(owner);
     }
     this.#groups.set(owner, group);
     return { ok: true, groupId, lanes: group.lanes };
@@ -297,7 +358,10 @@ export class Fission {
   // a lane did, and a report that arrives late is still not an error of the
   // host's.
   settle(owner, laneIndex, result = null) {
-    const group = this.#groups.get(owner);
+    // A lane may settle while its group is still being built (a one-step
+    // host). The building map is consulted first so that settlement is the
+    // lane's delivery rather than "no group".
+    const group = this.#buildingGroups.get(owner) ?? this.#groups.get(owner);
     if (group === undefined) return null;
     if (group.phase === GROUP_STATES.CONVERGED || group.phase === GROUP_STATES.FAILED) {
       return { groupId: group.groupId, owner, lane: laneIndex, terminal: group.phase };

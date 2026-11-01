@@ -357,24 +357,6 @@ export class ProgramCall {
     return { status: "parked" };
   }
 
-  /**
-   * Resume the parked expression with a value from outside the session (the
-   * operator's answer to `ask`). Returns false when nothing is parked under
-   * this name, which the caller reports instead of pretending a resume.
-   */
-  settle(name, value) {
-    return this.parks.settle(name, value);
-  }
-
-  /**
-   * Wake this call's parked expression and answer its continuation. This is the
-   * one route `SessionState` uses for both resumes (the AI's `this.unpark` and
-   * the operator's message), so both report the same thing.
-   */
-  resume(name, value) {
-    return this.parks.resume(name, value);
-  }
-
   finish(state, payload) {
     if (this.#settled) return;
     this.#settled = true;
@@ -461,11 +443,12 @@ export const compile = (code, members) => {
   }
   const names = Object.keys(primitives);
   // `__surface` is the object the `JsProgram` base class reads in its
-  // constructor; it carries the members and the primitives alike.
+  // constructor. It carries the members only: the primitives are parameters,
+  // so putting them on `this` too would give one capability two spellings.
   const body = `return (async () => {\n${programBody(code)}\n})();`;
   return new AsyncFunction("__surface", ...names, body).bind(
     instance,
-    { ...members },
+    { ...instance },
     ...names.map((name) => primitives[name]),
   );
 };

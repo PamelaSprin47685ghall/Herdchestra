@@ -11,5 +11,8 @@
 - `plugin.mjs` —— **仅测试入口，不是装载路径**。宿主从不导入它（目录目标只找
   `index.js`/`server.js`，不读 `main`/`exports`，也不按文件名找 `plugin.mjs`）；
   它只把两种形状放在同一个 specifier 下，供测试使用。真实装载只走 `index.js`。
+- `spec/test-temp.mjs` —— 测试临时工作区的统一登记表：进程退出时删除，property 场景
+  在场景结束即删，因此 `node --test` 不再留下 `herd-*` 目录。它不是 `*.test.mjs`，
+  不会被测试运行器当成套件加载。
 
-改动适配器只改 `spec/`。
+改动适配器只改 `spec/`。本轮（2026-11-01）的行为修订见 `spec/AGENTS.md` §14。

@@ -7,13 +7,15 @@
 // be handed to a child process and is never printed, logged or written into the
 // repository.
 //
-// Why a warm host: a cold host start and a plugin load cost more than the turn
-// they precede. The old loop paid both for every scenario. Each host script now
-// pays them once and drives N turns, so a scenario costs one provider turn.
+// Each host script owns its own turn loop: OMP and OpenCode start a host process
+// per turn, while Cline keeps one SDK host and starts one session per turn. The
+// library shares only the pieces above, so a script can change its loop without
+// changing the others.
 //
 // Why the root is under /tmp: a smoke run must never write into the operator's
-// project. Every script creates `<tmp>/hc-smoke-<host>-<pid>/` and removes it on
-// exit unless `--keep` asks to keep it.
+// project. Every script creates a fresh `mkdtemp` root under `<tmp>`
+// (`hc-smoke-<host>-<random>`) and removes it on exit unless `--keep` asks to
+// keep it.
 
 import { mkdir, mkdtemp, rm, readdir, readFile, writeFile, access } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
@@ -28,8 +30,8 @@ export const DEFAULT_MODEL = process.env.HC_SMOKE_MODEL ?? "lazy/task";
 // Arguments
 // ---------------------------------------------------------------------------
 
-// `--scenario a --turns 3 --keep` plus `--flag` booleans. Unknown options are an
-// error rather than ignored: a typo must not silently run the whole set.
+// `--flag` booleans plus `--name value` options. Unknown options are an error
+// rather than ignored: a typo must not silently run the whole set.
 export const parseArgs = (argv, { flags = [], values = [] } = {}) => {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -65,9 +67,8 @@ export const cleanupRoot = async (root, keep) => {
   await rm(root, { recursive: true, force: true });
 };
 
-// A git repository with one committed file. The hosts look for a project; an
-// empty directory makes some of them invent one, and the checks then read the
-// wrong root.
+// A directory with one file. OMP's turn runner adds the git repository itself
+// (`git init` + `git add`); the other hosts accept the plain directory.
 export const makeWorkspace = async (root) => {
   const workspace = path.join(root, "workspace");
   await mkdir(workspace, { recursive: true });
@@ -122,32 +123,60 @@ export const openCodeModel = () => process.env.HC_SMOKE_OPENCODE_MODEL ?? `ai.kw
 // Records
 // ---------------------------------------------------------------------------
 
-// Every `.jsonl` under `<root>/.Herdchestra/`, parsed line by line. A line that
-// does not parse is returned as `{ unparsable: true, line }` so a check can say
-// so instead of throwing.
+// Every `.jsonl` and `.json` under `<root>/.Herdchestra/`. A `.jsonl` file is
+// parsed line by line; a `.json` file is one durable fact (a gate verdict, a
+// ledger) or an array of them, so each parsed object becomes one record. A line
+// or file that does not parse is returned as `{ unparsable: true, ... }` so a
+// check can say so instead of throwing.
 export const readRecords = async (workspace) => {
   const dir = path.join(workspace, ".Herdchestra");
   if (!(await exists(dir))) return [];
   const out = [];
   for (const name of await readdir(dir)) {
-    if (!name.endsWith(".jsonl")) continue;
-    const text = await readFile(path.join(dir, name), "utf8");
-    for (const line of text.split("\n")) {
-      if (line.trim().length === 0) continue;
-      try {
-        out.push({ file: name, ...JSON.parse(line) });
-      } catch {
-        out.push({ file: name, unparsable: true, line: line.slice(0, 200) });
+    const file = path.join(dir, name);
+    if (name.endsWith(".jsonl")) {
+      const text = await readFile(file, "utf8");
+      for (const line of text.split("\n")) {
+        if (line.trim().length === 0) continue;
+        try {
+          out.push({ file: name, ...JSON.parse(line) });
+        } catch {
+          out.push({ file: name, unparsable: true, line: line.slice(0, 200) });
+        }
       }
+      continue;
+    }
+    if (!name.endsWith(".json")) continue;
+    let value;
+    try {
+      value = JSON.parse(await readFile(file, "utf8"));
+    } catch {
+      out.push({ file: name, unparsable: true, line: "" });
+      continue;
+    }
+    for (const record of Array.isArray(value) ? value : [value]) {
+      if (record !== null && typeof record === "object") out.push({ file: name, ...record });
+      else out.push({ file: name, value: record });
     }
   }
   return out;
 };
 
-// The refusals that make a session unusable. `refused` is the Pair Hint
+// The refusal codes that make a session unusable. `refused` is the Pair Hint
 // journal's record; `gateHeld`/`failure` name the request gate. A drift record
 // carries `failure.stage`/`failure.code`.
-export const REFUSAL_CODES = Object.freeze(["PREFIX_DRIFT", "CONTEXT_PROJECTION_FAILED", "REQUEST_REFUSED"]);
+export const FORBIDDEN_CODES = Object.freeze(["PREFIX_DRIFT", "CONTEXT_PROJECTION_FAILED", "REQUEST_GATE_UNWRITABLE"]);
+
+// The request gate's codes are the refusal codes every script searches for; one
+// list keeps the three scripts from drifting apart.
+export const REFUSAL_CODES = FORBIDDEN_CODES;
+
+// The program's own refusals. A `js-*` tool that answers one of these did not
+// run the program, so a CUE receipt alone is not a pass.
+export const PROGRAM_REFUSAL_CODES = Object.freeze(["SCOPE_REFUSED", "INVALID_ARGUMENT", "SYNTAX_ERROR", "PROGRAM_FAILED"]);
+
+export const programRefusalsOf = (text) =>
+  typeof text === "string" ? PROGRAM_REFUSAL_CODES.filter((code) => text.includes(code)) : [];
 
 export const refusalsOf = (records) =>
   records.filter((record) => {
@@ -243,8 +272,10 @@ export const step = async (table, phase, run, { fatal = true, note = undefined }
 // ---------------------------------------------------------------------------
 
 // A child whose stdout/stderr are collected. The child is killed with its group
-// so a host that spawns its own workers does not outlive the run.
-export const spawnHost = async (command, args, { cwd, env = {}, onLine = null }) => {
+// so a host that spawns its own workers does not outlive the run. `timeout`
+// bounds one turn: a hung host is sent SIGTERM (then SIGKILL after a grace
+// period) instead of leaving an orphan process group behind.
+export const spawnHost = async (command, args, { cwd, env = {}, onLine = null, timeout = 300_000 }) => {
   const { spawn } = await import("node:child_process");
   const child = spawn(command, args, {
     cwd,
@@ -252,7 +283,7 @@ export const spawnHost = async (command, args, { cwd, env = {}, onLine = null })
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
-  const state = { stdout: "", stderr: "", lines: [], exit: null };
+  const state = { stdout: "", stderr: "", lines: [], exit: null, timedOut: false };
   const feed = (stream, key) => {
     let rest = "";
     stream.setEncoding("utf8");
@@ -273,6 +304,7 @@ export const spawnHost = async (command, args, { cwd, env = {}, onLine = null })
   const exited = new Promise((resolve) => {
     child.on("exit", (code, signal) => {
       state.exit = { code, signal };
+      clearTimeout(timer);
       resolve(state.exit);
     });
   });
@@ -284,6 +316,25 @@ export const spawnHost = async (command, args, { cwd, env = {}, onLine = null })
       /* already gone */
     }
   };
+  let timer = null;
+  if (typeof timeout === "number" && timeout > 0) {
+    timer = setTimeout(() => {
+      state.timedOut = true;
+      kill();
+      // A host that ignores SIGTERM would otherwise keep the run waiting for an
+      // exit that never comes; the second signal is the backstop.
+      const force = setTimeout(() => {
+        if (state.exit !== null) return;
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }, 5_000);
+      force.unref?.();
+    }, timeout);
+    timer.unref?.();
+  }
   return { child, state, exited, kill };
 };
 

@@ -48,9 +48,9 @@ export const PLAN_PROMPT = `<plan>
 启动 Manager 不结束你的规划任务，也不改动底稿；Manager 无权改底稿，也不退回你的里程碑。需要重新规划只能由操作员发真实消息触发新任务。
 
 # 工具面
-\`this.cat\`、\`this.write\`、\`this.park\`、\`this.unpark\`、\`this.ask\`、\`this.devops\`，以及顶层原语 \`review\`。没有 glob、grep、exec，也不访问仓库其他文件。一个能力只有一种写法：成员一律写 \`this.xxx\`，裸 \`cat(...)\` 不存在；顶层原语一律写裸函数名，\`this.review\` 不存在。
+\`this.cat\`、\`this.write\`、\`this.devops\`、\`this.ask\`、\`this.unpark\`，以及顶层原语 \`review\`。没有 glob、grep、exec，也不访问仓库其他文件。一个能力只有一种写法：成员一律写 \`this.xxx\`，裸 \`cat(...)\` 不存在；顶层原语一律写裸函数名，\`this.review\` 不存在。
 仓库事实一律经 \`this.devops(intent)\` 同步取得；同一任务同时至多一个未决 devops，它的完整调查记录原样返回，系统不做二次摘要，你不必也不得转述成摘要。
-\`this.ask\` 只在 S1 阶段可用；它就是 \`this.park({ question })\` + \`interrupt\`，\`this.park\` 因此也在工具面里（单独 \`this.park\` 不中断回合）：程序挂起，本轮回合中断，控制权交还操作员。操作员在常规对话中答复后，控制权回到你，你在新程序里调用 \`this.unpark(name, answer)\` 把答复注入原挂起点，同一任务从 \`this.ask\` 处继续，不重开任期、不制造评审。S2、S3、待执行调用 \`this.ask\` 一律被拒（ASK_FORBIDDEN_OUTSIDE_S1）。
+\`this.ask\` 只在 S1 阶段可用；它自己挂起程序并加上 \`interrupt\`（工具面里没有单独的 \`this.park\`）：程序挂起，本轮回合中断，控制权交还操作员。操作员在常规对话中答复后，控制权回到你，你在新程序里调用 \`this.unpark(name, answer)\` 把答复注入原挂起点，同一任务从 \`this.ask\` 处继续，不重开任期、不制造评审。S2、S3、待执行调用 \`this.ask\` 一律被拒（ASK_FORBIDDEN_OUTSIDE_S1）。
 
 # 无人值守
 系统是无人值守的常授权模式：禁止等待用户决策或授权，禁止半途而废。

@@ -360,7 +360,11 @@ export class WorkerTable {
     const workerName = name ?? title;
     const existing = this.#workers.get(workerName);
     if (existing !== undefined && existing.state === LIVE) {
-      await this.#sessions.prompt({ sessionID: existing.sessionID, text: brief, delivery: "queue" });
+      // §7.1: a same-name live worker is STEERED, and the host's steer delivery
+      // is `"steer"`. `"queue"` is the new-fork delivery: it admits the brief
+      // only after the worker's current turn ends, so a worker that keeps
+      // working never reads it while the receipt still says `steered: true`.
+      await this.#sessions.prompt({ sessionID: existing.sessionID, text: brief, delivery: "steer" });
       // The steered turn is new work on a session that may still carry the
       // outcome of its previous turn (the host writes `idle_outcome` only at a
       // terminal). Forgetting it here is what keeps a later `join` from

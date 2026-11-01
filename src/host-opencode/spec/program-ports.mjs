@@ -33,6 +33,7 @@ import { readFile } from "node:fs/promises";
 import { refusal, REFUSALS } from "./refusals.mjs";
 import { stateOf, FISSION_CAPACITY, laneRoleOf } from "./activation.mjs";
 import { requireModelOf } from "./model-inherit.mjs";
+import { roleOf } from "./agent-role.mjs";
 
 // Plan's first empty review asks the operator (根 §2.4 第 1 步). It is the SAME
 // question `this.ask` asks, and it takes the same one step: the review parks
@@ -46,13 +47,18 @@ import { requireModelOf } from "./model-inherit.mjs";
 // here as well would be a second mechanism for one fact: the body would be
 // suspended on the port's promise instead of the park the wrapper can see, and
 // the call would answer `completed` instead of the park receipt.
-const askOperator = async (activation, question) => {
-  const sessionID = activation.askSession ?? null;
-  const program = activation.askProgram ?? null;
+const askOperator = async (question, scope) => {
+  const sessionID = scope?.sessionID ?? null;
+  const program = scope?.id ?? null;
   return { ok: true, asked: true, question, program, sessionID, interrupt: true, parked: true };
 };
 
-export const makeRelayPorts = (activation) =>
+// `scope` is the calling session and its physical call id, stated per call
+// (`activation.portsFor`). The relay ports used to read them from one mutable
+// slot on the activation, which two interleaved tool calls of different sessions
+// could overwrite: a relay could then retire the wrong session, and a hand-off
+// could reuse another call's id.
+export const makeRelayPorts = (activation, scope = null) =>
   Object.freeze({
     // Retirement, the barrier and the successor start are one step (根 §2.4 第 3 步).
     // `relaySession` and `relayLedger` are set by the plugin for the duration of
@@ -63,36 +69,43 @@ export const makeRelayPorts = (activation) =>
       }
       // The predecessor and its ledger travel on the decision: compose's
       // `ReviewMember` calls `handOver` with the three flags only, so the
-      // surface passes what it knows through `activation.relayContext`, which
-      // the plugin sets for the duration of one call.
-      const context = activation.relayContext ?? null;
-      if (context === null) return { ok: false, reason: "NO_SESSION_DOMAIN" };
+      // caller states the session and its call id in this port's scope.
+      const sessionID = scope?.sessionID ?? null;
+      if (typeof sessionID !== "string" || sessionID.length === 0) {
+        return { ok: false, reason: "NO_SESSION_DOMAIN" };
+      }
+      // The side the retiring tenure judges under (§2.4 第 3 步). A Plan's relay
+      // starts a Plan successor; a Manager's a Manager one. The role comes from
+      // the calling session's agent, never from the record being written.
+      const kind = roleOf(scope.agent) === "plan" ? "plan" : "manager";
+      const ledger = stateOf(activation, sessionID).ledgerFor(kind);
       return activation.relayHost.handOver({
-        predecessor: context.sessionID,
-        milestone: context.ledger.milestone,
-        tenure: context.ledger.tenure,
+        predecessor: sessionID,
+        milestone: ledger.milestone,
+        tenure: ledger.tenure,
+        kind,
       });
     },
     startManager: async (draft) => {
       // The Plan's own operator input travels with the hand-off (根 §2.4 第 4 步:
       // the successor sees "用户原始输入"). The Plan holds it as a durable fact;
       // reading it here keeps this port from guessing from a transcript.
-      const context = activation.relayContext ?? null;
+      const sessionID = scope?.sessionID ?? null;
       const operatorInput =
-        context === null ? null : (stateOf(activation, context.sessionID).originalInput()?.text ?? null);
+        sessionID === null ? null : (stateOf(activation, sessionID).originalInput()?.text ?? null);
       return activation.relayHost.startManager(draft, {
         operatorInput,
         // The Plan's own session: its model is what the Manager must run.
-        planSession: context === null ? null : context.sessionID,
+        planSession: sessionID,
         // §2.4 第 6 步: the physical call id is the ONLY thing a repeat is
-        // matched on. `relayContext.id` is the host's call id for the program
+        // matched on. `scope.id` is the host's call id for the program
         // running this review, so the same call replayed reports the Manager it
         // already started, while a new empty review — identical draft or not —
         // starts its own (§2.2).
-        handoffId: context === null ? null : (context.id ?? null),
+        handoffId: scope?.id ?? null,
       });
     },
-    askOperator: async (question) => askOperator(activation, question),
+    askOperator: async (question) => askOperator(question, scope),
   });
 
 export const makeControlPort = (activation, sessionID) =>
@@ -110,6 +123,26 @@ export const makeControlPort = (activation, sessionID) =>
     // null: it is an override, and core reads the target's own set.
     unpark: async (request) => {
       const state = stateOf(activation, sessionID);
+      const target = state.calls.program(request.name);
+      // The operator's prompt may already have resumed this ask (§3.3 example 7:
+      // the reply arrives as a prompt, and `prompt-hook.mjs` resumes the park).
+      // The model's documented next step — `this.unpark(name, answer)` in a new
+      // program — must then answer the settled receipt instead of core's
+      // `STALE_CONTROL`: the resume already happened, exactly once, and the
+      // controller reads its result rather than asking for a second one.
+      if (target !== null && target.state !== "parked") {
+        const receipt = state.calls.replayAnswer(request.name, { source: state.calls.source(request.name) });
+        if (receipt !== null) {
+          return {
+            ...receipt,
+            resumed: false,
+            alreadyResumed: true,
+            value: request.value ?? null,
+            answer: request.value ?? null,
+            note: "this program was already resumed; no second resume was performed",
+          };
+        }
+      }
       const controller = state.calls.program(request.controllerId);
       const outcome = state.control.unpark({
         controllerId: request.controllerId,
@@ -139,10 +172,10 @@ export const makeForkJoinPorts = (activation, sessionID) =>
 // `devops` (spec §6): one investigation for Plan. It starts a devops worker and
 // waits for that one answer, then returns the report whole; nothing here
 // summarises it. At most one devops is in flight per Plan session.
-export const makeDevopsPort = (activation) =>
+export const makeDevopsPort = (activation, scope = null) =>
   Object.freeze({
     investigate: async (intent) => {
-      const sessionID = activation.devopsSession ?? null;
+      const sessionID = scope?.sessionID ?? null;
       if (sessionID === null) return refusal(REFUSALS.ROLE, { member: "devops" });
       const inFlight = activation.devopsRuns.get(sessionID);
       if (inFlight !== undefined) return refusal(REFUSALS.DEVOPS_BUSY, { name: inFlight });

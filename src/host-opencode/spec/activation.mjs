@@ -41,14 +41,55 @@ import {
 const safeName = (value) =>
   String(value).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "session";
 
+// The Plan relay that opened this session, when there is one. A Plan's
+// successor reads and writes the draft its predecessor wrote (§2.2): the record
+// carries the file's name and the workspace it lives in, and this is the reader
+// both the draft port and the announced path use.
+const planRelayOf = (activation, sessionID) => {
+  const state = activation?.states?.get?.(sessionID) ?? null;
+  const record = state?.relay?.record?.() ?? null;
+  if (record === null || record.corrupt === true) return null;
+  if (record.kind !== "plan" || record.successor !== sessionID) return null;
+  return record;
+};
+
+// The workspace a session's draft lives in. The Plan's own session root is the
+// announced one (`draftPath`), and a relayed Plan successor inherits the
+// predecessor's, because it continues the predecessor's file.
+export const draftRootOf = (activation, sessionID) => {
+  const relay = planRelayOf(activation, sessionID);
+  if (relay !== null && typeof relay.draftRoot === "string" && relay.draftRoot.length > 0) return relay.draftRoot;
+  return stateOf(activation, sessionID).root;
+};
+
+// The draft file's name: the session's own, or the predecessor's when this
+// session is a Plan's successor.
+export const draftNameOf = (activation, sessionID) => {
+  const relay = planRelayOf(activation, sessionID);
+  if (relay !== null && typeof relay.draft === "string" && relay.draft.length > 0) return relay.draft;
+  return safeName(sessionID);
+};
+
+// The road-bound devops of one session (根 §2.3). Keyed by the session that owns
+// the road, so two Managers cannot see or release each other's devops.
+export const devopsRoadOf = (activation, sessionID) => {
+  const key = typeof sessionID === "string" && sessionID.length > 0 ? sessionID : "";
+  let road = activation.devopsInFlight.get(key);
+  if (road === undefined) {
+    road = new Set();
+    activation.devopsInFlight.set(key, road);
+  }
+  return road;
+};
+
 // How many lanes one group may have. The host documents no cap on child
 // sessions, so the adapter's own limit is the only one: a larger group is
 // refused as `CapacityExceeded` rather than started and abandoned.
 export const FISSION_CAPACITY = 32;
 
 // `hooks` carries what needs the calling session or a live tool call:
-// `forkWorker`, `joinWorker` and `fissionWorker` are supplied by the plugin
-// because a port call does not carry the caller's session id.
+// `forkWorker` and `joinWorker` are supplied by the plugin because a port call
+// does not carry the caller's session id.
 export const makeActivation = ({ commandPort, sessions = null, root = null, hooks = {} } = {}) => {
   const activation = {
     sessions,
@@ -69,11 +110,9 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
       },
     }),
     asks: new AskChannel({ sessions }),
-    disposed: false,
     // Supplied by the plugin.
     forkWorker: hooks.forkWorker ?? (async () => null),
     joinWorker: hooks.joinWorker ?? (async () => null),
-    fissionWorker: hooks.fissionWorker ?? (async () => null),
   };
   // The relay host writes the one record the two gates read (根 §2.4 第 3 步). It needs
   // the workspace root for that file, and the session table so the successor's
@@ -102,13 +141,16 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
         // Results that finished but were never joined. Dropping them here would
         // make the successor redo work to learn what the predecessor knew.
         unclaimed: table.unclaimed(),
-        // The devops bound to this road, whether or not it is busy right now.
-        // The set is shared by the activation, so only the predecessor's own
-        // roster names which of its workers is the road-bound one: taking the
-        // whole set would hand the successor a devops another Manager started.
-        devops: [...activation.devopsInFlight].filter((name) => table.get(name) !== null),
+        // The devops bound to THIS session's road, whether or not it is busy
+        // right now. The road is keyed by the session that owns it, so a
+        // successor is never handed a devops another Manager started.
+        devops: [...devopsRoadOf(activation, sessionID)].filter((name) => table.get(name) !== null),
       };
     },
+    // A Plan's saved draft (§2.2) travels with a Plan relay: the successor must
+    // write and read the file its predecessor wrote, not a new one keyed by its
+    // own session id.
+    draftOf: (sessionID) => ({ root: draftRootOf(activation, sessionID), name: draftNameOf(activation, sessionID) }),
   });
   activation.workers = new Map();
   activation.fissions = new Map();
@@ -118,7 +160,10 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
   // and the session is the only identity a fork and a later call share (a
   // program is named by its tool-call id, which is never a session id).
   activation.fissionOrigins = new Map();
-  activation.devopsInFlight = new Set();
+  // The road-bound devops of each session (根 §2.3: one devops per road). The
+  // key is the session that owns the road: two Managers may each run their own
+  // `devops`, and one Manager's fork must never release the other's.
+  activation.devopsInFlight = new Map();
   activation.devopsRuns = new Map();
   // The parent of each session, as `session.created` reported it: `null` for a
   // top-level session, a session id for a child. The operator's original input
@@ -150,38 +195,29 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
   // events for it; the table is what keeps one stop from becoming several
   // nudges.
   activation.nudgedRounds = new Map();
-  // Set by the plugin for the duration of one call, because a port call does
-  // not carry the calling session.
-  activation.askSession = null;
-  // The program a ledger-driven question is asked for (Plan's first empty
-  // review, 根 §2.4 第 1 步). The question parks through the surface's own
-  // channel (`program-tool.mjs`); this name only labels the answer the port
-  // returns.
-  activation.askProgram = null;
-  activation.devopsSession = null;
-  activation.relayContext = null;
-  // The identity a worker's lanes run as. It is NOT a constant: a lane is a
+  // The identity each worker session runs as. It is NOT a constant: a lane is a
   // parallel present of its owner (§4.2), so a devops that fissions starts
-  // devops lanes. The plugin states the owner's role for the duration of one
-  // worker call (`activation.laneRole`), and `laneRoleOf` is the answer every
-  // caller reads.
-  activation.laneRole = null;
+  // devops lanes. The role is a property of the SESSION (its agent), so it is
+  // keyed by the session and never by "the call in flight": two concurrent tool
+  // calls of two sessions cannot clobber each other's identity.
+  activation.laneRoles = new Map();
   activation.laneRoleOf = (owner = null) => laneRoleOf(activation, owner);
 
-  const relay = makeRelayPorts(activation);
   const fission = makeFissionPorts(activation);
   // Plan's saved draft (§2.2), named per calling session so a hand-off reads
   // the file that session's Plan wrote.
-  const draftFor = (sessionID) => makeDraftPort({ root: activation.root, name: safeName(sessionID) });
+  const draftFor = (sessionID) =>
+    makeDraftPort({ root: draftRootOf(activation, sessionID), name: draftNameOf(activation, sessionID) });
   // The draft's path for one session, without opening a port: the Plan must be
   // told the exact path (§2.2), and its receipt is where this host can say it.
   // It uses the session's own workspace, the same one the port below writes to.
   activation.draftPath = (sessionID) =>
-    planDraftPath(stateOf(activation, sessionID)?.root ?? activation.root, safeName(sessionID));
-  const devops = makeDevopsPort(activation);
-  // `draft` is per session (`draftFor(sessionID)` below), not a static port:
-  // Plan's saved draft is named after the session that wrote it (§2.2).
-  activation.staticPorts = { relay, fission, devops };
+    planDraftPath(draftRootOf(activation, sessionID), draftNameOf(activation, sessionID));
+  // `draft`, `relay` and `devops` are per call (`portsFor` below), not static
+  // ports: a relay needs the calling session and its physical call id, a devops
+  // needs the session whose road it runs on, and Plan's saved draft is named
+  // after the session that wrote it (§2.2).
+  activation.staticPorts = { fission };
 
   activation.fissionTableOf = (owner) => fissionTableOf(activation, owner);
   // Record one adapter-created session before it is prompted. Idempotent, and a
@@ -203,9 +239,13 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
 
   // The ports one call reads. `state` is the calling session's state; the
   // worker ports go through the plugin's actions because they need the session.
-  activation.portsFor = ({ state, sessionID, signal }) => {
+  activation.portsFor = ({ state, sessionID, signal, call = null }) => {
     const worker = makeForkJoinPorts(activation, sessionID);
     const command = activation.commandPort;
+    // The calling session and its physical call id, stated per call. A port call
+    // does not carry them, and a mutable slot shared by the activation let one
+    // interleaved tool call read another's context.
+    const scope = call === null ? { sessionID, id: null, agent: null } : { sessionID, id: call.id ?? null, agent: call.agent ?? null };
     return {
       command:
         signal === undefined
@@ -217,12 +257,12 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
       worker,
       fork: { fork: worker.fork, join: worker.join },
       join: { join: worker.join },
-      relay,
+      relay: makeRelayPorts(activation, scope),
       // compose's `fission` port is the caller's own: `fission(owner, prompts)`
       // plus the five host steps that build the lanes.
       fission: fission.fissionFor(sessionID),
       draft: draftFor(sessionID),
-      devops,
+      devops: makeDevopsPort(activation, scope),
       // The two exempt snapshot queries (§6.2). `ScopeHooks#ask` is synchronous
       // by contract and answers from the newest committed facts; a host that
       // answered a promise here would turn a snapshot into a park.
@@ -273,13 +313,14 @@ export const workerTableOf = (activation, sessionID) => {
   // it is a different question — it needs the host's answer, which is why only
   // the reconciled pass below releases, and only for a worker the host reports
   // finished (`reconciled: true`).
+  const road = devopsRoadOf(activation, sessionID);
   const bindDevops = ({ reconciled = false } = {}) => {
     for (const worker of table.rosterEntries()) {
       if (worker.role !== "devops") continue;
-      if (worker.state !== "idle") activation.devopsInFlight.add(worker.name);
+      if (worker.state !== "idle") road.add(worker.name);
       else if (reconciled && table.get(worker.name)?.hostFinished === true) {
         // The host says this worker is not running, so it has released the road.
-        activation.devopsInFlight.delete(worker.name);
+        road.delete(worker.name);
       }
     }
   };
@@ -295,7 +336,7 @@ export const workerTableOf = (activation, sessionID) => {
   // read would let this session fork a second worker under a name the
   // predecessor still holds.
   if (state !== undefined) {
-    state.adoptRoster?.(table, activation.devopsInFlight);
+    state.adoptRoster?.(table, road);
   }
   return table;
 };
@@ -304,7 +345,7 @@ export const workerTableOf = (activation, sessionID) => {
 // no owner role (a lane built outside a worker call, or a role this adapter does
 // not fork) keeps `coder`, the only identity a lane could otherwise be.
 export const laneRoleOf = (activation, owner = null) => {
-  const named = activation.laneRole ?? activation.fissionOrigins?.get(owner)?.role ?? null;
+  const named = activation.laneRoles?.get(owner) ?? activation.fissionOrigins?.get(owner)?.role ?? null;
   return named === "devops" ? "devops" : "coder";
 };
 
@@ -328,7 +369,6 @@ export const fissionTableOf = (activation, sessionID) => {
 };
 
 export const disposeActivation = (activation) => {
-  activation.disposed = true;
   activation.views.clear();
   activation.states.clear();
   activation.workers.clear();
@@ -336,6 +376,9 @@ export const disposeActivation = (activation) => {
   activation.lanes.clear();
   activation.devopsInFlight.clear();
   activation.devopsRuns.clear();
+  activation.fissionOrigins.clear();
+  activation.identities.clear();
+  activation.laneRoles.clear();
   activation.parents.clear();
   activation.observedSessions.clear();
   activation.agents.clear();

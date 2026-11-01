@@ -75,7 +75,7 @@
 于是一个还没拿到 agent 的会话会静默获得 Manager 的面与它的评审台账——那是一个猜测，不是读取。
 显式给出角色的路径（`workerSessionTools.install` 的 `role`、`bindSession` 的 `role`）不受影响。
 
-收窄在 `session_start` 做一次：`getActiveTools()` → 去掉 `REPLACED_TOOLS`（`read`、`grep`、`glob`、`write`、`edit`、`bash`、`eval`、`task`）→ Manager 再并上 `js-manager`、`fork`、`join`；worker 去掉 `js-manager` 与 `js-review`。`js-review` 已注册但不在任何常驻可见集合里（根 §2.3：只在评估窗口开着时开放）。**不在 `before_agent_start` 里重复调用** `setActiveTools`。
+收窄在 `session_start` 做一次，并在**阶段真的变化**时再做一次：`getActiveTools()` → 去掉 `REPLACED_TOOLS`（`read`、`grep`、`glob`、`write`、`edit`、`bash`、`eval`、`task`）→ Manager 再并上 `js-manager`、`fork`、`join`；worker 去掉 `js-manager` 与 `js-review`。`js-review` 已注册但不在任何常驻可见集合里（根 §2.3：只在评估窗口开着时开放）。**绝不在 `before_agent_start` 里调用** `setActiveTools`（根 §7.3：会让宿主重跑 policy preparation）；评估轮在 `turn_start` 开、在本轮第一次 review 被接受时关。
 
 收窄只改模型看见的目录；**执行拦截在 `tool_call`**：Manager 调 `MANAGER_FORBIDDEN` 任一名字即 `block`；调不属于本角色的编程面（如 worker 调 `js-manager`）也 `block`。
 
@@ -158,14 +158,28 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 - 重建表时**只有一条接管路径**：新表从日志认识 worker，仍在跑的会话经 `runningSession`
   （`surface.mjs` `#laneSessions`）交给 `adopt()`，并带 `observeFrom` 不重放旧事件。旧表由
   `LaneTable.detach()` 摘下监听（不 dispose 会话），等着它的 `join` 以 `SESSION_DISPOSED` 结束。
+  `#laneSessions` 在重建前**不清空**：先填好仍在跑的会话，再建新表，接管查找才看得见它们。日志里仍
+  `running`、但本进程没有任何活会话的条目属于**上一个进程**，新表把它 `settle` 成 `WORKER_LOST`——
+  否则 `join` 会对着一个永远不会到来的回合空转（每个宏任务醒来一次，直到进程被杀）。
+- `LaneTable.start` 的**同步** `prompt` 抛出也会被捕获：删表项、写 `RELEASE`、清掉本次回合可能已入队的
+  错误结果并 dispose，回 `TURN_START_FAILED`。首回合被宿主拒绝（`submitted.ok !== true`）走同一条清理；
+  `join` 不会收到一个 `fork` 已报 `started:false` 的幽灵结果。`#settleTail` 对**已经结束**的回合
+  （同步结束、或接管时结束先到）只入队一次，靠 `Lane#turnId` 区分，不会因为 sink 永不触发而丢结果。
 
 **无人值守出口在 `nudge.mjs`。** `nudgeFor({ role, ledger, askedInS1, handOverComplete })` 是纯函数：
 只有 `ask`（Plan 的 `S1`）与终局（Manager 到 `done`；Plan 到「待执行」且交接已完成）两个出口；
 其余一律 `{ stop: false, nudge }`，文本列出账本里尚未完成的全部事项并附上 `NUDGE_MANDATE` 的常授权口令。
 规则写成**出口的正向清单**：没人想到的新台账状态会落到「nudge」（继续干活），而不是「stop」（丢活）。
 送达方式（`index.mjs` 的宿主调用）与台账是否诚实（`core/review.mjs`）都不在这里决定。
-`SessionState.markAskedInS1` / `askedInS1` 是 S1 提问的持久标记，答复恢复后清掉——`Manager` 从不提问，
-所以这个标记不会替它掩盖未完成的工作。
+`SessionState.markAskedInS1` / `askedInS1` 是 S1 提问的持久标记。`askOperator` 在 `interruptTurn`
+**之前**置位，`RoleSession#turnExit` 在**每一次终局回合评估**里清掉（不论判定是 `ask-s1`、人按停还是
+nudge），并同时把该回合记进 `NudgeBook`。只在 `ask-s1` 时清会漏掉「提问自己的 abort 被宿主写成
+`Interrupted by user`」的那次：标记留着，下一回合的停止被误判成合法的 S1 等待，会话从此不再被 nudge。
+`Manager` 从不提问，所以这个标记不会替它掩盖未完成的工作。
+
+**nudge 的送达回执要检查。** `deliverNudge` 回 `{ok, reason}`；投递失败时 `index.mjs` 往
+`.Herdchestra/<session>.requests.jsonl` 写一条 `phase:"nudge"`、`code:"NUDGE_UNDELIVERED"` 的
+`gateStateRecord`。不重试（第二次投递会被读成系统反复催促），也不假装送达。
 
 **人按停不是「代理自己想停」（2026-11-01 实测修复）。** `turn_end` 钩子把本回合的 assistant 消息交给
 `RoleSession#noteTurnEnd`，`turnExit` 用 `compose/nudge.mjs` 的 `operatorInterruptOf` 读它：omp 对操作员中断写的是
@@ -191,11 +205,13 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
   - 请求闸门写不进去（`open`/`settle` 回 `false` 或抛错）→ 请求同样**未投影**，所以副本与「屏障失败」同形：带 fence 时是继任提示 + fence 已经算作继任者的那条操作员消息；无 fence 时只有操作员最新那条消息。此时 Scope 与 Pair Hint 都不运行——它们的答案会决定一份「闸门无法保证模型停手」的副本。请求里没有操作员消息时，副本只有失败说明本身。
   每种失败都在副本里点名（阶段、失败码、原因），并**关闭请求闸门**：`tool_call` 在闸门关闭时拒绝**每一次**工具调用（`CONTEXT_PROJECTION_FAILED`）。模型可以报告失败，不能拿一份没投影过的请求去干活。
 - **请求闸门是持久事实**（`.Herdchestra/<session>.request.json`）：每次 `context` 开始前先写 `allowed:false`，投影完成后写判据（干净即 `allowed:true`）。进程死在请求中间，文件停在「拒绝」，重启后继续拒绝——这是唯一安全的默认方向。
+- **闸门的形状也是安全事实。** `requestGate` 只接受 `{v:3, settled:boolean, allowed:boolean, request:非空字符串}`（`previous` 同形但无 `settled`）；手工改过或外来 schema 的文件（例如 `allowed:"no"`）读作 `REQUEST_GATE_UNREADABLE`，绝不按「已投影」读。`requestRefusal` 只有 `allowed === true` 才放行，其他任何值都拒绝。
 - **闸门的 I/O 失败一律 fail closed，而且只在内存里也能拦住。** 读：`readJson` 读不出的已有文件按「拒绝」读（`REQUEST_GATE_UNREADABLE`），不按「无判据」读；解析不了的文件、目录占位、读时抛错同样按「拒绝」。写：`openContextRequest`/`settleContextRequest` 回 `false` 时，`createContextHandler` 把拒绝**存在自己身上**（`gateHeld`），由同一个钩子对象的 `requestRefusal()` 交给 `tool_call`，直到某次请求 settle 出一个文件真的写下的判据才清掉。`tool_call` 对闸门的每一种回答都 fail closed：只有明确的 `null` 算「已投影」；抛错、空对象、缺 `message` 的答案一律按 `CONTEXT_PROJECTION_FAILED` 拒绝。**带 fence 的请求在闸门写不进去时不再抛出**（旧实现的 `REQUEST_REFUSED` 已删除）：宿主会吞掉抛出并照发它自己那份副本，对继任者就是被替换的整段对话；现在发的是上面那条最小副本，停手靠内存闸门。
 - **`context` 里任何情况都不抛出。** 抛出不是停止请求的手段（见上）：它只会让宿主把未投影的副本发出去。闸门才是停止手段。
 - **回退副本绝不取前任的提问。** 回退路径里的「操作员最新消息」从 `fence.fenceThrough` 开始找，之前的 user 消息属于被替换的任期，交给继任者就是屏障要防的泄漏；全都早于 fence 时，副本只剩失败说明。
 - Scope：`tool_call` 做准入（注解从参数 `scope` 读，原样交给 `admit`，拒收即 `block`）；`tool_result` 结算并持久化；`before_agent_start` 每请求推进一次回合号。记录写 `.Herdchestra/{session}.scope.jsonl`，冷启按 §6.2 从记录重建，`resetScope` 只证明旧事件，预算待模型重新确证。
-- Pair Hint：会话首次请求时按阶梯（`HERDCHESTRA_LANGUAGE` → `HERDCHESTRA_HOST_LANGUAGE` → `LC_ALL`/`LC_MESSAGES`/`LANG` → English）绑定语言；handles 取本会话尚未结清的 park 名。
+- Pair Hint：会话首次请求时按阶梯（`HERDCHESTRA_LANGUAGE` → `HERDCHESTRA_HOST_LANGUAGE` → `LC_ALL`/`LC_MESSAGES`/`LANG` → English）绑定语言；handles 取本会话尚未结清的 park 名（`state.noteParked` 在程序 park 时加入，`noteFinished` 在它结束或关闭时移除；parked 程序恢复后由 `run.outcome` 的回调移除）。
+- **side-channel 事实由调用方显式传入 `pairHintProject`。** `context` 处理器从宿主交来的原始消息算出 `side`，再作为 `ephemeral` 传进去；**不得**让 `pairHintProject` 从它收到的副本重新推导——继任任期的副本经过屏障，宿主那条 `role:"developer"` 提醒已被裁掉，重新推导会把标题请求当成主回合，开 epoch、改 handles、锚定前缀链，随后真实请求报 `PREFIX_DRIFT`。
 - **投影只有一处入口：`SessionState#pairHintProject`**（`ProgramSurface#pairHintProject` 只是转调）。它先比较冻结的 handles 与当前未结清的 park 名：**不等才** `await hint.newEpoch()`，再 `setHandles` 并 `project`。冻结的呈现属于整个 epoch（根 §6.1），只调 `setHandles` 的话，epoch 冻结时没有的 park 永远列不进空闲提示；相等时不动 epoch，也就不付全量重算。
 - **继任者的前缀链在屏障处重锚，而且只在那时**（`barriered` 参数）。屏障切掉了被替换的对话，那份副本不可能是之前任何呈现的延长，所以链从它开始（根 §2.4 第 3 步，唯一合法的断点）。同一次调用里若因 handles 变化已经开过新 epoch，就不再重锚——开新 epoch 已经决定了链。
 - **重锚与投影必须用同一种消息形态。** `anchor` 收到的是 `toPairHintMessages(messages)`，不是原始宿主副本。原始副本里同一条用户消息可能是裸字符串，而投影里是单个 text part；两边形态不同时，`assertPrefix` 会在下标 0 判漂移（真机 2026-11-01：继任者第二次请求报 `PREFIX_DRIFT`，`index: 0`，消息一个字都没变）。
@@ -364,12 +380,12 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 2. **`js-review` 按评估窗口开关（根 §2.3）。** 该面注册但**不**常驻：只有 Manager 在窗口开着时能看到它。**没有窗口就是关着的窗口**：`surfaceAllowed` 现在要求 `window !== null && window.open === true`，会话没有窗口时 `js-review` 一律被拒（此前 `window === null` 被当作开着，等于把只读面交给了一个从未评估过的 Manager）。窗口的记账只发生一次：程序内的 `review` 由 compose 的 `ProgramSurface.noteReview` 记账，会话成员自己的 `review` 由 `RoleSession.review` 记账，`tool_call` 闸门里对 `js-review` 只判一次（带窗口），不再被后面的通用面检查用「无窗口」二次否决。
 
    窗口本身是 core 的 `ReviewWindow`（`SessionState#window`），适配器只驱动它，不另存计数器：
-   - **开**：`before_agent_start`（每个请求一次）调 `HostAdapter.openEvaluation()` → `window.beginRound()`，阶段真的变化时重新收窄，`visibleToolsFor(..., { evaluating: true })` 才把 `js-review` 加进可见集。
-   - **关**：本轮**第一次被接受**的 review（`receipt.ok === true`）经 `RoleSession.review` → `window.noteReview(receipt)` 关闭窗口，`onReviewAccepted` 只在关闭的那一次触发收窄。**被拒的 review 不关**——Manager 还没判定。
+   - **开**：`turn_start`（宿主每个模型回合一次）调 `HostAdapter.openEvaluation()` → `window.beginRound()`，阶段真的变化时重新收窄，`visibleToolsFor(..., { evaluating: true })` 才把 `js-review` 加进可见集。**不在 `before_agent_start` 开**：根 §7.3 禁止在那里调 `setActiveTools`。
+   - **关**：本轮**第一次被接受**的 review（`receipt.ok === true`）关闭窗口。两条路径都通知适配器：会话成员自己的 `review` 经 `RoleSession.review`；**程序里的 `review(...)`** 由 compose 的 `ProgramSurface.noteReview` 记账，`RoleSession.buildSurface` 包装的同一方法在窗口由开转关时调用 `onReviewAccepted`（compose 的 `ReviewMember` 不经过 `ports.relay.review`，只接这条包装就会漏）。`onReviewAccepted` 把 `#evaluating` 置 `false` 并重新收窄。**被拒的 review 不关**——Manager 还没判定。
    - **执行拦截**：`tool_call` 与 `buildSurface` 都读同一个窗口；关着的窗口一律 `REVIEW_WINDOW_CLOSED`，worker 无论如何都被角色拒。`visibleToolsFor` 只改目录，不是授权。
 
    两条边界都要说清：
-   - §7.3 说在 `before_agent_start` 里调 `setActiveTools` 会让宿主重跑 policy preparation（最多三次），并要求 system prompt 幂等。本适配器的 prompt 是角色的纯函数，幂等成立；且**只在阶段真的变化时**才收窄（一轮一次，不是一请求一次）。
+   - §7.3 禁止在 `before_agent_start` 里调 `setActiveTools`。本适配器把开轮放在 `turn_start`，且**只在阶段真的变化时**才收窄（一轮一次，不是一请求一次）；`before_agent_start` 只返回角色的纯函数 prompt。
    - 收窄失败（宿主拒绝该 action）不让请求失败：面保持原状，只记 `narrowFailure`，与收窄本身失败时的既有行为一致。
 
    `js-review` 仍只属于 Manager（`ownFace`），worker 即使 `evaluating: true` 也拿不到。
@@ -379,21 +395,31 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 
 4. **fission（裂变）的每一步都真的做了，包括替换 present。** `Fission` 对**每个**会话都建（不只是 Manager）。归属判定走的是**会话身份**，不是名字：`ProgramSurface` 传给 `fission` 的 owner 是**程序名**（tool call id，`call_96a5…`），与 `RoleSession.name()`（`w1`）永远不相等 —— 曾用 `name === this.name()` 判定，真机 worker 被拒为 `InvalidOrigin`。现在 `origins` 只读会话自己的 `#forked` 事实（由 `bindSession` 显式传入），参数不参与判定；共享的 `Fission.origins(owner)` 契约不变，其他宿主行为不受影响。`name()` 仍是会话身份，作为组标签与 lane 名前缀；容量看的是真实 SDK 工厂（`sessionFactoryOf`），不看宿主 action。
 
-   **lane**：每条都是真实 worker 会话（同身份、同一工作树，经 `LaneTable.start` 创建、接运行时、握手授权、起首回合）。lane 以 `register: false` 启动，**不进 owner 的 roster**——组自己持有它们（`ports.mjs` `fissionPort.lanes`），否则 `join` 会收走一条尚未收敛的 lane。`ownerView` 恒为空视图（读不到别的会话的转录）。
+   **lane**：每条都是真实 worker 会话（同身份、同一工作树，经 `LaneTable.start` 创建、接运行时、握手授权、起首回合）。lane 以 `register: false` 启动，**不进 owner 的 roster**——组自己持有它们（`ports.mjs` `fissionPort.lanes`），否则 `join` 会收走一条尚未收敛的 lane。`ownerView` 读**属主会话自己**的最后一条已交付 assistant 文本（调用方就是属主自己的会话，不是别人的转录）；会话暴露不出转录时才回 `null`（空视图）。
 
-   **lane 的起始文本读 `lane.laneCount`（根 §4.2 第 3 步）。** 总泳道数是组合层在 `lanesOf` 里一次性定下的 lane 事实，随 `createLane(lane)` 的 lane 对象到达；本适配器只读它，不数、也不从 `index` 推。曾用 `lane.index + 1` 顶替，结果每条 lane 印出的「one of N」各不相同，与同一段身份声明自相矛盾。lane 起始文本 = 三段身份声明（含 `laneCount`）+ owner 已交付视图（本适配器恒为空，故省略）+ 本条 prompt。
+   **lane 不能再裂变（根 §4.2 `InvalidOrigin`）。** `register: false` 的事实随 `workerToolsFor` 的第四个参数传到 `workerSessionTools.install` → `bindSession`，`origins` 要求 `#forked === true && #fissionLane !== true`。仅看 `#forked` 会把 fission lane 当成 `fork` 起的 worker，允许它再开一组。
 
-   **替换 present**：`fissionPort.replacePresent` 调本会话自己的控制面（`session-control.mjs` `silence`）：`abort({reason})` 停掉在途回合，有 `clearQueue` 就清空排队工作，然后重读 `isStreaming` 确认真的停了；会话对象**不 dispose**，它的转录与已交付视图仍可读。这是「静默中断旧 present」在 OMP 上的真实对应物。
+   **第 4 步的组记录是持久的。** `persistGroup` 往 `.Herdchestra/<lineage>.fission.jsonl` 追加一行 `{groupId, owner, lanes}`；写不进去就拒绝启动整组（`FISSION_RECORD_FAILED` / `FISSION_RECORD_UNAVAILABLE`）。`discardGroup` 追加 `fission-withdrawn`，回滚不会在重放里复活一个组。
 
-   **唯一的拒绝：`PRESENT_BUSY`，而它的等待没有独立预算。** 调用方正在自己的回合里，宿主在工具批次返回后才结算该回合，而本适配器必须在返回前做完替换，所以它先 `waitSettled()` 等 owner 到回合之间。这个等待**只**受本请求自己的期限约束——根 §3.3 已经为每次工具调用一次性固定了 `Deadline`（每字节 50ms），§4.2 没有给 fission 任何额外时限。适配器**不得**自造定时器或环境变量预算：那会把一个由规格定义的失败变成某个未记录阈值下的失败。期限用尽仍不结算 → 回执 `{ok:false, reason:"PRESENT_BUSY", busy, detail}`，组合层 `abortLanes` 真实 dispose 每条 lane，不登记组、不留 lane 记录，`this.fission(...)` 以该错误失败。**不得**返回 `{ok:true}` 或「部分成功」。真机是否能在期限内涵盖结算，**尚未验证**（见 §6.1）；若不能，正确做法是如实报告这个宿主约束，而不是放宽判定或加预算。
+   **第 5 步等宿主接受首回合。** `startLane` 在 `lane.start(brief)` 之后 `await lane.submitted`；`ok !== true` 抛 `TURN_START_FAILED`，让 compose 回滚整组，而不是在一根从未启动的 lane 上收敛。
 
-   **回执形状**：成功 `{ok:true, groupId, lanes}`；`replacePresent` 成功时 receipt 带 `{ok:true, owner, silenced:{aborted, cleared, stillStreaming}}`。
+   **第 7 步的 pre-fission completion 由本适配器交付并 claim。** roster 的 `onArrive` 把每个 worker 结果交给 `Fission.settled`（组未开时进入 compose 的 pending），本会话另存一份；`buildLane` 建第一根 lane 时取走同一刀口的结果，`replacePresent` 成功后一个宏任务再对每根 lane 调 `Fission.claim(owner, index, key)` 并把完成文本 `steer` 进仍在跑的 lane。没有这一步，`ConvergenceReady` 的合取是空的。
+
+   **第 10 步收敛后属主恢复为唯一 present。** `Fission.settle` 报 `converged` 时，`#noteFission` 调 `SessionControl.restore()` 清掉 `SESSION_REPLACED` 标记，并把合并结果 `LaneTable.deliver(owner, …)` 进属主自己的 roster，属主会话的 `join()` 能收到它；不恢复则属主此后每次都被 `SESSION_REPLACED` 拒绝，永远读不到自己的合并结果。
+
+   **lane 的起始文本读 `lane.laneCount`（根 §4.2 第 3 步）。** 总泳道数是组合层在 `lanesOf` 里一次性定下的 lane 事实，随 `createLane(lane)` 的 lane 对象到达；本适配器只读它，不数、也不从 `index` 推。曾用 `lane.index + 1` 顶替，结果每条 lane 印出的「one of N」各不相同，与同一段身份声明自相矛盾。lane 起始文本 = 三段身份声明（含 `laneCount`）+ owner 已交付视图（有则加，无则省略）+ 本条 prompt。
+
+   **替换 present 是「标记 + 停队 + 回合末 abort」。** `fissionPort.replacePresent` 调本会话自己的控制面：先 `replace()` 打上 `SESSION_REPLACED`（此后每个新回合都被拒），再 `stop()` 清空排队工作并重读 `isStreaming`；宿主的 abort 不能在本回合内 await（`AgentSession.abort` 会等 `waitForIdle`，而死锁在调用它的回合上），所以 `atTurnEnd()` 把 `silence()` 排到 `agent_end`，由 `index.mjs` 的 `drainTurnEnd()` 执行。会话对象**不 dispose**，转录与已交付视图仍可读。
+
+   **回执只在真的停住或真的排上 abort 时成功。** 要求 `settled.ok === true || deferred.ok === true`；两者都失败，或 `atTurnEnd` 当场执行而 `silence()` 失败，一律回 `PRESENT_NOT_REPLACED` 并让 compose 回滚。旧实现只要两个字段非空就回 `ok:true`，组可能在旧 present 仍有排队/在途回合时「收敛」。`silence()` 的拒绝不再被吞掉，回执的 `silence` 字段如实携带。
+
+   **回执形状**：成功 `{ok:true, groupId, lanes}`；`replacePresent` 成功时 receipt 带 `{ok:true, owner, replaced, settled, deferredAbort, silence, stoppedNow}`。
 
    **回滚结果必须到达模型，否则「没有残留」不可观测。** 拒绝错误上挂 `rollback: { ok, groupId, released, failed }`，`groupId`/lane 名以会话身份开头（`w1:2:2`）。这个字段曾在两个边界被丢掉两次：`thrownResult` 只保留 `code`/`message`/`details`，`program.mjs` 又把失败记录重拼成 `{name, message, code}`。现在两处共用 `extraFactsOf(error)`——带走除 `name`/`message`/`stack`/`code`/`details` 外的全部 enumerable 自有属性，所以不是给 `rollback` 开特例，而是「抛出时附带的事实」一律保留。`abortFailure`（回滚自身失败）走同一条通道，与 `rollback` 并列，不替代原错误。
 
    **已作废的观测（2026-11-01，替换 present 实现之前）**：worker `w1` 曾收到
    `{"ok":false,"name":"Error","code":"PRESENT_NOT_REPLACED","step":"replacePresent",…}`。
-   那是旧实现的拒绝码；当前实现改为真实替换，拒绝码只有 `PRESENT_BUSY`（现任在本请求的期限内没停下来）。旧结论「OMP 没有静默另一个会话的原语」已被推翻：**另一个**会话确实停不了，但 owner 停自己的 present 可以（`abort` + `clearQueue`），而 fission 只需要后者。`PRESENT_NOT_REPLACED` 现在只在会话完全没有控制面（`present === null` 或 `silence` 未真正停下）时出现。
+   那是旧实现的拒绝码；旧结论「OMP 没有静默另一个会话的原语」也已被推翻：**另一个**会话确实停不了，但 owner 停自己的 present 可以（标记 + 停队 + 回合末 abort），而 fission 只需要后者。`PRESENT_NOT_REPLACED` 现在只在标记没落地、`stop()` 与 `atTurnEnd()` 都没成功、或当场 `silence()` 失败时出现；`PRESENT_BUSY` 不再是本适配器的拒绝码。
 
    **`released` 的证明边界**：`released` 只证明两件事——组合层删除了该 lane 记录，且对该 lane 的 `dispose()` 调用没有抛异常（抛了进 `failed`）。它**不**证明宿主侧会话真的已销毁：宿主没有向扩展回报会话终止的事实，本适配器拿不到。因此文档与回执都不得把 `released` 读成「宿主会话已终止」；「没有残留」只到组合层为止。
 
@@ -425,9 +451,9 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 
 ## 9 测试
 
-（计数沿革：112 → 115（Plan 底稿三项）→ 重写 3 项并新增 relay 原子路径用例 → **174**（请求闸门的 I/O 失败一律 fail closed：写不进去、settle 失败、闸门抛错或答非所问、读不出/解析不了/目录占位）→ **194**（根 §6.3 CUE 呈现：15 项呈现契约 + 19 处回执读取改走 `details`）。relay 一族的用例覆盖：一笔 `appendEntriesAtomically` 提交、发布失败不留痕、延期意图在回合内落盘、`agent_end` 括号内让出后提交、冷启动从转录重建 fence、继任者自己的账本文件、提示只出现一次、以及「延期与同步两条路径的落盘状态逐字段相同」。）
+（用例数随并行编辑变动；当前条数与分层耗时见 `src/AGENTS.md` §4.1 的 2026-11-01 快照。）relay 一族的用例覆盖：一笔 `appendEntriesAtomically` 提交、发布失败不留痕、延期意图在回合内落盘、`agent_end` 括号内让出后提交、冷启动从转录重建 fence、继任者自己的账本文件、提示只出现一次、以及「延期与同步两条路径的落盘状态逐字段相同」。
 
-`node --test "src/host-omp/**/*.test.mjs"`（当前 256 项：`host-omp` 208、`prefix-stability` 17、`cue` 15、`worker-roster` 11、`spawn-gate` 5）。测试只断言消费者可见的行为，不扫描源码结构、字段声明或语法布线。覆盖：角色判定（**kind 先于名字：顶层 `plan` 为 `ROLE.PLAN`，子代理叫 `plan` 仍是 `CODER`**）、可见工具集（**Plan 只见 `plan`，无 `fork`/`join`/`call`/`glob`/`grep`**）、**面归属与执行闸门：只有 Plan 能跑 `plan`，Plan 也跑不了 worker/Manager 的面**、**`install(session, { only })` 只写该 lane 自己的 face（worker 会话拿不到 `plan`）**、**Plan 拿到自己的提示词段（不走三文件投影，那里会按根 §5 拒绝）**、程序编译与成员缺失、**park 挂起与 `unpark` 就地续跑（含真实工具端到端）**、**程序按角色注册能力集，且控制者回执带得见被恢复的值（含 JSON 往返）**、`HostBinding` 的 `runAgent`/`steer`/`progressOf`/无调度器、lane 上的 `fork`/`join`/steer 与 subagent 身份、**worker 运行时 action 逐个落到会话自身（含缺成员拒绝）**、工具注册时机、**worker 工具装在 worker 自己的会话表上（成员数随 `SURFACE_MEMBERS` 变；worker 的 `js-worker` 现已含 `fork`/`join`，与根 §3.1 一致）**、**worker 的 `fork` 落在 worker 自己的 roster（子会话 parent 是 `w1`）**、**Plan 交接经宿主自己的 SDK 工厂起真实 Manager 会话（底稿即首回合 brief、答案取自回合结束、无 SDK 时回 `NO_SESSION_FACTORY`）**、**`js-review` 只在评审阶段可见（Manager 开/关、worker 永不可见）**、**评审阶段由 `before_agent_start` 打开、review 被接受后关闭（空账 review 也算接受：§5.1 说 `[]` 不拒、只 `added:0`）**、**fission 真实替换 present（现任 `abort` 被调用、组已登记、lane 不进 owner roster）**、**fission 被 `PRESENT_BUSY` 拒绝时整组回滚且 `rollback.released` 等于 lane 数、`groupId` 以会话名开头**、`join` 的拒绝文案区分「表空」与「报告已取走」、Scope 回合边界、fission 的归属（worker 准入 / Manager `InvalidOrigin`）、**relay 一笔原子提交（提交→`newSession`→重新提交的顺序、崩溃点、fence 冷启动重建、屏障裁剪、`parentSession` 记被替换转录的路径、`agent_end` 括号释放前后的延期执行、拒绝时意图不丢、以及 fast-check 性质「任何交错都不留半个任期」）**、**屏障只留操作员输入与继任提示（有 fence 时 Scope 不再二次裁剪）**、`ask` 与 devops 端口、会话级 `startManager` 与冷启重建/scope/语言绑定、四个钩子、工具结果形状、拒收的 code 与 details 透传、回执的真实 `remainingWaitMs`、状态目录。
+`node --test "src/host-omp/**/*.test.mjs"`（条数与分层耗时见 `src/AGENTS.md` §4.1 的 2026-11-01 快照）。测试只断言消费者可见的行为，不扫描源码结构、字段声明或语法布线。覆盖：角色判定（**kind 先于名字：顶层 `plan` 为 `ROLE.PLAN`，子代理叫 `plan` 仍是 `CODER`**）、可见工具集（**Plan 只见 `plan`，无 `fork`/`join`/`call`/`glob`/`grep`**）、**面归属与执行闸门：只有 Plan 能跑 `plan`，Plan 也跑不了 worker/Manager 的面**、**`install(session, { only })` 只写该 lane 自己的 face（worker 会话拿不到 `plan`）**、**Plan 拿到自己的提示词段（不走三文件投影，那里会按根 §5 拒绝）**、程序编译与成员缺失、**park 挂起与 `unpark` 就地续跑（含真实工具端到端）**、**Plan 的 `this.ask` 端到端：park 回执带 `interrupt:true`、`ctx.abort` 恰好一次、`unpark` 恢复同一函数体且不换任期**、**程序按角色注册能力集，且控制者回执带得见被恢复的值（含 JSON 往返）**、`HostBinding` 的 `runAgent`/`steer`/`progressOf`/无调度器、lane 上的 `fork`/`join`/steer 与 subagent 身份、**worker 运行时 action 逐个落到会话自身（含缺成员拒绝）**、工具注册时机、**worker 工具装在 worker 自己的会话表上（成员数随 `SURFACE_MEMBERS` 变；worker 的 `js-worker` 现已含 `fork`/`join`，与根 §3.1 一致）**、**worker 的 `fork` 落在 worker 自己的 roster（子会话 parent 是 `w1`）**、**Plan 交接经宿主自己的 SDK 工厂起真实 Manager 会话（底稿即首回合 brief、答案取自回合结束、无 SDK 时回 `NO_SESSION_FACTORY`）**、**`js-review` 只在评审阶段可见（Manager 开/关、worker 永不可见）**、**评审阶段由 `turn_start` 打开、review 被接受后关闭（空账 review 也算接受：§5.1 说 `[]` 不拒、只 `added:0`）**、**fission 真实替换 present（现任 `abort` 被调用、组已登记、lane 不进 owner roster）**、**fission 替换失败时整组回滚且 `rollback.released` 等于 lane 数、`groupId` 以会话名开头**、**跨进程重载的 `RUNNING` worker 报 `WORKER_LOST`，`join` 不再空转**、`join` 的拒绝文案区分「表空」与「报告已取走」、Scope 回合边界、fission 的归属（worker 准入 / Manager `InvalidOrigin`、fission lane 也 `InvalidOrigin`）、**relay 一笔原子提交（提交→`newSession`→重新提交的顺序、崩溃点、fence 冷启动重建、屏障裁剪、`parentSession` 记被替换转录的路径、`agent_end` 括号释放前后的延期执行、拒绝时意图不丢、以及 fast-check 性质「任何交错都不留半个任期」）**、**屏障只留操作员输入与继任提示（有 fence 时 Scope 不再二次裁剪）**、`ask` 与 devops 端口、会话级 `startManager` 与冷启重建/scope/语言绑定、四个钩子、工具结果形状、拒收的 code 与 details 透传、回执的真实 `remainingWaitMs`、状态目录。
 
 **真机已验证（2026-11-01，18.14.2，`--resume <successor.jsonl>`）**：
 
@@ -437,7 +463,7 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 2. **`parentSession` 通过。** 继任头部里就是被替换转录的路径，宿主原样保留。
 3. **`recordGoverns` 通过。** 继任转录里恰好一条 `herdchestra.relay`，其 `successorSessionId` 是**自己的真实 id**（不是 `<id>#tenure-1`），所以恢复它时被采纳、恢复旧转录时被挡。
 
-**仍未在真机上验证**：`replacePresent` 能否在**本请求期限内**等到宿主结算本回合（不能时如实回 `PRESENT_BUSY`，不加预算）。`js-review` 的阶段开关（`before_agent_start` 开、review 接受后关）只有离线用例，真机需确认收窄真的落到了宿主的 active set。**Scope 闸门读到的是活 ctx** 未隔离实测：模型自己写了 `scope` 的调用通过，但不带 `scope` 的调用没有被单独跑过。
+**仍未在真机上验证**：fission 收敛后 `SessionControl.restore()` 与 `LaneTable.deliver(owner, …)` 能否让真实 Manager 的 `join` 收到合并结果（离线只覆盖端口与花名册）；`.fission.jsonl` 的组记录目前**只写不重放**，真机崩溃恢复需要一次实测才能确认重放策略。`js-review` 的阶段开关（`turn_start` 开、review 接受后关）只有离线用例，真机需确认收窄真的落到了宿主的 active set。**Scope 闸门读到的是活 ctx** 未隔离实测：模型自己写了 `scope` 的调用通过，但不带 `scope` 的调用没有被单独跑过。
 
 **真机缺陷与修复（2026-11-01，`--resume` 继任者，18.14.2）：**
 
@@ -471,7 +497,7 @@ worker 是**本适配器自己创建并驱动的真实会话**（`lane.mjs`，�
 
 ```sh
 cd /home/kunweiz/Desktop/vibe/Herdchestra
-node --test "src/host-omp/**/*.test.mjs"          # 期望：256 项全绿
+node --test "src/host-omp/**/*.test.mjs"          # 期望：全绿
 node --test "src/core/**/*.test.mjs" "src/compose/**/*.test.mjs"   # 确认 core 改动没有连带失败
 ```
 
@@ -491,7 +517,7 @@ omp -p --yolo --extension /home/kunweiz/Desktop/vibe/Herdchestra/src/host-omp/in
 在 `w1`（由 `fork` 起的 worker）里调用 `this.fission(["lane one","lane two"])`。
 
 - 期望：`{"ok":true,"groupId":"w1:2:<n>","lanes":[…]}`；`HERDCHESTRA_DEBUG=1` 的日志里 `w1` 之后不再产出新回合。
-- 若得到 `PRESENT_BUSY`：记录 `detail.busy` 与耗时。**不要**用任何环境变量或加预算去「调通」它——等待只受本请求期限约束（§3.3），期限用尽就是不结算。若宿主在工具批次返回前从不结算本回合，那是宿主约束，如实回报。
+- 成功回执带 `{ok:true, owner, replaced, settled, deferredAbort, silence, stoppedNow}`。`settled.ok` 可能为 `false`（调用方正在自己的回合里，宿主还没结算），但 `deferredAbort.ok` 必须为 `true`——回合末 `agent_end` 的 `drainTurnEnd()` 会执行那次 `silence()`。若得到 `PRESENT_NOT_REPLACED`：记录 `settled`/`deferredAbort`/`silence` 原样；**不要**用环境变量或加预算去「调通」它。
 - 回滚必须完整：任何拒绝下 `rollback.ok === true` 且 `released` 等于 lane 数。
 
 ### 10.4a 真机结论：omp 18.14.2 上**在带接力无法完成**（2026-11-01，隔离树 `/tmp/hc-devops-final`）
@@ -619,7 +645,7 @@ omp -p --yolo --extension /home/kunweiz/Desktop/vibe/Herdchestra/src/host-omp/in
 
 判定：
 
-1. **第一次请求**（尚未 review）时，Manager 的 `active after` **含** `js-review` —— `before_agent_start` 打开了评审阶段。
+1. **第一次回合**（尚未 review）时，Manager 的 `active after` **含** `js-review` —— `turn_start` 打开了评审阶段（`before_agent_start` 只出提示词）。
 2. review 被接受后，**下一次请求**的 `active after` **不含** `js-review` —— 阶段已关闭。
 3. 收窄失败不得让请求失败：若日志里出现 `narrowFailure`，回报原文。
 4. worker 会话的 `active after` **任何时刻都不含** `js-review`（`ownFace` 只给 Manager）。

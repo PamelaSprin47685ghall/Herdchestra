@@ -72,7 +72,9 @@ test("§3.1: both worker identities carry fork and join as program members", () 
     assert.ok(SURFACE_MEMBERS[name].includes("fork"), `${role}: fork in SURFACE_MEMBERS`);
     assert.ok(SURFACE_MEMBERS[name].includes("join"), `${role}: join in SURFACE_MEMBERS`);
   }
-  // Manager keeps them too, and keeps `review`/`ask`, which a worker lacks.
+  // Manager keeps them too, and keeps `review`, which a worker lacks. A worker
+  // also has no `ask`: 根 §3.1 marks the question channel absent for
+  // `js-worker`; only top-level programs ask.
   assert.ok(SURFACE_MEMBERS["js-manager"].includes("fork"));
   assert.equal(SURFACE_MEMBERS["js-worker"].includes("review"), false);
   assert.equal(SURFACE_MEMBERS["js-worker"].includes("ask"), false);

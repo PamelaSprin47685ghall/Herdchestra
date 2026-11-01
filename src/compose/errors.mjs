@@ -13,6 +13,9 @@ export const COMPOSE_CODES = Object.freeze({
   // 根 §2.2, §3.1: `this.ask` belongs to Plan's `S1` alone. Every other stage
   // runs unattended and decides for itself.
   ASK_FORBIDDEN_OUTSIDE_S1: "ASK_FORBIDDEN_OUTSIDE_S1",
+  // 根 §2.2: at most one pending DevOps per task. A second `this.devops(intent)`
+  // while the first is in flight is refused by name.
+  DEVOPS_IN_FLIGHT: "DEVOPS_IN_FLIGHT",
   // Spec §4.2 uses the PascalCase spelling for this refusal; the code field
   // keeps that spelling so a reader can compare it with the spec directly.
   TERMINAL_ALREADY_SET: "TERMINAL_ALREADY_SET",

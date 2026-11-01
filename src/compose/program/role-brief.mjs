@@ -36,7 +36,10 @@ const FIELD = /\b(?:role|identity|as)\b\s*(?:[:=—-]|\bis\b)([^\n.;]*)/i;
 
 const FENCE = /```[\s\S]*?```/g;
 const INLINE_CODE = /`[^`]*`/g;
-const QUOTED = /"[^"\n]*"|'[^'\n]*'/g;
+// A quote is a delimiter only at a token boundary. An apostrophe INSIDE a word
+// (`worker's`, `it's`) is ordinary prose, and treating it as an opening quote
+// swallowed the `role: coder` declaration that followed it.
+const QUOTED = /"[^"\n]*"|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu;
 const URL = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 
 // The brief with everything that only talks about identities removed.

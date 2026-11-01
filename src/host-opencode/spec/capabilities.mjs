@@ -60,6 +60,11 @@ export const MANAGER_FORBIDDEN_TOOLS = Object.freeze([
   "bash",
   "shell",
   "subagent",
+  // §2.3: the Manager never asks the operator. The host's `question` tool asks
+  // and returns inside one call, which bypasses the park and the `interrupt`
+  // receipt; the only operator question this adapter allows is Plan's `S1`
+  // `this.ask`.
+  "question",
 ]);
 
 /**
@@ -77,10 +82,30 @@ export const PLAN_FORBIDDEN_TOOLS = Object.freeze([
   "shell",
   "subagent",
   "task",
+  // Plan asks with `this.ask` in `S1` (§2.2), which parks and interrupts; the
+  // host's blocking `question` tool is not that channel.
+  "question",
 ]);
 
-/** The only host tool a worker keeps: the user question channel. */
-export const WORKER_HOST_TOOLS = Object.freeze(["question"]);
+/**
+ * Host tools a worker keeps: none. §3.1 gives a child agent no question channel,
+ * and §2.2 gives the operator question to Plan's `S1` alone.
+ */
+export const WORKER_HOST_TOOLS = Object.freeze([]);
+
+/**
+ * Builtins removed from the host's tool registry at registration (§7.1: the
+ * static half of the two-layer separation).
+ *
+ * `ctx.tool.transform` is GLOBAL — the host's `Editor.remove` deletes from one
+ * tools map (`packages/core/src/tool.ts`) — so this list can only hold what NO
+ * agent may use: the operator question (§2.2: Plan asks with `this.ask`) and the
+ * builtin `subagent` tool (§4.1: every child is a `fork`, so its depth limit and
+ * its own session creation must not be reachable). The Manager's other forbidden
+ * builtins (`read`, `grep`, `bash`, …) are removed per request by
+ * `narrowTools`, because the host's own internal agents still use them.
+ */
+export const STATIC_REMOVED_TOOLS = Object.freeze(["question", "subagent"]);
 
 /** Hook names, with the host file that triggers them. */
 export const HOOKS = Object.freeze({

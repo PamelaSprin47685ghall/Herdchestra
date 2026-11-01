@@ -424,6 +424,11 @@ export class Lane {
   #turnError;
   #submitted;
   #settleSubmitted;
+  // This lane's turn number. A turn is the unit a result belongs to, and a
+  // synchronous end inside `start` can outrun the roster's settle tail; the
+  // number lets the roster tell "already settled" from "settled before the
+  // tail was armed".
+  #turnSeq = 0;
   // The end promise a roster has already armed a settle tail for. It is the
   // TURN's identity: `start` replaces `ended`, so a new turn is a new watch.
   watchedTurn = null;
@@ -495,6 +500,16 @@ export class Lane {
     return this.#startedAt;
   }
 
+  get turnId() {
+    return this.#turnSeq;
+  }
+
+  // The error this turn ended with, or null. Read by the roster when a turn
+  // ended before its tail was armed.
+  get turnError() {
+    return this.#turnError ?? null;
+  }
+
   // The assistant text of the turn, as it stands. A finished lane's report and
   // the roster's own record both read it here, so the two cannot disagree.
   get text() {
@@ -557,6 +572,7 @@ export class Lane {
   // Start a turn WITHOUT waiting for it.
   start(brief) {
     this.#turnError = null;
+    this.#turnSeq += 1;
     // A lane whose turn already ended can start another one (§4.1: a finished
     // worker's next brief continues in the same session). The END is a fact of
     // the TURN, not of the lane, so each start gets its own promise: reusing
@@ -697,6 +713,10 @@ export class LaneTable {
   #generation;
   #history;
   #unclaimed;
+  // The last turn of each name this table settled. A turn that ended before
+  // its settle tail could be armed is queued once; this is how the tail knows
+  // it must not queue it a second time.
+  #settledTurns;
   // Names whose result this roster already handed to a caller. A name is not a
   // turn: the worker stays addressable (`names`), but its old answer is never
   // offered twice, and a reload reads the same fact back from the journal.
@@ -772,6 +792,7 @@ export class LaneTable {
     // reload of THIS process's table (the journal keeps identity and outcome;
     // the text is the lane's own).
     this.#history = new Map();
+    this.#settledTurns = new Map();
     this.#onArrive = typeof onArrive === "function" ? onArrive : null;
     this.#runningSession = typeof runningSession === "function" ? runningSession : null;
     this.#unclaimed = [];
@@ -784,6 +805,7 @@ export class LaneTable {
     this.#disposedNames = null;
     this.#restored = this.#adoptRestored();
     this.#adoptRunning();
+    this.#settleLostWorkers();
     this.#settleRestored();
   }
 
@@ -813,6 +835,33 @@ export class LaneTable {
       const session = this.#runningSession(entry.name);
       if (session === null || session === undefined) continue;
       this.adopt(entry.name, { session });
+    }
+  }
+
+  // A journal `RUNNING` entry that no live session of THIS process holds is a
+  // worker from a previous process. Nothing here can drive its turn, so leaving
+  // it RUNNING made `join` wait for an end that will never arrive (an infinite
+  // macrotask loop, not just a slow answer). It is settled as LOST, which is a
+  // real result the caller can collect. A table built without a session lookup
+  // cannot tell, and leaves the entry alone.
+  #settleLostWorkers() {
+    if (this.#runningSession === null) return;
+    for (const entry of [...this.#restored.entries]) {
+      if (entry.state !== "running") continue;
+      // An entry `#adoptRunning` could take is already a lane; a session the
+      // lookup answers but `adopt` rejected (no `subscribe`) cannot be driven
+      // either, so it is lost like a cross-process one.
+      if (this.#lanes.has(entry.name)) continue;
+      const session = this.#runningSession(entry.name);
+      if (session !== null && session !== undefined && typeof session.subscribe === "function") continue;
+      this.settle(entry.name, {
+        error: {
+          name: "WORKER_LOST",
+          message:
+            "the journal says this worker was running, but no live session in this process holds it; " +
+            "the process that could report its turn is gone",
+        },
+      });
     }
   }
 
@@ -924,6 +973,7 @@ export class LaneTable {
   // whoever came back, and each turn comes back once).
   #settle(lane, { error = null } = {}) {
     const name = lane.name;
+    this.#settledTurns.set(name, lane.turnId);
     this.#history.set(name, { text: lane.text, startedAt: lane.startedAt, error });
     // The lane's own last assistant text is the report: the ONE shape a finished
     // worker answers with, and the one the journal records.
@@ -960,6 +1010,16 @@ export class LaneTable {
     const turn = lane.ended;
     if (lane.watchedTurn === turn) return false;
     lane.watchedTurn = turn;
+    // A turn that ALREADY ended before a tail could be armed (a fake session
+    // that emits `agent_end` synchronously inside `start`, or an adopted lane
+    // whose end raced the rebuild) has no future event to observe. Its result
+    // is queued here once; the sink below could never fire for it.
+    if (lane.settled) {
+      if (this.#settledTurns.get(name) !== lane.turnId) {
+        this.#settle(lane, { error: lane.turnError ?? null });
+      }
+      return false;
+    }
     // The journal is written from inside the turn's own end (`Lane#finish`),
     // synchronously: a reload on the very next line of the host's code must
     // already see this worker settled.
@@ -973,6 +1033,42 @@ export class LaneTable {
     // would queue the same turn twice. A tail is armed for an UNSETTLED turn
     // only, and a settled lane gets no tail at all.
     return true;
+  }
+
+  // Drop the result a failed START queued for this exact turn. A turn that
+  // never started must not be collectable: `fork` reported `started: false`,
+  // and a later `join` handing over its error would be the phantom worker this
+  // cleanup exists to prevent. Only the newest result of that name can be this
+  // turn's, and only when the settle really happened.
+  #discardTurnResults(name, turnId) {
+    if (this.#settledTurns.get(name) !== turnId) return false;
+    for (let index = this.#unclaimed.length - 1; index >= 0; index -= 1) {
+      if (this.#unclaimed[index].name !== name) continue;
+      this.#unclaimed.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  // Queue a result the OWNER produces outside a lane's own turn: §4.2 step 10
+  // hands the merged group result back to the owner, and the Manager's `join`
+  // reads it from this roster like any worker report. No lane is involved, so
+  // nothing is fed to `onArrive` (that would offer the owner's own result as a
+  // pre-fission completion).
+  deliver(name, { error = null, text = null, role = null, agentId = null } = {}) {
+    if (typeof name !== "string" || name.length === 0) return null;
+    const result = workerResult({
+      name,
+      agentId: agentId ?? name,
+      role,
+      text,
+      startedAt: this.#clock(),
+      error,
+    });
+    this.#unclaimed.push(result);
+    this.#record({ type: WORKER_RECORD_TYPES.SETTLE, name, agentId: result.agentId, text: result.text, error });
+    this.#wake();
+    return result;
   }
 
   // The face a lane of this role is created with.
@@ -1257,7 +1353,20 @@ export class LaneTable {
       // queued (results are per turn and are never withdrawn), so `join` still
       // hands over the answer nobody collected.
       this.#record({ type: WORKER_RECORD_TYPES.STEER, name, agentId: existing.agentId });
-      existing.start(brief);
+      try {
+        existing.start(brief);
+      } catch (error) {
+        // The session refused the prompt synchronously. `Lane.start` has
+        // already replaced `#ended` and cleared `#settled`, so leaving the lane
+        // in the table would make every later `start` answer `NAME_TAKEN` for a
+        // turn that never began. The worker is released; its earlier results
+        // stay queued.
+        this.#discardTurnResults(name, existing.turnId);
+        this.#lanes.delete(name);
+        this.#record({ type: WORKER_RECORD_TYPES.RELEASE, name, agentId: existing.agentId });
+        await existing.dispose();
+        return { ok: false, reason: "TURN_START_FAILED", detail: String(error?.message ?? error) };
+      }
       this.#settleTail(existing);
       return { ok: true, lane: existing, continued: true };
     }
@@ -1289,7 +1398,12 @@ export class LaneTable {
         // in the Manager's journal).
         const lanesFor = () => workerBuild?.adapter?.session?.lanes ?? null;
         const apiArg = workerExtensionApi(this.#api, lanesFor);
-        workerBuild = workerToolsFor(apiArg, this, role) ?? null;
+        // The FOURTH argument is a fact about this lane, not about its role: a
+        // lane is a fission present (`register: false`) and may not fission
+        // again, while a `fork`-started worker may. A session created through
+        // the SDK never emits `session_start`, so the creator is the only one
+        // that can state it.
+        workerBuild = workerToolsFor(apiArg, this, role, { fissionLane: register === false }) ?? null;
       } catch (error) {
         return { ok: false, reason: "WORKER_TOOLS_FAILED", detail: String(error?.message ?? error) };
       }
@@ -1445,7 +1559,21 @@ export class LaneTable {
     // over: `#submitted` is created INSIDE `Lane.start`, so an inert lane has
     // none, and awaiting it would hang forever on a promise nobody resolves.
     if (inert) return { ok: true, lane, inert: true };
-    lane.start(brief);
+    try {
+      lane.start(brief);
+    } catch (error) {
+      // A synchronous throw from `session.prompt` used to escape AFTER the lane
+      // was in the table and its FORK record was on disk: `#submitted` never
+      // settled, no tail was armed, and `join` waited on a phantom lane
+      // forever. The lane is released like any other failed start.
+      if (register !== false) {
+        this.#lanes.delete(name);
+        this.#record({ type: WORKER_RECORD_TYPES.RELEASE, name, agentId: lane.agentId });
+      }
+      this.#discardTurnResults(name, lane.turnId);
+      await lane.dispose();
+      return { ok: false, reason: "TURN_START_FAILED", detail: String(error?.message ?? error) };
+    }
     // The tail is armed AFTER the turn exists: `Lane.start` gives the turn its
     // own end promise, and a tail armed before it would watch the promise the
     // constructor made and then throw away — so the worker's end would never
@@ -1461,6 +1589,11 @@ export class LaneTable {
         // the registration instead of leaving a worker that never ran.
         this.#record({ type: WORKER_RECORD_TYPES.RELEASE, name, agentId: lane.agentId });
       }
+      // `Lane.start` turns a rejected prompt into an error `agent_end`, and the
+      // tail armed above has already queued that turn's result. A worker whose
+      // `fork` reported `started: false` must not leave a collectable report
+      // behind.
+      this.#discardTurnResults(name, lane.turnId);
       await lane.dispose();
       return { ok: false, reason: "TURN_START_FAILED", detail: submitted.error?.message ?? "turn rejected" };
     }

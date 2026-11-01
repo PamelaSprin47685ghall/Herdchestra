@@ -575,6 +575,35 @@ export class SessionState {
     if (read.value.v !== 3) {
       return { ...unreadable, code: "REQUEST_GATE_UNKEYED", detail: "the request gate file predates per-request verdicts" };
     }
+    // The SHAPE is part of the safety fact. A hand-edited or foreign-schema
+    // gate such as `{v:3, settled:true, allowed:"no"}` used to read as
+    // projected, because only `allowed === false` refused. A verdict this
+    // adapter cannot believe is a refusal, never an open gate.
+    const verdict = read.value;
+    if (
+      typeof verdict.settled !== "boolean" ||
+      typeof verdict.allowed !== "boolean" ||
+      typeof verdict.request !== "string" ||
+      verdict.request.length === 0
+    ) {
+      return { ...unreadable, code: "REQUEST_GATE_UNREADABLE", detail: "the request gate file carries no believable verdict" };
+    }
+    if (verdict.previous !== null && verdict.previous !== undefined) {
+      const previous = verdict.previous;
+      if (
+        typeof previous !== "object" ||
+        Array.isArray(previous) ||
+        typeof previous.request !== "string" ||
+        previous.request.length === 0 ||
+        typeof previous.allowed !== "boolean"
+      ) {
+        return {
+          ...unreadable,
+          code: "REQUEST_GATE_UNREADABLE",
+          detail: "the request gate file carries no believable previous verdict",
+        };
+      }
+    }
     return read.value;
   }
 
@@ -601,7 +630,11 @@ export class SessionState {
     this.#requestSeq += 1;
     this.#requestId = next;
     const previous =
-      settled === null || settled.request === next || settled.settled !== true
+      settled === null ||
+      typeof settled.request !== "string" ||
+      settled.request.length === 0 ||
+      settled.request === next ||
+      settled.settled !== true
         ? null
         : { request: settled.request, allowed: settled.allowed === true, stage: settled.stage ?? null, code: settled.code ?? null, detail: settled.detail ?? null };
     return this.#writeGate({
@@ -659,14 +692,19 @@ export class SessionState {
         message: `no request has finished projecting (request ${String(gate.request)} is still open: CONTEXT_PROJECTION_PENDING); this session cannot run work until a request projects`,
       };
     }
-    if (settled.allowed !== false) return null;
-    const stage = typeof settled.stage === "string" ? settled.stage : "request";
-    const code = typeof settled.code === "string" && settled.code.length > 0 ? settled.code : "CONTEXT_PROJECTION_FAILED";
-    const detail = typeof settled.detail === "string" && settled.detail.length > 0 ? `: ${settled.detail}` : "";
-    return {
-      code: "CONTEXT_PROJECTION_FAILED",
-      message: `the ${stage} projection of request ${String(settled.request)} failed (${code}${detail}); this session cannot run work until a request projects`,
-    };
+    // ONLY an explicit `allowed === true` opens the gate. A missing or
+    // non-boolean value is not a pass: this is a safety fact, and every other
+    // answer refuses.
+    if (settled.allowed !== true) {
+      const stage = typeof settled.stage === "string" ? settled.stage : "request";
+      const code = typeof settled.code === "string" && settled.code.length > 0 ? settled.code : "CONTEXT_PROJECTION_FAILED";
+      const detail = typeof settled.detail === "string" && settled.detail.length > 0 ? `: ${settled.detail}` : "";
+      return {
+        code: "CONTEXT_PROJECTION_FAILED",
+        message: `the ${stage} projection of request ${String(settled.request)} failed (${code}${detail}); this session cannot run work until a request projects`,
+      };
+    }
+    return null;
   }
 
   // Whether the verdict now on disk is the one that was asked for. The gate is a
@@ -1101,7 +1139,27 @@ export class SessionState {
   // projection that actually changed its input may open a new chain. A caller
   // that omits it makes every difference look like a rewrite, which is the safe
   // direction — the chain then refuses rather than blessing it.
-  async pairHintProject(messages, { barriered = false, incoming = null, givenItems = null, answeredItems = null, projectedBy = null, filtered = null } = {}) {
+  async pairHintProject(
+    messages,
+    {
+      barriered = false,
+      incoming = null,
+      givenItems = null,
+      answeredItems = null,
+      projectedBy = null,
+      filtered = null,
+      // Whether this request is a SIDE-CHANNEL turn, decided by the CALLER from
+      // the messages the host handed over. It must not be re-derived from
+      // `messages`: a fenced successor tenure's copy is the barrier's output,
+      // and the barrier keeps only the last operator message — the host's
+      // developer/agent reminder that marks a title request is gone. Re-deriving
+      // read that copy as the conversation, so the side turn could open an
+      // epoch, set handles and anchor the prefix chain; the next real request
+      // then drifted (`PREFIX_DRIFT`), which is the incident the ephemeral rule
+      // exists to prevent.
+      ephemeral = null,
+    } = {},
+  ) {
     // A side-channel turn is not the conversation (§6.1). OMP fires ephemeral
     // title/card requests through this same hook while the main turn streams
     // (measured 2026-11-01, session 01a19547): the side copy extended the
@@ -1115,16 +1173,16 @@ export class SessionState {
     // moves nothing, so the conversation continues the chain it presented. Core
     // owns that rule (`REQUEST_KINDS.EPHEMERAL`); this function only says which
     // request is which.
-    const ephemeral = isSideChannelRequest(messages);
+    const sideChannel = typeof ephemeral === "boolean" ? ephemeral : isSideChannelRequest(messages);
     const hint = await this.pairHint();
     // An ephemeral request never opens an epoch and never changes the handle
     // list: both are facts of the conversation, and a UI request is not one.
-    const handles = ephemeral ? hint.handles : this.parkedNames();
+    const handles = sideChannel ? hint.handles : this.parkedNames();
     const frozen = hint.text === null ? null : [...hint.handles].sort().join("\n");
     const next = [...handles].sort().join("\n");
-    const opensEpoch = !ephemeral && frozen !== null && frozen !== next;
+    const opensEpoch = !sideChannel && frozen !== null && frozen !== next;
     if (opensEpoch) await hint.newEpoch();
-    if (!ephemeral) hint.setHandles(handles);
+    if (!sideChannel) hint.setHandles(handles);
     if (!hint.bound) return messages;
     // The barrier broke the copy and no epoch opened here to start a new chain:
     // that is the case the anchor exists for. An epoch change above already
@@ -1148,7 +1206,7 @@ export class SessionState {
     // pair's place), so anchoring again would throw that decision away.
     // An ephemeral request is a BRANCH of the chain, never a step of it: it
     // anchors nothing and records nothing (core's `REQUEST_KINDS.EPHEMERAL`).
-    const boundary = ephemeral ? null : projectionBoundary({
+    const boundary = sideChannel ? null : projectionBoundary({
       presented: hint.presented,
       projected: chain,
       incoming,
@@ -1173,13 +1231,13 @@ export class SessionState {
       // rewrite (found by `src/compose/prefix-state-machine.test.mjs`).
       durableRewrite: freshCompaction(hint.presented, chain),
     });
-    if (!ephemeral && !opensEpoch) {
+    if (!sideChannel && !opensEpoch) {
       if (barriered) hint.anchor(chain, { reason: REBASE_REASONS.RELAY });
       else if (shouldAnchor(boundary)) hint.anchor(chain, { reason: boundary.reason });
     }
     const projected = await hint.project({
       messages: chain,
-      kind: ephemeral ? REQUEST_KINDS.EPHEMERAL : REQUEST_KINDS.MAIN,
+      kind: sideChannel ? REQUEST_KINDS.EPHEMERAL : REQUEST_KINDS.MAIN,
     });
     return projected.messages;
   }

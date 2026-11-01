@@ -47,14 +47,15 @@
 | 宿主接口 | 本适配器 | 落在哪 |
 |---|---|---|
 | `ctx.agent.transform` | 建 `Manager`、`Plan`（primary）、`coder`、`devops`（subagent），其余 agent 置 `hidden` | `spec/agent-definitions.mjs` |
-| `ctx.tool.transform` | 加 `js-manager`、`js-worker`、`js-review`、`plan`、`fork`、`join` | `spec/tool-registrations.mjs` |
-| `ctx.session.hook("context")` | 请求副本：Scope 投影、Pair Hint 合成对、导演段、工具目录收窄、owner 视图记录 | `spec/context-hook.mjs` |
-| `ctx.session.hook("prompt")` | 操作员消息：回答未决的 `ask`、重开已结案的工作 | `spec/prompt-hook.mjs` |
+| `ctx.tool.transform` | 加 `js-manager`、`js-worker`、`js-review`、`plan`、`fork`、`join`；`editor.remove` 移除任何角色都不许用的宿主内置（`question`、`subagent`） | `spec/tool-registrations.mjs`、`spec/capabilities.mjs` |
+| `ctx.session.hook("context")` | 请求副本：Scope 投影、Pair Hint 合成对、导演段、工具目录收窄、owner 视图记录；**评估轮在此开启** | `spec/context-hook.mjs` |
+| `ctx.session.hook("compaction")` / `("generate")` | 同一个投影处理器；`generate` 在投影前标 `kind: "ephemeral"`（借用历史的一次性请求，不覆盖主链前缀） | `spec/context-hook.mjs`、`spec/plugin.mjs` |
+| `ctx.session.hook("prompt")` | 只回答**真正的操作员** prompt（`delivery !== "queue"`、非子会话）的未决 `ask`，并重开已结案的工作 | `spec/prompt-hook.mjs` |
 | `ctx.tool.hook("execute.before")` | 角色越权、`scope` 注解准入 | `spec/execute-hooks.mjs` |
 | `ctx.tool.hook("execute.after")` | 一次模型回合的结算 | `spec/execute-hooks.mjs` |
 | `ctx.event.subscribe` | `session.created` 绑定语言；`session.execution.*` 让 worker 退出在途，并对顶层代理的自然停止投递 Nudge（§8.2）；`session.execution.interrupted` 是操作员按停，**不判定、不投递**（`handleTurnEnd` 直接答 `hold: "operator-interrupt"`） | `spec/plugin.mjs`、`spec/turn-nudge.mjs` |
 
-没有别的注册点。压缩与标题请求挂同一个 `context` 处理，但本适配器只改
+没有别的注册点。压缩与 generate 请求挂同一个 `context` 处理，但本适配器只改
 `roleOf(event.agent)` 认得的四个 agent 的请求。
 
 ## 2 会话状态（`spec/session-state.mjs`）
@@ -91,10 +92,13 @@
 
 - 第一层是可见性：`session.hook("context")` 的 `event.tools` 是本次请求的工具目录，
   本适配器按角色删名（`spec/narrowing.mjs`）。`js-review` 另受评估窗口约束（根 §2.3）：窗口是 `SessionState#windowFor`
-  （core 的 `ReviewWindow`），`program-tool.mjs` 在建立程序前读它，关着即 `REVIEW_WINDOW_CLOSED`；窗口由 `ProgramSurface`
-  在构造时 `beginRound()`、在受理 review 后 `noteReview` 关闭。worker 无论如何都被角色拒。
-  Manager 只留 `js-manager`、`js-review`、
-  `fork`、`join`、`question`；Plan 只留 `plan`、`question`；worker 留 `js-worker`、`fork`、`join`、`question`
+  （core 的 `ReviewWindow`），**轮次在 `context` 钩子（请求边界）开启**，不是每次工具调用都开；
+  `program-tool.mjs` 在建立程序前读它，关着即 `REVIEW_WINDOW_CLOSED`，`narrowTools` 在窗口关闭时
+  把 `js-review` 从目录里删掉。同一回合里 review 被受理后再调 `js-review` 不会重开窗口。
+  worker 无论如何都被角色拒。
+  Manager 只留 `js-manager`、`js-review`、`fork`、`join`；Plan 只留 `plan`；worker 留 `js-worker`
+  （外加 compose 面里的 `fork`/`join`）。**任何角色都不留 `question`**：§2.2 只允许 Plan 在 `S1` 用
+  `this.ask`（park + interrupt），§2.3 的 Manager 无提问通道，§3.1 的子代理没有提问通道。
 
   第 0 条：`js-worker` 是 `coder` 与 `devops` **共用的同一个工具**（§2.1：两者系统提示词逐字相同，差别只在 brief）。
   注册必须写成 `workerProgram`（`workerRole(roleOf(context.agent))`），绝不能用 `programFor("coder")` 这类字面角色：
@@ -102,8 +106,10 @@
   这个等式检查保留（第二层授权），错的是注册处写死角色。
   （§4.1 把 `fork`/`join` 给每个可派工的身份；`js-review` 仍只属 Manager）。
 - 第二层是拒绝：目录收窄拦不住已捕获的执行器（宿主源码如此），所以 `execute.before` 对
-  Manager 与 Plan 的 `read`/`grep`/`glob`/`write`/`edit`/`patch`/`bash`/`shell`/`subagent`
+  Manager 与 Plan 的 `read`/`grep`/`glob`/`write`/`edit`/`patch`/`bash`/`shell`/`subagent`/`question`
   直接拒收；每个适配器工具在 `execute` 里再核一次自己的角色（`spec/role-tools.mjs`）。
+  `ctx.tool.transform` 同时移除任何角色都不许用的内置（`STATIC_REMOVED_TOOLS`：`question`、`subagent`）：
+  宿主的工具表是全局的，所以静态移除只能放这五个角色都不能用的名字，其余按请求收窄。
 - 工具输入与输出都是 JSON Schema（`spec/tool-inputs.mjs`、`spec/tool-outputs.mjs`）。
 - **声明了 `output` 就必须回 `{ output }`。** 宿主的
   `packages/core/src/tool/runtime.ts` 在工具声明了输出 schema 时，结果缺 `output` 键就回
@@ -160,9 +166,14 @@
   曾经声明并必填的 `role` 是一个适配器根本不读的第三通道，且会让合规调用在 schema 层就失败。测试
   `scope-schema.test.mjs` 钉住这条形状（属性名、required、brief 描述里必须写明两种身份）。`devops`
   同一时刻只允许一个（`spec/session-creation.mjs`）。建子会话用
-  `Session.create({ parentID, title, agent, model })`，首个 brief 用
+  `Session.create({ parentID, title, agent, model })`，**新建** worker 的首个 brief 用
   `Session.prompt({ sessionID, text, delivery: "queue" })` 投递——宿主缺省是 `"steer"`。
-- 重名且在途即 steer，回执显式给 `steered: true`；否则新建，回执 `steered: false`。
+- 重名且在途即 steer，**steer 用 `delivery: "steer"`**（§7.1：`queue` 只用于新建；排队会让一直在干活的
+  worker 永远读不到，而回执仍写 `steered: true`），回执显式给 `steered: true`；否则新建，回执 `steered: false`。
+- **devops 的道路按会话记**：`activation.devopsInFlight` 是 `Map<sessionID, Set<name>>`
+  （`devopsRoadOf`）。同名 fork 打到**本会话**已在跑的 devops 是 steer，**不**回 `DEVOPS_BUSY`；
+  只有本会话还没有 devops 时才检查并**在任何 await 之前同步预留**名字，失败路径释放，
+  `wait: true` 的 `finally` 只在 `receipt.started === true` 时释放。
 - `join()` 不带参数，等第一个归来的 worker：对每个在途 worker 并发 `Session.wait`，
   取最先返回者，再读 `Session.get` 的 `outcome`；`outcome` 缺失即仍在忙，不冒充完成。
   返回记录形如 `{ name, role, sessionID, outcome, title }`。
@@ -243,7 +254,8 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
 
 闸门在 compose 的 `ProgramSurface#handler("ask")`：它读台账自己的 `askAllowed`，Plan 的 `S2`、
 `S3`、`待执行` 与 `Manager` 一律以 `ASK_FORBIDDEN_OUTSIDE_S1` 拒绝（程序不挂起、回合不中断、
-系统不等待任何人）。`js-worker` 的面里根本没有 `ask` 成员。适配器不再加第二道判断，只把
+系统不等待任何人）。`js-worker` 的面可以没有 `ask` 成员（compose 的成员表决定；有成员也只是给具名拒绝）。
+适配器不再加第二道判断，只把
 拒绝原样交给宿主（程序失败，`error.message` 以该码开头）。
 
 `Plan` 的初任在 `S1` 提交空账 `review([])` 时，台账回 `askUser` + `我需要干什么？` + `interrupt`，
@@ -327,7 +339,10 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
      原文**不**从转录里取：转录的形状是 `PublicSessionMessage`（`{type, text}`），且压缩后最早的用户消息
      只是摘要余项。
   1. `Session.create` 建**惰性**继任者（无 `parentID`、不 prompt），此时它没有任何回合与历史；
-  2. 原子写记录（`incumbent`/`successor`/`tenure`/`barrier`/`briefId`，`phase: "committed"`）。
+  2. 原子写记录（`incumbent`/`successor`/`tenure`/`barrier`/`briefId`/`kind`，`phase: "committed"`）。
+     `kind` 是**被退休的台账侧**（`plan` / `manager`）：继任者用同一侧创建（`Plan` 或 `Manager`），
+     记录的 `milestone` 也按该侧的里程碑表恢复；Plan 的接力还带 `draft`/`draftRoot`，继任者读写
+     **前任的同一个底稿文件**。缺 `kind` 的旧记录按 `manager` 读。
      **写失败 → 删除第 1 步的会话并回 `ok: false`**：没有记录就没有退休；
      记录同时提交根 §2.4 第 4 步要求保留的三样，外加操作员的原始请求：
      - `operatorInput`：操作员原始请求（第 4 步保留项之一），取自 `.original.json` 这一持久事实；
@@ -335,8 +350,8 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
        空闲 worker 仍是名字指向的地方，已完成的可能握着没人领取的结果；
      - `unclaimed`：已结束但没人 `join` 过的结果；
      - `boundDevops`：道路绑定的 devops 名字，忙或闲都跨接力不变。
-       `activation.devopsInFlight` 是整个激活共享的集合，所以只取**该前任自己名册里**的那几个名字：
-       把别的 Manager 启动的 devops 交给继任者，等于让继任者去指挥一个不属于它的 worker。
+       `activation.devopsInFlight` 是 `Map<sessionID, Set<name>>`（`devopsRoadOf`），
+       只取**该前任自己那条道路**上的名字；别的 Manager 启动的 devops 不会交给继任者。
      `roster` 里有条目缺 `sessionID` 时在 `create` 之前就拒（`RELAY_ROSTER_UNPRESERVABLE`）：
      保不住就不提交，不拿假成功换一条记录。
   3. 写 `phase: "sending"`，用 `record.briefId` 投递 `notice`（`delivery: "queue"`）；
@@ -805,3 +820,55 @@ reset 无法开闭环——错的是**模型无从知道要写这两个字段**�
 任何一步失败时，日志里的 `ContextRefusal` code（`PAIR_HINT_UNAVAILABLE`、
 `RESOURCE_PAIR_INCOMPLETE`、`PREFIX_DRIFT`、`MESSAGE_COPY_FAILED`、`PAIR_HINT_MISSING` 等）
 直接指出是哪个分支，而不是一句笼统的“请求失败”。
+
+## 14 2026-11-01 审计修订（本轮修复的事实）
+
+这一节只记**行为改变**，详细理由在对应源码注释里。
+
+- **接力的侧（`kind`）**：`handOver` 接收 `kind`（`plan` / `manager`），继任者用同一侧创建
+  （`Plan` / `Manager`），记录持久化 `kind`；`recordRelayStart` / `openLedger` / `restoreLedger`
+  按该侧恢复里程碑。缺 `kind` 的旧记录按 `manager` 读。Plan 接力的 `draft`/`draftRoot`
+  让继任者读写前任的同一个底稿（`draftRootOf` / `draftNameOf`）；`draftFor` 与 `draftPath`
+  现在都从会话自己的 root 派生（不再是插件根）。
+- **Plan 交接的两个相**：`startManager` 先写 `phase: "sending"`（带确定性 `briefId`）→
+  `Session.prompt({ id: briefId })` → `phase: "sent"`。prompt 抛错且会话确实被删除时记录一并删除；
+  `recoverRelay` 对 `plan-handoff` 在非 `sent` 相回 `resume`（同 id 重投），`sent` 才是 `done`。
+  `startManager` 检查 `recordSuccessorRow`，失败回 `SUCCESSOR_LEDGER_NOT_DURABLE`（与 `handOver` 一致），
+  并在成功后把交接事实写进 Plan 自己的台账行（`noteHandoff`，`handoff: true`）。
+- **steer 的投递**：同名在途 worker 用 `delivery: "steer"`；`queue` 只用于新建。
+- **devops 道路按会话**：`activation.devopsInFlight` 是 `Map<sessionID, Set<name>>`；
+  同名 fork 到本会话在跑的 devops 是 steer，不拒；检查与预留同步发生在第一个 await 之前；
+  `wait: true` 的 `finally` 只在 `receipt.started === true` 时释放。
+- **按调用的上下文**：`withCall` / `withWorkerRole` 与 activation 上的可变槽
+  （`relayContext` / `askSession` / `devopsSession` / `askProgram` / `laneRole`）已删除；
+  `portsFor({ call })` 把会话与物理 call id 传给 relay/devops 端口，lane 角色按**会话**记在
+  `activation.laneRoles`。两个并发的工具调用不会再读错彼此的上下文。
+- **第二次挂起会唤醒恢复者**：park 通道在 park 后调 `ProgramCalls#wakePark`，只有**正在等待**的
+  resumer（`waitStop` 已标记 `awaited`）会被唤醒；首次 park 不会预结算未来的 resumer。
+  被恢复的程序再次 `ask` 时，通道自己记录并展示问题（第一次仍由调用等待同一 promise）。
+- **`ask` 只认真正的操作员 prompt**：`delivery === "queue"`（适配器自己的投递）与子会话都不消费
+  未决问题。prompt 钩子已恢复过的 ask，之后模型再 `this.unpark(name, answer)` 回**已结算回执**
+  （`alreadyResumed: true`），不再 `STALE_CONTROL`；resume 抛错也只写进 `answered.error`。
+- **`question` 工具**：Manager / worker 权限、Plan 权限、目录 `KEEP` 全部移除；`STATIC_REMOVED_TOOLS`
+  在 `ctx.tool.transform` 里 `editor.remove("question")` / `("subagent")`；`execute.before`
+  对 Manager/Plan 的 `question` 直接拒。
+- **评估窗口**：轮次只在 `context` 钩子（请求边界）`beginRound()`；`makeSurface` 传
+  `reviewSurface({ openRound: false })`；窗口关闭时 `narrowTools` 删掉 `js-review`。
+  同一回合的第二次 `js-review` 不会重开窗口。
+- **重放优先**：`beforeCall` 与 `program-tool` 都先查 callId 重放（同载荷直接回原回执，
+  不执行任何东西），再查 `js-review` 窗口与 `relayRefusal`。`program-calls.restoreFrom`
+  保留整份存储回执（`error`/`reason`/`payload`/`command`/`delta`/`remainingWaitMs`）。
+- **请求期限**：程序在准入时拿到 `Deadline`；`withDeadline` 到期时 `surface.expire()` 把程序挂起、
+  为该挂起点登记 park 条目，调用回 park 回执。`built.refusal` 也经 `withDraft`。
+- **Nudge 的交接事实**：`turnExit` 不再硬编码 `{ handedOff: true }`；`handleTurnEnd` 从
+  `handoff: true` 的台账行（本 tenure）读出事实。`eventMilestone` 只接受该角色合法的里程碑名，
+  `session.execution.failed` 的 `reason` 句子不再被当成里程碑。
+- **压缩与 generate**：`compaction` 挂同一个投影处理器；`generate` 在投影前标 `kind: "ephemeral"`。
+- **身份文件按摘要命名**：`identityFile` 用会话 id 的 SHA-256 前 32 位，不再用可碰撞的替换+截断。
+- **无消息结果的 `tool` 消息保留**：`messagesFromItems` 只对**有 callId** 的孤立结果做半对丢弃。
+- **测试临时目录**：`spec/test-temp.mjs` 统一登记并在进程退出时删除；property 场景在
+  `runScenario` 结束即删。四个曾泄漏的测试文件（`worker-roster`、`context-refusal`、
+  `successor-prefix`、`relay-record`）改用它。
+- **死代码**：`session-state` 的重复 `get root()`、`program-tool` 的 `withSignal`、插件里未用的
+  `fissionTableOf` 导入、`activation.disposed` / `fissionWorker` 已删除；`disposeActivation`
+  清空 `fissionOrigins` / `identities` / `laneRoles`；`park-table` 头注释改为真实语义（恢复在原地继续，不重跑）。

@@ -7,27 +7,29 @@
 // and session store are never written.
 //
 // Three turns: two plain, the middle one asking for `js-manager`. The checks are
-// the four facts a session must leave behind: host exit 0, no refusal code, a
-// `js-*` tool result rendered as CUE, and `.Herdchestra/<session>.*` records.
+// the five facts a session must leave behind: host exit 0, no refusal code, a
+// `js-*` tool result rendered as CUE, no program refusal code in that result,
+// and `.Herdchestra/<session>.*` records.
 //
-// The tool results are read from the host's own log, which `--print-logs`
-// writes to stderr, and from `.Herdchestra/<session>.calls.jsonl`, the adapter's
-// call record. A run where the model skipped the tool is a failing check, not a
-// retry.
+// The tool results are read from the host's `--format json` stream; the
+// `.Herdchestra/` records are searched for refusals. A run where the model
+// skipped the tool is a failing check, not a retry.
 
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import {
   cleanupRoot,
   createTable,
+  FORBIDDEN_CODES,
   isCue,
   makeRoot,
   makeWorkspace,
   openCodeConfig,
   openCodeModel,
   parseArgs,
+  programRefusalsOf,
   readRecords,
   refusalsOf,
   spawnHost,
@@ -37,14 +39,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
 const PLUGIN_DIR = path.join(REPO, "src/host-opencode");
 
-const FORBIDDEN = Object.freeze(["PREFIX_DRIFT", "CONTEXT_PROJECTION_FAILED", "REQUEST_GATE_UNWRITABLE"]);
-
 const TURNS = Object.freeze([
   "Reply with the single word ok and stop.",
   [
-    "Call the `js-manager` tool exactly once. Its only arguments are `source` (the program) and",
+    "Call the `js-manager` tool exactly once. Its only arguments are `code` (the program) and",
     "`scope` (the annotation):",
-    '`{"source": "return { ok: true, value: 1 + 1 };", "scope": {"kind": "resetScope", "newScopeGoal": "smoke", "newScopeRetentionBudget": 5}}`.',
+    '`{"code": "return { ok: true, value: 1 + 1 };", "scope": {"kind": "resetScope", "newScopeGoal": "smoke", "newScopeRetentionBudget": 5}}`.',
     "Then reply with the single word done and stop.",
   ].join(" "),
   "Reply with the single word ok and stop.",
@@ -66,6 +66,29 @@ const writeConfig = async (root) => {
   };
   await writeFile(path.join(configDir, "opencode.json"), JSON.stringify(config, null, 2));
   return configDir;
+};
+
+// A kept root is evidence, not a credential store. The provider block is the
+// operator's own, so every `apiKey` in the kept copy is replaced before the
+// process exits; the run itself already read the real value.
+const redactApiKeys = (value) => {
+  if (Array.isArray(value)) return value.map(redactApiKeys);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key, key === "apiKey" && typeof inner === "string" ? "[redacted]" : redactApiKeys(inner)]),
+  );
+};
+
+const scrubKeptConfig = async (configDir) => {
+  const file = path.join(configDir, "opencode.json");
+  let config;
+  try {
+    config = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    return;
+  }
+  config.provider = redactApiKeys(config.provider ?? {});
+  await writeFile(file, JSON.stringify(config, null, 2));
 };
 
 // The CUE detector is shared: `isCue` in ./lib.mjs, because all three hosts
@@ -125,6 +148,7 @@ const runTurn = async ({ workspace, configDir, sessionId, prompt, label }) => {
     ],
     {
       cwd: workspace,
+      timeout: 300_000,
       env: {
         OPENCODE_CONFIG_DIR: configDir,
         // The plugin's own answer for "which workspace": on a live host the
@@ -193,9 +217,9 @@ const main = async () => {
 
     for (const run of runs) check(`exit ${run.label}`, run.exit.code === 0, run.exit.code === 0 ? undefined : `code ${run.exit.code}`);
 
-    const inStream = FORBIDDEN.filter((code) => stream.includes(code));
+    const inStream = FORBIDDEN_CODES.filter((code) => stream.includes(code));
     const refused = refusalsOf(records).map((record) => record.code ?? record.failure?.code ?? record.kind ?? "refused");
-    const inRecords = FORBIDDEN.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
+    const inRecords = FORBIDDEN_CODES.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
     check("no refusal codes", inStream.length === 0 && inRecords.length === 0 && refused.length === 0, [
       inStream.length > 0 ? `stream: ${inStream.join(",")}` : "",
       inRecords.length > 0 ? `records: ${inRecords.join(",")}` : "",
@@ -210,6 +234,12 @@ const main = async () => {
     check("js tool called", jsResults.length > 0, jsResults.length === 0 ? "no js-* tool call in the stream" : `${jsResults.length} call(s)`);
     const text = answer?.text;
     check("tool output is CUE", isCue(text), isCue(text) ? undefined : `first 120 bytes: ${JSON.stringify((text ?? "").slice(0, 120))}`);
+    const programRefusals = programRefusalsOf(text);
+    check(
+      "js tool did not refuse",
+      answer !== undefined && programRefusals.length === 0,
+      answer === undefined ? "no js-* tool result to read" : programRefusals.length === 0 ? undefined : `program refusal: ${programRefusals.join(",")}`,
+    );
 
     const { names, ids } = await sessionIdsOf(workspace);
     const own = names.filter((name) => name.startsWith(sessionId));
@@ -221,6 +251,7 @@ const main = async () => {
     table.record({ phase: "harness", ms: 0, ok: false, note: error.message });
   } finally {
     table.print();
+    if (args.keep) await scrubKeptConfig(path.join(root, "config"));
     await cleanupRoot(root, args.keep);
   }
   process.exit(failed === 0 ? 0 : 1);

@@ -9,6 +9,7 @@
 import { nodeCommandRunner } from "../core/command.mjs";
 import { PUBLISHED_FIELD, successorCopy } from "./relay-record.mjs";
 import { groupIdOfLane } from "./fission-fanout.mjs";
+import { appendJsonLine } from "./files.mjs";
 
 // `call(command)` (spec §3.3). OMP's `pi.exec(command, args)` takes argv, not a
 // shell string, and returns `{ stdout, stderr, code }` (exec/exec.ts:21). The
@@ -84,12 +85,32 @@ export const askPort = ({ ui, questions }) => ({
 // devops session through the host's `task` tool and waits for that session's one
 // answer, then returns the report whole; the system adds no summary.
 export const devopsPort = ({ binding }) => ({
-  async investigate(intent) {
-    const name = `plan-devops-${Date.now().toString(36)}`;
-    const run = await binding.runAgent({ agent: "devops", name, brief: intent });
-    if (run.ok !== true) return run;
-    return { ok: true, report: run.text, agentId: run.agentId ?? null };
-  },
+  // §2.2: a Plan's task has AT MOST one pending DevOps investigation. Two
+  // concurrent `this.devops(...)` calls in one program used to start two
+  // sessions and report two reports; the second is refused by name instead.
+  // The latch is per port (one per session), and it is released when the
+  // investigation settles, whatever it settled with.
+  investigate: (() => {
+    let inFlight = false;
+    return async (intent) => {
+      if (inFlight) {
+        return {
+          ok: false,
+          reason: "DEVOPS_IN_FLIGHT",
+          detail: "this task already has a DevOps investigation in flight; wait for its report",
+        };
+      }
+      inFlight = true;
+      try {
+        const name = `plan-devops-${Date.now().toString(36)}`;
+        const run = await binding.runAgent({ agent: "devops", name, brief: intent });
+        if (run.ok !== true) return run;
+        return { ok: true, report: run.text, agentId: run.agentId ?? null };
+      } finally {
+        inFlight = false;
+      }
+    };
+  })(),
 });
 
 // `worker` (spec §4.1): the Manager's own fork and join.
@@ -140,21 +161,38 @@ export const fissionPort = ({
   startLane,
   agentFor,
   owner,
+  // The owner's last delivered assistant view, or null. §4.2 steps 2–3: a lane
+  // starts from the owner's view; the caller is the owner's own session, so an
+  // empty answer means the session really exposes none.
+  view = null,
   present = null,
   fission = () => null,
   fanout = null,
   onEvent = null,
-}) => ({
+  // The durable group journal (§4.2 step 4): one append-only file per session.
+  // `recordFile` is a path or a function returning one. A group whose creation
+  // cannot be written must not start, so the commit is a refusal.
+  recordFile = null,
+  // The completions that settled before this group (§4.2 step 7), and the
+  // callback that receives them once the group is registered in compose.
+  takeCompletions = null,
+  onGroupBuilt = null,
+}) => {
+  // The completions captured for each group, taken at the group's first
+  // `buildLane` — the same cut compose made when it captured its own list.
+  const capturedByGroup = new Map();
+  return {
     // The session that owns this group. Fission's owner is a SESSION identity,
     // never the name of the program that called it: a program is named by its
     // tool-call id, and comparing that against the session name refused every
     // real worker with `InvalidOrigin`.
     ownerName: () => owner(),
     async ownerView() {
-      // The owner's last delivered view is its session's transcript, which this
-      // adapter does not read for another session. A lane therefore starts from
-      // the framing plus its own input: the documented empty-view case.
-      return null;
+      // The caller is the owner's own session: reading its last delivered
+      // assistant text is reading its own transcript, not another session's.
+      // A session that exposes none answers null (the documented empty view).
+      const text = typeof view === "function" ? view() : null;
+      return typeof text === "string" && text.length > 0 ? text : null;
     },
     // §4.2 step 3: build the lane INERT. The session is created, wired,
     // authorized and narrowed, but its first turn is not sent, so the group
@@ -163,6 +201,9 @@ export const fissionPort = ({
     // The lane count is compose's fact (§4.2 step 3), carried by the lane it
     // hands over; the index is not a count and must never stand in for one.
     async buildLane(lane) {
+      if (!capturedByGroup.has(lane.groupId)) {
+        capturedByGroup.set(lane.groupId, typeof takeCompletions === "function" ? takeCompletions() : []);
+      }
       const context = [laneFraming(lane.laneCount)];
       if (typeof lane.view === "string" && lane.view.length > 0) context.push(lane.view);
       context.push(lane.prompt);
@@ -213,15 +254,66 @@ export const fissionPort = ({
       const brief = record.brief;
       record.brief = null;
       record.lane.start(brief);
+      // §4.2 step 5: the lane counts as started only when the host ACCEPTED its
+      // first turn. `Lane.start` turns a rejected prompt into an error
+      // `agent_end`, so waiting on the promise here is what lets compose roll
+      // the whole group back instead of converging on a lane that never ran.
+      const submitted = await record.lane.submitted;
+      if (submitted?.ok !== true) {
+        throw Object.assign(
+          new Error(`lane ${laneId} did not start: ${submitted?.error?.message ?? "the turn was rejected"}`),
+          { code: "TURN_START_FAILED" },
+        );
+      }
       return { ok: true, laneId, lane: record.lane };
     },
     async persistGroup({ groupId, owner: groupOwner, lanes: groupLanes }) {
-      return { ok: true, groupId, owner: groupOwner, lanes: groupLanes.map((lane) => lane.laneId) };
+      const target = typeof recordFile === "function" ? recordFile() : recordFile;
+      if (typeof target !== "string" || target.length === 0) {
+        return {
+          ok: false,
+          reason: "FISSION_RECORD_UNAVAILABLE",
+          detail: "this session exposes no durable journal for a fission group; refusing to start one that a crash would erase",
+        };
+      }
+      try {
+        appendJsonLine(target, {
+          v: 1,
+          type: "fission-group",
+          at: new Date().toISOString(),
+          groupId,
+          owner: groupOwner,
+          lanes: groupLanes.map((lane) => ({ laneId: lane.laneId, index: lane.index })),
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "FISSION_RECORD_FAILED",
+          detail: String(error?.message ?? error),
+        };
+      }
+      return { ok: true, durable: true, groupId, owner: groupOwner, lanes: groupLanes.map((lane) => lane.laneId) };
     },
     // The group was rolled back before it existed: there is no record here to
-    // withdraw, and saying so is not a failure.
-    async discardGroup({ groupId }) {
-      return { ok: true, groupId, withdrawn: false };
+    // withdraw, and saying so is not a failure. A group that WAS committed
+    // records its withdrawal, so a replay does not resurrect it.
+    async discardGroup({ groupId, owner: groupOwner, lanes: groupLanes = [] }) {
+      capturedByGroup.delete(groupId);
+      const target = typeof recordFile === "function" ? recordFile() : recordFile;
+      if (typeof target !== "string" || target.length === 0) return { ok: true, groupId, withdrawn: false };
+      try {
+        appendJsonLine(target, {
+          v: 1,
+          type: "fission-withdrawn",
+          at: new Date().toISOString(),
+          groupId,
+          owner: groupOwner ?? null,
+          lanes: groupLanes.map((lane) => ({ laneId: lane.laneId, index: lane.index })),
+        });
+      } catch (error) {
+        return { ok: false, groupId, withdrawn: false, reason: "FISSION_RECORD_FAILED", detail: String(error?.message ?? error) };
+      }
+      return { ok: true, groupId, withdrawn: true };
     },
     // The group a lane id belongs to. A lane the group never created answers
     // null, and a turn end from it feeds nothing.
@@ -276,7 +368,7 @@ export const fissionPort = ({
     // is not a failure: the group exists and the mark is what makes the owner
     // stop, so answering `PRESENT_NOT_REPLACED` for it would be the false report
     // the group code turns into a rollback.
-    async replacePresent({ owner: groupOwner }) {
+    async replacePresent({ owner: groupOwner, groupId = null }) {
       const target = groupOwner ?? owner();
       if (present === null) {
         return {
@@ -332,25 +424,59 @@ export const fissionPort = ({
       // The callback aborts ONCE and never re-arms itself: the mark already
       // refuses every turn after this one.
       let deferred = null;
+      // The result of an immediate `silence()` (atTurnEnd runs the callback at
+      // once when no turn is in flight). It used to be dropped, so a failed
+      // silence was reported as a replaced present.
+      let silenced = null;
       if (typeof present.atTurnEnd === "function") {
         try {
           deferred = present.atTurnEnd(() => {
-            void present.silence().catch(() => {});
+            silenced = present.silence();
+            void silenced.catch(() => {});
           });
         } catch (error) {
           deferred = { ok: false, reason: "DEFERRED_ABORT_FAILED", detail: String(error?.message ?? error) };
         }
       }
+      if (deferred?.ran === true && silenced !== null) {
+        try {
+          silenced = await silenced;
+        } catch (error) {
+          silenced = { ok: false, reason: "SILENCE_FAILED", detail: String(error?.message ?? error) };
+        }
+      }
       // A surface that can neither settle its turns nor arm the boundary abort
       // has no way to stop the old present, so the receipt must not claim one.
-      if (settled === null && deferred === null) {
+      //
+      // §4.2 step 6: the receipt says the present was replaced only when the
+      // stop really succeeded (`settled.ok`) or the boundary abort was really
+      // armed (`deferred.ok`). A `{ok:false}` from both used to be reported as
+      // success, and the group could converge while the old present still had
+      // queued or in-flight turns.
+      const stopped = settled?.ok === true || deferred?.ok === true;
+      const silenceFailed = deferred?.ran === true && silenced?.ok === false;
+      if (!stopped || silenceFailed) {
         return {
           ok: false,
           reason: "PRESENT_NOT_REPLACED",
           owner: target,
-          detail: "the owner's control surface can neither settle its turns nor arm an abort at the turn's end",
+          detail: silenceFailed
+            ? `the owner's present was marked, but silencing it failed: ${silenced?.reason ?? "unknown"}`
+            : "the owner's control surface could neither settle its turns nor arm an abort at the turn's end",
           replaced: marked,
+          settled,
+          deferredAbort: deferred,
+          silence: silenced,
         };
+      }
+      // §4.2 step 7: the group now exists in compose (all build/start/commit
+      // steps succeeded). The captured completions are delivered to every lane
+      // and claimed there, one macrotask later so `Fission` has registered the
+      // group first.
+      if (typeof onGroupBuilt === "function" && groupId !== null) {
+        const captured = capturedByGroup.get(groupId) ?? [];
+        capturedByGroup.delete(groupId);
+        onGroupBuilt({ groupId, captured });
       }
       return {
         ok: true,
@@ -358,6 +484,7 @@ export const fissionPort = ({
         replaced: marked,
         settled,
         deferredAbort: deferred,
+        silence: silenced,
         // True when the old present really stopped now: the mark landed AND the
         // session is not streaming. A `false` here is not a refusal — the mark
         // still governs and the boundary abort is armed — it says the turn in
@@ -366,6 +493,7 @@ export const fissionPort = ({
       };
     },
     async abortLanes({ groupId, laneIds }) {
+      capturedByGroup.delete(groupId);
       const released = [];
       const failed = [];
       for (const laneId of laneIds) {
@@ -384,7 +512,8 @@ export const fissionPort = ({
       }
       return { ok: failed.length === 0, groupId, released, failed };
     },
-});
+  };
+};
 
 // `relay` (root §2.4 第 3 步). Retirement, the context barrier and the
 // successor start land as ONE durable record: "三者不可分割，进程中断也不会留下半个任期".

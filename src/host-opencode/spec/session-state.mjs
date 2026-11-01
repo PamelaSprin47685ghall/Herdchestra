@@ -355,10 +355,6 @@ export class SessionState {
     return this.#root;
   }
 
-  get root() {
-    return this.#root;
-  }
-
   get file() {
     return this.#file;
   }
@@ -466,15 +462,19 @@ export class SessionState {
   //
   // The inherited facts are copied first: the row belongs to this session's own
   // file, and a copy that landed after it would look like a later event.
-  recordRelayStart(at) {
+  recordRelayStart(at, kind = "manager") {
     if (typeof at !== "string" || at.length === 0) return false;
+    // The ledger side the relay named (根 §2.4 第 3 步). A Plan relay starts a
+    // Plan successor; a Manager relay a Manager one. The record carries the
+    // side, so the successor's row and its restored ledger agree on the kind.
+    const side = kind === "plan" ? "plan" : "manager";
     this.inherit();
     // The ledger is restored first, because the row must name the tenure the
     // ledger really holds. A relayed successor's ledger already starts as a
     // successor (tenure 1) from the relay record; reading it before writing the
     // row keeps the row and the ledger from disagreeing, which would make the
     // next cold start restore a tenure that never opened.
-    const ledger = this.ledgerFor("manager");
+    const ledger = this.ledgerFor(side);
     // A row for this tenure is written once. A second hand-over delivery finds
     // the row and leaves it alone.
     if (
@@ -485,15 +485,32 @@ export class SessionState {
         // proof that the successor's row already exists and write nothing.
         (record) =>
           record?.type === RECORD_TYPES.REVIEW &&
-          record.kind === "manager" &&
+          record.kind === side &&
           record.sessionID === this.#sessionID &&
           record.tenure === ledger.tenure,
       )
     ) {
       return true;
     }
-    this.openLedger("manager", { at, ledger });
+    this.openLedger(side, { at, ledger });
     return true;
+  }
+
+  // The Plan hand-off is a durable fact of the tenure that performed it
+  // (根 §2.2: the hand-off is the exit a Plan earns). It is written on the
+  // Plan's own review row, so a cold start and the turn-exit controller read
+  // the same fact instead of inferring it from the milestone.
+  noteHandoff({ to = null, handoffId = null } = {}) {
+    const ledger = this.ledgerFor("plan");
+    appendRecords(this.#file, [
+      {
+        ...ledgerRecord(this.#sessionID, ledger),
+        handoff: true,
+        ...(typeof to === "string" && to.length > 0 ? { handoffTo: to } : {}),
+        ...(typeof handoffId === "string" && handoffId.length > 0 ? { handoffId } : {}),
+      },
+    ]);
+    return ledger;
   }
 
   /**
@@ -579,16 +596,20 @@ export class SessionState {
     // writes: `openLedger` records the step BEFORE `at`, so the replay below
     // reaches `at` on its own.
     const relay = this.#relay.record();
+    // A record written before the side was stored describes a Manager relay:
+    // the only relay that existed then. The side decides which milestone list
+    // the record's `milestone` belongs to, so it is read before the restore.
+    const side = relay?.kind === "plan" ? "plan" : "manager";
     const inherited =
       relay !== null && relay.corrupt !== true && relay.successor === this.#sessionID &&
-      typeof relay.milestone === "string" && relay.milestone.length > 0
+      side === kind && typeof relay.milestone === "string" && relay.milestone.length > 0
         ? relay.milestone
         : null;
     const ledger = restoreLedger(kind, this.recordsOf(RECORD_TYPES.REVIEW), {
       from: inherited,
       // A relayed successor's first tenure is the predecessor's, so its ledger
       // starts as a successor even before it has a row of its own.
-      asSuccessor: relay !== null && relay.corrupt !== true && relay.successor === this.#sessionID,
+      asSuccessor: relay !== null && relay.corrupt !== true && side === kind && relay.successor === this.#sessionID,
       // §2.3 closing: an empty review at `close` closes the work only when the
       // real execution resources are settled. The host cannot answer that
       // (workers are sessions this adapter started, not host bookkeeping), so

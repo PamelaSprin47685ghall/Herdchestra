@@ -20,8 +20,6 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { applyContextHook, opensPrefixChain } from "./context-hook.mjs";
@@ -29,8 +27,11 @@ import { openPairHint } from "./pair-hint-request.mjs";
 import { toHintMessages } from "./message-adapter.mjs";
 import { SessionState } from "./session-state.mjs";
 import { RELAY_GATE, RELAY_PHASES, relayFile, relayRecord, writeRelay } from "./relay-record.mjs";
+import { tempRoot as tempRootDir } from "./test-temp.mjs";
 
-const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "herd-prefix-"));
+// One workspace per test; the registry removes it when the process exits, so no
+// file can forget one.
+const tempRoot = (prefix) => tempRootDir(prefix);
 
 const text = (value) => [{ type: "text", text: value }];
 

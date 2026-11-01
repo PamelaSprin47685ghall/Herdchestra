@@ -62,6 +62,7 @@ import {
   MANAGER_TOOLS,
   WORKER_LANE_TOOLS,
   isWorkerRole,
+  fissionRecordFile,
 } from "./host-facts.mjs";
 import { readFileSync } from "node:fs";
 import { readText } from "./files.mjs";
@@ -152,6 +153,14 @@ export class RoleSession {
   // over a running worker adopts it from here (`LaneTable` `runningSession`).
   #laneSessions = new Map();
   #fissionLanes;
+  // A lane created by a fission group is a parallel present of a forked
+  // worker, not a worker a `fork` started. It may not fission again (§4.2
+  // `InvalidOrigin`). The fact is stated by the creator, never re-derived.
+  #fissionLane = false;
+  // Worker turns that settled before any group existed (step-7 completions).
+  // The live `Fission` captures the same results; this copy is what the port
+  // delivers to each lane and claims once the group is registered.
+  #fissionPending = [];
   #laneTools;
   #binding;
   #worker;
@@ -200,6 +209,7 @@ export class RoleSession {
     state = null,
     dispatch = null,
     forked = false,
+    fissionLane = false,
     // The worker face the adapter builds: `{ workerToolsFor, workerToolNames }`.
     // `workerToolsFor(workerPi)` is called once per started worker, after that
     // worker's session exists, so the tools a worker runs read the worker's own
@@ -219,6 +229,7 @@ export class RoleSession {
     this.#ctx = ctx;
     this.#role = role;
     this.#forked = forked;
+    this.#fissionLane = fissionLane === true;
     this.#onReviewAccepted = typeof onReviewAccepted === "function" ? onReviewAccepted : null;
     // The factory builds a session before any `ctx` exists, so the state is
     // created on the first bind. A test may pass one ready-made.
@@ -262,12 +273,13 @@ export class RoleSession {
   // Bind the session the host handed us on the first event. A worker session
   // created through the SDK never receives `session_start`, so this is the only
   // place its role, id and state can be learned.
-  bind({ ctx, role = roleOfAgent(ctx?.agent), forked = false, root = null } = {}) {
+  bind({ ctx, role = roleOfAgent(ctx?.agent), forked = false, fissionLane = false, root = null } = {}) {
     if (ctx === null || ctx === undefined) return this;
     if (this.#ctx === null) {
       this.#ctx = ctx;
       this.#role = role;
       this.#forked = forked;
+      this.#fissionLane = fissionLane === true;
       // A state handed in at construction already carries the root its owner
       // bound; replacing it here would silently move the ledger and the scope
       // journal to `projectRoot()`. Only a session with no state yet derives one.
@@ -292,12 +304,12 @@ export class RoleSession {
   // SDK). The host emits no event for such a session, so the adapter hands over
   // the session and its identity directly. Only a session that has not bound yet
   // accepts one: rebinding would move a live session's registry and ledger.
-  bindSession({ session, role = roleOfAgent(session?.agent), forked = true, root = null } = {}) {
+  bindSession({ session, role = roleOfAgent(session?.agent), forked = true, fissionLane = false, root = null } = {}) {
     if (session === null || session === undefined) return this;
     if (this.#ctx !== null) return this;
     // The session's own view. `agent`, `sessionManager` and the getters a
     // surface reads live on the session itself, so the session IS the context.
-    return this.bind({ ctx: session, role, forked, root });
+    return this.bind({ ctx: session, role, forked, fissionLane, root });
   }
 
   // The session-scoped objects: lanes, worker port, review member, fission.
@@ -398,6 +410,10 @@ export class RoleSession {
         // rather than weakening that refusal.
         agentFor: () => agentForRole(isWorkerRole(this.#role) ? this.#role : ROLE.CODER),
         owner: () => this.name(),
+        // §4.2 steps 2–3: the owner's last delivered assistant text. The caller
+        // IS the owner's own session, so its transcript is readable here; only
+        // a session that exposes no transcript leaves the view empty.
+        view: () => this.#ownerView(),
         // Replacing the present is this session's own control: it aborts its
         // live turn and drops its queue. The wait for the owner to be between
         // turns would be a wait for the call that is asking, so the port does
@@ -409,6 +425,15 @@ export class RoleSession {
         // asks for the live object on every call, so a group admitted after the
         // port was built is still found.
         fission: () => this.#fission,
+        // §4.2 step 4: the group's creation is committed before any lane runs.
+        // One durable line in the session's own journal, so a crash after the
+        // build still leaves the group recoverable.
+        recordFile: () => fissionRecordFile(this.#state.root, this.#state.lineageId),
+        // §4.2 step 7: the completions that settled before this group. The port
+        // takes them when the first lane is built (the same cut compose made)
+        // and delivers/claims them once the group exists.
+        takeCompletions: () => this.#takeFissionPending(),
+        onGroupBuilt: ({ groupId, captured }) => this.#scheduleFissionDelivery(groupId, captured),
         fanout: {
           feedLaneEnd: (args) => feedLaneEndToGroup({ ...args, onEvent: (entry) => this.#noteFission(entry) }),
         },
@@ -424,7 +449,9 @@ export class RoleSession {
       // creator fact (carried by `bindSession`, never re-derived). The generic
       // `Fission` keeps its `origins(owner)` contract untouched, so no other
       // host changes behaviour.
-      origins: () => this.#forked === true,
+      // A fission lane is itself a parallel present: §4.2 refuses a nested
+      // group (`InvalidOrigin`). A `fork`-started worker is the only origin.
+      origins: () => this.#forked === true && this.#fissionLane !== true,
       // The host's own way to start a session: this adapter's roster
       // (`LaneTable`, which creates the worker face, wires the runtime,
       // authorizes the worker and starts its first turn). `canStartWorker()`
@@ -472,8 +499,63 @@ export class RoleSession {
   // had already closed. Silent by default — a working session must not write to
   // its own transcript.
   #noteFission(entry) {
+    // §4.2 step 10: the group converged. The takeover lane's announcement is
+    // the merged result, and the owner becomes the single present again — its
+    // old present was only replaced while the group ran. The result is queued
+    // in the owner's roster so the Manager's `join()` receives it.
+    if (entry?.converged !== null && entry?.converged !== undefined) {
+      const receipt = entry.converged;
+      const result = receipt?.result ?? null;
+      const text = typeof result === "string" ? result : result?.text ?? null;
+      // Restoring is a fact of this session's control surface; a surface that
+      // cannot restore (a test double) simply reports it.
+      const restored = this.#control?.restore?.() ?? null;
+      this.#lanes?.deliver?.(this.name(), {
+        text,
+        agentId: this.name(),
+        role: this.#role,
+        error: result?.error ?? null,
+      });
+      if (process.env.HERDCHESTRA_DEBUG === "1") {
+        console.log("[herd] fission converged", JSON.stringify({ groupId: receipt?.groupId ?? null, restored }));
+      }
+      return;
+    }
     if (process.env.HERDCHESTRA_DEBUG !== "1") return;
     console.log("[herd] fission", JSON.stringify(entry));
+  }
+
+  // §4.2 step 7: deliver each captured completion to every lane once, and claim
+  // it in the group. Compose already broadcast the same completions when the
+  // group became live; the claim is what makes `ConvergenceReady` require every
+  // lane to have received them. The work runs one macrotask after the build
+  // steps so the group is registered in `Fission` first.
+  #scheduleFissionDelivery(groupId, captured) {
+    if (!Array.isArray(captured) || captured.length === 0) return;
+    setTimeout(() => {
+      const fission = this.#fission;
+      const owner = this.name();
+      const group = fission?.groupOf?.(owner) ?? null;
+      if (group === null || group.groupId !== groupId) return;
+      for (const lane of group.lanes) {
+        const record = this.#fissionLanes.get(lane.laneId) ?? null;
+        if (record === null) continue;
+        for (const completion of captured) {
+          const key = completion?.key ?? completion;
+          try {
+            fission.claim(owner, lane.index, key);
+          } catch {
+            // A group that already closed refuses the claim; its terminal
+            // write is the fact that matters, not this late delivery.
+            continue;
+          }
+          const text = typeof completion?.text === "string" ? completion.text : "";
+          if (text.length > 0 && record.lane.settled !== true) {
+            void record.lane.steer(text).catch(() => {});
+          }
+        }
+      }
+    }, 0);
   }
 
   // This session's own roster. `fork` and `join` of one session read exactly
@@ -488,11 +570,13 @@ export class RoleSession {
     // stop. The workers themselves are untouched: one session, one Lane, the
     // successor's.
     if (this.#lanes !== null) this.#lanes.detach();
-    // A rebuild forgets the lanes the previous table held: a `fork` lane that is
-    // still running comes back through the journal, and a group lane comes back
-    // through `#rebuildLaneSessions` below. Keeping the old entries would hand
-    // a finished session to a new lane.
-    this.#laneSessions.clear();
+    // The live sessions are KEPT across a rebuild. The journal says which
+    // workers are still RUNNING, and the rebuilt table adopts exactly those
+    // through `runningSession`; clearing this map first left the adoption
+    // lookup empty, so a journal `RUNNING` entry could never be handed back to
+    // its real turn and `join` waited forever. A finished worker's session is
+    // not adopted (its journal entry is FINISHED), and a later `fork` of the
+    // same name overwrites the entry.
     // The roster is DURABLE. A worker is a session that outlives the adapter
     // that started it (a plugin reload, a restart, a second extension
     // instance), so the facts `join` decides on live in
@@ -505,7 +589,7 @@ export class RoleSession {
       this.#state === null
         ? null
         : new WorkerRoster({ file: workerRosterFile(this.#state.root, this.#state.sessionId) });
-    return new LaneTable({
+    const table = new LaneTable({
       api: this.#api,
       extensionPaths: [adapterEntry()],
       parentAgentId: ctx?.agent?.id ?? null,
@@ -524,7 +608,55 @@ export class RoleSession {
       // `toolNames` and let the host decide the face.
       toolNamesFor: (laneRole) => (laneRole === ROLE.MANAGER ? [...MANAGER_TOOLS] : [...WORKER_LANE_TOOLS]),
       ...(this.#laneTools === null ? {} : this.#laneTools),
+      // A worker's turn that ends while no group exists is a step-7
+      // completion: the next fission broadcasts it to every lane. The live
+      // `Fission` captures it, and this session keeps a copy so the port can
+      // deliver and claim it once the group is registered.
+      onArrive: (result) => {
+        this.#fissionPending.push(result);
+        // The same bound compose keeps: a session that never fissions must not
+        // grow a queue of every worker turn it ever ran.
+        if (this.#fissionPending.length > 256) this.#fissionPending.splice(0, this.#fissionPending.length - 256);
+        void this.#fission?.settled?.(result);
+      },
     });
+    return table;
+  }
+
+  // The pre-fission completions this session has seen but not yet delivered to
+  // a group. `fissionPort.buildLane` takes them when a group's first lane is
+  // built, which is the same cut compose made when it captured its own list.
+  #takeFissionPending() {
+    const pending = this.#fissionPending;
+    this.#fissionPending = [];
+    return pending;
+  }
+
+  // The owner's last delivered assistant text, or null when its transcript
+  // exposes none. §4.2 steps 2–3 give every lane the owner's view; the caller
+  // here is the owner's own session, so reading its own entries is not reading
+  // a foreign transcript. Only assistant TEXT is a delivered view: a tool call
+  // or thinking block is not what the owner said.
+  #ownerView() {
+    const entries = this.#sessionManagerEntries();
+    if (entries === null) return null;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      const message = entry?.type === "message" ? entry.message : entry;
+      if (message === null || typeof message !== "object" || message.role !== "assistant") continue;
+      const content = message.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter((part) => part?.type === "text" && typeof part.text === "string")
+                .map((part) => part.text)
+                .join("")
+            : "";
+      if (text.length > 0) return text;
+    }
+    return null;
   }
 
   // The live sessions of the fission groups this process still holds, by lane
@@ -588,7 +720,11 @@ export class RoleSession {
   refreshContext(ctx) {
     if (ctx === null || ctx === undefined || typeof ctx !== "object") return this;
     this.#ctx = ctx;
-    this.#control = new SessionControl(ctx, { state: this.#state });
+    // The wrapper is REBOUND, never replaced: the fission port and the ask
+    // path hold this object, and a new instance would leave them reading the
+    // `session_start` context's `abort`/`isIdle` forever.
+    if (this.#control !== null && typeof this.#control?.attach === "function") this.#control.attach(ctx);
+    else this.#control = new SessionControl(ctx, { state: this.#state });
     // `binding` carries the same context for the ports that ask it for the host
     // dialog; refreshing it keeps `ask` on the live UI.
     if (this.#binding !== null && typeof this.#binding.refresh === "function") this.#binding.refresh(ctx);
@@ -668,12 +804,16 @@ export class RoleSession {
       turnId,
       nudged: this.#nudged,
     });
-    // The question belongs to the wait it opened: once this turn's end has been
-    // judged as the legal wait, the next stop must earn its own exit.
-    if (decision.stopAllowed === true && decision.reason === "ask-s1") this.#state?.clearAskedInS1?.();
-    // `booked` is true only for the call that decided this turn, so a repeat of
-    // the same turn is answered without a second nudge.
-    if (decision.booked === true) this.#nudged.book(decision.turnId);
+    // The question belongs to the turn that asked it, and this evaluation is
+    // that turn's end. It is consumed WHATEVER the verdict: the host may report
+    // the ask's own abort as an operator interrupt (`turn_end` says
+    // "Interrupted by user"), and leaving the marker set then masked the NEXT
+    // stop as another `ask-s1` — the session was never nudged again.
+    //
+    // The turn is booked in the same step, so a re-emitted `agent_end` for the
+    // same turn cannot nudge after a legal stop consumed the marker.
+    this.#nudged.book(decision.turnId);
+    this.#state?.clearAskedInS1?.();
     return decision;
   }
 
@@ -944,6 +1084,20 @@ export class RoleSession {
       // in memory and never written, and a later session read an empty ledger.
       ledgerStore: { save: () => this.#state.saveLedger() },
     });
+    // §2.3: a PROGRAM's bare `review(...)` books the session window through
+    // `ProgramSurface.noteReview` — compose's `ReviewMember` never calls the
+    // port's `review`, so the callback wired there alone never fired. Wrap the
+    // one method that actually closes the window, so the adapter learns of the
+    // round's first accepted review exactly as it does on the session path.
+    const noteReview = surface.noteReview.bind(surface);
+    surface.noteReview = (receipt) => {
+      const before = state.window.open;
+      const answer = noteReview(receipt);
+      if (before === true && state.window.open === false && this.#onReviewAccepted !== null) {
+        this.#onReviewAccepted(receipt);
+      }
+      return answer;
+    };
     // The expiry's park channel (根 §3.3: 一旦到期). `release` settles the parked
     // expression of a program the expiry suspended, so a body blocked on a
     // member answers the park receipt instead of hanging on a request that ran
@@ -956,6 +1110,11 @@ export class RoleSession {
       surface,
       program,
       parks: this.#parks,
+      // §6.1 item 7: the Pair Hint's Idle Hint lists unsettled park handles.
+      // A handle enters the list when its program parks and leaves it when the
+      // resumed body finishes (program-tools attaches the outcome callback).
+      noteParked: () => state.noteParked(name),
+      noteFinished: () => state.noteFinished(name),
       // The host half of §3.3's deadline: the tool races the program against
       // it, and on expiry the controller and every still-active program of the
       // request park together.
@@ -1618,6 +1777,11 @@ export class RoleSession {
     // 根 §2.4 第 1 步: the first empty review is not a review — it is a question,
     // and the operator must get the turn back to answer it. The ledger has
     // already been left where it was; this only ends the turn.
+    //
+    // The fact is recorded BEFORE the abort: `turnExit` reads it when the
+    // aborted turn ends, and an ask whose abort is reported as an operator
+    // interrupt must still be a legal stop rather than a nudge.
+    this.#state?.markAskedInS1?.(question);
     await this.#control.interruptTurn({ reason: `herdchestra: first review asks (${question})` });
     // The caller reads the operator's words when the host's dialog answered
     // in-call, and the whole receipt otherwise: a question that was asked and

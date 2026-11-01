@@ -15,9 +15,15 @@ import { MANAGER_FORBIDDEN_TOOLS, PLAN_FORBIDDEN_TOOLS, TOOL_NAMES, WORKER_HOST_
 // adapter registers but the role does not own is removed even if it is present.
 // `js-review` is the Manager's evaluation face (§8): it is offered while an
 // evaluation is open and removed once the review is accepted.
+//
+// `question` is NOT kept by any role. §2.2 allows an operator question only in
+// Plan's `S1`, and Plan asks with `this.ask`; §2.3 gives the Manager no ask
+// channel at all, and §3.1 gives workers none. The host's `question` tool asks
+// and returns inside one call, bypassing the park, the `interrupt` receipt and
+// the execute-level gates, so no role may see it.
 const KEEP = Object.freeze({
-  manager: Object.freeze([TOOL_NAMES.manager, TOOL_NAMES.review, TOOL_NAMES.fork, TOOL_NAMES.join, "question"]),
-  plan: Object.freeze([TOOL_NAMES.plan, "question"]),
+  manager: Object.freeze([TOOL_NAMES.manager, TOOL_NAMES.review, TOOL_NAMES.fork, TOOL_NAMES.join]),
+  plan: Object.freeze([TOOL_NAMES.plan]),
   coder: Object.freeze([TOOL_NAMES.worker, ...WORKER_HOST_TOOLS]),
   devops: Object.freeze([TOOL_NAMES.worker, ...WORKER_HOST_TOOLS]),
 });
@@ -26,8 +32,14 @@ export const keptTools = (role) => KEEP[role] ?? Object.freeze([]);
 
 // Delete from `tools` (mutated in place, as the host hook expects) every name
 // this role must not see. Returns the deleted names for a diagnostic.
-export const narrowTools = (tools, role) => {
+//
+// `window` is the Manager's evaluation window (§2.3). It is a GETTER read here,
+// at the request boundary: once this round's review is accepted the window is
+// shut, and the catalog must stop advertising `js-review` instead of offering a
+// face the executor will refuse.
+export const narrowTools = (tools, role, { window = null } = {}) => {
   const kept = new Set(keptTools(role));
+  if (role === "manager" && window !== null && window.open !== true) kept.delete(TOOL_NAMES.review);
   const removed = [];
   for (const name of Object.keys(tools)) {
     if (kept.has(name)) continue;

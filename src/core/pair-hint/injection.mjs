@@ -206,7 +206,7 @@ export class PairHintInjector {
     // A new epoch. The old pair leaves the copy; the new one goes at the new
     // fact's place, or at the end when the new epoch has none yet.
     const rest = withoutPairs(messages, injections);
-    const cut = cutFor(rest, fact.after);
+    const cut = cutFor(rest, fact.after, { clamp: branch });
     const placedFact = fact.at({ after: cut, inserted: cut });
     const placedPair = syntheticMessages({ fact: placedFact, text });
     return {

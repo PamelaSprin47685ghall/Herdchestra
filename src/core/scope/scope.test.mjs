@@ -719,6 +719,67 @@ test("projection: operator messages, pinned members and provider text survive", 
   assert.ok(out.some((item) => item.kind === ITEM.MESSAGE && item.role === "operator"));
 });
 
+test("projection: every historical resetScope call and its paired result survives", () => {
+  const items = [
+    operator("first"),
+    call("write", "r1", { scope: reset("first scope", 2) }),
+    result("write", "r1", { scope: reset("first scope", 2) }),
+    call("cat", "old"),
+    result("cat", "old"),
+    operator("second"),
+    call("write", "r2", { scope: reset("second scope", 3) }),
+    result("write", "r2", { scope: reset("second scope", 3) }),
+    call("write", "r3", { scope: reset("third scope", 4) }),
+    result("write", "r3", { scope: reset("third scope", 4) }),
+    call("cat", "now"),
+    result("cat", "now"),
+  ];
+  const out = projectRequest(items, { resetCallId: "r3" });
+  assert.ok(Array.isArray(out), JSON.stringify(out));
+  const ids = out.map((item) => item.callId).filter((id) => typeof id === "string");
+  // Both older reset beats survive with their paired results; the ordinary old
+  // beat does not. §6.2 names 「历次 `resetScope` 调用及其配对结果」, not only the
+  // newest boundary.
+  assert.deepEqual(ids, ["r1", "r1", "r2", "r2", "r3", "r3", "now", "now"]);
+
+  // A reset named only by its member (an item that carries no annotation) is
+  // kept too: the member name is the settled form.
+  const bare = [
+    call("resetScope", "b1"),
+    result("resetScope", "b1"),
+    call("write", "b2", { scope: reset("next", 2) }),
+    result("write", "b2"),
+  ];
+  const bareOut = projectRequest(bare, { resetCallId: "b2" });
+  assert.deepEqual(
+    bareOut.map((item) => item.callId),
+    ["b1", "b1", "b2", "b2"],
+  );
+
+  // A host may annotate only the call, or only the result. Either way the pair
+  // is kept together; dropping one side would be refused as a disagreement.
+  const callOnly = [
+    call("write", "o1", { scope: reset("old", 2) }),
+    result("write", "o1"),
+    call("write", "o2", { scope: reset("new", 2) }),
+    result("write", "o2"),
+  ];
+  assert.deepEqual(
+    projectRequest(callOnly, { resetCallId: "o2" }).map((item) => item.callId),
+    ["o1", "o1", "o2", "o2"],
+  );
+  const resultOnly = [
+    call("write", "p1"),
+    result("write", "p1", { scope: reset("old", 2) }),
+    call("write", "p2", { scope: reset("new", 2) }),
+    result("write", "p2", { scope: reset("new", 2) }),
+  ];
+  assert.deepEqual(
+    projectRequest(resultOnly, { resetCallId: "p2" }).map((item) => item.callId),
+    ["p1", "p1", "p2", "p2"],
+  );
+});
+
 test("projection: with no reset everything is kept", () => {
   const items = [operator("a"), call("cat", "c1"), result("cat", "c1"), thinking()];
   assert.deepEqual(projectRequest(items), items);
@@ -1008,15 +1069,39 @@ test("invariant: remaining never leaves [0, budget] across random calls", async 
     fc.asyncProperty(fc.array(annotations, { maxLength: 30 }), async (raws) => {
       const scope = new Scope({ sessionId: "s" });
       let turn = 0;
+      let budget = null;
+      let remaining = 0;
       for (const raw of raws) {
         turn += 1;
-        const before = scope.retention;
-        await scope.call({ member: "write", annotation: raw, turnId: turn });
-        const after = scope.retention;
-        if (after.established) {
-          assert.ok(after.remaining >= 0);
-          assert.ok(after.remaining <= before.remaining || raw.kind === SCOPE_KINDS.RESET);
+        const result = await scope.call({ member: "write", annotation: raw, turnId: turn });
+        // The expected budget moves only on a SETTLED beat: a refused or
+        // confirmed call changes no unit.
+        if (result.ok === true && result.outcome === "settled") {
+          if (raw.kind === SCOPE_KINDS.RESET) {
+            budget = raw.newScopeRetentionBudget;
+            remaining = budget;
+          } else if (raw.kind === SCOPE_KINDS.KEEP) {
+            // Exactly one unit, floored at zero: a spent budget stays spent.
+            remaining = Math.max(0, remaining - 1);
+          }
+          // `removeLast` and `meToo` decrement nothing.
         }
+        const after = scope.retention;
+        if (!after.established) {
+          assert.equal(budget, null, "no reset has settled, so no budget exists");
+          continue;
+        }
+        assert.notEqual(budget, null, "an established budget comes from a settled reset");
+        assert.ok(after.remaining >= 0, `remaining ${after.remaining} is negative`);
+        assert.ok(
+          after.remaining <= budget,
+          `remaining ${after.remaining} exceeds the budget ${budget}`,
+        );
+        assert.equal(
+          after.remaining,
+          remaining,
+          `remaining drifted after a ${raw.kind} call`,
+        );
       }
     }),
     { ...fcRuns(100) },

@@ -27,17 +27,25 @@ export class TaskPort {
   #agentFor;
   #snapshot;
   #depth;
+  #sessions;
 
   // `lanes` is the worker roster (`lane.mjs` `LaneTable`); `agentFor(role)`
   // maps a worker's declared role to the host agent definition that runs it —
   // the argument is a ROLE, never a worker name. `snapshot()` reads
   // `ctx.getAsyncJobSnapshot()`; the default reads nothing, so a port built
   // without a host simply finds no finished job.
-  constructor({ lanes, sleep, agentFor, snapshot = () => null, depth = null }) {
+  constructor({ lanes, sleep, agentFor, snapshot = () => null, depth = null, sessions = null }) {
     this.#lanes = lanes;
     this.#sleep = sleep;
     this.#agentFor = agentFor;
     this.#snapshot = snapshot;
+    // The live sessions of the workers this process started, by name. The
+    // session's `LaneTable` rebuild adopts a journal `RUNNING` worker through
+    // this map, so a reload keeps waiting on the real turn instead of on a
+    // `settle` that belongs to the process which ended. The map is shared with
+    // the surface by reference; a fork records into it as soon as the lane
+    // starts.
+    this.#sessions = sessions instanceof Map ? sessions : null;
     // The depth a child of the CALLING session must carry: that session's own
     // depth plus one (`surface.mjs` `#laneDepth`). `null` leaves the table's
     // own default in place, which is what a table built for one fixed depth
@@ -112,6 +120,7 @@ export class TaskPort {
       ...(typeof depth === "number" ? { depth } : {}),
     });
     if (started.ok === true) {
+      this.#sessions?.set(name, started.lane.session);
       // The lane is in this roster from the moment it started. A `join` of the
       // SAME session therefore always has something to wait on — there is no
       // window between the fork receipt and the lane's first event in which the

@@ -273,7 +273,6 @@ const relayFailureSegment = (failure) =>
 export const createBeforeAgentStartHandler = ({
   role,
   onTurn = null,
-  onEvaluationStart = null,
   // Plan's draft, resolved per turn: `{path}` when the directory was prepared,
   // `{path, failure: {code, detail}}` when it could not be. Spec §6 says the
   // system names the draft path to the model; without this the model has a
@@ -286,15 +285,8 @@ export const createBeforeAgentStartHandler = ({
 }) => {
   return async () => {
     if (typeof onTurn === "function") onTurn();
-    // Spec §2.3: a Manager request opens an evaluation round, which may make
-    // the read-only review face visible. Awaited because the model must see the
-    // new set before it writes the request this hook is preparing.
-    //
-    // §7.3 warns that `setActiveTools` here makes the host re-run policy
-    // preparation; the caller narrows only when the phase actually changes (once
-    // per round, not per request) and its prompt is a pure function of the role,
-    // which is what that re-run requires.
-    if (typeof onEvaluationStart === "function") await onEvaluationStart();
+    // No `setActiveTools` here, ever: root §7.3 makes it re-run policy
+    // preparation. §2.3's evaluation round opens at `turn_start` instead.
     // §5: Plan is outside the three-file projection, and `systemPromptFor`
     // refuses it by design. Its prompt is its own role segment.
     const base = role === ROLE.PLAN ? PLAN_PROMPT : systemPromptFor(role);
@@ -721,6 +713,11 @@ export const createContextHandler = ({
           answeredItems: scopeAnswered,
           projectedBy: scopeAnswer,
           filtered: current,
+          // The fact is computed from the messages the host handed over, not
+          // from `current`: the barrier may have stripped the host's own
+          // developer/agent reminder, and re-deriving it from the fenced copy
+          // would treat a title request as a main turn (the 2026-11-01 drift).
+          ephemeral: side,
         });
         if (Array.isArray(projected)) current = projected;
         else {

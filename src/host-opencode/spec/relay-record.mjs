@@ -146,6 +146,16 @@ export const relayRecord = ({
   successor,
   tenure,
   milestone,
+  // Which ledger side the successor continues (§2.4 第 3 步). A Plan's relay
+  // starts a Plan successor, a Manager's a Manager one; the side decides the
+  // successor's agent and the milestone list its record's `milestone` belongs
+  // to, so it is a committed fact of the record rather than a caller's memory.
+  kind = "manager",
+  // A Plan's saved draft (§2.2) travels with the side: the successor writes and
+  // reads the SAME file the predecessor did, or the hand-off would look for a
+  // draft nobody wrote.
+  draft = null,
+  draftRoot = null,
   notice = SUCCESSION_NOTICE,
   operatorInput = null,
   roster = [],
@@ -160,14 +170,21 @@ export const relayRecord = ({
 }) => {
   if (typeof sessionID !== "string" || sessionID.length === 0) throw new TypeError("a relay record needs a session id");
   if (typeof successor !== "string" || successor.length === 0) throw new TypeError("a relay record needs a successor");
+  const side = kind === "plan" ? "plan" : "manager";
   return {
     v: RELAY_RECORD_VERSION,
+    kind: side,
     sessionID,
     incumbent,
     successor,
     inheritFrom: incumbent,
     tenure,
     milestone,
+    // A Plan's draft is one persistent product (§2.2): the file's name under
+    // the predecessor's workspace is the fact a successor needs. A Manager has
+    // no draft, so the fields are absent rather than null.
+    ...(side === "plan" && typeof draft === "string" && draft.length > 0 ? { draft } : {}),
+    ...(side === "plan" && typeof draftRoot === "string" && draftRoot.length > 0 ? { draftRoot } : {}),
     retired: true,
     barrier: true,
     notice: typeof notice === "string" && notice.length > 0 ? notice : SUCCESSION_NOTICE,
@@ -298,11 +315,17 @@ export const recoverRelay = (file) => {
   const record = readRelay(file);
   if (record === null) return { kind: "none" };
   if (record.corrupt === true) return { kind: "corrupt", reason: record.reason, detail: record.detail ?? null, record };
-  // A Plan hand-off retires nobody, so it has no gates to enforce and no brief
-  // to re-deliver: the Manager it started already holds the draft. It is `done`
-  // for the same reason a relay's `sent` record is: there is nothing left to do
-  // but let the barrier carry the operator's words into the request.
-  if (record.kind === "plan-handoff") return { kind: "done", record };
+  // A Plan hand-off retires nobody, so it has no gates to enforce. Its delivery
+  // is still a fact with two phases: `sent` means the Manager holds the draft,
+  // and anything earlier means the record landed but the draft was never
+  // confirmed. That record is `resume` — the same brief id is delivered again,
+  // and the host reconciles the duplicate — or `undeliverable` when the host
+  // cannot reconcile one at all.
+  if (record.kind === "plan-handoff") {
+    if (record.phase === RELAY_PHASES.SENT) return { kind: "done", record };
+    if (record.briefId === null || record.briefId === undefined) return { kind: "undeliverable", record };
+    return { kind: "resume", record };
+  }
   // Before the delivery question: a successor that starts while its predecessor
   // can still act is worse than a successor that never starts.
   if (!enforceable(record)) return { kind: "unenforceable", record };

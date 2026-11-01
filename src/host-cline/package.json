@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "SEE LICENSE IN ../../LICENSE",
-  "description": "Herdchestra adapter for Cline: js-manager / js-worker / js-review / fork / join as a Cline plugin. Shipped inside the herdchestra package; not published on its own, because its modules import ../core and ../compose and only resolve inside the root tree.",
+  "description": "Herdchestra adapter for Cline: js-manager / js-worker / js-plan / js-review / fork / join as a Cline plugin. Shipped inside the herdchestra package; not published on its own, because its modules import ../core and ../compose and only resolve inside the root tree.",
   "main": "./index.js",
   "exports": {
     ".": "./index.js"

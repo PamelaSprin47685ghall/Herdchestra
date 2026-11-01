@@ -33,120 +33,7 @@ import {
   verifiedCompletion,
 } from "./nudge.mjs";
 import { fcRuns } from "../core/test-runs.mjs";
-
-// Whether `text` appears in a CUE rendering of `text` (§6.3). CUE is the
-// contract for what the model reads, so the obligation must survive the
-// encoding. The renderer's only alteration is the literal around a string: a
-// fenced inline literal (`#*"…"#*`) writes `\`, CR and NUL as `\` + the
-// literal's own `#` run + the character, and a block indents its body. This
-// decoder reads those forms back byte for byte. A single-pass scan, not a
-// chain of replaces: a literal `#` may sit right before an escaped backslash,
-// and a replace pass that treats that `#` as an escape start loses the byte.
-const decodeCueBody = (body, fence) => {
-  const escape = `\\${fence}`;
-  let out = "";
-  for (let i = 0; i < body.length; ) {
-    if (body.startsWith(escape, i)) {
-      const at = i + escape.length;
-      const next = body[at];
-      if (next === "\\") {
-        out += "\\";
-        i = at + 1;
-        continue;
-      }
-      if (next === "n") {
-        out += "\n";
-        i = at + 1;
-        continue;
-      }
-      if (next === "r") {
-        out += "\r";
-        i = at + 1;
-        continue;
-      }
-      if (body.startsWith("u0000", at)) {
-        out += "\0";
-        i = at + 5;
-        continue;
-      }
-    }
-    out += body[i];
-    i += 1;
-  }
-  return out;
-};
-
-// The text inside the CUE literals this renderer emits. A fenced inline
-// literal is `#*"…"#*`; a block is `#*"""` … `"""#*` with its body indented.
-// Plain text and unfenced literals stay as they are.
-const cueDecoded = (text) => {
-  let out = "";
-  for (let i = 0; i < text.length; ) {
-    let hashes = 0;
-    while (text[i + hashes] === "#") hashes += 1;
-    const fence = "#".repeat(hashes);
-    if (hashes === 0) {
-      // An unfenced literal is `"…"` with the standard escapes. Skip over it,
-      // so a `#` just before its closing quote is not read as a fence.
-      if (text[i] === '"') {
-        let end = i + 1;
-        while (end < text.length) {
-          if (text[end] === "\\") end += 2;
-          else if (text[end] === '"') {
-            end += 1;
-            break;
-          } else end += 1;
-        }
-        out += text.slice(i, end);
-        i = end;
-        continue;
-      }
-      out += text[i];
-      i += 1;
-      continue;
-    }
-    if (text[i + hashes] !== '"') {
-      out += text[i];
-      i += 1;
-      continue;
-    }
-    const open = i + hashes;
-    if (text.startsWith('"""', open)) {
-      const close = `"""${fence}`;
-      const end = text.indexOf(close, open + 3);
-      if (end === -1) {
-        out += text.slice(i);
-        break;
-      }
-      const lines = text.slice(open + 3, end).split("\n");
-      // The opener ends its line; the closer's indentation is the last line.
-      const indent = lines.pop() ?? "";
-      if (lines[0] === "") lines.shift();
-      const body = lines.map((line) => (line.startsWith(indent) ? line.slice(indent.length) : line)).join("\n");
-      out += decodeCueBody(body, fence);
-      i = end + close.length;
-      continue;
-    }
-    const close = `"${fence}`;
-    const end = text.indexOf(close, open + 1);
-    if (end === -1) {
-      out += text.slice(i);
-      break;
-    }
-    out += decodeCueBody(text.slice(open + 1, end), fence);
-    i = end + close.length;
-  }
-  return out.replace(/\s+/g, " ").trim();
-};
-// The raw bytes compared against the decoded rendering: only whitespace is
-// normalised, because the rendering's own line breaks and indentation are not
-// part of the obligation.
-const cueNormalized = (text) => text.replace(/\s+/g, " ").trim();
-const cueContains = (rendered, text) => {
-  const want = cueNormalized(text);
-  if (want.length === 0) return true;
-  return cueDecoded(rendered).includes(want);
-};
+import { cueScalar } from "../core/cue.mjs";
 
 // The program these surfaces run. It is never executed here: the tests read the
 // members the face offers, which is where §2.2's rules live.
@@ -214,10 +101,15 @@ const milestoneArb = fc.oneof(
 const obligationArb = fc
   .array(
     fc.record({
-      // A real ledger key is a non-empty identifier the model wrote; CUE prints
-      // a bare word as written, so the generator stays on words for the same
-      // reason `validateFindings` demands a non-empty key.
-      key: fc.stringMatching(/^[a-z][a-z0-9-]{0,11}$/),
+      // `validateFindings` accepts any non-empty string, so the generator must
+      // too: quotes, backticks, backslashes, CR/LF, NUL and CJK are reachable
+      // and are interpolated into the nudge as written.
+      key: fc
+        .array(fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789 -_'\"`\\\n\r\0测试"), {
+          minLength: 1,
+          maxLength: 16,
+        })
+        .map((chars) => chars.join("")),
       value: fc.string({ minLength: 1, maxLength: 40 }),
     }),
     { maxLength: 6 },
@@ -256,7 +148,9 @@ test("theorem 1: ask parks and interrupts in Plan S1, and only there", () => {
           assert.equal(surface.surface().ask, undefined);
           return;
         }
-        const allowed = kind === "plan" && milestone === PLAN_MILESTONES[0];
+        // The gate is the ROLE's and the ledger's: only Plan's `S1` allows;
+        // a Manager carrying a plan ledger is still refused.
+        const allowed = role === ROLES.PLAN && kind === "plan" && milestone === PLAN_MILESTONES[0];
         if (allowed) {
           surface.surface().ask(question);
           assert.equal(state.state, "parked");
@@ -309,10 +203,13 @@ test("theorem 2: a user-facing agent never stops on its own", () => {
           askedInTurn && role === "plan" && view.kind === "plan" && view.milestone === PLAN_MILESTONES[0];
         // The exit is the ledger's own: Plan needs 待执行 judged by a tenure
         // after the first, with the hand-off submitted; Manager needs `done`.
+        // Both require an EMPTY ledger: a stop with work still owed is exactly
+        // the exit §2.2/§2.3 forbid.
         const completion =
-          view.kind === "manager"
+          obligations.length === 0 &&
+          (view.kind === "manager"
             ? view.milestone === MANAGER_MILESTONES.at(-1)
-            : view.milestone === PLAN_MILESTONES.at(-1) && handedOff;
+            : view.milestone === PLAN_MILESTONES.at(-1) && handedOff);
         const expected = askExit || completion;
 
         assert.equal(decision.stopAllowed, expected);
@@ -326,8 +223,14 @@ test("theorem 2: a user-facing agent never stops on its own", () => {
         assert.equal(typeof decision.nudge, "string");
         assert.ok(decision.nudge.includes(STANDING_ORDER));
         for (const { key, value } of obligations) {
-          assert.ok(cueContains(decision.nudge, key), `nudge names ${key}`);
-          assert.ok(cueContains(decision.nudge, value), `nudge quotes ${key}'s obligation`);
+          // A key is written raw between backticks, so the exact bytes must be
+          // there; a value is rendered by `cueScalar`, so its exact literal must
+          // be there.
+          assert.ok(decision.nudge.includes(key), `nudge names ${key}`);
+          assert.ok(
+            decision.nudge.includes(cueScalar(String(value))),
+            `nudge quotes ${key}'s obligation`,
+          );
         }
         if (obligations.length === 0) {
           assert.ok(decision.nudge.includes("账本当前为空"));
@@ -428,7 +331,7 @@ test("theorem 5: a natural stop below the exit always produces a nudge", () => {
         assert.equal(decision.stopAllowed, false);
         assert.equal(decision.reason, STOP_REASONS.NUDGE);
         assert.ok(decision.nudge.includes(STANDING_ORDER));
-        for (const { key } of obligations) assert.ok(cueContains(decision.nudge, key), `nudge names ${key}`);
+        for (const { key } of obligations) assert.ok(decision.nudge.includes(key), `nudge names ${key}`);
       },
     ),
     { ...fcRuns(300) },
@@ -488,7 +391,7 @@ test("theorem 3: verified completion and the S1 ask are the only stops", () => {
 
 test("a worker's turn ending is its report, and an in-flight turn has not stopped", () => {
   fc.assert(
-    fc.property(milestoneArb, obligationArb, fc.constantFrom("coder", "devops", "worker", undefined), (view, obligations, role) => {
+    fc.property(milestoneArb, obligationArb, fc.constantFrom("coder", "devops"), (view, obligations, role) => {
       const decision = evaluateTurnExit({ role, ledger: ledgerView(view.kind, view.milestone, obligations) });
       assert.equal(decision.stopAllowed, true);
       assert.equal(decision.reason, STOP_REASONS.NOT_USER_FACING);
@@ -496,6 +399,13 @@ test("a worker's turn ending is its report, and an in-flight turn has not stoppe
     }),
     { ...fcRuns(100) },
   );
+  // An unknown or missing role is NOT a worker: failing open there would
+  // silently disable the nudge for a top-level agent.
+  for (const role of ["worker", "Plan", undefined]) {
+    const decision = evaluateTurnExit({ role, ledger: ledgerView("manager", MANAGER_MILESTONES[0], []) });
+    assert.equal(decision.stopAllowed, false, String(role));
+    assert.equal(decision.reason, STOP_REASONS.NUDGE, String(role));
+  }
   const busy = evaluateTurnExit({
     role: "manager",
     ledger: ledgerView("manager", MANAGER_MILESTONES[0], []),
@@ -504,6 +414,28 @@ test("a worker's turn ending is its report, and an in-flight turn has not stoppe
   assert.equal(busy.stopAllowed, true);
   assert.equal(busy.reason, STOP_REASONS.IN_FLIGHT);
   assert.equal(busy.nudge, null);
+});
+
+test("an exit with open obligations is a nudge, not a completion", () => {
+  const owed = [{ key: "open", value: "still working" }];
+  const done = ledgerView("manager", MANAGER_MILESTONES.at(-1), owed);
+  assert.equal(verifiedCompletion(done, {}), false);
+  const decision = evaluateTurnExit({ role: "manager", ledger: done });
+  assert.equal(decision.stopAllowed, false);
+  assert.equal(decision.reason, STOP_REASONS.NUDGE);
+  assert.ok(decision.nudge.includes("open"));
+
+  const ready = ledgerView("plan", PLAN_MILESTONES.at(-1), owed, { tenure: 1 });
+  assert.equal(verifiedCompletion(ready, { handedOff: true }), false);
+  assert.equal(evaluateTurnExit({ role: "plan", ledger: ready, handedOff: true }).stopAllowed, false);
+});
+
+test("an internal abort type is not an operator interrupt", () => {
+  assert.equal(operatorInterruptOf({ type: "compaction.aborted" }), false);
+  assert.equal(operatorInterruptOf({ type: "session.execution.aborted" }), false);
+  // The shapes are read conjunctively: a record carrying an internal stop
+  // reason beside the operator's cancelled status still names the operator.
+  assert.equal(operatorInterruptOf({ stopReason: "aborted", status: "cancelled" }), true);
 });
 
 test("the first empty review asks the operator in Plan S1 only", () => {

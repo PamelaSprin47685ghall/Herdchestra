@@ -167,7 +167,25 @@ export const programTool = ({
           // A park receipt carries `value` too: the resumed expression's value
           // is the one fact a parked call has already received, and the model
           // must see it under the same name it will see at completion.
-          const parked = receiptObject(receipt);
+          //
+          // §3.3: an `ask` park is the one park that hands the turn back to the
+          // operator. The host's asked receipt carries `interrupt: true`
+          // (`ports.mjs` `askedReceipt`), but the program body is suspended and
+          // this receipt is what the model reads, so the control fact must be
+          // stated here too — otherwise the model sees a park and no reason to
+          // stop.
+          const parked = {
+            ...receiptObject(receipt),
+            ...(site?.reason === "ask" ? { interrupt: true } : {}),
+          };
+          // The parked set is the Pair Hint's handle list (§6.1 item 7): a
+          // handle enters it when the program parks and leaves it when the
+          // resumed body finishes (the outcome callback below).
+          if (typeof built.noteParked === "function") built.noteParked();
+          void run.outcome.then(
+            () => built.noteFinished?.(),
+            () => built.noteFinished?.(),
+          );
           return textResult(present(parked), { result: parked });
         }
         const outcome = first.outcome;
@@ -214,11 +232,12 @@ export const WORKER_DESCRIPTION =
 
 export const PLAN_DESCRIPTION =
   "Run a JavaScript program against the Plan programming face. Members: this.cat, this.write, this.ask, " +
-  "this.devops; primitive: review. " +
+  "this.unpark, this.devops; primitive: review. " +
   "You read and write ONE file — the draft at the path the system gives you — and nothing else in the " +
   "repository. Use this.devops(intent) to have the single DevOps investigate the repo and return its whole " +
   "report; use this.ask(question) to put a question to the operator (the program parks until the answer " +
-  "arrives). The draft is read-only until your first accepted review(this round's findings); after that " +
+  "arrives as this.unpark(name, answer) from a later program). The draft is read-only until your first " +
+  "accepted review(this round's findings); after that " +
   "this.write is allowed. At the final milestone, review([]) hands the saved draft to a Manager. " +
   SPELLING +
   " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run()." +

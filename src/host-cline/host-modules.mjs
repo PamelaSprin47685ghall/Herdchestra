@@ -217,8 +217,11 @@ const resolveOnce = async () => {
       return resolved;
     }
   }
-  resolved = { mod: null, source: null };
-  return resolved;
+  // A failed walk is NOT cached. `resolved` stays null, so the next caller
+  // retries the ladder: one install-time `import` failure (a file an installer
+  // was still writing) must not disable fork, fission and devops for the life
+  // of the process.
+  return { mod: null, source: null };
 };
 
 let inFlight = null;
@@ -229,9 +232,8 @@ const resolveCore = async () => {
   try {
     return await inFlight;
   } finally {
-    // A walk that ended with no SDK is not cached as a permanent failure: the
-    // next caller gets its own attempt, because a transient `import` error (a
-    // file still being written by an installer) must not poison the process.
+    // A walk that ended with no SDK left `resolved` null (see `resolveOnce`), so
+    // the next caller gets its own attempt.
     if (resolved === null) inFlight = null;
   }
 };

@@ -227,6 +227,20 @@ export const applyContextHook = async (event, { state, hint }) => {
   const role = roleOf(event.agent);
   if (role === null) return { event, removed: [], fact: null, notice: null, hint: null };
 
+  // §2.3: the Manager's evaluation round opens at the REQUEST boundary — this
+  // hook — and nowhere else. Opening it from a tool call let a `js-review` call
+  // reopen the round its own accepted review had just shut, so the same turn
+  // could review twice. `beginRound` is idempotent under an open round: the
+  // host may prepare the same request more than once, and only a request that
+  // follows an accepted review advances the round.
+  if (
+    role === "manager" &&
+    requestKind(event) === "main" &&
+    typeof state.windowFor === "function"
+  ) {
+    state.windowFor("manager").beginRound();
+  }
+
   // The turn that just ended is closed first, at the request boundary: every
   // tool call of that turn settled before this hook runs, so a turn whose only
   // annotation was `meToo` is refused here (§6.2). The refusal is a value
@@ -404,7 +418,9 @@ export const applyContextHook = async (event, { state, hint }) => {
 
   // 5-6. The request's own system prompt and catalog.
   event.system = withDirector(event.system, event.agent);
-  const removed = narrowTools(event.tools, role);
+  const removed = narrowTools(event.tools, role, {
+    window: role === "manager" && typeof state.windowFor === "function" ? state.windowFor("manager") : null,
+  });
   // The turn boundary is closed by the plugin after this hook; the copy is the
   // only thing this function decides.
   return { event, removed, fact, notice, hint: hintMode, closeTurn: closed };

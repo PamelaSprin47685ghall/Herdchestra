@@ -56,8 +56,12 @@ import { SURFACE_MEMBERS } from "../compose/program/surface.mjs";
 //             hint from the copy and the next request would present a new
 //             placement — a prefix drift the model never caused.
 //   js-review the Manager's evaluation face (§2.3), not a beat of any Scope.
+//             The TOOL name is what a host call's item carries (`toItems` reads
+//             `toolCall.toolName`), so pinning the tool is what keeps the
+//             evaluation channel across a `resetScope`; the face's member names
+//             are pinned beside it for a host that names the member.
 // The rest is core's default (`assume`, `negotiate`, `askPreviousScope`).
-export const PINNED_MEMBERS = Object.freeze([...DEFAULT_PINNED_MEMBERS, "", ...SURFACE_MEMBERS["js-review"]]);
+export const PINNED_MEMBERS = Object.freeze([...DEFAULT_PINNED_MEMBERS, "", "js-review", ...SURFACE_MEMBERS["js-review"]]);
 
 // Which semantic part a content block is, in either shape the request path can
 // carry: the runtime's `tool-call`/`tool-result` parts, or the provider's
@@ -111,16 +115,24 @@ const readKey = (value, key) => {
 // The runtime's part carries `output`: a bare value (a string, or any value an
 // in-process caller passed) or a tagged `{ type, value }` — `{type:"text"}` for
 // text, `{type:"json"}` for a refusal receipt or a program receipt. The
-// provider block carries its content on `content`. A `{ type: "text", value }`
-// wrapper is not structure: its value IS the model's text, and rendering it as
-// CUE would put quotes around output the tool already wrote as prose.
+// provider block carries its content on `content`.
+//
+// ONLY the host's two tags are envelopes. A bare object is the tool's own
+// result and is rendered whole: a program receipt carries `name`, `state`,
+// `source`, `reason`, `payload` and `value`, and unwrapping it because it
+// happens to have a `value` property stripped the receipt the model is owed
+// (§3.3). A `{ type: "text", value }` wrapper is not structure either: its
+// value IS the model's text, and rendering it as CUE would put quotes around
+// output the tool already wrote as prose.
 const structuredValueOf = (value) => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    // A bare non-string value (an object without the tag) is still structure.
-    return value !== null && typeof value === "object" && readKey(value, "type") === undefined ? value : undefined;
+  if (value === null || value === undefined || typeof value !== "object") return undefined;
+  const tag = readKey(value, "type");
+  if (tag === "text") return undefined;
+  if (tag === "json") {
+    const inner = readKey(value, "value");
+    return inner === undefined ? value : inner;
   }
-  if (readKey(value, "type") === "text") return undefined;
-  return readKey(value, "value") ?? value;
+  return value;
 };
 
 // What the model reads when a structured result cannot be rendered as CUE.
@@ -182,7 +194,10 @@ const toolResultText = (part) => {
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return raw;
     const tag = readKey(parsed, "type");
-    if (tag === undefined) return raw;
+    // Only the host's own two tags are envelopes. A JSON object the TOOL wrote
+    // (a command's stdout `{"type":"event","value":1}`) is the tool's own
+    // bytes: unwrapping it would replace them with one field of it.
+    if (tag !== "text" && tag !== "json") return raw;
     const value = readKey(parsed, "value");
     if (tag === "text") {
       // The host's text envelope, persisted as a string: its value IS the
@@ -226,11 +241,21 @@ const toolResultText = (part) => {
 // recognises and leaves alone, so a projected copy that reaches this function
 // again (a caller re-projecting, a test comparing two passes) is returned as it
 // stands.
+// A result part in the provider's wire shape, whose model-visible text lives on
+// `content` rather than on the runtime's `output`. A mixed `role: "user"`
+// message can carry both kinds, so the part's own keys decide, never the
+// message's role.
+const isProviderResult = (part) => readKey(part, "output") === undefined && readKey(part, "content") !== undefined;
+
 export const toCueToolResults = (messages) => {
   const list = Array.isArray(messages) ? messages : [];
   return list.map((message) => {
     if (message === null || typeof message !== "object") return message;
-    if (!isResultMessage(message) || !Array.isArray(message.content)) return message;
+    // A result part is rewritten wherever it sits. A provider user message that
+    // mixes text and `tool_result` blocks is not a "result message" by
+    // `isResultMessage`'s all-parts test, and skipping it left that result as
+    // raw JSON — invisible to the CUE rule and to Scope's pairing.
+    if (!Array.isArray(message.content) || !message.content.some(isResultPart)) return message;
     let changed = false;
     const content = message.content.map((part) => {
       if (!isResultPart(part)) return part;
@@ -245,7 +270,7 @@ export const toCueToolResults = (messages) => {
       changed = true;
       // The rewrite stays in the message's OWN shape: a provider block keeps
       // `content`, and the runtime's part keeps `output`.
-      if (message.role !== "tool") return { ...part, content: text };
+      if (isProviderResult(part)) return { ...part, content: text };
       return { ...part, output: { type: "text", value: text } };
     });
     return changed ? { ...message, content } : message;
@@ -297,6 +322,32 @@ export const toItems = (messages) => {
       continue;
     }
     if (message.role === "user") {
+      // A provider-shaped user message may mix its own text with `tool_result`
+      // blocks. Each result is a pair Scope must see and CUE must render, and
+      // the text is still a message: reading only the text made the result
+      // invisible, and reading only the results dropped the operator's words.
+      const content = Array.isArray(message.content) ? message.content : [];
+      const results = content.filter(isResultPart);
+      if (results.length > 0) {
+        const hostKind = hostUserMessageKind(message);
+        const text = textOf(content);
+        if (text.trim().length > 0) {
+          // A user message that carries results is a tool-result turn of the
+          // provider's own making, so its text is host context, not the
+          // operator's words: Scope keeps it wherever it sits and never counts
+          // it as a beat, and no `ask` is answered with it.
+          items.push({ kind: "provider", text, source: message, ...(hostKind === null ? {} : { hostKind }) });
+        }
+        for (const part of results) {
+          items.push({
+            kind: "toolResult",
+            member: resultNameOf(part),
+            callId: resultCallIdOf(part),
+            source: message,
+          });
+        }
+        continue;
+      }
       // Root §6.1/§6.2: a user message the HOST wrote (hook context, a
       // compaction summary, a display-only notice) is not the operator's words.
       // Scope keeps provider context wherever it sits and never counts it as a
@@ -367,12 +418,49 @@ export const selectKept = (messages, projectedItems) => {
   //
   // A message whose every item was dropped is still dropped, so an old Scope's
   // beats leave the copy as §6.2 requires.
-  const survivors = list.filter((message) => {
-    if (!kept.has(message)) return false;
-    if (!isResultMessage(message) || !Array.isArray(message.content)) return true;
-    const results = message.content.filter((part) => isResultPart(part) && resultCallIdOf(part) !== undefined);
-    return results.length === 0 || results.some((part) => surviving.has(resultCallIdOf(part)));
-  });
+  //
+  // A result message is judged by the CALL it answers, in both directions. The
+  // provider refuses a result whose call the copy no longer carries AND a call
+  // whose result left, so a result whose call survived is kept even when the
+  // projection dropped it (the assistant message survived for its prose), and a
+  // kept result whose call is gone leaves — with the message's own words, if it
+  // has any.
+  const survivors = [];
+  for (const message of list) {
+    const content = Array.isArray(message.content) ? message.content : null;
+    const resultParts = content === null ? [] : content.filter(isResultPart);
+    if (resultParts.length === 0) {
+      if (kept.has(message)) survivors.push(message);
+      continue;
+    }
+    const answersKeptCall = resultParts.some((part) => {
+      const id = resultCallIdOf(part);
+      return id !== undefined && surviving.has(id);
+    });
+    if (!kept.has(message)) {
+      if (!answersKeptCall) continue;
+      // The projection dropped the message; the call it answers is still in the
+      // copy, so the result half is restored and nothing else is.
+      const parts = content.filter((part) => isResultPart(part) && surviving.has(resultCallIdOf(part)));
+      survivors.push(parts.length === content.length ? message : { ...message, content: parts });
+      continue;
+    }
+    const hasOrphan = resultParts.some((part) => {
+      const id = resultCallIdOf(part);
+      return id !== undefined && !surviving.has(id);
+    });
+    if (!hasOrphan) {
+      survivors.push(message);
+      continue;
+    }
+    const parts = content.filter((part) => {
+      if (!isResultPart(part)) return true;
+      const id = resultCallIdOf(part);
+      return id === undefined || surviving.has(id);
+    });
+    if (parts.length === 0) continue;
+    survivors.push({ ...message, content: parts });
+  }
   // A projection-written message goes where the projection put it: right before
   // the next message it kept.
   for (const item of written) {
@@ -553,8 +641,17 @@ export const lastOperatorText = (messages) => {
   for (let index = list.length - 1; index >= 0; index -= 1) {
     if (list[index]?.role !== "user") continue;
     if (hostUserMessageKind(list[index]) !== null) continue;
+    // A user message that carries a tool result is the host's turn, not the
+    // operator's — whether it is all results or a provider message mixing text
+    // and results. A trailing tool result must not hide the answer above it.
+    const content = Array.isArray(list[index].content) ? list[index].content : null;
+    if (content !== null && content.some(isResultPart)) continue;
     const words = textOf(list[index].content).trim();
-    return words.length > 0 ? words : null;
+    // An image-only or empty user message is not an answer either. The scan
+    // continues to the operator's earlier words instead of answering the
+    // question with nothing.
+    if (words.length === 0) continue;
+    return words;
   }
   return null;
 };

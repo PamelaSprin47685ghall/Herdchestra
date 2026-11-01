@@ -40,14 +40,14 @@
 `program/surface.mjs` 的 `SURFACE_MEMBERS` 是唯一成员表：
 
 - `js-manager`：`park`、`unpark`、`fork`、`join`、`review`、`ask`、`negotiate`、`askPreviousScope`。没有 `cat`/`stat`/`ls`/`write`/`mkdir`/`rm`/`mv`——Manager 连读都没有；读的唯一例外是独立的 `js-review`。也没有 `call`：Manager NEVER run（§2.1）。也没有 `fission`：裂变只属于 `fork` 启动的 worker（§4.2）。
-- `js-worker`：`cat`、`stat`、`ls`、`write`、`mkdir`、`rm`、`mv`、`where`、`whereAll`、`park`、`unpark`、`call`、`fission`、`fork`、`join`、`negotiate`、`askPreviousScope`。coder 的 bash 禁令只在提示词里，`call` 照样在面里。没有 `ask`：提问通道只属于顶层程序（§3.1、§3.3 例 7）；也没有 `review`。根 §3.1 把 `fork`/`join` 同时给了 `js-worker` 与 `js-manager`：worker 的 `fork` 落在**它自己的 roster**（§4.1），与 `fission` 是两件事，能否派工由 brief 说明。
+- `js-worker`：`cat`、`stat`、`ls`、`write`、`mkdir`、`rm`、`mv`、`where`、`whereAll`、`park`、`unpark`、`call`、`fission`、`fork`、`join`、`negotiate`、`askPreviousScope`。coder 的 bash 禁令只在提示词里，`call` 照样在面里。没有 `ask`：根 §3.1 在 `js-worker` 一列明写「子代理无此通道」，提问只属于顶层程序（§3.3 例 7）；也没有 `review`。根 §3.1 把 `fork`/`join` 同时给了 `js-worker` 与 `js-manager`：worker 的 `fork` 落在**它自己的 roster**（§4.1），与 `fission` 是两件事，能否派工由 brief 说明。
 - `negotiate`、`askPreviousScope`：§6.2 的两个豁免成员，放在**所有记账的面上**（`js-manager` 与 `js-worker`），因为报的就是这些面要花的额度。它们不进 `js-review`（只读评估不是任何 Scope 的一拍），也不进 `plan`（Plan 没有 Scope）。见 §3 的「同步快照查询」。
 - `js-review`：`cat`、`stat`、`ls`、`where`、`whereAll`，只读；由 `ProgramSurface.reviewSurface()` 单独给出，不混进 `js-manager`。
   它只在评估窗口开着时存在（根 §2.3）：`reviewSurface()` 对关闭的窗口抛 `REVIEW_WINDOW_CLOSED`，对非 Manager 角色同样抛。
-  窗口是会话的 `ReviewWindow`（core），经构造参数 `window` 传入；surface 在构造时调一次 `beginRound()`（同一轮内幂等），
+  窗口是会话的 `ReviewWindow`（core），经构造参数 `window` 传入；surface 只在**没有会话窗口**（自带窗口即本次程序自己的请求）或窗口的 `round === 0`（从未开过）时调 `beginRound()`。会话窗口的开轮属于宿主的请求边界：同一回合里受理过一次 review 之后，第二个 `js-manager` 程序不得把刚关上的评估窗口重新打开（§2.3）。
   受理一次 review 后 `noteReview(receipt)` 关闭窗口——被拒的 review 不关。适配器另有自己的闸门，但这一层独立成立：
   宿主漏掉闸门也读不到关着的窗口。
-- `plan`：`cat`、`write`、`park`、`unpark`、`ask`、`devops`、`review`。`ask` 就是 `park` + `interrupt`（根 §2.2、§3.3 例 7），所以 `plan` 必须同时拥有 `unpark`：用户答复后由 AI 在新程序里 `this.unpark(name, answer)` 恢复原挂起点。`ask` 只在 `S1` 阶段可用，其余阶段调用抛 `ASK_FORBIDDEN_OUTSIDE_S1`。
+- `plan`：`cat`、`write`、`unpark`、`ask`、`devops`、`review`。没有单独的 `park`（根 §3.1 在 Plan 一列标 `-`）：`ask` 自己经 `parkChannel` 挂起程序并加上 `interrupt`（根 §2.2、§3.3 例 7），所以 `plan` 必须同时拥有 `unpark`：用户答复后由 AI 在新程序里 `this.unpark(name, answer)` 恢复原挂起点。`ask` 只在 `S1` 阶段可用，其余阶段调用抛 `ASK_FORBIDDEN_OUTSIDE_S1`。
 - Plan 的 `write` 在本任第一次 review 之前被拒（`DRAFT_READ_ONLY`，根 §2.2）；判据是 core 的 `draftWritable(ledger)`，读的就是这个 surface 自己的台账。继任由 `openSuccessor()` 把 `reviewCount` 归零，于是新任期重新只读。`review` 必须先在本地台账记账再交端口执行副作用，否则 `write` 查的是另一份台账，解锁永远不会发生。
 
 成员实现：
@@ -60,7 +60,8 @@
 - **`call` 的拒绝次序照根 §3.3：先准入，后接线。** 已结束或已挂起的程序先以自身状态被拒（`is parked` / `is completed`），再是 `draining`、`running another command`，最后才是「没有命令端口」。理由是调用方要据此决定下一步：程序挂起时它必须去恢复，而不是重试或怀疑接线；先说「没有命令端口」会把真正可行动的事实藏起来。拒绝不改变任何状态，挂起站点仍在，恢复照旧可用。
 - `write` 只保证单次调用的原子替换；多次 `write` 之间没有事务、没有锁、没有校验，同一路径写两次就是后一次获胜（§3.2）。「每路径只写一次」是程序自己的纪律（§3.4 的例子），组合层不拦。
 - `park` 返回九字段回执；同一程序第二次 park 被拒。`ask` 用同一个通道 park，`reason` 为 `ask`、`payload` 为 `{ question }`，回执另带不可枚举的 `interrupt: true`：宿主必须结束本轮回合，把控制权交还用户。
-- **`ask` 的阶段门禁。** 成员在 `js-manager` 与 `plan` 两面上都存在，但只有 `this.ledger` 是 `plan` 且里程碑为 `S1` 时才允许（core `askAllowed(ledger)`）。其余情形一律抛 `ComposeError("ASK_FORBIDDEN_OUTSIDE_S1", ...)`，程序**不挂起**：万象术无人值守，只有 Plan 的第一阶段可以向人提问。成员保留而不删，是为了让越界调用读到具名拒绝，而不是一个 `TypeError`。
+- **`ask` 的阶段门禁。** 成员只在 `js-manager` 与 `plan` 两面上存在（`js-worker` 没有此通道，根 §3.1）；且只有角色是 Plan 且 `this.ledger` 的里程碑为 `S1` 时才允许（core `askAllowed(ledger)`）。门禁先于参数校验：`this.ask("")` 在越界角色或阶段也一律抛 `ComposeError("ASK_FORBIDDEN_OUTSIDE_S1", ...)`，程序**不挂起**。万象术无人值守，只有 Plan 的第一阶段可以向人提问。成员保留而不删，是为了让越界调用读到具名拒绝，而不是一个 `TypeError`。
+- **`devops` 单飞。** 同一任务同时至多一个未决 DevOps（根 §2.2）。surface 自己持一个在途标记：第一个 `this.devops(intent)` 未结清时，第二个调用抛 `ComposeError("DEVOPS_IN_FLIGHT", ...)`；第一个调查记录原样返回，组合层不做二次摘要。
 - 已结束或已挂起的程序不再接受新表达式（core 的 `acceptsExpressions` getter）。
 - **回执的形状只有九个字段。** `receipt()` 与 `finalReceipt()` 用 core 的 `withExtra` 把 `value`、`result` 挂成不可枚举键，`Object.keys`、展开与深比较都只看到九个字段（§3.3）。可枚举的第十个键会让"形状"随便利字段漂移。
 - 期限：`ProgramSurface` 构造时按 `intent` 一次性固定 `Deadline`（`intent` 缺省为 null，即无期限），
@@ -77,10 +78,11 @@
 
 ## 4 fission（根 §4.2）
 
-- 准入顺序：`InvalidOrigin` → `AlreadyActive` → `TooFewLanes` → `EmptyLanePrompt`（带 `index`）→ `CapacityExceeded`。任一项不满足都返回 `{ok:false, rejection}`，不创建任何 lane。
+- 准入顺序：`InvalidOrigin` → `AlreadyActive`（仅当该 owner 还有一个**活动**组）→ `ConflictingGroup`（同一 owner 的建组尚未结束）→ `TooFewLanes` → `EmptyLanePrompt`（带 `index`）→ `CapacityExceeded`。任一项不满足都返回 `{ok:false, rejection}`，不创建任何 lane。`converged`/`failed` 是终局而不是活动：owner 在组收敛或失败后可以再次 `this.fission`，旧组记录保留到新组成功替换它为止。
 - **建组步骤没有自己的时间上限。** 时间只有一个来源：准入时按 `intent` 字节数一次性定下的请求期限（根 §3.3）。组合层不发明第二只钟；端口不回答就是宿主不回答，组合层如实等待并如实报告，不把自定的超时当成端口的失败。
 - 组 id 一经发出就不再复用（`#ids`）；`DuplicateOwnerActive` 在 `AlreadyActive` 之后、建组之前判定，绝不以 `ConflictingGroup` 冒充。
 - 通过后依次：取 owner 视图 → 逐条 `createLane` → `persistGroup` → 逐条 `startLane` → `replacePresent`。任何一步失败都调 `abortLanes({groupId, laneIds})`，不登记组，不留部分组。步骤次序照根 §4.2 的 4→6：持久提交、启动、替换；组的内部状态仍是 `started`（全部 lane 启动）→ `replaced`（替换完成）。
+- **组在 `startLane` 之前就对 `settle`/`deliver`/`#take` 可见。** 一步式宿主的 lane 就是它的第一回合，可能在 `createLane`/`startLane` 内同步结束；建组中的组放在 `#buildingGroups` 里，投递因此不会丢。成功后移入 `#groups`，回滚时删除。回滚还会把建组前捕获的完成事实去重后放回 `#pending` 队首：下一次建组继承它们，而不是静默地少算条件 B。
 - **失败有两种形状，同样算失败**：端口抛出异常，或端口返回 `{ok:false, reason}`（`portRefused`）。后者被包成带 `step` 与 `receipt` 的错误，走同一条回滚。回滚自身再失败时，原错误带上 `abortFailure`，不被回滚错误顶替。
 - `ownerView` 必须是字符串或 `null`（空视图合法）；其他类型在创建任何 lane 之前以 `INVALID_ARGUMENT` 失败，`abortLanes` 照样收到空 lane 表。
 - **总泳道数 `lane_count` 是组合层的事实，随 lane 一起交给宿主（根 §4.2 第 3 步）。** `group.mjs` 的 `lanesOf(groupId, prompts)` 只调用一次：它按 `0..n−1` 建 lane，并把 `laneCount = prompts.length` 写进**每条** lane。`createLane` 与 `persistGroup` 收到的都是这些 lane，所以同一组的每条 lane 印出同一个数。`laneCount` 绝不是 `index` 或 `index + 1`：那会让同一段身份声明在每条 lane 里自相矛盾。宿主只读 `lane.laneCount`，不数 lane 表、不从下标推。
@@ -89,11 +91,14 @@
 - 只有接管 lane（序号 n−1）可以宣布收敛；`converged` 与 `failed` 一次性，同值重复是幂等保持，异值报 `TERMINAL_ALREADY_SET`。
 - 接管 lane 的「交出」由宣布本身完成：它在宣布前可以尚未上报自己的交付，宣布仍是唯一的收束动作；其余每条 lane 的交付与每条广播的认领仍缺一不可。被拒绝的宣布不留下痕迹，宣布失败时该 lane 仍算未交出。
 - 进入 `converged` / `failed` 之后不再接受 `deliver`、`broadcast`、`claimBroadcast`（`TERMINAL_ALREADY_SET`）：合并次序由终局写定，迟到的投递不得让它随到达次序变化。
-- 合并次序恒为 `0..n−1`（`mergeOrder()` 不接受参数，结果是拓扑，不是调用方给的清单）。后继从当前 lane 顺环取第一个未交出者（`successorOf`）：已交出的 lane 被跳过；全部 lane 都已交出时没有「第一个未交出者」，返回 `null`。越界下标一律 `INVALID_ARGUMENT`。
+- 合并次序恒为 `0..n−1`（`mergeOrder()` 不接受参数，结果是拓扑，不是调用方给的清单）。后继从当前 lane 顺环取第一个**其他**未交出者（`successorOf`）：已交出的 lane 与调用者自己都被跳过；没有其他未交出者时返回 `null`。越界下标一律 `INVALID_ARGUMENT`。
+- 广播完成的键在建组时归一化一次：`key ?? name ?? id`。认领与 `ConvergenceReady` 读同一个键，所以宿主不带 `key`、只带 `name`/`id` 的完成也能被认领。
 
 ## 5 review 与接力（根 §2.3、§2.4）
 
 `relay/review.mjs` 不重算台账：台账是 core 的 `ReviewLedger`。组合层只做三件宿主必须做的事，并把结果原样并入回执：
+
+**一个 `ProgramSurface` 只建一个 `ReviewMember`。** 台账先判决、宿主后动手，两条并发的 review 会读到同一份空台账；复用同一个成员的队列，才让「同一 `ReviewMember` 的 review 串行执行」这句话有对象可指。队列空闲且本次 review 不需要宿主副作用时（`recorded`、`nextReview`、`confirm`、`closed`，或台账的同步拒绝），`ReviewMember.review` **直接返回回执**，于是 `const r = review(f)` 与 `await review(f)` 读到同一份字段；只有 `relay`、`handoff`、`askUser` 这三种要调端口或挂起程序的判决返回 Promise。
 
 - `relay`：调 `port.handOver({retire, openSuccessor, barrier})`；只有 `handOverCompleted(done)` 为真才 `ledger.openSuccessor()`。
   该判定要求 `ok === true` **且** `retired === true`、`barrier === true`、`successor` 非空——
@@ -115,7 +120,7 @@
 | `fork` | `fork(name, brief, role)`：`role` 是组合层从 brief 显式声明解析出的结果（`program/role-brief.mjs`），宿主不得再推导或补默认值 |
 | `join` | `join()` |
 | `ask` | `ask(question, { program, toolCallId })`：记录问题并返回 `{ ok: true, asked: true, question, program, interrupt: true }`；宿主有同步对话框时另带 `answer`。**任何宿主都不得以「没有通道」拒绝**——挂起与中断本身就是通道 |
-| `fission` | `ownerView(owner)`、`createLane(lane)`、`persistGroup(group)`、`startLane(laneId)`、`replacePresent(group)`、`abortLanes({groupId, laneIds})` |
+| `fission` | `ownerView(owner)`、`buildLane(lane)` 或 `createLane(lane)`、`persistGroup(group)`、`startLane(laneId)`、`replacePresent(group)`、`abortLanes({groupId, laneIds})` |
 | `relay` | `handOver(decision)`、`startManager(draft)`、`askOperator(question)` |
 | `devops` | `investigate(intent)` |
 | `draft` | `read()`：Plan 已保存的底稿字节，缺失时返回空串 |
@@ -123,11 +128,11 @@
 | `scope` | `ask(member)`：同步快照（`negotiate` / `askPreviousScope`），返回核心快照或拒收值，**不是 Promise** |
 | `control` | `unpark({ controllerId, name, value, capabilities, deadline })`：`ProgramSurface.unpark` 调它；回执是目标程序恢复后的九字段回执，`value` 为挂起表达式收到的值（`HOST-PORTS.md`「control」） |
 
-`fission` 端口的六个方法是**建组步骤**，由组合层（`Fission`）按顺序调用；宿主侧把它们
+`fission` 端口的建组方法是**建组步骤**，由组合层（`Fission`）按顺序调用；宿主侧把它们
 接成同一个对象的成员。`createLane(lane)` 收到 `{ index, laneId, prompt, laneCount, groupId, owner, view }`，
 其中 `view` 是 owner 最近一次已交付的视图或 `null`，`laneCount` 是本组的总泳道数（每条 lane 相同）。
 
-建组步骤的六种方法列在 `fission/port.mjs` 的 `FISSION_PORT_METHODS`（`ownerView` 与 `persistGroup`
+建组步骤的方法列在 `fission/port.mjs` 的 `FISSION_PORT_METHODS`（`ownerView` 与 `persistGroup`
 也在其中，因为组合层按顺序调用它们）。每个步骤可以抛错，也可以返回 `{ok:false, reason}`；两种都
 触发整组 `abortLanes`。`abortLanes` 的回执带 `orphaned`（宿主停不掉的 lane），组合层原样交给调用方，
 不当作成功也不吞掉。

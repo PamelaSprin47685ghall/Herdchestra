@@ -323,15 +323,17 @@ core 的 `TextMembers` 与成员层调用 `park(payload)` 请求挂起；`Progra
   绑定成员；`host-omp/program.mjs` 的 `JsProgram` 基类被 OMP 与 OpenCode 共用（见 §0 的例外说明）。
   三处都按 §2.1 的单一写法绑定：成员进 `this`，`fork`/`join`/`review` 进形参。
 - 适配器自有状态只落 `.Herdchestra/`（根 §1 第 3 条），文件名按宿主各有事实：
-  - OpenCode：`{session}.jsonl`（追加式记录：review / scope / language / fission）、`{session}.hint.jsonl`、
-    `{session}.relay.json`、`{session}.calls.jsonl`（程序调用的持久事实）、
+  - OpenCode：`{session}.jsonl`（追加式记录：review / scope / language / fission）、
+    `hint-<sha256(session)>.jsonl`（Pair Hint 日志）、`{session}.relay.json`、
+    `{session}.calls.jsonl`（程序调用的持久事实）、
     `original-<id 前 16 字符>-<sha256(id) 前 16 位>.json`（操作员原文，原子发布）；
-  - OMP：`{session}.scope.jsonl`、`{session}.hint.jsonl`、`{session}.session.json`（台账 + 栅栏）、
+  - OMP：`{session}.scope.jsonl`、`{session}.jsonl`（Pair Hint 日志）、`{session}.session.json`（台账 + 栅栏）、
     `{session}.request.json`（请求闸门）、`{session}.requests.jsonl`（请求形状诊断）、
     `{lineage}.relay.jsonl`（接力记录的适配器副本，与宿主转录条目互为独立视图）；
   - Cline：`{session}.{plan|manager}.json`（评审台账 + 栅栏）、`{session}.scope.jsonl`、
-    `{session}.role.json`（启动前写定的会话身份，根 §2.1）、`{session}.workers.jsonl` 与
-    `{session}.workers.restored.json`（§3.1a 的花名册）、`{session}.fission.jsonl`（泳道组）。
+    `{session}.jsonl`（Pair Hint 日志）、`{session}.role.json`（启动前写定的会话身份，根 §2.1）、
+    `{session}.workers.jsonl` 与 `{session}.workers.restored.json`（§3.1a 的花名册）、
+    `{session}.fission.jsonl`（泳道组）。
 
   底稿一律在 `drafts/<name>.md`，目录由适配器在会话构造或启动前建好（`drafts.mjs` / `program-ports.mjs`）。
 
@@ -441,27 +443,34 @@ OMP 上同一个接力事实有两份**各自独立、各自原子**的持久视
 单元测试证明的是形状，真机 smoke 证明的是三个宿主**装得上、跑得动、写得下记录**。两条回路各答一个问题，
 不要用一条回路代替另一条。
 
-| 命令 | 回答什么 | 用例数 | 参考耗时（本机 16 核，2026-11-01 量） |
+| 命令 | 回答什么 | 用例数 | 参考耗时（16 核，2026-11-01 审计后快照） |
 |---|---|---|---|
-| `npm test` | 全量属性测试，每个用例按自己声明的次数跑 | 1071 | 约 3.1–3.7 秒 |
-| `npm run test:quick` | 同一组用例，属性测试每例至多 20 次（`HC_FC_RUNS=20`），并行度 `$(nproc)` | 1071 | 约 3.1–3.3 秒 |
-| `npm run smoke:omp` | 真机 OMP：3 个回合，中间一回合调 `js-manager` | —（3 个真机回合） | 约 2–8 分钟（120–490 秒） |
-| `npm run smoke:opencode` | 真机 OpenCode v2（`opencode run --standalone`，隔离 `OPENCODE_CONFIG_DIR`） | —（3 个真机回合） | 约 14 秒 |
-| `npm run smoke:cline` | 真机 Cline（`@cline/core` SDK，隔离 `CLINE_DIR`） | —（3 个真机回合 + 1 个 park 回合） | 约 15–17 秒 |
+| `npm test` | 全量属性测试，每个用例按自己声明的次数跑 | 1127 | 约 3.7–3.9 秒 |
+| `npm run test:quick` | 同一组用例，属性测试每例至多 20 次（`HC_FC_RUNS=20`），并行度 `$(nproc)` | 1127 | 约 3.4–3.5 秒 |
+| `npm run smoke:omp` | 真机 OMP：3 个回合，中间一回合调 `js-manager` | —（3 个真机回合） | 约 5 分钟（324 秒；区间 2–8 分钟） |
+| `npm run smoke:opencode` | 真机 OpenCode v2（`opencode run --standalone`，隔离 `OPENCODE_CONFIG_DIR`） | —（3 个真机回合） | 约 12 秒 |
+| `npm run smoke:cline` | 真机 Cline（`@cline/core` SDK，隔离 `CLINE_DIR`） | —（3 个真机回合 + 1 个 park 回合） | 约 15 秒 |
 | `npm run smoke` | 上面三个并行，逐宿主一行 | — | 约 2–8 分钟（取决于最慢的宿主） |
 
-- 分层实测（同一棵树，2026-11-01，16 核）：`core` 253 例 1.2 秒、`compose` 163 例 1.5 秒、
-  `host-omp` 267 例 2.4 秒、`host-opencode` 218 例 1.8 秒、`host-cline` 170 例 2.2 秒；合计 1071 例。
+- **这是一份 2026-11-01 的快照**（1.0.0 审计修复后，同一棵树、16 核），不是长期契约：条数与耗时都随并行
+  编辑和网络变动，引用时连同“哪棵树、哪台机器、什么时候”一起引用。
+- 分层实测（同一次快照）：`core` 264 例 1.2 秒、`compose` 176 例 1.5 秒、
+  `host-omp` 271 例 2.4 秒、`host-opencode` 219 例 1.8 秒、`host-cline` 197 例 2.5 秒；合计 1127 例。
   `host-cline` 的 devops 连接用例注入工厂，不启动真机运行时；此前它会让该层多等一次约 46 秒的网络超时。
 - 时间只作量级参考：本仓库长期多写者并行编辑，引用时连同“哪台机器、什么时候”一起引用。
 - 每个 smoke 建一个 `/tmp/hc-smoke-<host>-<随机>/` 根，跑完即删；`--keep` 保留，`--verbose` 打出宿主输出。
   Cline 另建 `/tmp/hc-smoke-cline-capture-<随机>/` 读回 provider 请求，跑完同样删除；`--capture <dir>` 指定
   目录时归操作员所有，脚本不删。
   凭据只从操作员自己的配置**读入**交给子进程，从不打印、不写入仓库。
-- 四个检查逐行给出，任何一条失败都以非零退出码结束，**失败即结果**：`宿主退出 0`、`无
-  PREFIX_DRIFT / CONTEXT_PROJECTION_FAILED / REQUEST_GATE_UNWRITABLE`（日志与 `.Herdchestra/` 记录都查）、
-  `工具输出是 CUE`（能 `JSON.parse` 的一律判失败；OMP 的 `{\n  ok: true\n}` 这种以 `{` 开头却不可解析的形态
-  是合格 CUE）、`.Herdchestra/<session>.*` 记录存在。
+- 三个 smoke 共用同一组检查，逐行给出，任何一条失败都以非零退出码结束，**失败即结果**：`宿主退出 0`、`无
+  PREFIX_DRIFT / CONTEXT_PROJECTION_FAILED / REQUEST_GATE_UNWRITABLE`（日志、`.Herdchestra/` 的 `.jsonl`
+  与 `.json` 记录都查）、`js-* 工具输出是 CUE`（能 `JSON.parse` 的一律判失败；OMP 的 `{\n  ok: true\n}` 这种
+  以 `{` 开头却不可解析的形态是合格 CUE）、`js-* 输出不含程序拒绝码`
+  （`SCOPE_REFUSED` / `INVALID_ARGUMENT` / `SYNTAX_ERROR` / `PROGRAM_FAILED`）、
+  `.Herdchestra/<session>.*` 记录存在。
+- Cline 另有两组实测：provider capture 逐请求检查角色规则与 Pair Hint 对（每个会话的第一笔冷启动请求允许
+  没有，之后每一笔必须各出现一次，且 Pair Hint 只出现一次）；`js-plan` 的 park 检查要求 `ask` 之后运行结束、
+  不再有模型步或 nudge。
 - CUE 判定只有一份，在 `scripts/smoke/lib.mjs` 的 `isCue`，三个脚本共用；不要在各脚本里另写一份。
 - 改了宿主适配器的装载路径、工具注册或投影时先跑对应 smoke，再跑 `test:quick`；全量 `npm test` 留给合入前。
 - smoke 里的模型默认 `lazy/task`，用 `HC_SMOKE_MODEL`、`HC_SMOKE_OMP_MODEL`、`HC_SMOKE_OPENCODE_MODEL`、

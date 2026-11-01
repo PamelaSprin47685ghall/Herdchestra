@@ -148,8 +148,15 @@ export const requestNotice = ({ session, role = session.declaredRole, askedInTur
 // A run that failed is not a stop the agent chose: the host already reported it,
 // and a nudge would bury the failure under an instruction the model cannot act
 // on. A run the operator cancelled is the operator's own act.
+//
+// Every answer that allows the stop CLEARS a recorded nudge. A nudge recorded
+// earlier in the same run (a natural-stop attempt `afterModel` refused) would
+// otherwise survive an operator interrupt or a host failure, and
+// `requestNotice` would replay it into the operator's next request — a claim
+// about a stop the operator made.
 export const runExit = ({ session, role = session.declaredRole, result = null }) => {
   if (!userFacing(role)) {
+    session.clearNudge();
     return { stopAllowed: true, reason: STOP_REASONS.NOT_USER_FACING, nudge: null };
   }
   const status = typeof result?.status === "string" ? result.status : null;
@@ -158,9 +165,12 @@ export const runExit = ({ session, role = session.declaredRole, result = null })
     // host failure; both stop without a nudge. (`operatorInterruptOf` reads the
     // same spelling, so `decide` would answer identically.)
     const reason = operatorInterruptOf({ status }) ? STOP_REASONS.OPERATOR_INTERRUPT : `run-${status}`;
+    session.clearNudge();
     return { stopAllowed: true, reason, nudge: null };
   }
-  return decide({ session, role, askedInTurn: session.askedInTurn });
+  const decision = decide({ session, role, askedInTurn: session.askedInTurn });
+  if (decision.stopAllowed) session.clearNudge();
+  return decision;
 };
 
 // The stop a parked `ask` owes its run (根 §2.2, §7.2 「中断（交还控制权）」).

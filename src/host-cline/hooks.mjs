@@ -75,6 +75,38 @@ const refusalOf = (admission) => {
 
 const nameOf = (context) => context?.tool?.name ?? context?.toolCall?.toolName ?? null;
 
+// Every tool whose `scope` annotation Scope must admit and settle (根 §6.2).
+//
+// The FACE gate is narrower: `fork` and `join` are primitives, not faces, so a
+// role's member list is not what decides them. Both schemas still REQUIRE
+// `scope` (`adapter.mjs` `withScope`), and §6.2 says every non-exempt tool books
+// its annotation: a `fork` that carries `resetScope` establishes the budget, and
+// a `join` that carries `keepLast` spends one. Leaving them out of the gate let
+// a turn made only of `fork`/`join` calls close as `SCOPE_METOO_ONLY`, and the
+// annotations never reached the book at all.
+export const SCOPE_TOOLS = Object.freeze(new Set([...FACE_TOOLS, "fork", "join"]));
+
+// Whether this hook context belongs to a DELEGATED runtime of this session
+// rather than to the session's own agent.
+//
+// A delegated runtime receives this session's hooks (`runtime.mjs` passes
+// `extensions.hooks` to the child), so every hook also runs for a child's run
+// and request. The session's bookkeeping is the PARENT's fact — its Scope turn,
+// its review window, its parked `ask`, its park stop, its nudge — and a child's
+// run must not move any of it. Measured consequence: a worker's brief is a user
+// message, so `resumeAsked` answered a question the operator never saw, and the
+// child's `beforeRun` cleared the parent's park stop.
+const delegatedRuntime = ({ session, context }) => {
+  const snapshot = context?.snapshot;
+  if (snapshot === null || typeof snapshot !== "object") return false;
+  const parent = snapshot.parentAgentId;
+  if (parent !== null && parent !== undefined) return true;
+  // A host that names the child's agent id is answered from the worker table:
+  // a name this table holds is one this session started.
+  const agentId = snapshot.agentId;
+  return typeof agentId === "string" && session.workers.get(agentId) !== null;
+};
+
 // Whether the host snapshot proves this call is a top-level agent: a snapshot
 // is present, it is an object, and it carries no parent. The test is the VALUE
 // of `parentAgentId`, never the key: `@cline/core` 0.2.0 omits the key entirely
@@ -135,20 +167,25 @@ const traceSink = () => {
 };
 
 // Best effort by design: a trace that throws must never refuse a real call.
+//
+// Everything that can throw — `describeContext`, `JSON.stringify`, the write
+// itself — happens inside the `try`. A host context carrying a cycle or a
+// throwing getter (the same objects that make the plugin sandbox warn) must
+// lose its trace line, never the call it describes.
 const traceGate = ({ tool, role, declaredRole, sessionId, identitySource, roleFactFailure = null, context }) => {
   const sink = traceSink();
   if (sink === null) return;
-  const line = `${JSON.stringify({
-    at: "beforeTool",
-    tool,
-    role,
-    declaredRole,
-    sessionId,
-    identitySource: identitySource,
-    roleFactFailure,
-    ...describeContext(context),
-  })}\n`;
   try {
+    const line = `${JSON.stringify({
+      at: "beforeTool",
+      tool,
+      role,
+      declaredRole,
+      sessionId,
+      identitySource: identitySource,
+      roleFactFailure,
+      ...describeContext(context),
+    })}\n`;
     if (sink.kind === "file") appendFileSync(sink.file, line);
     else process.stderr.write(line);
   } catch {
@@ -167,7 +204,10 @@ export const createHooks = ({ session }) => {
     //
     // A run is not a model turn: one run holds many model requests
     // (`snapshot.iteration` in `AgentBeforeModelContext`).
-    beforeRun: async () => {
+    beforeRun: async (context) => {
+      // A child runtime's run is not this session's run: its start must not
+      // advance the parent's turn counter or clear the parent's park stop.
+      if (delegatedRuntime({ session, context })) return undefined;
       session.beginRun();
       const notice = session.scopeNotice();
       return notice === null ? undefined : { appendContext: contextText(notice) };
@@ -187,9 +227,18 @@ export const createHooks = ({ session }) => {
     // an `afterRun` answer (`callAfterRunHooks`), so this receipt is for the
     // session's own record and for a test.
     afterRun: async (context) => {
+      // A child's run ending is its report (§2.2 `not-user-facing`); the
+      // parent's nudge channel is not the child's to drive.
+      if (delegatedRuntime({ session, context })) return undefined;
       const role = session.declaredRole;
       const decision = runExit({ session, role, result: context?.result ?? null });
-      if (decision.stopAllowed) return undefined;
+      if (decision.stopAllowed) {
+        // A stop the guard allows is no longer owed, whatever an earlier
+        // attempt recorded: an operator interrupt or a host failure must not
+        // leave a nudge that the next request would replay.
+        session.clearNudge();
+        return undefined;
+      }
       session.noteNudge({ role, reason: decision.reason, text: decision.nudge });
       const delivery = await session.deliver(decision.nudge);
       return { continued: delivery.ok === true, delivery, reason: decision.reason, text: decision.nudge };
@@ -200,6 +249,11 @@ export const createHooks = ({ session }) => {
     // `session-runtime-orchestrator.ts:228-256`): a `stop` wins outright, and
     // otherwise `messages` and `appendContext` both travel.
     beforeModel: async (context) => {
+      // A child's request is its own conversation. The COPY still applies —
+      // CUE rendering and the Scope projection are about the bytes the model
+      // reads — but nothing of the parent's turn, parked ask, park stop, model
+      // reading or nudge may move for a child's request.
+      if (delegatedRuntime({ session, context })) return await copyOf(rewrite, context?.request);
       // 根 §2.2 「中断（交还控制权）」: a turn that parked an `ask` has no further
       // model step. The host reads `AgentStopControl` from this hook, so the run
       // ends here instead of asking the model again after the question was put
@@ -341,7 +395,7 @@ export const createHooks = ({ session }) => {
             : `${name} is not available to this session`,
         );
       }
-      if (!FACE_TOOLS.has(name)) return undefined;
+      if (!SCOPE_TOOLS.has(name)) return undefined;
       const refusal = refusalOf(
         session.admit({
           agentId: context?.snapshot?.agentId ?? null,
@@ -355,7 +409,7 @@ export const createHooks = ({ session }) => {
 
     afterTool: async (context) => {
       const name = nameOf(context);
-      if (typeof name !== "string" || !FACE_TOOLS.has(name)) return undefined;
+      if (typeof name !== "string" || !SCOPE_TOOLS.has(name)) return undefined;
       // A call the gate refused never ran, so it must not settle: Scope books
       // on settle, and a refused `js-plan` was writing its `resetScope` row on
       // the live host. The entry is taken (not read), because a call id belongs
@@ -385,6 +439,9 @@ export const createHooks = ({ session }) => {
     // nudge, and `beforeModel` speaks it into the next request (the host reads
     // no text from `afterModel`; `guard.mjs` names the measurement).
     afterModel: async (context) => {
+      // A child's assistant message is its own turn's; the parent's natural-stop
+      // decision is not made from it.
+      if (delegatedRuntime({ session, context })) return undefined;
       turnExit({ session, role: session.declaredRole, assistantMessage: context?.assistantMessage ?? null });
       return undefined;
     },

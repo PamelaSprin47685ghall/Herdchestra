@@ -32,6 +32,8 @@ const fakeHost = async ({ directory, sessions } = {}) => {
   const after = [];
   const context = [];
   const prompt = [];
+  const compaction = [];
+  const generate = [];
   const subscribed = [];
   const ctx = {
     location: { directory: dir },
@@ -47,7 +49,12 @@ const fakeHost = async ({ directory, sessions } = {}) => {
       hook: async (name, callback) => (name === "execute.before" ? before : after).push(callback),
     },
     session: {
-      hook: async (name, callback) => (name === "context" ? context : prompt).push(callback),
+      hook: async (name, callback) => {
+        if (name === "context") context.push(callback);
+        else if (name === "prompt") prompt.push(callback);
+        else if (name === "compaction") compaction.push(callback);
+        else if (name === "generate") generate.push(callback);
+      },
       ...(sessions ?? {}),
     },
     event: {
@@ -79,15 +86,19 @@ const fakeHost = async ({ directory, sessions } = {}) => {
     for (const hook of after) await hook({ ...event, status: "completed", result: output });
     return output;
   };
-  return { dir, tools, before, after, context, prompt, subscribed, call, cleanup };
+  return { dir, tools, before, after, context, prompt, compaction, generate, subscribed, call, cleanup };
 };
 
-test("registers four agents, six tools, four hooks and one subscription", async () => {
+test("registers four agents, six tools, six hooks and one subscription", async () => {
   const host = await fakeHost();
   assert.deepEqual([...host.tools.keys()], ["js-manager", "js-worker", "js-review", "plan", "fork", "join"]);
   assert.equal(host.before.length, 1);
   assert.equal(host.after.length, 1);
+  // `context` is the session's own request; `compaction` and `generate` borrow
+  // the conversation and carry the same projection (§7.1, §6.1).
   assert.equal(host.context.length, 1);
+  assert.equal(host.compaction.length, 1);
+  assert.equal(host.generate.length, 1);
   assert.equal(host.prompt.length, 1);
   assert.deepEqual(host.subscribed[0].types, [
     "session.created",
@@ -326,7 +337,8 @@ test("context hook narrows the catalog, appends the director and the hint pair o
     messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
   };
   await host.context[0](event);
-  assert.deepEqual(Object.keys(event.tools).sort(), ["fork", "join", "js-manager", "js-review", "question"]);
+  // No `question`: §2.3 runs the Manager unattended, so it has no ask channel.
+  assert.deepEqual(Object.keys(event.tools).sort(), ["fork", "join", "js-manager", "js-review"]);
   assert.equal(event.system.length, 1);
   assert.equal(event.system[0].text, DIRECTOR_MESSAGE);
   // The host's own shape: the pair is a `tool-call` part whose id carries the
@@ -483,10 +495,22 @@ test("the adapter's state and the Pair Hint journal never share a file", async (
 // `js-review` evaluation window (根 §2.3)
 // ---------------------------------------------------------------------------
 
+// One model request of a Manager session: the `context` hook is the request
+// boundary, and §2.3 opens the evaluation round there.
+const managerRequest = (host, sessionID = "ses_main") =>
+  host.context[0]({
+    sessionID,
+    agent: "Manager",
+    tools: { "js-manager": {}, "js-review": {} },
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  });
+
 test("js-review runs only inside an open evaluation round, and only for the Manager", async () => {
   const host = await fakeHost();
   const code = "class Js extends JsProgram { async run() { return 1; } }";
-  // A Manager's program call is a request: it opens the round.
+  // A request — the `context` hook — opens the round. A tool call does not.
+  await managerRequest(host);
   const manager = await host.call("js-manager", { code: "class Js extends JsProgram { async run() { return 0; } }" }, { agent: "Manager" });
   assert.equal(manager.value, 0);
   const opened = await host.call("js-review", { code }, { agent: "Manager" });
@@ -517,7 +541,11 @@ test("a refused review leaves the evaluation window open", async () => {
   const accepted = await host.call("js-manager", { code: "class Js extends JsProgram { async run() { return review([{ key: \"a\", value: \"x\" }]); } }" }, { agent: "Manager" });
   assert.equal(accepted.value.ok, true);
   assert.equal((await host.call("js-review", { code }, { agent: "Manager" })).rejection, "REVIEW_WINDOW_CLOSED");
-  // …and the next request is a new round, which opens it again.
+  // …and a second `js-review` in the SAME turn does not reopen it: only a
+  // request boundary does (§2.3: the face is withdrawn for the rest of the round).
+  assert.equal((await host.call("js-review", { code }, { agent: "Manager" })).rejection, "REVIEW_WINDOW_CLOSED");
+  // The next request is a new round, which opens it again.
+  await managerRequest(host);
   const again = await host.call("js-manager", { code: "class Js extends JsProgram { async run() { return 0; } }" }, { agent: "Manager" });
   assert.equal(again.value, 0);
   assert.equal((await host.call("js-review", { code }, { agent: "Manager" })).value, 2);
@@ -669,10 +697,11 @@ test("the agent transform never assigns to a host-owned field", async () => {
 
   // A list is never refused: it is emptied and refilled in place, so the host's
   // own array object now holds the adapter's rules.
+  // No `question` allow: §3.1 gives a worker no question channel, and §2.2
+  // gives the operator question to Plan's `S1` `this.ask` alone.
   assert.deepEqual(seen.get("coder").permissions, [
     { action: "*", resource: "*", effect: "deny" },
     { action: "js-worker", resource: "*", effect: "allow" },
-    { action: "question", resource: "*", effect: "allow" },
   ]);
   await cleanup();
   await fs.rm(dir, { recursive: true, force: true });

@@ -12,7 +12,6 @@ export {
   DEFAULT_EXEMPT_MEMBERS,
   DEFAULT_PINNED_MEMBERS,
   RESET_MEMBER,
-  FIRST_INCUMBENT_QUESTION,
   ScopeRefusal,
   ScopeArgumentError,
   isScopeRefusal,

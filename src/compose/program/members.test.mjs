@@ -8,7 +8,11 @@ import { ProgramSurface, ROLES } from "./surface.mjs";
 import { ProgramState } from "../../core/program.mjs";
 import { fakeClock } from "../../core/clock.mjs";
 
-const root = async () => fs.mkdtemp(path.join(os.tmpdir(), "compose-"));
+const root = async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  return dir;
+};
 
 const ports = (overrides = {}) => ({
   command: {
@@ -47,8 +51,8 @@ const surfaceOf = (role, state, dir, extra = {}) =>
     views: new Map(),
   });
 
-test("cat, write and where work end to end on a real directory", async () => {
-  const dir = await root();
+test("cat, write and where work end to end on a real directory", async (t) => {
+  const dir = await root(t);
   const state = new ProgramState("w1");
   const members = surfaceOf(ROLES.CODER, state, dir).surface();
   const written = await members.write("notes.txt", "alpha\nbeta\n");
@@ -64,8 +68,8 @@ test("cat, write and where work end to end on a real directory", async () => {
   assert.deepEqual(await members.ls(""), ["notes.txt"]);
 });
 
-test("an ambiguous where parks with the candidates payload", async () => {
-  const dir = await root();
+test("an ambiguous where parks with the candidates payload", async (t) => {
+  const dir = await root(t);
   const state = new ProgramState("w2");
   const members = surfaceOf(ROLES.CODER, state, dir).surface();
   const receipt = members.where("x\ny\nx\n", "x");
@@ -76,8 +80,8 @@ test("an ambiguous where parks with the candidates payload", async () => {
   assert.equal(state.state, "parked");
 });
 
-test("the review surface parks with the same diagnostics as the worker", async () => {
-  const dir = await root();
+test("the review surface parks with the same diagnostics as the worker", async (t) => {
+  const dir = await root(t);
   const surface = surfaceOf(ROLES.MANAGER, new ProgramState("m3"), dir);
   const review = surface.reviewSurface();
   // A payload handed straight to the park channel arrives as a site with no
@@ -93,8 +97,8 @@ test("the review surface parks with the same diagnostics as the worker", async (
   assert.ok(missing.payload.nearest !== null, "a zero match carries its nearest line");
 });
 
-test("an explicit park receipt has no delta and carries the payload", async () => {
-  const dir = await root();
+test("an explicit park receipt has no delta and carries the payload", async (t) => {
+  const dir = await root(t);
   // The park path reaches the receipt with no argument; a `delta` that is only
   // bound inside another method made this a ReferenceError.
   const receipt = surfaceOf(ROLES.CODER, new ProgramState("w7"), dir).surface().park({ q: 1 });
@@ -103,14 +107,14 @@ test("an explicit park receipt has no delta and carries the payload", async () =
   assert.equal(receipt.delta, "");
 });
 
-test("a missing file is a refusal with the posix code", async () => {
-  const dir = await root();
+test("a missing file is a refusal with the posix code", async (t) => {
+  const dir = await root(t);
   const members = surfaceOf(ROLES.CODER, new ProgramState("w3"), dir).surface();
   await assert.rejects(() => members.cat("nope.txt"), (error) => error.code === "ENOENT");
 });
 
-test("every write replaces the target atomically; no lock across writes", async () => {
-  const dir = await root();
+test("a later write replaces an earlier one; no lock spans two calls", async (t) => {
+  const dir = await root(t);
   const members = surfaceOf(ROLES.CODER, new ProgramState("w5"), dir).surface();
   await members.write("twice.txt", "first\n");
   const second = await members.write("twice.txt", "second\n");
@@ -118,8 +122,8 @@ test("every write replaces the target atomically; no lock across writes", async 
   assert.equal(await members.cat("twice.txt"), "second\n");
 });
 
-test("call drains, runs through the port and reports the command", async () => {
-  const dir = await root();
+test("call drains, runs through the port and reports the command", async (t) => {
+  const dir = await root(t);
   const state = new ProgramState("w4");
   const members = surfaceOf(ROLES.DEVOPS, state, dir).surface();
   const receipt = await members.call("git status");
@@ -127,8 +131,8 @@ test("call drains, runs through the port and reports the command", async () => {
   assert.equal(state.pendingOperations, 0);
 });
 
-test("call waits for earlier operations, reports waiting, and refuses once finished", async () => {
-  const dir = await root();
+test("call waits for earlier operations, reports waiting, and refuses once finished", async (t) => {
+  const dir = await root(t);
   const state = new ProgramState("w6");
   const seen = [];
   const surface = surfaceOf(ROLES.DEVOPS, state, dir, {
@@ -162,8 +166,8 @@ test("call waits for earlier operations, reports waiting, and refuses once finis
   await assert.rejects(() => members.call("too late"), /completed/);
 });
 
-test("port members pass through without inventing an outcome", async () => {
-  const dir = await root();
+test("port members pass through without inventing an outcome", async (t) => {
+  const dir = await root(t);
   const manager = surfaceOf(ROLES.MANAGER, new ProgramState("m1"), dir).surface();
   // §4.1: two arguments. The worker's identity comes from the brief's explicit
   // declaration, and the port receives it resolved.
@@ -202,6 +206,42 @@ test("port members pass through without inventing an outcome", async () => {
   assert.equal(await plan.devops("check"), "facts:check");
 });
 
+test("a review refusal with no host effect is a receipt, not a promise", () => {
+  const dir = "/tmp";
+  const manager = surfaceOf(ROLES.MANAGER, new ProgramState("m-review"), dir).surface();
+  const refused = manager.review("not a findings list");
+  assert.equal(typeof refused?.then, "undefined");
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, "INVALID_ARGUMENT");
+});
+
+test("a second devops while one is in flight is refused", async (t) => {
+  const dir = await root(t);
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const state = new ProgramState("d-single");
+  const surface = surfaceOf(ROLES.PLAN, state, dir, {
+    devops: {
+      investigate: async (intent) => {
+        await gate;
+        return `facts:${intent}`;
+      },
+    },
+  });
+  const members = surface.surface();
+  const first = members.devops("one");
+  assert.throws(
+    () => members.devops("two"),
+    (error) => error.code === "DEVOPS_IN_FLIGHT",
+  );
+  release();
+  assert.equal(await first, "facts:one");
+  // The guard clears when the first settles, so the next investigation runs.
+  assert.equal(await members.devops("three"), "facts:three");
+});
+
 test("js-review reads and never writes", () => {
   const dir = "/tmp";
   const surface = surfaceOf(ROLES.MANAGER, new ProgramState("m2"), dir);
@@ -214,8 +254,8 @@ test("js-review reads and never writes", () => {
 
 // --------------------------------------------- documented signatures (§3.1, §3.4)
 
-test("where takes the content, not a path: every §3.4 example shape works", async () => {
-  const dir = await root();
+test("where takes the content, not a path: every §3.4 example shape works", async (t) => {
+  const dir = await root(t);
   const state = new ProgramState("w-doc");
   const members = surfaceOf(ROLES.CODER, state, dir).surface();
   const source = "export const timeoutMs = 30000;\nconst batchSize = 10;\n";
@@ -238,8 +278,8 @@ test("where takes the content, not a path: every §3.4 example shape works", asy
   );
 });
 
-test("stat answers exactly the four documented fields on both faces", async () => {
-  const dir = await root();
+test("stat answers exactly the four documented fields on both faces", async (t) => {
+  const dir = await root(t);
   await fs.writeFile(path.join(dir, "a.txt"), "abc");
   await fs.mkdir(path.join(dir, "sub"));
   for (const role of [ROLES.CODER, ROLES.MANAGER]) {

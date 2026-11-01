@@ -183,6 +183,10 @@ export class FileMembers {
   async mv(from, to) {
     const blocked = this.#blocked(from);
     if (blocked) return blocked;
+    // The destination is an access too: a guard that denies it must refuse the
+    // move before the OS touches either path.
+    const blockedTarget = this.#blocked(to);
+    if (blockedTarget) return blockedTarget;
     try {
       await fs.rename(this.resolve(from), this.resolve(to));
       return { ok: true, from, to };

@@ -25,19 +25,19 @@
 //    the runner is rebound per session, so a fresh instance is what a second
 //    session needs.
 // 3. **The narrowing runs at session start and when the review phase changes.**
-//    `setActiveTools` inside `before_agent_start` makes the host re-run policy
-//    preparation (spec §7.3), so the phase is narrowed only when it actually
-//    changes — once per round, not once per request — and the prompt it returns
-//    is a pure function of the role, which is what that re-run requires. What
-//    the model sees is the narrowing; enforcement is the `tool_call` gate in
-//    hooks.mjs.
+//    Root §7.3 forbids `setActiveTools` inside `before_agent_start` (it makes
+//    the host re-run policy preparation), so the review phase is opened and
+//    narrowed at the host's MODEL-TURN boundary (`turn_start`), once per round.
+//    `before_agent_start` only returns the role's prompt and never touches the
+//    active set. What the model sees is the narrowing; enforcement is the
+//    `tool_call` gate in hooks.mjs.
 //
 // ## `js-review` follows the evaluation window (spec §2.3)
 //
 // `js-review` is registered but is not a permanent face. It is visible for a
 // Manager only while the session's evaluation window is open: `openEvaluation`
-// opens it at the host's request boundary (`before_agent_start`), and the
-// window shuts when the round's FIRST review is accepted (`onReviewAccepted`).
+// opens it at the host's model-turn boundary (`turn_start`), and the window
+// shuts when the round's FIRST review is accepted (`onReviewAccepted`).
 // A refused review leaves it open: the Manager has not judged. Only the Manager
 // ever owns it (`ownFace`), and the window is core's `ReviewWindow` — this
 // adapter keeps no second counter that could drift from it.
@@ -154,9 +154,9 @@ export const visibleToolsFor = (role, allTools, extraTools = [], { evaluating = 
     .filter((name) => typeof name === "string" && name.length > 0);
   // The review face is not in any always-visible set: spec §2.3 opens it only
   // while the session's evaluation window is open. `evaluating` is that window
-  // — opened by the host's request boundary (`before_agent_start`) and shut by
-  // the round's first accepted review, so the face is present exactly while
-  // §2.3 says it may be.
+  // — opened at the host's model-turn boundary (`turn_start`) and shut by the
+  // round's first accepted review, so the face is present exactly while §2.3
+  // says it may be.
   //
   // Only the Manager owns the face (`ownFace`), so a worker passing
   // `evaluating: true` still does not receive it.
@@ -300,7 +300,15 @@ export const workerSessionTools = (pi, options = {}) => {
       // a MANAGER session, which is not forked — `forked` also decides whether
       // the session keeps a review ledger and the `js-manager` ports, so
       // claiming it for a Manager would strip the very things it needs.
-      adapter.bindSession(session, { forked: options.forked !== false, role, root });
+      adapter.bindSession(session, {
+        forked: options.forked !== false,
+        // A fission lane is a forked worker's parallel present, not a worker a
+        // `fork` started: it may not fission again (§4.2). The fact is stated
+        // by the creator, exactly like `forked`.
+        fissionLane: options.fissionLane === true,
+        role,
+        root,
+      });
       if (adapter.ctx !== session) return { ok: false, reason: "the worker's adapter did not bind its session" };
       // The session's OWN factory, installed here because `install` is the one
       // path every worker goes through (a lane, a fission group, a hand-built
@@ -493,7 +501,9 @@ export class HostAdapter {
         // The window is the authority; this only mirrors it for the visible
         // set. A second accepted review in the same round finds the window
         // already shut and the face already gone.
-        if (this.endEvaluation() !== false) return;
+        const wasOpen = this.#evaluating;
+        this.endEvaluation();
+        if (wasOpen === false) return;
         // The re-narrow is best-effort: a host that refuses actions must not
         // turn an accepted review into a failure. The face simply stays visible
         // until the next narrowing, and the `tool_call` gate still refuses a
@@ -511,7 +521,7 @@ export class HostAdapter {
       // own, never this one's). A session created through the SDK has no
       // extension runtime, so the lane installs these tools on it directly.
       laneTools: {
-        workerToolsFor: (workerPi, lanes, laneRole = ROLE.CODER) => {
+        workerToolsFor: (workerPi, lanes, laneRole = ROLE.CODER, facts = {}) => {
           // The lane needs the whole build, not just the list: it installs the
           // tools on the worker's session and disposes the adapter if the
           // worker is refused. No roster is shared: the worker opens its own
@@ -529,6 +539,11 @@ export class HostAdapter {
           const worker = workerSessionTools(workerPi, {
             dispatch: this.#dispatch,
             forked: laneRole !== ROLE.MANAGER,
+            // §4.2: a lane is a parallel present, not a worker started by
+            // `fork`. It must not be able to fission again; the fact travels
+            // with the lane because a session created through the SDK never
+            // emits `session_start` and cannot re-derive it.
+            fissionLane: facts?.fissionLane === true,
             // The worker writes into the tree its owner belongs to, stated
             // explicitly rather than read from `projectRoot()` at bind time.
             root: this.#session.state?.root ?? null,
@@ -668,13 +683,13 @@ export class HostAdapter {
   // root happened to be set, which made the suite nondeterministic. The lane
   // passes its owner's root instead, so a worker inherits the tree it was
   // started from.
-  bindSession(session, { forked = true, role = null, root = null } = {}) {
+  bindSession(session, { forked = true, fissionLane = false, role = null, root = null } = {}) {
     if (this.#bound || session === null || typeof session !== "object") return this;
     this.#ctx = session;
     this.#bound = true;
     this.#role = role ?? roleOfAgent(session.agent);
     this.#forked = forked === true;
-    this.#session.bindSession({ session, role: this.#role, forked: this.#forked, root });
+    this.#session.bindSession({ session, role: this.#role, forked: this.#forked, fissionLane, root });
     ADAPTERS.set(sessionIdOf(session), this);
     return this;
   }
@@ -738,6 +753,12 @@ export class HostAdapter {
       if (owner === null) return;
       owner.session.closeSurface(name);
       owner.session.releasePark(name, state);
+      // §6.1 item 7: the Pair Hint's Idle Hint lists unsettled park handles.
+      // A parked program keeps its handle; a program that ended (completed or
+      // failed) releases it. A parked body that finishes later is released by
+      // the outcome callback in `program-tools.mjs`.
+      if (state === "parked") owner.session.state?.noteParked?.(name);
+      else owner.session.state?.noteFinished?.(name);
     };
     // The one face this session runs by default. A planner runs `plan`; the
     // others keep the face their role already had.
@@ -811,6 +832,10 @@ export class HostAdapter {
     // object the request path writes to: the in-memory fail-closed verdict of a
     // request gate that cannot be written lives in it.
     let contextHook = null;
+    // The host's MODEL-turn boundary. It is where §2.3 opens a round, never
+    // `before_agent_start`: root §7.3 forbids `setActiveTools` inside the
+    // latter, because it makes the host re-run policy preparation.
+    const turnStart = createTurnStartHandler({ scopeOpenTurn: (event) => session().scopeOpenTurn(event) });
     this.#hooks = {
       tool_call: async (event) => {
         // The gate answers only for a session that RESOLVES to this adapter.
@@ -898,12 +923,6 @@ export class HostAdapter {
             ...(session().state.draftDirFailure === null ? {} : { failure: session().state.draftDirFailure }),
           })
           : null,
-        // Spec §2.3: every Manager request opens an evaluation round. Recorded
-        // here, and narrowed only when the phase actually changes: §7.3 says
-        // `setActiveTools` inside `before_agent_start` makes the host re-run
-        // policy preparation, so it is paid once per round, not per request.
-        // A worker never opens one: the window is the Manager's face only.
-        onEvaluationStart: this.#role === ROLE.MANAGER ? () => this.openEvaluation() : null,
         // A deferred relay that could not run is stated to the model rather
         // than left as a silent no-op: the in-turn receipt said "deferred", and
         // nothing else would ever contradict it.
@@ -912,7 +931,13 @@ export class HostAdapter {
       // Scope books per MODEL turn, which the host marks with `turn_start` and
       // `turn_end` (agent-loop.ts:1256 / :789). Closing on a tool result would
       // settle a turn before its other concurrent calls had arrived.
-      turn_start: createTurnStartHandler({ scopeOpenTurn: (event) => session().scopeOpenTurn(event) }),
+      turn_start: async (event) => {
+        // §2.3: a Manager's evaluation round opens at the host's model-turn
+        // boundary. This is deliberately NOT `before_agent_start`: root §7.3
+        // forbids `setActiveTools` there. A worker never opens one.
+        if (this.#role === ROLE.MANAGER) await this.openEvaluation();
+        return await turnStart(event);
+      },
       turn_end: createTurnEndHandler({
         scopeCloseTurn: (event) => session().scopeCloseTurn(event),
         // The turn's ending message, kept for the idle boundary: an operator
@@ -945,7 +970,31 @@ export class HostAdapter {
             typeof exit.nudge === "string" &&
             exit.nudge.length > 0
           ) {
-            await session().nudge(exit.nudge);
+            const delivered = await session().nudge(exit.nudge);
+            // §7.3: a nudge nobody received is a session that stopped. The
+            // delivery receipt is checked and a failure leaves a durable line;
+            // it is never retried (a second send would read as nagging).
+            if (delivered?.ok !== true) {
+              const state = session().state;
+              if (state?.root && state?.sessionId) {
+                recordRequest(
+                  requestLogFile(state.root, state.sessionId),
+                  gateStateRecord({
+                    phase: "nudge",
+                    sessionId: state.sessionId,
+                    host: state.hostVersion ?? null,
+                    verdict: {
+                      request: exit.turnId ?? null,
+                      allowed: false,
+                      stage: "nudge",
+                      code: "NUDGE_UNDELIVERED",
+                      detail: delivered?.reason ?? "the nudge was not delivered",
+                    },
+                    trigger: "agent_end",
+                  }),
+                );
+              }
+            }
           }
           return done;
         },
@@ -1098,17 +1147,16 @@ export class HostAdapter {
   // Spec §2.3: the Manager's read-only review face is open from a round's first
   // evaluation until that round's `review` is accepted.
   //
-  // The round boundary is the host's own request boundary, not a counter of
-  // ours: `beginEvaluation` runs from `before_agent_start`, which the host calls
-  // once per request, so the face cannot drift open or shut by a turn we
-  // miscounted. `endEvaluation` runs when a review is ACCEPTED — a refused
-  // review leaves the round's evaluation open, because the Manager still has not
-  // judged.
+  // The round boundary is the host's own MODEL-turn boundary, not a counter of
+  // ours: `beginEvaluation` runs from `turn_start`, which the host emits before
+  // the model call of every turn, so the face cannot drift open or shut by a
+  // turn we miscounted. `endEvaluation` runs when a review is ACCEPTED — a
+  // refused review leaves the round's evaluation open, because the Manager still
+  // has not judged.
   //
-  // Re-narrowing is safe here and nowhere else: spec §7.3 warns that calling
-  // `setActiveTools` inside `before_agent_start` makes the host re-run policy
-  // preparation, so `beginEvaluation` only records the phase and the narrowing
-  // that the request path already performs picks it up.
+  // Re-narrowing is safe here and nowhere else: root §7.3 forbids calling
+  // `setActiveTools` inside `before_agent_start`, so the phase is opened and
+  // narrowed at `turn_start` instead.
   //
   // Answers whether the phase MOVED: `true` only on the call that opened the
   // round, `false` for a repeat. That is the fact `openEvaluation` narrows on,
@@ -1124,18 +1172,13 @@ export class HostAdapter {
     return true;
   }
 
-  // Open this round's evaluation and make the face visible. §7.3 warns that
-  // `setActiveTools` inside `before_agent_start` makes the host re-run policy
-  // preparation (up to three times) and requires the system prompt to be
-  // idempotent. This adapter's prompt IS a pure function of the role, so the
-  // re-run is safe; it is still paid only when the phase actually changes,
-  // which is once per round rather than once per request.
+  // Open this round's evaluation and make the face visible. §7.3 forbids
+  // `setActiveTools` inside `before_agent_start`; this runs from `turn_start`,
+  // and narrows only when the phase actually changes (once per round).
   async openEvaluation() {
-    // §7.3: `setActiveTools` inside `before_agent_start` makes the host re-run
-    // policy preparation, so it is paid ONLY when the phase really changed —
-    // once per round, never once per request. `beginEvaluation` records the
-    // round and answers whether the phase moved; a second preparation of the
-    // same round answers `false` and nothing is written.
+    // Narrow ONLY when the phase really changed — once per round, never once
+    // per request. `beginEvaluation` records the round and answers whether the
+    // phase moved; a repeat of the same round answers `false`.
     const moved = this.beginEvaluation();
     if (moved !== true) return this.#evaluating;
     try {
@@ -1148,10 +1191,10 @@ export class HostAdapter {
     return this.#evaluating;
   }
 
-  // Shut the round's evaluation. The answer is the phase AFTER the call, which
-  // is what the review callback reads (`endEvaluation() !== false` means the
-  // face is really gone); `beginEvaluation` answers the opposite question — did
-  // the phase move — so the two are not interchangeable.
+  // Shut the round's evaluation. The answer is the phase AFTER the call (false
+  // once shut), which is what tests and callers read; `beginEvaluation` answers
+  // the opposite question — did the phase move — so the two are not
+  // interchangeable.
   endEvaluation() {
     if (this.#evaluating === false) return this.#evaluating;
     this.#evaluating = false;
@@ -1273,6 +1316,14 @@ export default function herdchestra(pi, options = {}) {
       return unboundRefusal(event?.toolName ?? "this tool");
     }
     const adapter = adapterFor(ctx);
+    // Every emit carries a FRESH `ExtensionContext` (`runner.ts`
+    // `createContext`), and only the object of THIS emit has the live
+    // `abort`, `sessionManager` and `ui`. An adapter that keeps the
+    // `session_start` object answers `this.ask` with a stale `ctx.abort` (or
+    // none at all), so the turn is never interrupted. `bind` on a bound
+    // adapter refreshes only the context and rebuilds the control/binding
+    // wrappers; state, roster, ledger and parks stay where they are.
+    if (adapter.bound) adapter.bind(ctx);
     await adapter.installHooks();
     const hook = adapter.hooks()[name];
     return typeof hook === "function" ? await hook(event) : undefined;
@@ -1286,6 +1337,7 @@ export default function herdchestra(pi, options = {}) {
   pi.on("session_start", async (event, ctx) => {
     const handshake = event?.herdchestraHandshake;
     const adapter = adapterFor(ctx);
+    if (adapter.bound) adapter.bind(ctx);
     await adapter.installHooks();
     const hook = adapter.hooks().session_start;
     if (typeof hook === "function") await hook(event);

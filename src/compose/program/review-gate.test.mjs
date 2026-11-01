@@ -88,10 +88,9 @@ test("the review surface refuses every role but the Manager", () => {
   }
 });
 
-test("a surface built without the session's window has a SHUT window", () => {
-  // §2.3's gate must be compose's. A host that forgot to hand its window over
-  // must not silently receive a per-program window that happens to be open:
-  // that was the OMP adapter's hole, and the face read through it.
+test("a surface built without the session's window owns its own open round", () => {
+  // A per-program window IS this program's request, so the program opens its
+  // round. There is no session window whose boundary the host owns.
   const surface = new ProgramSurface({
     name: "no-window",
     role: ROLES.MANAGER,
@@ -102,15 +101,15 @@ test("a surface built without the session's window has a SHUT window", () => {
     root: "/tmp",
     views: new Map(),
   });
-  assert.equal(surface.window.open, false, "no session window means no open evaluation");
-  // A surface with no session window is its own request, so its FIRST ask opens
-  // the round; a host that owns the request boundary says so instead, and then
-  // the face stays shut until that host opens the round itself.
+  assert.equal(surface.window.open, true, "the program's own round is open");
+  assert.equal(typeof surface.reviewSurface({ openRound: false }).cat, "function");
+  // Once a review is accepted, the round is shut and `openRound: false` cannot
+  // reopen it. Only a new request may.
+  surface.window.noteReview({ ok: true });
   assert.throws(
     () => surface.reviewSurface({ openRound: false }),
     (error) => error.code === REVIEW_WINDOW_CLOSED,
   );
-  assert.equal(typeof surface.reviewSurface().cat, "function");
 });
 
 test("a shut window refuses the review surface, and an open one serves it", () => {
@@ -151,6 +150,20 @@ test("building a program opens the round, so a fresh surface serves the face", (
   assert.equal(typeof surface.reviewSurface().cat, "function");
 });
 
+test("a second program does not reopen the round an accepted review closed", () => {
+  const window = new ReviewWindow({ kind: "manager" });
+  window.beginRound();
+  managerSurface(window, "first");
+  assert.equal(window.open, true);
+  window.noteReview({ ok: true });
+  assert.equal(window.open, false);
+  // The same turn's second `js-manager` call must not start round 2 merely by
+  // being built: the host owns the request boundary.
+  managerSurface(window, "second");
+  assert.equal(window.round, 1);
+  assert.equal(window.open, false);
+});
+
 // One review through a manager surface, as a host would make it: an obligation
 // is what the ledger accepts (`recorded`); an empty ledger below the last
 // milestone is the first tenure's `askUser`, which the ledger also accepts; a
@@ -165,11 +178,16 @@ test("property: an accepted review shuts the face for every later program of the
       let shut = false;
       for (let index = 0; index < accepted.length; index += 1) {
         const surface = managerSurface(window, `call-${index}`);
-        // The face is served exactly while the window is open.
+        // The host owns the request boundary, so a later program of the same
+        // round says `openRound: false`: the face is served exactly while the
+        // window is open, and a closed round stays closed.
         if (window.open) {
-          assert.equal(typeof surface.reviewSurface().cat, "function");
+          assert.equal(typeof surface.reviewSurface({ openRound: false }).cat, "function");
         } else {
-          assert.throws(() => surface.reviewSurface(), (error) => error.code === REVIEW_WINDOW_CLOSED);
+          assert.throws(
+            () => surface.reviewSurface({ openRound: false }),
+            (error) => error.code === REVIEW_WINDOW_CLOSED,
+          );
         }
         // An accepted review records an obligation; a refused one asks the
         // ledger for something it cannot do yet (a relay this fixture refuses).
@@ -199,10 +217,9 @@ test("property: a review never reopens a window that was shut before it", async 
       // stays in that round.
       for (let index = 0; index < 3; index += 1) {
         const surface = managerSurface(window, `later-${round}-${index}`);
-        // Building the surface asked for the next round, which is the honest
-        // reading of "a program is a request"; the window moved on, so the
-        // round that was shut is the one already judged. What must never happen
-        // is a review reopening the round it was shut in.
+        // Building the surface does not move the host's round: the session
+        // window's boundary is the host's. What must never happen is a review
+        // reopening the round it was shut in.
         const before = window.round;
         await reviewOnce(surface, index + 1);
         assert.ok(window.round >= before, "a review moved the round backwards");

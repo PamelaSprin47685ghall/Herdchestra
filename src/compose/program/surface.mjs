@@ -94,6 +94,12 @@ const observed = (value) => {
   return value;
 };
 
+// The ledger whose DevOps investigation is still in flight (根 §2.2: 同一任务
+// 同时至多有一个未决的 DevOps). The guard lives with the ledger the programs of
+// one task share, not with one surface instance: a host may rebuild the surface
+// between two programs, and the task's one-at-a-time rule must survive that.
+const DEVOPS_IN_FLIGHT = new WeakMap();
+
 // A thrown refusal as the receipt every review answer has. The code and the
 // message are the two facts a program reads (`r.ok`, `r.code`), so they travel
 // in the same fields a successful receipt uses.
@@ -113,8 +119,10 @@ export const SURFACE_MEMBERS = Object.freeze({
   // (`ASK_FORBIDDEN_OUTSIDE_S1`) instead of a TypeError: 根 §2.2 gives the
   // question to Plan's `S1` alone, and the Manager runs unattended.
   "js-manager": ["park", "unpark", "fork", "join", "review", "ask", ...SCOPE_QUERIES],
-  // A worker has no `ask`: that channel belongs to a top-level program only
-  // (§3.1, §3.3 example 7). It has no `review`: the ledger is the Manager's.
+  // A worker has no `review`: the ledger is the Manager's. It has no `ask`
+  // either: 根 §3.1 marks the question channel absent for `js-worker`, and §3.3
+  // example 7 gives it to top-level programs only. A worker's turn ending is
+  // its report, never a question.
   //
   // `fork`/`join` are here because §3.1 marks them for `js-worker` as well as
   // `js-manager`: a worker that the brief allows to dispatch starts children in
@@ -141,14 +149,15 @@ export const SURFACE_MEMBERS = Object.freeze({
   ],
   "js-review": ["cat", "stat", "ls", "where", "whereAll"],
   // Plan asks the operator in `S1`, so Plan must also be able to resume the
-  // program it parked: `this.ask` IS `this.park` + `interrupt`, and the answer
-  // arrives as `this.unpark(name, answer)` from a later program of the same
-  // session (§2.2, §3.3 example 7). Without `unpark` here the ask could never be
-  // answered on this face.
+  // program it parked: `this.ask` parks internally and adds `interrupt`, and
+  // the answer arrives as `this.unpark(name, answer)` from a later program of
+  // the same session (§2.2, §3.3 example 7). Without `unpark` here the ask could
+  // never be answered on this face. There is no separate `this.park`: 根 §3.1
+  // marks it absent for Plan, and `this.ask` reaches the park channel itself.
   //
   // `ask` is listed because the member must exist to be refused by name after
   // `S1`; the handler decides from the ledger's milestone.
-  plan: ["cat", "write", "park", "unpark", "ask", "devops", "review"],
+  plan: ["cat", "write", "unpark", "ask", "devops", "review"],
 });
 
 export const surfaceNameFor = (role) => {
@@ -168,6 +177,11 @@ const text = (name, value) => {
 // One program surface. `ports` carries the host ports this role needs; a port
 // the role does not use is not read.
 export class ProgramSurface {
+  // One review member per surface, so its queue serializes every review of
+  // this program's tenure (根 §2.4 第 3 步): two reviews with different callIds
+  // must not both read the same empty ledger and both relay.
+  #reviewer = null;
+
   // `intent` is the request's intent text; the deadline is 50 ms per UTF-8
   // byte of it (spec §3.3). `registry` is optional: when given, `settle()`
   // retires the finished name so it can be reused.
@@ -244,21 +258,18 @@ export class ProgramSurface {
     // that decides what a review means: a window for the other side would close
     // on a Plan review and never on a Manager's. The host passes the session's
     // window in; `ports` is not the place for it, because no member calls it.
-    // A host that hands no window in gets a SHUT window of the right side, never
-    // a fresh open one: §2.3's face must not exist merely because the adapter
-    // forgot to say where its session keeps the round.
+    // A host that hands no window in gets a per-program window of the right
+    // side: the program IS its own request, so the round opens below. A host
+    // that owns a session window states it here, and its request boundary
+    // decides when rounds open.
     this.window = reviewWindow ?? new ReviewWindow({ kind: role === ROLES.PLAN ? "plan" : "manager" });
-    // Whether that window is the session's. The host owns the request boundary
-    // of a session window; a per-program window's own request is the program,
-    // and `reviewSurface` opens its round when the face is first asked for.
-    this.holdsSessionWindow = reviewWindow !== null;
-    // A program that arrives is a request of its round, and §2.3 opens the
-    // evaluation there. A host with its own request boundary has already opened
-    // it, and `beginRound()` with no argument is idempotent under an open
-    // window: a repeated preparation of one request never starts a second
-    // round, while a program that follows an accepted review does — which is
-    // exactly "the next request after the review".
-    if (this.holdsSessionWindow) this.window.beginRound();
+    // A per-program window is its own request, so the program opens its round.
+    // A SESSION window belongs to the host's request boundary: the host opens
+    // rounds at its own request edges, and a second program of one turn — after
+    // an accepted review shut the window — must NOT reopen the round that
+    // review just closed (§2.3). Only a window that has never been opened
+    // (`round === 0`) is started here.
+    if (reviewWindow === null || this.window.round === 0) this.window.beginRound();
     // Every accepted review is persisted once, by the store's owner, so the
     // count and the milestone a later program reads are the ones this one left.
     this.ledgerStore = ledgerStore;
@@ -310,11 +321,20 @@ export class ProgramSurface {
     // The member parks through the SAME channel every other member uses
     // (`parkChannel`), so the first review's question suspends the body exactly
     // as `this.ask` does (根 §2.4 第 1 步, §3.3 example 7).
-    const relay = new ReviewMember({
-      ledger: this.ledger,
-      port: this.ports.relay,
-      park: (site) => this.parkChannel()(site),
-    });
+    //
+    // ONE member per surface: its queue is what serializes this tenure's
+    // reviews, so two reviews with different callIds cannot both read the same
+    // empty ledger and both relay (根 §2.4 第 3 步). A new member per call would
+    // make that queue vacuous. The park closure reads `this` lazily, so a host
+    // that states its channel after the build still reaches the right one.
+    if (this.#reviewer === null) {
+      this.#reviewer = new ReviewMember({
+        ledger: this.ledger,
+        port: this.ports.relay,
+        park: (site) => this.parkChannel()(site),
+      });
+    }
+    const relay = this.#reviewer;
     // A Plan at 待执行 hands its SAVED draft to the Manager, and the review
     // carries no text of its own (§2.2): `source` is the bytes the draft port
     // reads at the canonical path, not a note the model wrote. Reading it here,
@@ -635,13 +655,15 @@ export class ProgramSurface {
       // answer)`, which injects it as this expression's value — no separate
       // answer channel exists.
       return (question) => {
-        const asked = text("ask(question)", question);
-        // `this.ask` exists only in Plan's `S1` (根 §2.2, §3.1). The member is
-        // present on every face that could try it, so a call from the wrong
-        // role or the wrong stage is a named refusal instead of a TypeError —
-        // the model reads which rule it broke.
+        // `this.ask` exists only in Plan's `S1` (根 §2.2, §3.1). The gate is
+        // checked BEFORE the argument: a call from the wrong role or stage is
+        // always the named refusal, whatever it passed — `this.ask("")` from a
+        // Manager must not read as an argument error. The member is present on
+        // both top-level faces (Manager and Plan), so the refusal is a fact the
+        // model can act on instead of a TypeError; workers have no such member
+        // (根 §3.1).
         const allowed = askAllowed(this.ledger);
-        if (!allowed.ok) {
+        if (this.role !== ROLES.PLAN || !allowed.ok) {
           throw new ComposeError(
             ASK_FORBIDDEN,
             "this.ask is only allowed during Plan milestone S1",
@@ -649,10 +671,11 @@ export class ProgramSurface {
               role: this.role,
               kind: this.ledger?.kind ?? null,
               milestone: this.ledger?.milestone ?? null,
-              reason: allowed.reason,
+              reason: this.role === ROLES.PLAN ? allowed.reason : "NOT_PLAN",
             },
           );
         }
+        const asked = text("ask(question)", question);
         const parked = this.parkChannel()({ reason: "ask", payload: { question: asked } });
         // The host's asking half (`ports.ask`): it records the question where
         // the operator can read it and answers with the asked receipt. The park
@@ -737,7 +760,38 @@ export class ProgramSurface {
       };
     }
     if (member === "devops") {
-      return (intent) => observed(this.port("devops").investigate(text("devops(intent)", intent)));
+      return (intent) => {
+        const asked = text("devops(intent)", intent);
+        // 根 §2.2: at most one pending DevOps per task. The guard lives in
+        // compose because the contract does: a host port that starts a fresh
+        // session per call would otherwise let a Plan run two at once. A second
+        // call is refused by name until the first settles, and the first
+        // investigation's record is returned verbatim.
+        if (DEVOPS_IN_FLIGHT.get(this.ledger) === true) {
+          throw new ComposeError(
+            COMPOSE_CODES.DEVOPS_IN_FLIGHT,
+            "a devops investigation is already in flight",
+            { intent: asked },
+          );
+        }
+        DEVOPS_IN_FLIGHT.set(this.ledger, true);
+        const settle = () => {
+          DEVOPS_IN_FLIGHT.delete(this.ledger);
+        };
+        let investigation;
+        try {
+          investigation = this.port("devops").investigate(asked);
+        } catch (error) {
+          settle();
+          throw error;
+        }
+        if (investigation !== null && typeof investigation?.then === "function") {
+          const done = Promise.resolve(investigation).finally(settle);
+          return observed(done);
+        }
+        settle();
+        return investigation;
+      };
     }
     if (member === "negotiate" || member === "askPreviousScope") {
       // §6.2: a snapshot query, answered synchronously from the newest

@@ -2278,6 +2278,7 @@ test("the Pair Hint pair survives the Scope projection of a resetScope", async (
   for (const item of hinted) assert.equal(PINNED_MEMBERS.includes(item.member), true, "the pair is pinned");
   // `SURFACE_MEMBERS["js-review"]` is the face's member names, not the tool:
   // the tool call is `js-review` and its members are what it may call.
+  assert.equal(PINNED_MEMBERS.includes("js-review"), true, "the evaluation TOOL is pinned: a host call's item names it");
   assert.equal(PINNED_MEMBERS.includes("cat"), true, "a review member is pinned too");
   assert.equal(PINNED_MEMBERS.includes("js-worker"), false, "the model's own work is not pinned");
   await plugin.hooks.afterRun();
@@ -2287,7 +2288,7 @@ test("pinned members are the same set the other adapters use", async () => {
   const { DEFAULT_PINNED_MEMBERS } = await import("../core/scope/errors.mjs");
   assert.deepEqual(
     [...PINNED_MEMBERS],
-    [...DEFAULT_PINNED_MEMBERS, "", ...SURFACE_MEMBERS["js-review"]],
+    [...DEFAULT_PINNED_MEMBERS, "", "js-review", ...SURFACE_MEMBERS["js-review"]],
     "cline pins exactly core's defaults plus the hint pair and the review face",
   );
 });
@@ -2718,6 +2719,7 @@ test("an operator interrupt on Cline is never nudged, and a natural stop still i
   assert.equal(cancelled.stopAllowed, true);
   assert.equal(cancelled.reason, "operator-interrupt");
   assert.equal(cancelled.nudge, null);
+  assert.equal(cleared.length, 2, "an allowed stop clears any nudge an earlier attempt recorded");
 
   // The same session, a model that stopped on its own: still a nudge.
   const natural = turnExit({ session, assistantMessage: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } });
@@ -3265,4 +3267,554 @@ test("gap 8: a crash between the fence and the ledger advance still leaves the s
   assert.equal(first.ok, true);
   assert.equal(first.kind, "confirm");
   assert.equal(restored.ledger.successor, false, "the successor has now judged");
+});
+
+// ---------------------------------------------------------------------------
+// Root §3.1: one spelling per capability
+// ---------------------------------------------------------------------------
+
+test("a program's primitives are bare names only: no this.fork/this.join/this.review", async (t) => {
+  // `compile` binds the members as the body's `this` and the three top-level
+  // primitives as parameters. The `JsProgram` base class assigns `__surface` to
+  // the instance, so passing the full member list there gave every program a
+  // SECOND spelling (`this.fork`) beside the bare one. The surface now carries
+  // the members only.
+  const dir = await workspace(t);
+  const { tools } = setup(dir);
+  const code = [
+    "return {",
+    "  thisFork: typeof this.fork,",
+    "  thisJoin: typeof this.join,",
+    "  thisReview: typeof this.review,",
+    "  bareFork: typeof fork,",
+    "  bareJoin: typeof join,",
+    "  bareReview: typeof review,",
+    "};",
+  ].join("\n");
+  const cases = [
+    // Which bare primitives each face carries (compose's member table).
+    ["js-manager", top("sp-m"), { bareFork: "function", bareJoin: "function", bareReview: "function" }],
+    ["js-worker", child("sp-w"), { bareFork: "function", bareJoin: "function", bareReview: "undefined" }],
+    ["js-plan", top("sp-p"), { bareFork: "undefined", bareJoin: "undefined", bareReview: "function" }],
+  ];
+  for (const [name, context, bare] of cases) {
+    const receipt = await tools.get(name).execute({ code }, context);
+    assert.equal(receipt.state, "completed", `${name}: ${JSON.stringify(receipt.error)}`);
+    assert.deepEqual(receipt.value, { thisFork: "undefined", thisJoin: "undefined", thisReview: "undefined", ...bare }, name);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The request copy: receipts whole, operator words found, mixed messages paired
+// ---------------------------------------------------------------------------
+
+test("a program receipt reaches the model whole, not stripped to its value", () => {
+  // The tool's result is a receipt object: `{ ok, name, state, reason, payload,
+  // source, pendingOperations, command, delta, remainingWaitMs, value, error }`.
+  // It has a `value` field, and unwrapping "any object with a value" rendered
+  // only that field: the model lost the receipt §3.3 requires.
+  const receipt = {
+    ok: true,
+    name: "p1",
+    state: "completed",
+    reason: null,
+    payload: null,
+    source: "return 2;",
+    pendingOperations: 0,
+    command: null,
+    delta: "",
+    remainingWaitMs: 0,
+    value: 2,
+    error: null,
+  };
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "start" }] },
+    { role: "assistant", content: [{ type: "tool-call", toolName: "js-manager", toolCallId: "c1", input: {} }] },
+    { role: "tool", content: [{ type: "tool-result", toolName: "js-manager", toolCallId: "c1", output: receipt }] },
+  ];
+  const text = toCueToolResults(messages)[2].content[0].output.value;
+  assert.equal(text.includes('name: "p1"'), true, "the receipt names its program");
+  assert.equal(text.includes("state: \"completed\""), true);
+  assert.equal(text.includes('source: "return 2;"'), true, "and carries the source §3.3 requires");
+  assert.equal(text.includes("value: 2"), true);
+
+  // A JSON object the TOOL wrote is the tool's own bytes. Only the host's two
+  // tags are envelopes; `{"type":"event","value":1}` is a command's stdout.
+  const foreign = [
+    { role: "tool", content: [{ type: "tool-result", toolName: "call", toolCallId: "c2", output: '{"type":"event","value":1}' }] },
+  ];
+  // The envelope is left alone and the tool's own bytes are what the model
+  // reads — not `1`, which is what unwrapping the foreign tag produced.
+  assert.equal(toCueToolResults(foreign)[0].content[0].output.value, '{"type":"event","value":1}');
+});
+
+test("the operator's answer is found above a trailing tool result or empty message", () => {
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "answer" }] },
+    { role: "tool", content: [{ type: "tool-result", toolName: "x", toolCallId: "c1", output: "x" }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "c2", name: "x", content: "y" }] },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "tool turn" },
+        { type: "tool_result", tool_use_id: "c3", name: "x", content: "z" },
+      ],
+    },
+    { role: "user", content: [{ type: "image", source: { data: "" } }] },
+  ];
+  // A tool-result user message (whole or mixed) is the host's turn, and an
+  // image-only message has no words: none answers the question, and the scan
+  // continues to the operator's own words.
+  assert.equal(lastOperatorText(messages), "answer");
+});
+
+test("a mixed user message contributes both its words and its tool result", () => {
+  const message = {
+    role: "user",
+    content: [
+      { type: "text", text: "here" },
+      { type: "tool_result", tool_use_id: "c9", name: "js-worker", content: '{"type":"json","value":{"ok":true}}' },
+    ],
+  };
+  const items = toItems([message]);
+  assert.equal(
+    items.some((item) => item.kind === "toolResult" && item.callId === "c9" && item.member === "js-worker"),
+    true,
+    "the result is a pair Scope can see",
+  );
+  assert.equal(
+    // The message is a tool-result turn the provider built, so its text is host
+    // context: Scope keeps it wherever it sits and never counts it as a beat.
+    items.some((item) => item.kind === "provider" && item.text === "here"),
+    true,
+    "and the words are still a message (as provider context)",
+  );
+  const cue = toCueToolResults([message])[0];
+  assert.equal(cue.content[0].text, "here");
+  assert.equal(cue.content[1].content, "{ok: true}", "the result is CUE, not the host's JSON envelope");
+});
+
+test("a result whose call survived is restored, so no tool_use is left unanswered", () => {
+  // Scope kept the assistant message for its prose and dropped the result. A
+  // provider refuses a call with no result, so the pair is restored.
+  const call = {
+    role: "assistant",
+    content: [
+      { type: "text", text: "working" },
+      { type: "tool-call", toolName: "js-worker", toolCallId: "a", input: {} },
+    ],
+  };
+  const result = { role: "tool", content: [{ type: "tool-result", toolName: "js-worker", toolCallId: "a", output: "x" }] };
+  const operator = { role: "user", content: [{ type: "text", text: "do it" }] };
+  const messages = [operator, call, result];
+  // The projection kept the words and the call, and dropped the result.
+  const keptItems = toItems(messages).filter((item) => item.kind !== "toolResult");
+  const kept = selectKept(messages, keptItems);
+  assert.deepEqual(kept, [operator, call, result]);
+});
+
+// ---------------------------------------------------------------------------
+// Scope: fork and join book their annotations (§6.2)
+// ---------------------------------------------------------------------------
+
+test("fork and join book their scope annotations like every other call", async (t) => {
+  const dir = await workspace(t);
+  const { plugin } = setup(dir);
+  const session = plugin.adapter.session;
+  const book = session.tenure.scope();
+  const call = (name, input, id) => ({
+    snapshot: { agentId: "top", parentAgentId: null },
+    tool: { name },
+    toolCall: { toolCallId: id, toolName: name },
+    input,
+  });
+  const negotiate = () => book.ask("negotiate", session.sessionId);
+
+  const fork = call(
+    "fork",
+    { name: "w", brief: "role: coder — do", scope: { kind: "resetScope", newScopeGoal: "dispatch", newScopeRetentionBudget: 2 } },
+    "fork-1",
+  );
+  // A Scope turn books one beat, and the reset is the beat of its turn.
+  await plugin.hooks.beforeRun();
+  await plugin.hooks.beforeModel({ request: { messages: [] } });
+  assert.equal(await plugin.hooks.beforeTool(fork), undefined, "the fork's resetScope is admitted");
+  await plugin.hooks.afterTool(fork);
+  assert.equal(negotiate().established, true, "the fork established the budget");
+  assert.equal(negotiate().remaining, 2);
+
+  // The next request is the next turn: the join's `keepLast` is its own beat.
+  await plugin.hooks.beforeModel({ request: { messages: [] } });
+  const join = call("join", { scope: { kind: "keepLast" } }, "join-1");
+  assert.equal(await plugin.hooks.beforeTool(join), undefined, "the join's keepLast is admitted");
+  await plugin.hooks.afterTool(join);
+  assert.equal(negotiate().remaining, 1, "the join spent one retention unit");
+});
+
+// ---------------------------------------------------------------------------
+// A delegated runtime's hooks never move the parent session
+// ---------------------------------------------------------------------------
+
+test("a child runtime's hooks never move the parent's ask, turn or park stop", async (t) => {
+  const dir = await workspace(t);
+  const { plugin, tools } = setup(dir, {}, { role: "plan" });
+  const session = plugin.adapter.session;
+  const parent = { snapshot: { agentId: "top", parentAgentId: null } };
+  await plugin.hooks.beforeRun(parent);
+  await plugin.hooks.beforeModel({
+    ...parent,
+    request: { messages: [{ role: "user", content: [{ type: "text", text: "start" }] }] },
+  });
+  const parked = await tools.get("js-plan").execute(
+    { code: "const answer = await this.ask('which file?'); return answer;", scope: { kind: "resetScope", newScopeGoal: "ask", newScopeRetentionBudget: 3 } },
+    top("ask-child"),
+  );
+  assert.equal(parked.reason, "ask");
+  assert.equal(session.askedInTurn, true);
+  assert.equal(session.parkStopOwed, true);
+  const run = session.run;
+  const turn = session.turn;
+
+  // The child receives this session's hooks; its brief is a USER message, which
+  // `resumeAsked` read as the operator's answer.
+  const childCtx = { snapshot: { agentId: "kid", parentAgentId: "top" } };
+  await plugin.hooks.beforeRun(childCtx);
+  await plugin.hooks.beforeModel({
+    ...childCtx,
+    request: { messages: [{ role: "user", content: [{ type: "text", text: "role: coder — do the work" }] }] },
+  });
+  await plugin.hooks.afterModel({
+    ...childCtx,
+    assistantMessage: { role: "assistant", content: [{ type: "text", text: "done" }] },
+  });
+  await plugin.hooks.afterRun({ ...childCtx, result: { status: "completed" } });
+
+  assert.deepEqual(session.asked, { name: "ask-child", question: "which file?" }, "the child's brief is not an answer");
+  assert.equal(session.askedInTurn, true);
+  assert.equal(session.parkStopOwed, true);
+  assert.equal(session.run, run, "a child's run does not advance the parent's run counter");
+  assert.equal(session.turn, turn, "nor its turn");
+  assert.equal(session.nudge, null);
+});
+
+test("an operator's answer finishes the parked program and frees its name", async (t) => {
+  const dir = await workspace(t);
+  const { plugin, tools } = setup(dir, {}, { role: "plan" });
+  const session = plugin.adapter.session;
+  await plugin.hooks.beforeModel({ request: { messages: [{ role: "user", content: [{ type: "text", text: "start" }] }] } });
+  const scope = { kind: "resetScope", newScopeGoal: "ask", newScopeRetentionBudget: 3 };
+  const parked = await tools.get("js-plan").execute(
+    { code: "const answer = await this.ask('q?'); return 'got:' + answer;", scope },
+    top("ask-finish"),
+  );
+  assert.equal(parked.reason, "ask");
+  assert.deepEqual(session.tenure.parkedNames(), ["ask-finish"]);
+  assert.equal(session.resumeAsked([{ role: "user", content: [{ type: "text", text: "answer" }] }])?.name, "ask-finish");
+  for (let tick = 0; tick < 4; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(session.tenure.parkedNames(), [], "a resumed program is no longer parked");
+  assert.equal(session.registry.live("ask-finish"), null, "its name is retired");
+  // The same name runs a new program: the park entry and the name are both free.
+  const again = await tools.get("js-plan").execute({ code: "return 1;", scope }, top("ask-finish"));
+  assert.equal(again.state, "completed", JSON.stringify(again.error));
+});
+
+test("a continuation that asks again owes its run the stop too", async (t) => {
+  const dir = await workspace(t);
+  const { plugin, tools } = setup(dir, {}, { role: "plan" });
+  const session = plugin.adapter.session;
+  await plugin.hooks.beforeModel({ request: { messages: [{ role: "user", content: [{ type: "text", text: "start" }] }] } });
+  const first = await tools.get("js-plan").execute(
+    {
+      code: "const a = await this.ask('first?'); const b = await this.ask('second?'); return a + '/' + b;",
+      scope: { kind: "resetScope", newScopeGoal: "ask", newScopeRetentionBudget: 3 },
+    },
+    top("ask-twice"),
+  );
+  assert.equal(first.reason, "ask");
+  // The first answer resumes the body, which parks on the second question.
+  session.resumeAsked([{ role: "user", content: [{ type: "text", text: "one" }] }]);
+  for (let tick = 0; tick < 4; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(session.asked, { name: "ask-twice", question: "second?" });
+  assert.equal(session.askedInTurn, true, "the second question is this turn's interrupt");
+  assert.equal(session.parkStopOwed, true, "and the run owes the stop");
+});
+
+// ---------------------------------------------------------------------------
+// The request copy's own boundaries (§6.1, §6.2)
+// ---------------------------------------------------------------------------
+
+test("a relay barrier keeps an operator turn at index 0", async (t) => {
+  const dir = await workspace(t);
+  const { plugin } = setup(dir);
+  const session = plugin.adapter.session;
+  const handed = session.tenure.handOver({ lastReview: 1, lastTurn: 1 });
+  assert.equal(handed.ok, true);
+  const copy = await session.projectMessages([{ role: "user", content: [{ type: "text", text: "继续" }] }]);
+  const texts = copy.flatMap((message) => (Array.isArray(message.content) ? message.content.map((part) => part?.text) : []));
+  assert.equal(texts.includes("继续"), true, "the successor keeps the operator's own words");
+});
+
+test("an equal-length projection is applied, not skipped", async (t) => {
+  const dir = await workspace(t);
+  const { plugin } = setup(dir);
+  const session = plugin.adapter.session;
+  // A `removeLast` lesson: the erased beat leaves and one replacement message is
+  // written in its place, so the copy keeps its LENGTH while its bytes change.
+  const scope = session.tenure.scope();
+  scope.project = ({ items }) => ({
+    ok: true,
+    messages: items.map((item) =>
+      item.kind === "message" && item.role === "assistant"
+        ? { kind: "message", role: "assistant", text: "lesson: do not spin", erasedCallId: "erased-1" }
+        : item,
+    ),
+  });
+  // No Pair Hint in this copy: it would add messages and hide the length.
+  session.tenure.pairHint = async () => ({
+    bound: false,
+    presented: null,
+    text: null,
+    handles: [],
+    anchor() {},
+    setHandles() {},
+    newEpoch: async () => {},
+  });
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "text", text: "old prose" }] },
+    { role: "user", content: [{ type: "text", text: "next" }] },
+  ];
+  const copy = await session.projectMessages(messages);
+  const text = JSON.stringify(copy);
+  assert.equal(text.includes("lesson: do not spin"), true, "the replacement reaches the copy");
+  assert.equal(text.includes("old prose"), false, "the erased message leaves it");
+  assert.equal(copy.length, messages.length, "the replacement keeps the copy's length");
+});
+
+test("a Scope refusal leaves a durable request record and still sends a copy", async (t) => {
+  const dir = await workspace(t);
+  const { plugin } = setup(dir);
+  const session = plugin.adapter.session;
+  const scope = session.tenure.scope();
+  scope.project = () => ({ ok: false, code: "SCOPE_CALL_RESULT_MISMATCH", message: "a result names no kept call" });
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "tool-call", toolName: "js-worker", toolCallId: "c1", input: {} }] },
+  ];
+  const copy = await session.projectMessages(messages);
+  assert.equal(Array.isArray(copy), true);
+  assert.equal(copy.length > 0, true, "the copy still goes out");
+  const journal = join(dir, ".Herdchestra", "cline-test.requests.jsonl");
+  assert.equal(existsSync(journal), true, "the refusal is written down");
+  const record = JSON.parse(readFileSync(journal, "utf8").trim().split("\n").at(-1));
+  assert.equal(record.kind, "scopeProjectionRefused");
+  assert.equal(record.code, "SCOPE_CALL_RESULT_MISMATCH");
+  assert.equal(record.sessionId, "cline-test");
+  assert.equal(record.items.count, 2, "the shapes the projection judged are recorded");
+  assert.equal(record.items.shapes.every((shape) => typeof shape.digest === "string"), true);
+  assert.equal(JSON.stringify(record).includes("go"), false, "no message text is recorded");
+});
+
+// ---------------------------------------------------------------------------
+// The tools and the hooks around them (§3.3, §7.2)
+// ---------------------------------------------------------------------------
+
+test("a syntax error frees the program name and answers a failure receipt", async (t) => {
+  const dir = await workspace(t);
+  const { tools } = setup(dir);
+  const tool = tools.get("js-manager");
+  const scope = { kind: "resetScope", newScopeGoal: "compile", newScopeRetentionBudget: 3 };
+  const broken = await tool.execute({ code: "return (;", scope }, top("compile-1"));
+  assert.equal(broken.state, "failed");
+  assert.equal(typeof broken.error.message, "string");
+  assert.equal(broken.error.code, "PROGRAM_COMPILE_FAILED");
+  // The name is free: a replay of the same call id is not NAME_TAKEN.
+  const retried = await tool.execute({ code: "return 1;", scope }, top("compile-1"));
+  assert.equal(retried.state, "completed", JSON.stringify(retried.error));
+  assert.equal(retried.value, 1);
+});
+
+test("a delegated runtime's tool list is the worker face only", async (t) => {
+  const dir = await workspace(t);
+  const { plugin } = setup(dir);
+  // `js-review` is the Manager's evaluation face and `beforeTool` refuses it for
+  // coder and devops, so a worker must not see it.
+  assert.deepEqual(plugin.adapter.tools.map((tool) => tool.name), ["js-worker"]);
+});
+
+test("the gate trace survives a context it cannot serialize", async (t) => {
+  const dir = await workspace(t);
+  const file = join(dir, "trace.jsonl");
+  process.env.HERDCHESTRA_TRACE_FILE = file;
+  t.after(() => {
+    delete process.env.HERDCHESTRA_TRACE_FILE;
+  });
+  const { plugin } = setup(dir);
+  const context = {
+    snapshot: { agentId: "a1", parentAgentId: null },
+    tool: { name: "js-manager" },
+    input: { code: "return 1;", scope: { kind: "resetScope", newScopeGoal: "g", newScopeRetentionBudget: 3 } },
+  };
+  // A context whose own keys cannot be read is exactly what the host's own
+  // structured clone refuses; the trace must lose its line, never the call.
+  const hostile = new Proxy(context, {
+    ownKeys() {
+      throw new Error("the host's context cannot be enumerated");
+    },
+  });
+  const answer = await plugin.hooks.beforeTool(hostile);
+  assert.notEqual(answer?.skip, true, "the call is not refused by a failed trace");
+  assert.equal(existsSync(file), false, "and no line is written");
+});
+
+test("a projection that throws still sends CUE-rendered tool results", async () => {
+  const { requestRewrite } = await import("./rewrite.mjs");
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    { role: "assistant", content: [{ type: "tool-call", toolName: "js-worker", toolCallId: "c1", input: {} }] },
+    { role: "tool", content: [{ type: "tool-result", toolName: "js-worker", toolCallId: "c1", output: { type: "json", value: { ok: true } } }] },
+  ];
+  const rewrite = requestRewrite({
+    project: async () => {
+      throw new Error("the session's projection failed");
+    },
+  });
+  const copy = await rewrite(messages);
+  assert.equal(copy[2].content[0].output.value, "{ok: true}", "§6.3 still holds on the fallback path");
+  assert.equal(copy[0], messages[0], "the operator's words are untouched");
+});
+
+// ---------------------------------------------------------------------------
+// The roster's own boundaries
+// ---------------------------------------------------------------------------
+
+test("a Plan ledger reads its own milestones, and its fence is adopted", async (t) => {
+  const dir = await workspace(t);
+  const file = join(dir, "p.plan.json");
+  const scopeFile = join(dir, "s.jsonl");
+  // A Plan relays too (an incumbent's empty review retires and opens a
+  // successor at the same milestone), so a Plan file can carry a fence. The
+  // restore indexed the milestone against the MANAGER list, answered -1, and
+  // returned a fresh ledger beside the fence: `retired` then said the successor
+  // was the retired incumbent, forever.
+  const first = new TenureState({ file, scopeFile, sessionId: "p", kind: "plan" });
+  assert.equal(first.handOver({ lastReview: 0, lastTurn: 1 }).ok, true);
+  const restored = new TenureState({ file, scopeFile, sessionId: "p", kind: "plan" });
+  assert.equal(restored.ledger.kind, "plan");
+  assert.equal(restored.ledger.tenure, 1, "the fence names the tenure that is judging");
+  assert.equal(restored.retired, false, "the successor is not the retired incumbent");
+
+  // A file with no fence: its obligations survive a restart. The old lookup
+  // found no milestone at all and returned before applying them.
+  const plain = join(dir, "q.plan.json");
+  await writeFile(
+    plain,
+    `${JSON.stringify({
+      v: 1,
+      sessionId: "q",
+      kind: "plan",
+      milestone: "S2",
+      tenure: 0,
+      reviews: 1,
+      obligations: [{ key: "draft", value: "write it" }],
+      successor: false,
+      fence: { retiredTenure: null, barrier: null, successor: null },
+    })}\n`,
+  );
+  const fromFile = new TenureState({ file: plain, scopeFile, sessionId: "q", kind: "plan" });
+  assert.deepEqual(fromFile.ledger.obligations, [{ key: "draft", value: "write it" }]);
+});
+
+test("two devops investigations in one turn do not both start", async () => {
+  const { createDevopsRunner } = await import("./devops.mjs");
+  const started = [];
+  let release = null;
+  const runner = createDevopsRunner({
+    ctx: {},
+    cwd: "/tmp",
+    extension: null,
+    tools: [],
+    delegatedApi: async () => ({
+      createDelegatedAgentConfigProvider: () => ({}),
+      createDelegatedAgent: () => ({
+        addTools() {},
+        run: () => {
+          started.push(1);
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        },
+      }),
+    }),
+    resolveConnection: async () => ({
+      model: { providerId: "p", modelId: "m" },
+      source: "context",
+      credentials: null,
+      credentialSource: null,
+    }),
+  });
+  const first = runner.investigate("one");
+  const second = await runner.investigate("two");
+  assert.equal(second.ok, false);
+  assert.equal(second.reason, "DEVOPS_ALREADY_IN_FLIGHT");
+  assert.equal(runner.busy, true, "the admission is set before the first await");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started.length, 1, "only one runtime was started");
+  release({ finishReason: "stop", text: "the report", iterations: 1 });
+  assert.deepEqual(await first, { ok: true, report: "the report" });
+  assert.equal(runner.busy, false);
+});
+
+test("a steer is delivered even when the host already wired its own queue", async () => {
+  const { runtimeHandle } = await import("./runtime.mjs");
+  const hostQueue = ["host-message"];
+  const handle = runtimeHandle({
+    name: "w",
+    brief: "first",
+    role: "coder",
+    tools: [],
+    configProvider: {
+      getRuntimeConfig: () => ({ consumePendingUserMessage: async () => hostQueue.shift() ?? "" }),
+    },
+    create: (options) => ({
+      run: () => new Promise(() => {}),
+      abort() {},
+      addTools() {},
+      notifyPendingUserMessage() {},
+      read: () => options.configProvider.getRuntimeConfig().consumePendingUserMessage,
+    }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(handle.steer("steered brief"), true);
+  const consume = handle.agent.read();
+  assert.equal(await consume(), "steered brief", "the adapter's queue is drained first");
+  assert.equal(await consume(), "host-message", "the host's own consumer is chained behind it");
+  assert.equal(await consume(), "");
+});
+
+test("two workers' groups route each lane's settlement to its own owner", async (t) => {
+  const dir = await workspace(t);
+  const table = new WorkerTable({
+    create: async ({ name }) => ({
+      started: true,
+      pending: true,
+      run: () => new Promise(() => {}),
+      abort() {},
+      addTools() {},
+      notifyPendingUserMessage() {},
+    }),
+  });
+  await table.fork({ name: "w1", brief: "one", role: "coder" });
+  await table.fork({ name: "w2", brief: "two", role: "coder" });
+  const session = new SessionFission({ workers: table, sessionId: "s-two", groupJournal: () => join(dir, "g.jsonl") });
+  const first = await session.port().fission("w1", ["a", "b"]);
+  const second = await session.port().fission("w2", ["c", "d"]);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  const one = session.laneSettled({ name: first.lanes[0].laneId, outcome: { text: "one" } });
+  assert.equal(one.owner, "w1", "the lane's own group, not the session's last owner");
+  assert.equal(one.groupId, first.groupId);
+  const two = session.laneSettled({ name: second.lanes[1].laneId, outcome: { text: "two" } });
+  assert.equal(two.owner, "w2");
+  assert.equal(two.groupId, second.groupId);
 });

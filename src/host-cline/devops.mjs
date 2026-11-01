@@ -42,80 +42,95 @@ export const createDevopsRunner = ({
   // adapter registers may not exist yet when the runner is built.
   const workerTools = () => (Array.isArray(tools) ? tools : []);
   let inFlight = null;
+  // The investigation itself. Defined before the returned object so the
+  // admission below can start it synchronously.
+  const runInvestigation = async (intent) => {
+    // The guarded factory (root §7.2): the devops face survives a narrowed
+    // tool list exactly as a forked worker's does.
+    const delegated = await delegatedApi(() => workerTools());
+    if (delegated === null) return { ok: false, reason: "HOST_HAS_NO_DELEGATED_AGENT" };
+    // The same ladder `fork` and the hand-off use. A devops run is the same
+    // work on the same account as the Plan that asks for it.
+    const resolved =
+      typeof resolveConnection === "function"
+        ? await resolveConnection()
+        : {
+            model: ctx?.providerId !== undefined && ctx?.modelId !== undefined ? { providerId: ctx.providerId, modelId: ctx.modelId } : null,
+            source: "context",
+            credentials: null,
+            credentialSource: null,
+          };
+    const connection = resolved?.model ?? null;
+    if (connection === null || typeof connection.modelId !== "string" || connection.modelId.length === 0) {
+      return {
+        ok: false,
+        reason: "MODEL_UNKNOWN",
+        message: "no source named this session's provider and model, so the devops runtime cannot connect",
+        detail: { tried: ["request", "context", "sessionRecord", "environment"] },
+      };
+    }
+    const extensions = extension === null ? [] : [extension];
+    const configProvider = delegated.createDelegatedAgentConfigProvider({
+      providerId: connection.providerId,
+      modelId: connection.modelId,
+      cwd,
+      extensions,
+      // The host's stored key and base URL for this provider. Without them the
+      // runtime starts and dies at the provider on "no API key".
+      ...(resolved.credentials === null || resolved.credentials === undefined
+        ? {}
+        : { ...resolved.credentials, modelId: connection.modelId }),
+    });
+    const handle = runtimeHandle({
+      name: `plan-devops-${Date.now().toString(36)}`,
+      // The identity is stated in the brief, exactly as §2.1 requires of any
+      // subagent start; the `devops` name here is the runtime handle's label,
+      // not the identity.
+      brief: `role: devops — ${intent}`,
+      role: ROLES.DEVOPS,
+      create: delegated.createDelegatedAgent,
+      configProvider,
+      tools: workerTools(),
+      extensions,
+      cwd,
+      prompt: systemPromptFor(ROLES.DEVOPS),
+      modelSource: resolved.source ?? null,
+      credentialSource: resolved.credentialSource ?? null,
+    });
+    if (handle?.started === false) {
+      return { ok: false, reason: handle.rejection ?? "HOST_HAS_NO_DELEGATED_AGENT", message: handle.message };
+    }
+    // The runtime reports its one turn through `onSettled`; the admission
+    // promise above is what a second caller collides with.
+    const settled = new Promise((resolve) => {
+      handle.onSettled((record) => resolve(record));
+    });
+    const record = await settled;
+    if (record?.finishReason === "error") {
+      return { ok: false, reason: "DEVOPS_FAILED", message: record.text };
+    }
+    return { ok: true, report: record?.text ?? "" };
+  };
+
   return {
     get busy() {
       return inFlight !== null;
     },
     // `investigate(intent)` answers `{ ok: true, report }` or
     // `{ ok: false, reason, message? }`.
+    //
+    // The admission is a single-flight promise set SYNCHRONOUSLY, before the
+    // first `await`. Assigning it after the SDK and the connection resolved let
+    // two concurrent calls both read `null` and both start a devops runtime,
+    // which is exactly the "at most one unresolved devops" rule §2.2 forbids.
     async investigate(intent) {
       if (inFlight !== null) return { ok: false, reason: "DEVOPS_ALREADY_IN_FLIGHT" };
-      // The guarded factory (root §7.2): the devops face survives a narrowed
-      // tool list exactly as a forked worker's does.
-      const delegated = await delegatedApi(() => workerTools());
-      if (delegated === null) return { ok: false, reason: "HOST_HAS_NO_DELEGATED_AGENT" };
-      // The same ladder `fork` and the hand-off use. A devops run is the same
-      // work on the same account as the Plan that asks for it.
-      const resolved =
-        typeof resolveConnection === "function"
-          ? await resolveConnection()
-          : {
-              model: ctx?.providerId !== undefined && ctx?.modelId !== undefined ? { providerId: ctx.providerId, modelId: ctx.modelId } : null,
-              source: "context",
-              credentials: null,
-              credentialSource: null,
-            };
-      const connection = resolved?.model ?? null;
-      if (connection === null || typeof connection.modelId !== "string" || connection.modelId.length === 0) {
-        return {
-          ok: false,
-          reason: "MODEL_UNKNOWN",
-          message: "no source named this session's provider and model, so the devops runtime cannot connect",
-          detail: { tried: ["request", "context", "sessionRecord", "environment"] },
-        };
-      }
-      const extensions = extension === null ? [] : [extension];
-      const configProvider = delegated.createDelegatedAgentConfigProvider({
-        providerId: connection.providerId,
-        modelId: connection.modelId,
-        cwd,
-        extensions,
-        // The host's stored key and base URL for this provider. Without them the
-        // runtime starts and dies at the provider on "no API key".
-        ...(resolved.credentials === null || resolved.credentials === undefined
-          ? {}
-          : { ...resolved.credentials, modelId: connection.modelId }),
-      });
-      const handle = runtimeHandle({
-        name: `plan-devops-${Date.now().toString(36)}`,
-        // The identity is stated in the brief, exactly as §2.1 requires of any
-        // subagent start; the `devops` name here is the runtime handle's label,
-        // not the identity.
-        brief: `role: devops — ${intent}`,
-        role: ROLES.DEVOPS,
-        create: delegated.createDelegatedAgent,
-        configProvider,
-        tools: workerTools(),
-        extensions,
-        cwd,
-        prompt: systemPromptFor(ROLES.DEVOPS),
-        modelSource: resolved.source ?? null,
-        credentialSource: resolved.credentialSource ?? null,
-      });
-      if (handle?.started === false) {
-        return { ok: false, reason: handle.rejection ?? "HOST_HAS_NO_DELEGATED_AGENT", message: handle.message };
-      }
-      inFlight = new Promise((resolve) => {
-        handle.onSettled((record) => resolve(record));
-      });
+      const admission = runInvestigation(intent);
+      inFlight = admission;
       try {
-        const record = await inFlight;
-        if (record?.finishReason === "error") {
-          return { ok: false, reason: "DEVOPS_FAILED", message: record.text };
-        }
-        return { ok: true, report: record?.text ?? "" };
+        return await admission;
       } finally {
-        inFlight = null;
+        if (inFlight === admission) inFlight = null;
       }
     },
   };

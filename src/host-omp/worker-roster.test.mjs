@@ -133,7 +133,22 @@ const fakeApi = () => {
   return api;
 };
 
-const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "herd-omp-roster-"));
+// Every root this file creates is removed once at exit. The property tests
+// create one per scenario (~120 per run), so per-test cleanup is impractical;
+// a process-exit sweep still leaves nothing behind.
+const ROOTS = [];
+process.once("exit", () => {
+  for (const root of ROOTS) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {}
+  }
+});
+const tempRoot = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "herd-omp-roster-"));
+  ROOTS.push(root);
+  return root;
+};
 
 // One session's roster over a journal on disk. A second call with the same root
 // and session id is what a reload looks like: a new in-memory table, the same
@@ -143,8 +158,9 @@ const world = ({ root, sessionId, running = () => null }) => {
   const api = fakeApi();
   const roster = new WorkerRoster({ file: workerRosterFile(root, sessionId) });
   const lanes = new LaneTable({ api, roster, runningSession: running });
-  const port = new TaskPort({ lanes, sleep: async () => {}, agentFor: () => "coder" });
-  return { api, roster, lanes, port, sessions: new Map() };
+  const sessions = new Map();
+  const port = new TaskPort({ lanes, sleep: async () => {}, agentFor: () => "coder", sessions });
+  return { api, roster, lanes, port, sessions };
 };
 
 // A join that must not answer yet. `quiet` reports whether it answered within a
@@ -207,20 +223,40 @@ test("a join after a reload returns the result the previous process recorded", a
   assert.deepEqual(again.roster, ["w1"]);
 });
 
-test("a worker still running across a reload keeps join waiting until it settles", async () => {
+test("a worker still running across an in-process reload keeps join waiting until it settles", async () => {
   const root = tempRoot();
   const first = world({ root, sessionId: "sess-running" });
   await first.port.fork("w1", "role: coder — long job");
   // No turn end: the worker is running when the reload happens.
-  const second = world({ root, sessionId: "sess-running" });
+  const second = world({
+    root,
+    sessionId: "sess-running",
+    running: (name) => first.sessions.get(name) ?? null,
+  });
   assert.deepEqual(second.lanes.names(), ["w1"]);
+  assert.notEqual(second.lanes.running("w1"), null, "the rebuilt table adopted the live lane");
   const joining = second.port.join();
-  assert.equal(await quiet(joining), false, "a restored running worker must keep join waiting");
-  // The host reports the turn's end to the reloaded table.
-  second.lanes.settle("w1", { text: "finished late" });
+  assert.equal(await quiet(joining), false, "an adopted running worker must keep join waiting");
+  // The worker's own session reports the turn's end; the adopted lane hears it.
+  first.sessions.get("w1").endTurn("finished late");
   const report = await within(joining);
   assert.equal(report.name, "w1");
   assert.equal(report.text, "finished late");
+});
+
+test("a journal RUNNING entry with no live session is reported lost instead of spinning join", async () => {
+  // A cross-process reload cannot drive the previous process's session. Leaving
+  // the entry RUNNING made `join` wait for a turn end that will never arrive;
+  // the lost fact is a result the caller can collect.
+  const root = tempRoot();
+  const first = world({ root, sessionId: "sess-lost" });
+  await first.port.fork("w1", "role: coder — long job");
+  // No turn end: the process that could report it is gone.
+  const second = world({ root, sessionId: "sess-lost" });
+  const report = await within(second.port.join());
+  assert.equal(report.ok, true);
+  assert.equal(report.name, "w1");
+  assert.equal(report.error?.name, "WORKER_LOST");
 });
 
 test("a steer keeps the old result and both turns are joined once each", async () => {

@@ -85,6 +85,3 @@ export const RESET_MEMBER = "resetScope";
 
 // The annotation kind that erases the beat before its call.
 export const REMOVE_MEMBER = "removeLast";
-
-// The reply text of the first incumbent's empty review (根 §2.4).
-export const FIRST_INCUMBENT_QUESTION = "我需要干什么？";

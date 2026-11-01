@@ -52,14 +52,47 @@ export const promptSessionOf = (event) => (typeof event?.sessionID === "string" 
 export const isPromptEvent = (event) =>
   promptSessionOf(event) !== null && typeof event?.prompt === "object" && event.prompt !== null;
 
+// Whether this prompt is the OPERATOR's own voice, or one of the adapter's own
+// deliveries arriving through the same hook.
+//
+// The adapter delivers its own messages with `delivery: "queue"` — the relay
+// brief, a Plan's draft, the nudge, a worker's brief, a lane's input — and the
+// host's operator prompt uses the default `"steer"`. A queued delivery is never
+// an answer: consuming a pending `ask` with a nudge or a brief would close the
+// operator's question with text nobody wrote for it.
+export const isOperatorPrompt = (event) => {
+  if (!isPromptEvent(event)) return false;
+  const delivery = typeof event?.delivery === "string" ? event.delivery : null;
+  return delivery !== "queue";
+};
+
 // Answer a pending ask. Returns what happened, so the caller can log it; the
 // resume itself is the same `unpark` path every parked program uses.
-export const answerPendingAsk = async ({ event, activation, state, sessionID, resume }) => {
+export const answerPendingAsk = async ({
+  event,
+  activation,
+  state,
+  sessionID,
+  resume,
+  parentID = undefined,
+  registeredParentID = undefined,
+}) => {
   const pending = activation.asks.pending(sessionID);
   if (pending === null) return null;
   if (!isPromptEvent(event)) {
     // The ask stays pending: a malformed payload must not consume the question.
     return { answered: false, reason: "PROMPT_HOOK_PAYLOAD", program: pending.program };
+  }
+  if (!isOperatorPrompt(event)) {
+    // The adapter's own delivery is not the operator's answer. The question
+    // stays pending for the real reply.
+    return { answered: false, reason: "NOT_OPERATOR_PROMPT", program: pending.program };
+  }
+  // A child session never answers a top-level question: its prompts are briefs
+  // (§4.1), and the registration says whether this session was created here.
+  const child = typeof registeredParentID === "string" || typeof parentID === "string";
+  if (child) {
+    return { answered: false, reason: "CHILD_SESSION", program: pending.program };
   }
   const answer = promptText(event);
   activation.asks.takeAnswer(sessionID);
@@ -78,8 +111,24 @@ export const answerPendingAsk = async ({ event, activation, state, sessionID, re
     // An `ask` site takes its own result, not the injected value (§3.3).
     site.value = answer;
   }
-  const resumed = await resume({ name: pending.program, value: answer, site, sessionID });
-  return { answered: true, program: pending.program, answer, resumed };
+  // The continuation may park again (a second `where` ambiguity or a second
+  // `ask`); the park channel wakes the resumer, so this answers the new park
+  // receipt instead of waiting for a body that will never finish on its own.
+  try {
+    const resumed = await resume({ name: pending.program, value: answer, site, sessionID });
+    return { answered: true, program: pending.program, answer, resumed };
+  } catch (error) {
+    // A resume that cannot happen (a program retired between the prompt and
+    // this hook) is reported on the receipt, never thrown through the host's
+    // prompt admission: the operator's message must still be admitted.
+    return {
+      answered: true,
+      program: pending.program,
+      answer,
+      resumed: null,
+      error: { code: error?.code ?? null, message: String(error?.message ?? error) },
+    };
+  }
 };
 
 // The operator's original input is captured FIRST (根 §2.4 第 3 步).

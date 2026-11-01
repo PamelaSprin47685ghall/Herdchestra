@@ -136,9 +136,13 @@ export const makeSurface = ({ role, name, program, session, ports, source = null
   // else runs the role's own member list. A shut window makes `reviewSurface()`
   // throw `REVIEW_WINDOW_CLOSED`; that refusal reaches the caller unchanged, so
   // the tool answers the reason instead of a TypeError over a missing member.
-  // The session owns the request boundary (§2.3), and this factory is called
-  // once per call: a `js-review` call is its round's request.
-  const members = review ? surface.reviewSurface({ openRound: true }) : surface.surface();
+  //
+  // The round is opened at the REQUEST boundary (`session.hook("context")`,
+  // `context-hook.mjs`), not here: a tool call is not a request, and a
+  // `js-review` call that opened its own round would reopen the evaluation the
+  // round's first accepted review just shut (§2.3). `openRound: false` says
+  // exactly that — this call is not a new request.
+  const members = review ? surface.reviewSurface({ openRound: false }) : surface.surface();
   return Object.freeze({ surface, members: Object.freeze(members) });
 };
 

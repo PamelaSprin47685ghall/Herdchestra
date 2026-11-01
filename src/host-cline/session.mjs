@@ -27,6 +27,7 @@ import { ParkTable } from "./execution.mjs";
 import { WorkerTable, restoredRoster } from "./workers.mjs";
 import { TenureState } from "./tenure.mjs";
 import { commandPort, relayPort } from "./ports.mjs";
+import { appendJsonLine } from "./files.mjs";
 import { SessionFission } from "./fission.mjs";
 import { runtimeHandle } from "./runtime.mjs";
 import { guardedDelegatedApi, providerCredentials } from "./host-modules.mjs";
@@ -119,6 +120,30 @@ const childKeyOf = (copy) => {
     text = String(first);
   }
   return `child-${createHash("sha256").update(text).digest("hex").slice(0, 16)}`;
+};
+
+// The shapes of one request's items, as a Scope refusal records them.
+//
+// A digest cannot be read back and a length stops short of enough to rebuild a
+// short message, so the record answers "which item, of what kind, how much" and
+// never "what did it say" — the same vocabulary the Pair Hint's refusal record
+// uses, so the two can be cross-checked by digest.
+const itemShapes = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  return {
+    count: list.length,
+    shapes: list.slice(0, 64).map((item) => {
+      const text = typeof item?.text === "string" ? item.text : "";
+      return {
+        kind: item?.kind ?? null,
+        role: item?.role ?? null,
+        member: typeof item?.member === "string" ? item.member : null,
+        callId: typeof item?.callId === "string" ? item.callId : null,
+        length: text.length,
+        digest: createHash("sha256").update(text).digest("hex"),
+      };
+    }),
+  };
 };
 
 export class SessionState {
@@ -710,7 +735,9 @@ export class SessionState {
         ...planPorts({
           file: plan.file,
           devops: { investigate: (intent) => plan.devops.investigate(intent) },
-          relay: relayPort({ tenure: this.#tenure, sessions: this.#sessions, operator: this.#operator }),
+          // A Plan and a Manager each ask for their own relay, and the port
+          // records the hand-off as it performs it (`#relayPort`).
+          relay: this.#relayPort(),
         }),
       };
     }
@@ -730,15 +757,58 @@ export class SessionState {
       ask: (member) => this.#tenure.scope().ask(member, this.#sessionId),
     };
     if (role === ROLES.MANAGER) {
-      ports.relay = relayPort({
-        tenure: this.#tenure,
-        sessions: this.#sessions,
-        operator: this.#operator,
-      });
+      ports.relay = this.#relayPort();
     } else {
       ports.fission = this.#fission.port();
     }
     return ports;
+  }
+
+  // The session's relay port, with the one fact this session must record
+  // attached to it.
+  //
+  // 根 §2.2: a Plan's `review([])` at 「待执行」 is its hand-off, and a hand-off
+  // that really started a Manager is the second half of Plan's only legitimate
+  // stop. The surface's `review` member reaches `ReviewMember` ->
+  // `relayPort.startManager` directly and never `reviewFor`, so the PORT is the
+  // one place both faces meet. Recording here is what lets
+  // `guard.verifiedCompletion` see `handedOff: true`; without it a Plan that
+  // handed off was refused its earned stop and nudged into starting a second
+  // Manager.
+  #relayPort() {
+    const relay = relayPort({ tenure: this.#tenure, sessions: this.#sessions, operator: this.#operator });
+    const session = this;
+    return {
+      ...relay,
+      async startManager(draft) {
+        const result = await relay.startManager(draft);
+        session.noteHandoff(result);
+        return result;
+      },
+    };
+  }
+
+  // One Scope projection that refused leaves one durable line in the session's
+  // request journal. §6.2/§6.3 require the diagnosis, and a refusal that is only
+  // visible in a returned value is invisible in a live host: the request still
+  // goes out with the CUE/barrier copy, and nothing said why the projection did
+  // not apply.
+  #recordScopeRefusal(refusal, items) {
+    const file = path.join(this.#root, ".Herdchestra", `${this.#stateName}.requests.jsonl`);
+    try {
+      appendJsonLine(file, {
+        v: 1,
+        at: new Date(clock.now()).toISOString(),
+        kind: "scopeProjectionRefused",
+        sessionId: this.#sessionId,
+        code: typeof refusal?.code === "string" ? refusal.code : "SCOPE_PROJECTION_REFUSED",
+        message: typeof refusal?.message === "string" ? refusal.message : null,
+        items: itemShapes(items),
+      });
+    } catch {
+      // A diagnostic that cannot be stored is lost; the request it describes is
+      // not. The same rule the Pair Hint refusal record follows.
+    }
   }
 
   // The continuation of a program whose park was already woken, as the receipt a
@@ -789,12 +859,12 @@ export class SessionState {
     if (answeredAsk && receipt?.state === "parked" && this.#asked === null && entry?.surface !== null) {
       const site = this.#parks.siteOf(name);
       if (site?.reason === "ask") {
-        this.#asked = {
+        this.#recordAsk({
           name,
           question: site?.payload?.question ?? null,
           resume: (answer) => void this.resume(name, answer),
           surface: entry.surface,
-        };
+        });
       }
     }
     return receipt;
@@ -820,12 +890,12 @@ export class SessionState {
       // park table with nobody told about it.
       if (outcome.site?.reason === "ask") {
         const site = outcome.site;
-        this.#asked = {
+        this.#recordAsk({
           name,
           question: site?.payload?.question ?? null,
           resume: (answer) => void this.resume(name, answer),
           surface,
-        };
+        });
       }
       return surface.receipt({ reason: outcome.site?.reason ?? "explicit", payload: outcome.site?.payload ?? null, ...extra });
     }
@@ -1015,12 +1085,21 @@ export class SessionState {
    * mark is never set by a refused call.
    */
   noteAsk({ name, question, resume, surface = null }) {
+    return this.#recordAsk({ name, question, resume, surface });
+  }
+
+  // One `ask` is one record AND the turn's interrupt (根 §2.2: `this.ask` IS
+  // park + interrupt). The three facts move together — the question, the S1
+  // exit, and the park stop this run owes — because a continuation that asks
+  // again parks a SECOND question that must interrupt its run exactly like the
+  // first. Recording only `#asked` left the second question parked while the
+  // run carried on and was nudged.
+  #recordAsk({ name, question, resume, surface = null }) {
     this.#asked = { name, question, resume, surface };
     this.#askedInTurn = true;
-    // 根 §2.2: `this.ask` IS park + interrupt, and the interrupt is a real stop
-    // of THIS run — not only a receipt field. The turn that parked must have no
-    // further model step; `guard.parkStop` is what asks the host for that, and
-    // this flag is the obligation it answers.
+    // The interrupt is a real stop of THIS run, not only a receipt field. The
+    // turn that parked must have no further model step; `guard.parkStop` is what
+    // asks the host for that, and this flag is the obligation it answers.
     this.#parkStopOwed = true;
     this.#parkStopped = false;
     return this.#asked;
@@ -1092,6 +1171,15 @@ export class SessionState {
     const parked = this.#parks.siteOf(name) !== null;
     if (!parked) return false;
     const entry = this.#parks.entries.get(name) ?? null;
+    // The program leaves `parked` for `running` exactly once, as core's own
+    // `unpark` does (`ProgramState.takeSite`). Without this step a resumed body
+    // that asks a SECOND question was refused by `ProgramCall.park` ("program is
+    // parked"): the state still read parked while the body ran on. The operator's
+    // message names no deadline, so the resumed run has none — the same rule
+    // core's `takeSite({ deadline: null })` applies.
+    if (entry?.program?.state === "parked" && typeof entry.program.takeSite === "function") {
+      entry.program.takeSite({});
+    }
     // `resume` is `settle` + `continuation`: it wakes the parked expression and
     // answers the body's own outcome (`completed` / `failed` / `parked`).
     const outcome = await this.#parks.resume(name, value);
@@ -1124,8 +1212,20 @@ export class SessionState {
    * failure. Only the accepted answer reaches here.
    */
   noteHandoff(receipt) {
-    if (receipt === null || typeof receipt !== "object" || receipt.ok !== true) return this.#handedOff;
-    if (typeof receipt.sessionId !== "string" || receipt.sessionId.length === 0) return this.#handedOff;
+    if (receipt === null || typeof receipt !== "object") return this.#handedOff;
+    // Two shapes reach here, and both are the same fact: the relay PORT's own
+    // receipt (`{ ok, sessionId }`), and a review receipt that carries it under
+    // `started` (`ReviewMember` answers `{ ...receipt, started }`). Reading only
+    // the top level made the surface's hand-off invisible.
+    const started = receipt.started !== null && typeof receipt.started === "object" ? receipt.started : null;
+    const accepted = receipt.ok === true || started?.ok === true;
+    const sessionId =
+      typeof receipt.sessionId === "string" && receipt.sessionId.length > 0
+        ? receipt.sessionId
+        : typeof started?.sessionId === "string" && started.sessionId.length > 0
+          ? started.sessionId
+          : null;
+    if (!accepted || sessionId === null) return this.#handedOff;
     this.#handedOff = true;
     return this.#handedOff;
   }
@@ -1300,7 +1400,10 @@ export class SessionState {
       // the relay. The other two adapters write the notice into the copy; this
       // one must too, or the successor's first request is a bare operator turn
       // the model cannot tell from the retired tenure's own.
-      current = [...successionNotice(fence), ...(cut > 0 ? current.slice(cut) : [])];
+      // `0` is a VALID cut: the successor's own operator turn is the first
+      // message of the copy, and dropping it would send the notice alone.
+      // `-1` is the only "no turn of the successor's own" sentinel.
+      current = [...successionNotice(fence), ...(cut >= 0 ? current.slice(cut) : [])];
     }
     const scope = this.#tenure.scope();
     // The Pair Hint's synthetic pair carries the empty tool name and the
@@ -1323,8 +1426,15 @@ export class SessionState {
       scopeGiven = clineItems;
       scopeAnswered = projected.messages ?? [];
       scopeAnswer = (projected.messages ?? []).map((item) => item?.source).filter((message) => message !== undefined);
-      const next = selectKept(current, projected.messages ?? []);
-      if (next.length !== current.length) current = next;
+      // The projection's answer IS the copy, whatever its length: a `removeLast`
+      // replaces one message with one message, and an equal-length copy is a
+      // rewrite the lesson decided, not a no-op.
+      current = selectKept(current, projected.messages ?? []);
+    } else {
+      // The projection refused (a call/result disagreement, a malformed record).
+      // The CUE/barrier copy still goes out — the raw host transcript never
+      // does — and the refusal leaves a durable line that names its shapes.
+      this.#recordScopeRefusal(projected, clineItems);
     }
     const hint = await this.#tenure.pairHint(this.#root);
     // A request that does NOT extend what this session already presented is a
@@ -1433,14 +1543,16 @@ export class SessionState {
   async #projectForChild(messages, childAgentId) {
     let current = toCueToolResults(messages);
     const scope = this.#tenure.scope();
+    const items = toItems(current);
     const projected = scope.project({
       sessionId: this.#sessionId,
-      items: toItems(current),
+      items,
       pinned: PINNED_MEMBERS,
     });
     if (projected.ok === true) {
-      const next = selectKept(current, projected.messages ?? []);
-      if (next.length !== current.length) current = next;
+      current = selectKept(current, projected.messages ?? []);
+    } else {
+      this.#recordScopeRefusal(projected, items);
     }
     const hint = await this.#tenure.pairHintFor(this.#root, childAgentId);
     if (hint.bound) {

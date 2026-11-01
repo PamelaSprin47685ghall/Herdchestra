@@ -316,9 +316,14 @@ Plan 在「待执行」提交空账 `review([])` 时，`relay.startManager(draft
 4. **子代理的内置工具由宿主决定。** `createSubAgentTools` 决定子代理拿哪些宿主工具，本适配器无法收紧。
 5. **回滚回执要如实。** `abortLanes` 回 `{ ok, released, orphaned }`：停不掉的 lane 记为 orphaned
    并留在表里，不会被算进 `released`；`control.unpark` 必须转发控制器的 `capabilities` 与 `deadline`。
-6. **没有针对子运行时的中途 steer。** `steer_message` 按 `sessions.get(sessionId)` 解析目标，
-   而 `createDelegatedAgent` 建出的子运行时**不进入** `sessions` 表。因此同名 `fork` 一律把 brief
-   排队到该 worker 的下一回合，回执是 `{ steered: true, queued: true, rejection: "NO_PER_RUNTIME_STEER" }`。
+6. **中途 steer 走子运行时自己的待输入通道。** `steer_message` 按 `sessions.get(sessionId)` 解析目标，
+   而 `createDelegatedAgent` 建出的子运行时**不进入** `sessions` 表，所以那条事件通道到不了它。
+   可到达的是运行时自己的 `consumePendingUserMessage`：agent 循环在每个请求边界读一次
+   （`agent-runtime.ts:1689`），`runtime.mjs` 在 config provider 上装的实现**先排本适配器的队列**，
+   再把宿主的消费者链在后面。同名 `fork` 因此把 brief 送进**正在运行的那一回合**，
+   回执是 `{ name, steered: true, started: false }`；运行时在回合结束时报告它实际读了几条
+   （`record.steered`），worker 表只结算这几条，没读到的那条留在运行时队列里由下一回合取走。
+   宿主连这个成员都没有时，brief 进表的 `pending` 队列，等该 worker 的下一回合。
 7. **`ask` 就是 `park` + `interrupt`，所以不需要宿主的问答接口。** 宿主确实没有「问一句话」的 API；
    审批往返（`capabilities.requestToolApproval`）在类型里有，但 `setup` 的 ctx 不带它。这不再是问题：
    `this.ask(question)` 让程序挂起（`ParkTable`），工具回 `{ ok: true, asked: true, question, interrupt: true }`，

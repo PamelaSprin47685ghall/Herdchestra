@@ -13,6 +13,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import fc from "fast-check";
 
 import { Fission } from "../compose/fission/fission.mjs";
@@ -20,6 +23,17 @@ import { fissionPort } from "./ports.mjs";
 import { feedLaneEnd, groupIdOfLane, laneAddressOf, laneResult } from "./fission-fanout.mjs";
 import { LaneTable } from "./lane.mjs";
 import { ROLE } from "./host-facts.mjs";
+
+// Every harness root, removed once at exit: a durable group journal is part of
+// the contract now, and a test that commits a group must not leak its file.
+const ROOTS = [];
+process.once("exit", () => {
+  for (const root of ROOTS) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {}
+  }
+});
 
 // One fake host session per lane. It exposes exactly what `LaneTable.start`
 // wires and observes (`subscribe`, `prompt`, `steer`, the runtime members), and
@@ -101,6 +115,8 @@ const fakeLaneSession = (agentId) => {
 // A session whose lanes are real `LaneTable` lanes and whose group is the real
 // compose `Fission` over the real port.
 const harness = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "herd-fission-"));
+  ROOTS.push(root);
   const sessions = [];
   const events = [];
   const api = {
@@ -124,6 +140,7 @@ const harness = () => {
     startLane: async (request) => lanes.start({ ...request, register: false }),
     agentFor: () => "coder",
     owner: () => "w1",
+    recordFile: path.join(root, ".Herdchestra", "fission.jsonl"),
     fission: () => group,
     // The owner's own control surface (§4.2 step 6). A mark, a settled stop and
     // an armed turn-end abort are what "the old present stops producing turns"

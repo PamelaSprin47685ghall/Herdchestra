@@ -184,20 +184,26 @@ test("a second operator message does not reopen a work that is already in progre
   assert.deepEqual(ledger.obligations, [{ key: "tests", value: "rerun" }]);
 });
 
-test("a relayed successor that records obligations advances instead of relaying again", () => {
-  // Root §2.4: the successor's first review with an empty ledger advances the
-  // milestone. A non-empty review before that is a normal working period, so
-  // the tenure is still the successor when the empty review finally comes.
+test("a relayed successor that records obligations returns to normal work, and its next empty review relays", () => {
+  // Root §2.4 第 5 步: the successor's FIRST review decides. A non-empty one is
+  // the normal working period and spends the flag; when that tenure later
+  // empties the ledger, the empty review is a RELAY again, not a promotion.
+  // The tenure that found the work never certifies it.
   const ledger = new ReviewLedger({ kind: "manager" });
   ledger.review([{ key: "a", value: "x" }]);
   ledger.review([{ key: "a", value: null }]); // relay
   ledger.openSuccessor();
   assert.equal(ledger.successor, true);
   assert.equal(ledger.review([{ key: "tests", value: "rerun" }]).kind, REVIEW_KINDS.RECORDED);
-  assert.equal(ledger.successor, true, "recording work does not end the successor tenure");
-  assert.equal(ledger.review([{ key: "tests", value: null }]).kind, REVIEW_KINDS.CONFIRM);
-  assert.equal(ledger.milestone, "close");
+  assert.equal(ledger.successor, false, "the successor's first review spends the flag");
+  const relayed = ledger.review([{ key: "tests", value: null }]);
+  assert.equal(relayed.kind, REVIEW_KINDS.RELAY);
+  assert.equal(ledger.milestone, "execute", "the relay keeps the milestone");
   assert.equal(ledger.tenure, 1);
+  // The relay opened the next tenure; its own first empty review promotes.
+  ledger.openSuccessor();
+  assert.equal(ledger.review([]).kind, REVIEW_KINDS.CONFIRM);
+  assert.equal(ledger.milestone, "close");
 });
 
 test("a draft-less handoff does not spend the tenure's first-review credit", () => {

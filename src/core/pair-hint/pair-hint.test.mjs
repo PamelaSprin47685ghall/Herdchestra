@@ -110,6 +110,12 @@ test("traditional Chinese locales are not passed off as Simplified Chinese", () 
   assert.equal(resolveLanguage({ locale: "zh-Hant-TW" }).source, "default");
   assert.equal(resolveLanguage({ locale: "zh-Hans-CN" }).language, LANGUAGES.SIMPLIFIED_CHINESE);
   assert.equal(resolveLanguage({ locale: "zh-CN,en;q=0.8" }).language, LANGUAGES.SIMPLIFIED_CHINESE);
+  // POSIX values carry a codeset and a modifier that are not part of the tag:
+  // the region still decides, and `zh.UTF-8` is plain `zh`.
+  assert.equal(resolveLanguage({ locale: "zh_TW.UTF-8" }).source, "default");
+  assert.equal(resolveLanguage({ locale: "zh_HK.UTF-8@euro" }).source, "default");
+  assert.equal(resolveLanguage({ locale: "zh.UTF-8" }).language, LANGUAGES.SIMPLIFIED_CHINESE);
+  assert.equal(resolveLanguage({ locale: "en_US.UTF-8" }).language, LANGUAGES.ENGLISH);
 });
 
 test("a fork copies the owner's language and is independent afterwards", () => {
@@ -268,6 +274,28 @@ test("the placement is a count of messages, not an index into one request", () =
   // A placement beyond the copy is refused, never clamped silently.
   assert.equal(
     codes(() => injector.inject({ messages: history, fact: placed.fact.at({ after: 9, inserted: 9 }), text: "hint" })),
+    PAIR_HINT_CODES.PREFIX_DRIFT,
+  );
+});
+
+test("a branch clamps the placement on the new-epoch path too", () => {
+  const injector = new PairHintInjector();
+  const oldFact = factFor({ epoch: 1, text: "old hint", handles: [], after: 1, inserted: 1 });
+  const oldPair = syntheticMessages({ fact: oldFact, text: "old hint" });
+  const host = { role: "user", content: "branch" };
+  // The new epoch already recorded a placement counted on a longer main copy;
+  // this ephemeral branch carries one of those messages plus the old pair.
+  const newText = "new hint";
+  const newFact = factFor({ epoch: 2, text: newText, handles: [], after: 5, inserted: 5 });
+
+  const placed = injector.inject({ messages: [...oldPair, host], fact: newFact, text: newText, branch: true });
+  assert.equal(placed.fact.after, 1, "the branch clamps to its own end");
+  assert.equal(findInjection(placed.messages).index, 1);
+  assert.equal(placed.messages.length, 3, "the old pair is replaced, never doubled");
+
+  // The same copy on a main request is drift: a clamp is a branch's allowance.
+  assert.equal(
+    codes(() => injector.inject({ messages: [...oldPair, host], fact: newFact, text: newText })),
     PAIR_HINT_CODES.PREFIX_DRIFT,
   );
 });

@@ -53,6 +53,7 @@ import {
   RELAY_PHASES,
   RELAY_RECORD_VERSION,
   RELAY_STATE_DIR,
+  briefIdFor,
   readRelay,
   recoverRelay,
   relayBrief,
@@ -172,6 +173,7 @@ export const makeRelayHost = ({
   workersOf = null,
   registerCreated = null,
   rootOfSession = null,
+  draftOf = null,
 }) => {
   const unusable = (reason) => ({
     handOver: async () => failure(reason),
@@ -261,25 +263,100 @@ export const makeRelayHost = ({
   //
   // The answer is `{ ok: true }` or `{ ok: false, detail }`; it is never thrown,
   // because the caller turns a failure into a receipt rather than a stack.
-  const recordSuccessorRow = (lookup, successor, milestone) => {
+  const recordSuccessorRow = (lookup, successor, milestone, kind = "manager") => {
     if (typeof lookup !== "function") return { ok: false, detail: "NO_SESSION_STATE" };
     if (typeof successor !== "string" || successor.length === 0) {
       return { ok: false, detail: "NO_SUCCESSOR" };
     }
     try {
-      const wrote = lookup(successor).recordRelayStart(milestone);
+      const wrote = lookup(successor).recordRelayStart(milestone, kind);
       return wrote === false ? { ok: false, detail: "recordRelayStart answered false" } : { ok: true };
     } catch (error) {
       return { ok: false, detail: String(error?.message ?? error) };
     }
   };
 
+  // The ledger side a record continues. A record written before the side was
+  // stored describes a Manager relay: that was the only relay then.
+  const sideOf = (record) => (record?.kind === "plan" ? "plan" : "manager");
+  const agentFor = (side) => (side === "plan" ? "Plan" : successorAgent);
+
+  // The Plan hand-off is the exit a Plan earns (根 §2.2), so the Plan's own
+  // tenure records it. The fact is durable and names the Manager it started;
+  // the turn-exit controller reads it instead of inferring a hand-off from the
+  // milestone, which a successor's `confirm` can also reach.
+  const noteHandoff = (planSession, managerSession, handoffId) => {
+    if (typeof planSession !== "string" || planSession.length === 0) return;
+    if (typeof stateOf !== "function") return;
+    try {
+      stateOf(planSession).noteHandoff?.({ to: managerSession, handoffId });
+    } catch {
+      // The Manager is already started; a fact that cannot be written is
+      // reported by the next turn's nudge (the hand-off is not proven), never
+      // by undoing a session the operator can already see.
+    }
+  };
+
+  // Deliver a Plan hand-off's draft and settle its record (根 §2.2, §2.4 第 4 步).
+  //
+  // The record is written in `sending` BEFORE the prompt and moved to `sent`
+  // after it. A crash between the two therefore leaves a record that says
+  // "the draft was not confirmed", and the same call re-delivers it under the
+  // SAME deterministic message id — the host's durable admission table
+  // reconciles the duplicate. A record written `sent` before the prompt could
+  // instead leave an inert Manager nobody ever delivers to.
+  const deliverHandoff = async (file, record, draft) => {
+    const sending = writeRelay(file, { ...record, phase: RELAY_PHASES.SENDING });
+    if (sending.ok !== true) {
+      return failure("MANAGER_RECORD_FAILED", {
+        session: null,
+        record,
+        detail: sending.detail ?? sending.reason ?? null,
+      });
+    }
+    try {
+      await sessions.prompt({
+        sessionID: record.successor,
+        ...(typeof record.briefId === "string" ? { id: record.briefId } : {}),
+        text: draft,
+        delivery: "queue",
+      });
+    } catch (error) {
+      // The Manager never took the draft. It is taken back, and the record that
+      // named it is removed when the session really is gone: a record naming a
+      // session nobody can find would make a repeat report a Manager that does
+      // not exist.
+      const cleanup = await discard(sessions, record.successor);
+      if (cleanup.removed === true) {
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          // The record is left in `sending`; a repeat re-delivers it, which is
+          // the safe direction.
+        }
+      }
+      return failure("MANAGER_PROMPT_FAILED", {
+        session: null,
+        discarded: record.successor,
+        cleanup,
+        detail: String(error?.message ?? error),
+      });
+    }
+    const sent = writeRelay(file, { ...record, phase: RELAY_PHASES.SENT });
+    return { ok: true, record: { ...record, phase: RELAY_PHASES.SENT }, durable: sent.ok === true };
+  };
+
   return {
     // Retirement, barrier and successor start (根 §2.3 step 2).
-    async handOver({ predecessor, milestone, tenure, notice } = {}) {
+    async handOver({ predecessor, milestone, tenure, notice, kind = "manager" } = {}) {
       if (typeof predecessor !== "string" || predecessor.length === 0) {
         return failure("NO_PREDECESSOR");
       }
+      // Which side is retiring (根 §2.4 第 3 步). The same port serves the Plan
+      // and the Manager surface, and the successor must run the side the
+      // predecessor ran: a Plan replaced by a Manager loses its tenure and its
+      // milestone. The side is a committed field of the record below.
+      const side = kind === "plan" ? "plan" : "manager";
       // Everything about the predecessor is read from ITS workspace: the record
       // (which is also where the gates look for it), the operator's original
       // input and the worker roster. See the header.
@@ -299,7 +376,12 @@ export const makeRelayHost = ({
         // first delivery may have ended with `SUCCESSOR_LEDGER_NOT_DURABLE`, and
         // this repeat is the recovery: `recordRelayStart` is idempotent, so it
         // writes the missing row and leaves an existing one alone.
-        const row = recordSuccessorRow(stateOf, existing.record.successor, existing.record.milestone);
+        const row = recordSuccessorRow(
+          stateOf,
+          existing.record.successor,
+          existing.record.milestone,
+          sideOf(existing.record),
+        );
         if (row.ok !== true) {
           return {
             ok: false,
@@ -347,7 +429,12 @@ export const makeRelayHost = ({
       if (existing.kind === "resume") {
         const delivered = await deliver(file, existing.record);
         if (delivered.ok !== true) return { ...delivered, recovered: true, notGuaranteed: NOT_GUARANTEED };
-        const row = recordSuccessorRow(stateOf, existing.record.successor, existing.record.milestone);
+        const row = recordSuccessorRow(
+          stateOf,
+          existing.record.successor,
+          existing.record.milestone,
+          sideOf(existing.record),
+        );
         if (row.ok !== true) {
           return {
             ok: false,
@@ -453,10 +540,10 @@ export const makeRelayHost = ({
       let created;
       try {
         created = await sessions.create({
-          title: "manager",
-          agent: successorAgent,
+          title: side === "plan" ? "plan" : "manager",
+          agent: agentFor(side),
           model: inherited.model,
-          metadata: { herdchestra: "relay-successor", from: predecessor },
+          metadata: { herdchestra: "relay-successor", from: predecessor, kind: side },
         });
       } catch (error) {
         return failure("RELAY_SUCCESSOR_FAILED", {
@@ -477,7 +564,7 @@ export const makeRelayHost = ({
       }
       // Registered before the brief is delivered: the brief is this adapter's own
       // delivery, and the successor is a top-level session (`identity.mjs`).
-      noteCreated(successor, { parentID: null, role: successorAgent, origin: "relay-successor" });
+      noteCreated(successor, { parentID: null, role: agentFor(side), origin: "relay-successor" });
 
       // Step 2: the record. This write is what retires the incumbent; if it
       // fails, the session created in step 1 is taken back and nothing retired.
@@ -486,12 +573,21 @@ export const makeRelayHost = ({
       // transcript before step 1, so no refusal can leave a session behind.
       let record;
       try {
+        // A Plan's saved draft is one persistent product (§2.2). The successor
+        // reads and writes the same file, so the name and the workspace travel
+        // in the record; a successor keyed by its own id would look for a draft
+        // nobody wrote.
+        const draft = side === "plan" && typeof draftOf === "function" ? draftOf(predecessor) : null;
         record = relayRecord({
           sessionID: predecessor,
           incumbent: predecessor,
           successor,
           tenure: Number.isInteger(tenure) ? tenure + 1 : 1,
           milestone: typeof milestone === "string" && milestone.length > 0 ? milestone : "execute",
+          kind: side,
+          ...(draft === null || draft === undefined
+            ? {}
+            : { draft: draft.name ?? null, draftRoot: draft.root ?? null }),
           notice,
           fenceThrough,
           operatorInput,
@@ -550,7 +646,7 @@ export const makeRelayHost = ({
       // `sent`, so a repeat finds it, delivers nothing twice, and writes the row
       // it could not write. That is why the failure keeps the record instead of
       // inventing a second one.
-      const ledger = recordSuccessorRow(stateOf, successor, record.milestone);
+      const ledger = recordSuccessorRow(stateOf, successor, record.milestone, side);
 
       // Step 5: stop what the incumbent is still running. A refusal here does
       // not undo the retirement: the gates already refuse its requests.
@@ -611,13 +707,45 @@ export const makeRelayHost = ({
       if (typeof planSession !== "string" || planSession.length === 0) {
         return failure("NO_PARENT_SESSION", { session: null, detail: "NO_SESSION" });
       }
+      // A Manager that restarts must judge from `execute` as a session the Plan
+      // started. Its row is the durable half of that, so a hand-off that cannot
+      // write it is not reported as complete — the same rule `handOver` keeps
+      // for its successor. The record stays, so a repeat repairs the row.
+      const settledHandoff = (session, record = null) => {
+        const row = recordSuccessorRow(stateOf, session, "execute", "manager");
+        if (row.ok !== true) {
+          return failure("SUCCESSOR_LEDGER_NOT_DURABLE", {
+            session,
+            successorRow: row,
+            record,
+          });
+        }
+        // The Plan's own tenure records the hand-off (根 §2.2: the hand-off is
+        // the exit it earns). The turn-exit controller reads this fact instead
+        // of inferring it from the milestone.
+        noteHandoff(planSession, session, handoffId);
+        return { ok: true, session, ledger: row };
+      };
       // The replay of THIS call id reports the Manager it already started
       // instead of starting a second one (see `planHandoffOf`). No host call
       // happens here: the fact is the record on disk. A different call id is a
       // different hand-off, even with byte-identical draft text (§2.2).
       const existing = planHandoffOf(root, handoffId);
       if (existing !== null) {
-        return { ok: true, session: existing.successor, recovered: true };
+        // A record in `sent` is a finished hand-off; its row and the Plan's own
+        // hand-off fact are repaired here because the crash may have happened
+        // between the delivery and either write.
+        if (existing.phase === RELAY_PHASES.SENT) {
+          return { ...settledHandoff(existing.successor, existing), recovered: true };
+        }
+        // The record landed but the delivery was never confirmed: re-deliver the
+        // same draft under the same message id, then settle.
+        const file = relayFile(root, existing.successor);
+        const text =
+          typeof existing.draft === "string" && existing.draft.length > 0 ? existing.draft : draft;
+        const delivered = await deliverHandoff(file, existing, text);
+        if (delivered.ok !== true) return { ...delivered, recovered: true };
+        return { ...settledHandoff(existing.successor, delivered.record), recovered: true };
       }
       // 根 §2.4 第 4 步: a successor sees the operator's original words. A Plan's
       // Manager is that successor — the Plan never spoke to the operator's task
@@ -661,7 +789,11 @@ export const makeRelayHost = ({
       // operator's original words (§2.4 第 4 步) so the barrier can put them
       // into the Manager's first request.
       const handoffFile = relayFile(root, session);
-      const wrote = writeRelay(handoffFile, {
+      // The message id is a function of the two identities, so a process that
+      // crashed before `sent` derives the same id and the host reconciles the
+      // second delivery instead of admitting a duplicate. The record itself is
+      // written in `sending`: nothing has been delivered yet.
+      const record = {
         v: RELAY_RECORD_VERSION,
         kind: "plan-handoff",
         successor: session,
@@ -673,8 +805,8 @@ export const makeRelayHost = ({
         sessionID: session,
         milestone: "execute",
         tenure: 0,
-        phase: RELAY_PHASES.SENT,
-        briefId: null,
+        phase: RELAY_PHASES.SENDING,
+        briefId: briefIdFor({ incumbent: planSession, successor: session, tenure: 1 }),
         notice: "",
         operatorInput: carried,
         draft,
@@ -685,7 +817,8 @@ export const makeRelayHost = ({
         from: planSession,
         handoffId: typeof handoffId === "string" && handoffId.length > 0 ? handoffId : null,
         at: Date.now(),
-      });
+      };
+      const wrote = writeRelay(handoffFile, record);
       if (wrote.ok !== true) {
         const cleanup = await discard(sessions, session);
         return failure("MANAGER_RECORD_FAILED", {
@@ -700,22 +833,9 @@ export const makeRelayHost = ({
       // top-level session (`identity.mjs`). Without this the host's plain prompt
       // is captured as the operator's words (`live5`).
       noteCreated(session, { parentID: null, role: successorAgent, origin: "plan-handoff" });
-      try {
-        await sessions.prompt({ sessionID: session, text: draft, delivery: "queue" });
-      } catch (error) {
-        const cleanup = await discard(sessions, session);
-        return failure("MANAGER_PROMPT_FAILED", {
-          session: null,
-          discarded: session,
-          cleanup,
-          detail: String(error?.message ?? error),
-        });
-      }
-      // The Manager's own row, for the same reason a relay writes its
-      // successor's: a Manager that restarts must judge from `execute` as a
-      // session the Plan started, not from the first tenure's question.
-      recordSuccessorRow(stateOf, session, "execute");
-      return { ok: true, session };
+      const delivered = await deliverHandoff(handoffFile, record, draft);
+      if (delivered.ok !== true) return delivered;
+      return settledHandoff(session, delivered.record);
     },
 
     // The first review of the first tenure is not a review: the system asks the

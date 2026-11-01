@@ -185,6 +185,16 @@ export class SessionControl {
     return this.#session;
   }
 
+  // Adopt the context of the event now being handled. The host builds a fresh
+  // `ExtensionContext` per emit, and the adapter refreshes its session on every
+  // event. The control surface is a long-lived object (the fission port holds
+  // it), so it is REBOUND in place rather than replaced: a new wrapper would
+  // leave every holder reading the `session_start` context forever.
+  attach(session = null) {
+    if (session !== null && session !== undefined) this.#session = session;
+    return this;
+  }
+
   // Whether this session's present has been replaced, and by what. `null` when
   // it has not.
   get replaced() {
@@ -223,6 +233,31 @@ export class SessionControl {
       }
     }
     return { ok: true, replaced: this.#replaced };
+  }
+
+  // The group converged: the owner is the single present again (§4.2 step 10).
+  // The mark was only ever a fact about the time the lanes ran, and leaving it
+  // set made the owner refuse every later turn with `SESSION_REPLACED` — a
+  // session that can never answer its own merged result. The mark lives on the
+  // session object (see `replace`), so it is removed there too.
+  restore() {
+    if (this.#session === null || typeof this.#session !== "object") {
+      return { ok: false, reason: "NO_SESSION", restored: false };
+    }
+    const wasReplaced = this.replaced !== null;
+    this.#replaced = null;
+    try {
+      delete this.#session[REPLACED_KEY];
+    } catch {
+      // A frozen session carries no writable mark; nothing else to clear.
+    }
+    const live = liveSession(this.#session);
+    if (live !== this.#session && live !== null && typeof live === "object") {
+      try {
+        delete live[REPLACED_KEY];
+      } catch {}
+    }
+    return { ok: true, restored: wasReplaced };
   }
 
   // Run `fn` once when the turn in flight ends, or at once when no turn is in

@@ -23,20 +23,25 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 export const IDENTITY_RECORD_VERSION = 1;
 
 export const IDENTITY_STATE_DIR = ".Herdchestra";
 
-const safeName = (value) =>
-  String(value).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "session";
-
 // One file per session. The name is the session id itself: a registration is
 // read on the prompt path of that same id, and a sanitized collision between two
 // ids would let one session's identity answer for another, so the id is escaped
-// rather than truncated.
+// rather than truncated — and escaping is a digest, not a replacement. A
+// replacement maps `a/b` and `a?b` to one name, and a 120-character truncation
+// makes any two ids sharing a prefix collide; either collision makes
+// `readIdentityOf` answer for the wrong session and lets `registerIdentity`
+// overwrite another session's file. The record inside names its own session, so
+// the file name needs only to be unique.
+const fileKey = (value) => createHash("sha256").update(String(value)).digest("hex").slice(0, 32);
+
 export const identityFile = (root, sessionID) =>
-  path.join(root, IDENTITY_STATE_DIR, `${safeName(sessionID)}.identity.json`);
+  path.join(root, IDENTITY_STATE_DIR, `${fileKey(sessionID)}.identity.json`);
 
 const readIdentity = (file) => {
   let raw;

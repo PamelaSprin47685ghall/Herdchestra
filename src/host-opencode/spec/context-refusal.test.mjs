@@ -17,15 +17,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { setup } from "./plugin.mjs";
 import { applyContextHook, ContextRefusal } from "./context-hook.mjs";
 import { openPairHint } from "./pair-hint-request.mjs";
 import { SessionState } from "./session-state.mjs";
+import { tempRoot as tempRootDir } from "./test-temp.mjs";
 
-const tempRoot = async () => fs.mkdtemp(path.join(os.tmpdir(), "hc-refuse-"));
+// One workspace per test; the registry removes it when the process exits, so no
+// file can forget one.
+const tempRoot = (prefix) => tempRootDir(prefix);
 
 // A fake host that records the context hook, exactly like the plugin registers
 // it. `sessions` is only needed for the hook's own session domain.

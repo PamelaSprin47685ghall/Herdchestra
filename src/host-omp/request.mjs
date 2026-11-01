@@ -52,7 +52,7 @@ export const toItems = (messages) => {
       items.push({
         kind: "toolResult",
         member: message.toolName,
-        callId: message.toolCallId,
+        callId: message.toolCallId ?? message.id,
         source: message,
       });
       continue;
@@ -75,7 +75,7 @@ export const toItems = (messages) => {
         items.push({
           kind: "toolResult",
           member: part.toolName,
-          callId: part.toolCallId,
+          callId: part.toolCallId ?? part.id,
           source: message,
         });
       }
@@ -149,17 +149,36 @@ export const selectKept = (messages, projectedItems) => {
   // A message whose every item was dropped is still dropped, because `kept`
   // holds only messages some item came from: an old Scope's beats leave the
   // copy as §6.2 requires.
-  // The call ids this copy carries, as the parts spell them.
+  // The call ids this copy carries, as the parts spell them. OMP emits the
+  // camelCase spelling (`toolCall`/`toolResult`) and the hint's own dialect uses
+  // the hyphenated one; `toItems` above already reads both, and this half-pair
+  // rule must agree with it or a result whose call the projection dropped is
+  // kept as an orphan (or a hyphen-spelled result is dropped) in one dialect.
+  const CALL_PART_TYPES = new Set(["tool-call", "toolCall"]);
+  const RESULT_PART_TYPES = new Set(["tool-result", "toolResult"]);
+  // The id is spelled `toolCallId` by the hint's own dialect and `id` by the
+  // host's assistant parts (`{type:"toolCall", id:"call_…"}` on 18.14.2).
+  // Reading only the first spelling made every host-spelled call invisible
+  // here: `surviving` stayed empty, the rule below dropped the result whose
+  // call the copy still carried, and the adapter's filter — not Scope — removed
+  // a message. `projectionBoundary` saw that as `filtered`, refused to re-base,
+  // and the next request drifted. `toItems` already read both spellings; this
+  // rule must answer with the same ids it does.
+  const callIdOf = (part) => part?.toolCallId ?? part?.id;
   const callIds = (content) =>
     content
-      .filter((part) => part?.type === "tool-call" && part.toolCallId !== undefined)
-      .map((part) => part.toolCallId);
-  const resultIds = (message) =>
-    message?.role === "tool" && Array.isArray(message.content)
-      ? message.content
-          .filter((part) => part?.type === "tool-result" && part.toolCallId !== undefined)
-          .map((part) => part.toolCallId)
-      : [];
+      .filter((part) => CALL_PART_TYPES.has(part?.type) && callIdOf(part) !== undefined)
+      .map(callIdOf);
+  const resultIds = (message) => {
+    // A tool result is its own message under `role: "toolResult"` on OMP, and a
+    // part of a `tool` message in the hint's dialect. Both answer a call.
+    const own = message?.toolCallId ?? message?.id;
+    if (message?.role === "toolResult" && own !== undefined) return [own];
+    if (message?.role !== "tool" || !Array.isArray(message.content)) return [];
+    return message.content
+      .filter((part) => RESULT_PART_TYPES.has(part?.type) && callIdOf(part) !== undefined)
+      .map(callIdOf);
+  };
   // A result the host handed over WITHOUT its call is not part of the copy at
   // all: the call it answers is not in the request, so there is nothing for it
   // to be the half of. This is the one case where a result leaves for a reason

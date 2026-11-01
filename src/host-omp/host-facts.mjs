@@ -174,6 +174,12 @@ export const PLAN_DRAFT_DIR = path.join(".Herdchestra", "drafts");
 
 export const planDraftPath = (root, name) => path.join(root, PLAN_DRAFT_DIR, `${name}.md`);
 
+// The durable record of a fission group (§4.2 step 4). One append-only journal
+// per session lineage, so a group committed before its lanes ran can be
+// replayed after a crash, and a rolled-back group leaves a withdrawal line.
+export const fissionRecordFile = (root, name) =>
+  path.join(stateDir(root), `${safeSessionName(name)}.fission.jsonl`);
+
 // A session id made safe for a file name. One definition, because the ledger
 // file and the draft file must agree on what a session is called: a second
 // sanitiser would let the two name different files for the same session.

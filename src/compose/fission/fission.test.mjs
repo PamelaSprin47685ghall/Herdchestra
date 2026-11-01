@@ -168,6 +168,84 @@ test("fission creates, persists, starts and replaces in order", async () => {
   assert.equal((await fission.fission("w1", ["c", "d"])).rejection, "AlreadyActive");
 });
 
+test("a second fission while the first group is being built is ConflictingGroup", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const calls = [];
+  const host = {
+    ownerView: async () => {
+      calls.push("ownerView");
+      await gate;
+      return "view";
+    },
+    createLane: async (lane) => {
+      calls.push(`createLane:${lane.index}`);
+      return { ok: true };
+    },
+    persistGroup: async () => ({ ok: true }),
+    startLane: async () => ({ ok: true }),
+    replacePresent: async () => ({ ok: true }),
+    abortLanes: async () => ({ ok: true }),
+  };
+  const fission = fissionWith(host);
+  const first = fission.fission("w1", ["a", "b"]);
+  // The first build is parked inside `ownerView`; the second call must not
+  // start a competing build.
+  assert.equal((await fission.fission("w1", ["c", "d"])).rejection, "ConflictingGroup");
+  assert.deepEqual(calls, ["ownerView"], "no lane of the refused build was created");
+  release();
+  assert.equal((await first).ok, true);
+  assert.deepEqual(
+    calls.filter((entry) => entry.startsWith("createLane")),
+    ["createLane:0", "createLane:1"],
+  );
+});
+
+test("a terminal group no longer blocks the owner, and stays addressable until replaced", async () => {
+  const fission = fissionWith(port());
+  const first = await fission.fission("w1", ["a", "b"]);
+  assert.equal(first.ok, true);
+  assert.equal(fission.settle("w1", 0, "zero").delivered, true);
+  assert.equal(fission.settle("w1", 1, "one").converged?.ok, true);
+  assert.equal(fission.stateOf("w1"), "converged");
+  // The finished record is still the owner's group until a new one commits.
+  assert.equal(fission.groupOf("w1").groupId, first.groupId);
+  assert.deepEqual(
+    fission.groups().map((group) => group.groupId),
+    [first.groupId],
+  );
+
+  // §4.2 step 10 restored the owner to a single present, so it may fission
+  // again; only an ACTIVE group refuses admission.
+  const second = await fission.fission("w1", ["c", "d"]);
+  assert.equal(second.ok, true);
+  assert.notEqual(second.groupId, first.groupId);
+  assert.equal(fission.groupOf("w1").groupId, second.groupId);
+});
+
+test("a rolled-back build gives its captured completions back to the next group", async () => {
+  const host = portRefusingOnce("startLane");
+  const fission = fissionWith(host);
+  // A turn settled before fission. The first build captures it and fails, so it
+  // must return to the pending queue rather than disappear with the rollback.
+  fission.settled({ name: "pre", text: "before" });
+  await assert.rejects(() => fission.fission("w1", ["a", "b"]), /startLane failed/);
+  const built = await fission.fission("w1", ["a", "b"]);
+  assert.equal(built.ok, true);
+  fission.settle("w1", 0, "zero");
+  fission.settle("w1", 1, "one");
+  // Every lane delivered, but the captured completion has not been claimed:
+  // condition B keeps the group out of `ready`/`converged`.
+  assert.equal(fission.stateOf("w1"), "replaced");
+  assert.equal(fission.claim("w1", 0, "pre"), true);
+  assert.equal(fission.claim("w1", 1, "pre"), true);
+  const announced = fission.settle("w1", 1, "one");
+  assert.equal(announced.converged?.ok, true);
+  assert.equal(fission.stateOf("w1"), "converged");
+});
+
 test("a failure after admission aborts the whole group", async () => {
   for (const failAt of ["createLane", "persistGroup", "startLane", "replacePresent"]) {
     // A thrown error and a refused receipt are the same fact (§4.2 step 4: a

@@ -68,8 +68,14 @@ export const enforceFace = (agent, tools) => {
 };
 
 // The members a runtime is handed: the host's own, plus the one input channel
-// this adapter owns. The host's members win wherever they exist — a runtime the
-// host wired with its own queue is already correct.
+// this adapter owns.
+//
+// The adapter's queue is ALWAYS drained first, and the host's own consumer is
+// chained behind it. Returning the host's config untouched when it already had a
+// `consumePendingUserMessage` left this adapter's queue with no reader at all:
+// `steer()` still pushed the brief and answered `true`, so the table counted a
+// carried turn while the text was silently lost. The host's member is not
+// dropped — a runtime the host wired with its own queue still reads it.
 const decorateConfigProvider = (configProvider, queue, counter) => {
   if (configProvider === null || typeof configProvider !== "object") return configProvider;
   if (typeof configProvider.getRuntimeConfig !== "function") return configProvider;
@@ -78,20 +84,23 @@ const decorateConfigProvider = (configProvider, queue, counter) => {
     getRuntimeConfig: () => {
       const config = configProvider.getRuntimeConfig();
       if (config === null || typeof config !== "object") return config;
-      if (typeof config.consumePendingUserMessage === "function") return config;
       // The agent loop awaits this member at every request boundary and trims
       // what it gets (`agent-runtime.ts:2302`): the answer is the steer's TEXT,
       // and the runtime builds the user message itself. An empty answer is "no
       // pending message", so an empty queue answers nothing.
+      const hostConsume =
+        typeof config.consumePendingUserMessage === "function" ? config.consumePendingUserMessage.bind(config) : null;
       return {
         ...config,
         consumePendingUserMessage: async () => {
           const next = queue.shift();
-          if (next === undefined) return "";
-          // How many steered briefs this turn read at its boundary: the report
-          // that ends the turn answers each of them.
-          counter.read += 1;
-          return next;
+          if (next !== undefined) {
+            // How many steered briefs this turn read at its boundary: the report
+            // that ends the turn answers each of them.
+            counter.read += 1;
+            return next;
+          }
+          return hostConsume === null ? "" : await hostConsume();
         },
       };
     },

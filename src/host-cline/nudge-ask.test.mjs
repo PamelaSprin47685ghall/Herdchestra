@@ -303,9 +303,13 @@ test("theorem 1: a worker has no ask at all", async (t) => {
     .get("js-worker")
     .execute({ code: `return await this.ask("anyone?");` }, childCall("w-ask"));
   assert.equal(worker.state, "failed");
-  // §3.1: the member is ABSENT from `js-worker`, so the call is a TypeError on
-  // the instance — never a silent no-op and never a parked program.
-  assert.match(worker.error.message, /this\.ask is not a function/);
+  // §3.1/§3.3: the question belongs to Plan's `S1` alone, and a worker cannot
+  // ask. Which refusal arrives is compose's choice — the member may be absent
+  // (a TypeError on `this.ask`) or present and refused by name
+  // (`ASK_FORBIDDEN_OUTSIDE_S1`) — but it is never a silent no-op and never a
+  // parked program.
+  assert.match(worker.error.message, /this\.ask is not a function|only allowed during Plan milestone S1/);
+  if (worker.error.code !== undefined) assert.equal(worker.error.code, "ASK_FORBIDDEN_OUTSIDE_S1");
   assert.equal(s.state.asked, null);
 });
 
@@ -471,10 +475,17 @@ const ledgerAt = async (s, kind, milestone, obligations = []) => {
 //
 // `done` is the Manager's exit, and it is a state the ledger only reaches
 // through the `close` tenure's empty review. Plan's exit needs BOTH halves: a
-// successor's verification and the submitted hand-off.
+// successor's verification (a tenure after the first, `tenure >= 1`) and the
+// submitted hand-off. An exit with an open obligation is not an exit: the
+// ledger that still owes something has not finished the work it claims to have
+// verified (`compose/nudge.mjs` `verifiedCompletion`). The property applies
+// obligations at every milestone, so this half must be stated here too — it was
+// missing, and a random draw of `done` with an obligation failed the test on a
+// rule the adapter correctly enforced.
 const atExit = (ledger, handedOff) => {
+  if (!Array.isArray(ledger.obligations) || ledger.obligations.length !== 0) return false;
   if (ledger.kind === "manager") return ledger.milestone === MANAGER_MILESTONES.at(-1);
-  return ledger.milestone === PLAN_MILESTONES.at(-1) && ledger.successor === true && handedOff === true;
+  return ledger.milestone === PLAN_MILESTONES.at(-1) && ledger.tenure >= 1 && handedOff === true;
 };
 
 test("theorem 3: a refused natural stop is nudged, carried, and dropped at the exit", async (t) => {
@@ -700,4 +711,37 @@ test("a nudge carries the standing order exactly, and never raw JSON", async (t)
     "当前的 review 账本还有上述事项没有做，立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。",
   );
   assert.equal(text.includes('{"'), false);
+});
+
+test("Plan's hand-off through the program surface records the exit's second half", async (t) => {
+  // 根 §2.2: a Plan's `review([])` at 「待执行」 IS its hand-off, and a hand-off
+  // that really started a Manager is the second half of Plan's only legitimate
+  // stop. The surface's review member reaches `ReviewMember` ->
+  // `relayPort.startManager` directly and never `reviewFor`, so the session's
+  // own record of the hand-off was never written and the guard refused the
+  // stop the Plan had earned.
+  const s = await session(t, "plan");
+  const { ManagerSessions } = await import("./sessions.mjs");
+  const original = ManagerSessions.prototype.startManager;
+  ManagerSessions.prototype.startManager = async () => ({ ok: true, sessionId: "manager-from-surface" });
+  t.after(() => {
+    ManagerSessions.prototype.startManager = original;
+  });
+  await s.hooks.beforeModel(request("start"));
+  await planToReady(s);
+  assert.equal(s.state.handedOff, false);
+
+  const receipt = await s.tools.get("js-plan").execute(
+    { code: "return await review([]);", scope: { kind: "resetScope", newScopeGoal: "handoff", newScopeRetentionBudget: 3 } },
+    topLevel("handoff-1"),
+  );
+  assert.equal(receipt.state, "completed", JSON.stringify(receipt.error));
+  assert.equal(receipt.value.ok, true, JSON.stringify(receipt.value));
+  assert.equal(receipt.value.kind, "handoff");
+  assert.equal(receipt.value.started.sessionId, "manager-from-surface");
+  assert.equal(s.state.handedOff, true, "the port's receipt reached the session");
+
+  // The guard now allows the stop, and no nudge is recorded.
+  await s.hooks.afterModel(assistantText("handed off"));
+  assert.equal(s.state.nudge, null, "a verified Plan that handed off reaches its exit");
 });

@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { eventsOf, setup, statedRoot, workspaceRootOf } from "./plugin.mjs";
+import { devopsRoadOf } from "./activation.mjs";
 import { SURFACE_MEMBERS } from "../../compose/program/surface.mjs";
 import { planDraftPath } from "./program-ports.mjs";
 import { PORTS_FOR, makeSurface } from "./surface-factory.mjs";
@@ -47,6 +48,8 @@ const fakeHost = async ({ directory, sessions = {}, events = [] } = {}) => {
   const after = [];
   const contextHooks = [];
   const promptHooks = [];
+  const compactionHooks = [];
+  const generateHooks = [];
   const subscribed = [];
   const calls = [];
   // What each session has on screen, as the host would report it. The relay
@@ -120,7 +123,15 @@ const fakeHost = async ({ directory, sessions = {}, events = [] } = {}) => {
       },
     },
     session: {
-      hook: async (name, callback) => (name === "context" ? contextHooks : promptHooks).push(callback),
+      // One array per host hook. A single "not context, so prompt" fallback
+      // silently filed `compaction` and `generate` under `prompt`, and
+      // `operatorSays` then called a projection instead of the prompt hook.
+      hook: async (name, callback) => {
+        if (name === "context") contextHooks.push(callback);
+        else if (name === "prompt") promptHooks.push(callback);
+        else if (name === "compaction") compactionHooks.push(callback);
+        else if (name === "generate") generateHooks.push(callback);
+      },
       ...domain,
     },
     event: {
@@ -180,6 +191,8 @@ const fakeHost = async ({ directory, sessions = {}, events = [] } = {}) => {
     messagesSeen,
     contextHooks,
     promptHooks,
+    compactionHooks,
+    generateHooks,
     call,
     cleanup,
     // The session state the plugin keeps for a session: the close shape is a
@@ -190,9 +203,11 @@ const fakeHost = async ({ directory, sessions = {}, events = [] } = {}) => {
     // The worker table the plugin keeps for a session. It is created lazily, so
     // a test that wants to seed the predecessor's roster asks for it first.
     table: (sessionID) => cleanup.workerTableOf(sessionID),
-    // The road-bound devops set, shared by the whole activation.
-    bindDevops: (name) => cleanup.devopsInFlight.add(name),
-    isDevopsBound: (name) => cleanup.devopsInFlight.has(name),
+    // The road-bound devops of one session. The road is keyed by the session
+    // that owns it (§2.3), so two Managers never see each other's devops.
+    bindDevops: (name, sessionID = "ses_main") => devopsRoadOf(cleanup.activation, sessionID).add(name),
+    isDevopsBound: (name, sessionID = "ses_main") =>
+      devopsRoadOf(cleanup.activation, sessionID).has(name),
     // One genuine operator receipt, as the host delivers it: the prompt hook is
     // where the operator's original input is captured (original-input.mjs).
     // A test that relays must speak first, because the relay refuses without a
@@ -446,7 +461,11 @@ test("a successor adopts the predecessor's roster, unclaimed results and bound d
     [["w2", "ses_w2"]],
     "the result nobody joined survives the relay",
   );
-  assert.equal(host.isDevopsBound("w2"), true, "the road-bound devops does not change hands");
+  assert.equal(
+    host.isDevopsBound("w2", successor),
+    true,
+    "the road-bound devops does not change hands: the successor's own road holds it",
+  );
   await host.cleanup();
 });
 
@@ -915,12 +934,13 @@ test("Plan writes its draft and hands it to a Manager session on an empty review
   const host = await fakeHost();
   // 根 §2.4 第 1 步: the first empty review of the first tenure is the operator's
   // question, so the walk answers it and relays the way a live host does. The
-  // session that ends at 待执行 is the LAST successor, and a Plan's draft is
-  // named after the session that writes it.
+  // session that ends at 待执行 is the LAST successor.
   const sessionID = await walkPlanToReady(host);
-  // The draft path is derived from the session (§2.2), the same rule every host
-  // uses, so the Plan writes exactly the file the hand-off reads.
-  const draftPath = planDraftPath(host.dir, sessionID);
+  // The draft path is derived from the session that STARTED the work (§2.2), and
+  // a Plan relay carries it to its successor: every successor of this walk reads
+  // and writes the same file its predecessor wrote, so the canonical path is
+  // still the first session's.
+  const draftPath = planDraftPath(host.dir, "ses_main");
   await fs.mkdir(path.dirname(draftPath), { recursive: true });
   // 根 §2.2: "系统会告知确切路径". Plan's system prompt is per agent and cannot
   // carry a per-session path, so the receipt names it — every Plan answer, not
@@ -963,7 +983,8 @@ test("two separate empty reviews start two Managers; a replayed call id starts o
   // 根 §2.4 第 1 步: the walk answers the first tenure's question and relays the
   // way a live host does, so the session it returns is the one at 待执行.
   const sessionID = await walkPlanToReady(host);
-  const draftPath = planDraftPath(host.dir, sessionID);
+  // The draft is one persistent product across the relay chain (§2.2).
+  const draftPath = planDraftPath(host.dir, "ses_main");
   await fs.mkdir(path.dirname(draftPath), { recursive: true });
   await fs.writeFile(draftPath, "the plan\n");
 
@@ -1320,7 +1341,9 @@ test("the context hook narrows Plan's catalog and leaves it without read or bash
     messages: [{ role: "user", content: [{ type: "text", text: "plan it" }] }],
   };
   for (const hook of host.contextHooks) await hook(event);
-  assert.deepEqual(Object.keys(event.tools).sort(), ["plan", "question"]);
+  // No `question`: Plan asks with `this.ask` in `S1` (park + interrupt), and
+  // §2.2 gives it no blocking host question tool.
+  assert.deepEqual(Object.keys(event.tools).sort(), ["plan"]);
   await host.cleanup();
 });
 
@@ -1591,7 +1614,11 @@ const walkPlanToReady = async (host, sessionID = "ses_main") => {
   let current = sessionID;
   for (let step = 0; step < 3; step += 1) {
     const relayed = await host.call("plan", { code: "return await review([]);" }, { agent: "Plan", sessionID: current });
-    assert.equal(relayed.value.kind, "relay", JSON.stringify(relayed.value));
+    assert.equal(
+      relayed.value?.kind,
+      "relay",
+      JSON.stringify({ value: relayed.value, error: relayed.error }),
+    );
     // The successor the relay really opened, from its own receipt: the record
     // names it too (`handedOver.record.successor`), and the host's session
     // state is keyed by the id the relay created.
@@ -1600,7 +1627,11 @@ const walkPlanToReady = async (host, sessionID = "ses_main") => {
     host.seesSession(current);
     await host.operatorSays(spoken, { sessionID: current, messageID: `msg_operator_${step}` });
     const promoted = await host.call("plan", { code: "return await review([]);" }, { agent: "Plan", sessionID: current });
-    assert.equal(promoted.value.kind, "confirm", JSON.stringify(promoted.value));
+    assert.equal(
+      promoted.value?.kind,
+      "confirm",
+      JSON.stringify({ receipt: promoted, value: promoted.value, error: promoted.error }),
+    );
   }
   assert.equal(host.state(current).ledgerFor("plan").milestone, "待执行");
   return current;
@@ -1612,11 +1643,11 @@ test("compose reads the saved draft for the hand-off: no host wires it itself", 
   // `#reviewMember`), so every host behaves alike; a host that passed its own
   // bytes would be the only one whose hand-off works.
   const host = await fakeHost();
-  // A relay hands the work to a NEW session, and a Plan's draft is named after
-  // the session that wrote it: the walk returns the session now judging, so the
-  // draft is written for THAT session, after the walk.
+  // A relay hands the work to a NEW session, but the draft it continues is the
+  // file its predecessor wrote: the walk returns the session now judging, and
+  // the canonical path is still the first session's.
   const sessionID = await walkPlanToReady(host);
-  const draftPath = planDraftPath(host.dir, sessionID);
+  const draftPath = planDraftPath(host.dir, "ses_main");
   await fs.mkdir(path.dirname(draftPath), { recursive: true });
   await fs.writeFile(draftPath, "the saved plan\n");
 
@@ -1646,7 +1677,8 @@ test("the saved draft decides the hand-off across separate program calls", async
   // instead of being replaced by the bytes of the first call.
   const host = await fakeHost();
   const sessionID = await walkPlanToReady(host);
-  const draftPath = planDraftPath(host.dir, sessionID);
+  // The draft survives the relay chain: every successor writes the same file.
+  const draftPath = planDraftPath(host.dir, "ses_main");
   await fs.mkdir(path.dirname(draftPath), { recursive: true });
   await fs.writeFile(draftPath, "first version\n");
   const first = await host.call("plan", { code: "return await review([]);" }, { agent: "Plan", sessionID });

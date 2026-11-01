@@ -66,6 +66,8 @@ const fakeHost = async ({ sessions = {} } = {}) => {
   const after = [];
   const context = [];
   const prompt = [];
+  const compaction = [];
+  const generate = [];
   const prompts = [];
   let emit = null;
   const stream = {
@@ -94,19 +96,32 @@ const fakeHost = async ({ sessions = {} } = {}) => {
       hook: async (name, callback) => (name === "execute.before" ? before : after).push(callback),
     },
     session: {
-      hook: async (name, callback) => (name === "context" ? context : prompt).push(callback),
+      hook: async (name, callback) => {
+        if (name === "context") context.push(callback);
+        else if (name === "prompt") prompt.push(callback);
+        else if (name === "compaction") compaction.push(callback);
+        else if (name === "generate") generate.push(callback);
+      },
       prompt: async (input) => {
         prompts.push(input);
         return { data: {} };
       },
       synthetic: async () => ({ data: {} }),
       interrupt: async () => {},
+      // A session this adapter creates runs its parent's model
+      // (`model-inherit.mjs`), so the host must be able to report one; a
+      // hand-off that cannot read the Plan's model is refused before a Manager
+      // exists, and the Plan's hand-off fact is then never written.
+      get: async (input) => ({
+        data: { id: input.sessionID, model: { providerID: "kw92", id: "lazy/task" } },
+      }),
+      create: async (input) => ({ data: { id: `ses_created_${(sequence += 1)}`, ...input } }),
       ...sessions,
     },
     event: { subscribe: () => stream },
   };
-  const cleanup = await setup(ctx);
   let sequence = 0;
+  const cleanup = await setup(ctx);
   const call = async (name, input, { agent = "coder", sessionID = "ses_main" } = {}) => {
     const id = `call_${(sequence += 1)}`;
     const scoped = { ...input, scope: input.scope ?? RESET() };
@@ -144,6 +159,8 @@ const fakeHost = async ({ sessions = {} } = {}) => {
     complete,
     says,
     prompts,
+    compaction,
+    generate,
     cleanup,
     state: cleanup.stateOf,
     // The activation the plugin built. The controller and the ledger table are
@@ -258,9 +275,17 @@ test("theorem 1: this.ask parks and interrupts in Plan S1, and is refused everyw
         const code = `return await this.ask(${JSON.stringify(question)});`;
         const allowed = face === "plan" && side === "plan" && planted === ASK_MILESTONE;
         if (face === "js-worker") {
-          // A worker has no `ask` member at all: the channel is top-level only.
-          const receipt = await host.call(tool, { code: 'return typeof this.ask;' }, { agent, sessionID });
-          assert.equal(receipt.value, "undefined", "a worker's surface carries no ask");
+          // A worker never ASKS. The face may omit the member entirely, or keep
+          // it for the named refusal; either way a call must not park.
+          const kindOf = await host.call(tool, { code: "return typeof this.ask;" }, { agent, sessionID });
+          if (kindOf.value !== "undefined") {
+            const receipt = await host.call(tool, { code: `return await this.ask(${JSON.stringify(question)});` }, {
+              agent,
+              sessionID,
+            });
+            assert.equal(receipt.state, "failed", JSON.stringify(receipt));
+            assert.equal(receipt.error.message.includes(ASK_FORBIDDEN), true, receipt.error.message);
+          }
           await host.cleanup();
           return;
         }
@@ -356,7 +381,6 @@ test("theorem 3: a natural turn exit is nudged unless it is the S1 ask or verifi
         // question can be pending at any milestone: the gate is the ledger's.
         const askable = kind === "plan" && ledger.milestone === ASK_MILESTONE;
         const asking = asked && askable;
-        const decision = turnExit({ role: kind, ledger, event: { id: round }, asked: asking });
         // Plan's exit is the verification plus the hand-off. The verification
         // is the TENURE, not the `successor` flag: the promotion IS the
         // successor's first review, and that review is what clears the flag
@@ -366,7 +390,17 @@ test("theorem 3: a natural turn exit is nudged unless it is the S1 ask or verifi
           kind === "manager"
             ? ledger.milestone === MANAGER_MILESTONES.at(-1)
             : ledger.milestone === PLAN_MILESTONES.at(-1) && ledger.tenure >= 1;
-        const exit = asking || atCompletion;
+        // The hand-off is a DURABLE fact, not a consequence of the milestone:
+        // the controller reads it from the row the hand-off wrote. The oracle
+        // models the successful hand-off, and the test below pins the negative
+        // (待执行 with no hand-off is nudged).
+        const handedOff = kind === "plan" && atCompletion;
+        const decision = turnExit({ role: kind, ledger, event: { id: round }, asked: asking, handedOff });
+        // §2.2/§2.3: the exit is reached only after the ledger is empty. A
+        // completion milestone with open obligations is not an earned stop (the
+        // generator can reach it only by applying findings after the walk), so
+        // the oracle must not treat it as one.
+        const exit = asking || (atCompletion && ledger.obligations.length === 0);
         if (asking) {
           // A pending S1 question is the operator's exit: no nudge, and the
           // round is not booked as a stop.
@@ -406,6 +440,19 @@ test("theorem 3: a natural turn exit is nudged unless it is the S1 ask or verifi
     ),
     { ...fcRuns(300) },
   );
+});
+
+test("theorem 3: 待执行 without a durable hand-off is nudged, not stopped", () => {
+  // The audit's counterexample: a Plan promoted to 待执行 by a successor's
+  // `confirm` (or one whose hand-off was refused `DRAFT_MISSING`) has the last
+  // milestone but no hand-off. Reading the milestone alone as an earned exit
+  // would let it stop with no Manager started.
+  const ledger = walkTo("plan", PLAN_MILESTONES.at(-1));
+  assert.ok(ledger.tenure >= 1, "待执行 is judged by a tenure after the first");
+  const decision = turnExit({ role: "plan", ledger, event: { id: "round_no_handoff" } });
+  assert.equal(decision.stopAllowed, false);
+  assert.equal(decision.reason, "unattended-nudge");
+  assert.equal(typeof decision.nudge, "string");
 });
 
 test("theorem 3: an execution the operator interrupted is never nudged", async () => {
@@ -663,7 +710,8 @@ test("the face of each role carries the members the rule needs", async () => {
   assert.ok(SURFACE_MEMBERS.plan.includes("unpark"));
   // The Manager keeps `ask` only so a call reads the named refusal.
   assert.ok(SURFACE_MEMBERS["js-manager"].includes("ask"));
-  // A worker has no question channel at all.
-  assert.equal(SURFACE_MEMBERS["js-worker"].includes("ask"), false);
+  // A worker's `ask` is not a channel: compose may list the member so a call
+  // reads the named refusal (`ASK_FORBIDDEN_OUTSIDE_S1`), and theorem 1 pins
+  // that refusal. What must never exist is a worker path that ASKS.
   assert.equal(ROLES.PLAN, "plan");
 });

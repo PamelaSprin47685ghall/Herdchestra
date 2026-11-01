@@ -44,9 +44,13 @@ export class SessionFission {
   // so one listener: registered when the port is first built and removed when
   // the session ends.
   #unlisten = null;
-  // Lane index by lane id, for the group that is building or live. A lane's
-  // turn end names its own id; the group addresses the lane by index.
-  #laneIndex = new Map();
+  // Where each lane belongs, by lane id: `{ owner, index }`. A lane's turn end
+  // names its own id, and the group that owns it is the group of the owner the
+  // lane was built for. One session-wide `#owner` slot misrouted every
+  // settlement as soon as two workers fissioned, or a second worker's refused
+  // fission rebound the slot: the first group's deliveries then hit an owner
+  // with no group, never reached `ConvergenceReady`, and never announced.
+  #lanes = new Map();
 
   constructor({ workers, sessionId, groupJournal = null, capacity = LANE_CAPACITY }) {
     this.#workers = workers;
@@ -71,7 +75,15 @@ export class SessionFission {
       // The table's receipt is already `{ ok, released, orphaned }`
       // (`compose/fission/port.mjs`); wrapping it again would hide an orphaned
       // lane inside a `released` array and report a failed teardown as clean.
-      abortLanes: async ({ laneIds }) => this.#workers.abortLanes(laneIds),
+      abortLanes: async ({ laneIds }) => {
+        const receipt = this.#workers.abortLanes(laneIds);
+        // A rolled-back lane has no group left to deliver to.
+        for (const entry of Array.isArray(laneIds) ? laneIds : []) {
+          const laneId = typeof entry === "string" ? entry : entry?.laneId;
+          if (typeof laneId === "string") this.#lanes.delete(laneId);
+        }
+        return receipt;
+      },
       // Where a group's creation is committed. A session without a root has no
       // journal, and `persistGroup` then REFUSES (`NO_GROUP_JOURNAL`): step 4 is
       // what makes a crash survivable, so a group that cannot be recorded does
@@ -102,9 +114,12 @@ export class SessionFission {
     return this.#group;
   }
 
-  #fission(owner, prompts) {
-    this.#owner = owner;
-    return this.#groups().fission(owner, prompts);
+  async #fission(owner, prompts) {
+    const receipt = await this.#groups().fission(owner, prompts);
+    // The reader's owner is the one whose group was ADMITTED: a refused second
+    // fission must not point `group` at a group that does not exist.
+    if (receipt?.ok === true) this.#owner = owner;
+    return receipt;
   }
 
   // Every lane settlement becomes a delivery to its group (§4.2 steps 8 and 10):
@@ -117,11 +132,11 @@ export class SessionFission {
   }
 
   #laneSettled(settled) {
-    if (this.#group === null || this.#owner === null) return null;
-    const index = this.#laneIndex.get(settled?.name);
-    if (!Number.isInteger(index)) return null;
+    if (this.#group === null) return null;
+    const lane = this.#lanes.get(settled?.name);
+    if (lane === undefined || !Number.isInteger(lane.index)) return null;
     const text = typeof settled?.outcome?.text === "string" ? settled.outcome.text : null;
-    return this.#group.settle(this.#owner, index, text);
+    return this.#group.settle(lane.owner, lane.index, text);
   }
 
   // A lane's turn settled: its delivery, and the takeover lane's announcement
@@ -149,9 +164,10 @@ export class SessionFission {
 
   async #buildLane(lane) {
     const owner = this.#workers.get(lane.owner);
-    // The index travels with the lane id from the moment the lane exists, so a
-    // turn that ends while the group is still building is still booked.
-    this.#laneIndex.set(lane.laneId, lane.index);
+    // The owner and index travel with the lane id from the moment the lane
+    // exists, so a turn that ends while the group is still building is booked to
+    // the right group.
+    this.#lanes.set(lane.laneId, { owner: lane.owner, index: lane.index });
     const built = await this.#workers.startLane({
       name: lane.laneId,
       brief: lane.prompt,

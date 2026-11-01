@@ -26,6 +26,12 @@ const ports = () => ({
 // 根 §3.3: a receipt names the program it ran, so a surface is built with one.
 const SOURCE = "class Js extends JsProgram {\n  async run() { return null; }\n}\n";
 
+const tempRoot = async (t, prefix) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  return dir;
+};
+
 const surfaceOf = (role, state = program(), root = "/tmp") =>
   new ProgramSurface({
     name: state.name,
@@ -85,7 +91,7 @@ test("manager has no file access and no command execution", () => {
   ]);
 });
 
-test("worker keeps call, fission, fork and join; it has no review or ask", () => {
+test("worker keeps call, fission, fork and join; it has no ask or review", () => {
   for (const role of [ROLES.CODER, ROLES.DEVOPS]) {
     const members = surfaceOf(role).surface();
     assert.equal(typeof members.call, "function", role);
@@ -93,21 +99,23 @@ test("worker keeps call, fission, fork and join; it has no review or ask", () =>
     // §3.1 marks fork/join for `js-worker` as well as `js-manager`.
     assert.equal(typeof members.fork, "function", `${role}: fork`);
     assert.equal(typeof members.join, "function", `${role}: join`);
-    for (const name of ["review", "ask"]) {
-      assert.equal(members[name], undefined, `${role}: ${name}`);
-    }
+    // 根 §3.1 marks both channels absent for `js-worker`: a worker's turn
+    // ending is its report, and the ledger is the Manager's.
+    assert.equal(members.ask, undefined, `${role}: ask`);
+    assert.equal(members.review, undefined, `${role}: review`);
   }
 });
 
 test("plan sees its own members, including the unpark its ask needs", () => {
   const members = surfaceOf(ROLES.PLAN).surface();
-  // 根 §2.2: `this.ask` is `this.park` + `interrupt`, and the answer arrives as
-  // `this.unpark(name, answer)`, so `plan` must own both.
-  assert.deepEqual(Object.keys(members).sort(), ["ask", "cat", "devops", "park", "review", "unpark", "write"]);
+  // 根 §3.1 marks `this.park` absent for Plan; `this.ask` parks internally.
+  // 根 §2.2: the answer arrives as `this.unpark(name, answer)`, so `plan` owns
+  // that member even though it has no separate park.
+  assert.deepEqual(Object.keys(members).sort(), ["ask", "cat", "devops", "review", "unpark", "write"]);
 });
 
-test("plan's draft is read-only until the tenure's first review (spec 5.5)", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-plan-"));
+test("plan's draft is read-only until the tenure's first review (spec 5.5)", async (t) => {
+  const dir = await tempRoot(t, "compose-plan-");
   const locked = surfaceOf(ROLES.PLAN, program("plan-1"), dir).surface();
   let blocked = null;
   try {
@@ -125,8 +133,8 @@ test("plan's draft is read-only until the tenure's first review (spec 5.5)", asy
   assert.equal(await plan.cat("draft.md"), "x");
 });
 
-test("a successor tenure starts read-only again (spec 5.5)", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-plan-"));
+test("a successor tenure starts read-only again (spec 5.5)", async (t) => {
+  const dir = await tempRoot(t, "compose-plan-");
   const reviewed = surfaceOf(ROLES.PLAN, program("plan-3"), dir);
   await reviewed.surface().review([{ key: "open", value: "x" }]);
   assert.equal(reviewed.ledger.reviewCount, 1);

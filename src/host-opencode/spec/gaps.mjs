@@ -118,9 +118,9 @@ export const GAPS = Object.freeze([
     id: "PLAN_ENTRY",
     question: "Is Plan a role the adapter must register now?",
     evidence:
-      "Root AGENTS.md §6, §7 describe Plan, but §2.1 lists only Manager, coder and devops, and §7.1 names only those three agents.",
+      "Root AGENTS.md §2.1 and §6 describe FOUR identities — Manager, Plan, coder, devops — while §7.1's agent list names three (Manager, coder, devops). The two sections disagree about Plan, not about whether it exists.",
     consequence:
-      "The adapter registers a fourth agent, `Plan` (mode `primary`), with the `plan` face (§6). §6 puts Plan outside the five `skillDocuments` projection, so its system prompt is its own role segment (compose/prompt/plan.mjs), never `common + manager` or `common + worker`; `systemPromptFor(\"plan\")` refuses with PLAN_OUTSIDE_PROJECTION. It is never forked, has no `fork`/`join`, and its `review` side effects are the relay host. §7.1's three-agent list is narrower than §6; this adapter follows §6 and records the discrepancy here.",
+      "The adapter registers a fourth agent, `Plan` (mode `primary`), with the `plan` face (§6). §6 puts Plan outside the three-file `skillDocuments` projection (`common`, `manager`, `worker`), so its system prompt is its own role segment (compose/prompt/plan.mjs), never `common + manager` or `common + worker`; `systemPromptFor(\"plan\")` refuses with PLAN_OUTSIDE_PROJECTION. It is never forked, has no `fork`/`join`, and its `review` side effects are the relay host. §7.1's three-agent list is narrower than §2.1/§6; this adapter follows §2.1/§6 and records the discrepancy here.",
     blocks: [],
   }),
   Object.freeze({

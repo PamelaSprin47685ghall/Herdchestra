@@ -129,8 +129,10 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
     record(forkTool());
     record(joinTool());
     // A delegated runtime gets the worker face, not the Manager's: `js-worker`
-    // is the programming face, and `js-review` is its read-only sibling.
-    session.noteTools(registered.filter((tool) => tool.name === "js-worker" || tool.name === "js-review"));
+    // is the programming face. `js-review` is the Manager's evaluation face and
+    // `hooks.beforeTool` refuses it for coder and devops, so handing it to a
+    // worker would put a tool it can never use in its list.
+    session.noteTools(registered.filter((tool) => tool.name === "js-worker"));
     // 根 §7.2: the request rewrite IS the `beforeModel` hook's `messages`
     // (`hooks.mjs`). The host applies it to this request only and never to the
     // transcript (`agent-runtime.ts:1700-1711`); a `registerMessageBuilder`
@@ -266,7 +268,12 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
   }
 
   // One call is one program: compile, run, answer by the program's own state
-  // (spec §3.3). The deadline is fixed at admission from the intent's bytes.
+  // (spec §3.3). The deadline is fixed at admission from the bytes this call
+  // actually has: `CODE_SCHEMA` carries `code` and `scope` and nothing else,
+  // and the host hands a tool call no request text, so the program source is
+  // the only "intent" the adapter can measure (`Deadline.forIntent`, 50 ms per
+  // UTF-8 byte). A future schema that carries the request's own `intent` should
+  // pass THAT text here instead.
   //
   // One spelling per capability (§3.1): `compile` binds the members as the
   // body's `this` and hands only `fork`, `join` and `review` over as bare
@@ -313,9 +320,29 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
     // to have observed the target in this request (spec §3.3). The call
     // therefore observes every live program of the session, itself included.
     for (const live of session.registry.list()) session.control.observe(name, live.name);
-    const fn = compile(code, Object.freeze({ ...members }));
-    const result = await call.run(() => fn());
-    session.control.close(name);
+    let result;
+    try {
+      // A body that does not COMPILE is still a call that ENDED. Without this
+      // guard a syntax error escaped `execute` after the registry and the
+      // control ledger were opened: the name stayed live, the host saw a
+      // rejected tool call, and a replay of the same call id answered
+      // `NAME_TAKEN`.
+      const fn = compile(code, Object.freeze({ ...members }));
+      result = await call.run(() => fn());
+    } catch (error) {
+      const failure = {
+        name: error?.name ?? "Error",
+        message: String(error?.message ?? error),
+        code: typeof error?.code === "string" ? error.code : "PROGRAM_COMPILE_FAILED",
+      };
+      // The call's own finishing step: the program reaches FAILED, the park
+      // entry closes and the name is retired, so the next call may use it.
+      call.settleContinuation({ status: "failed", error: failure });
+      session.tenure.noteFinished(name);
+      return { ...surface.receipt(), value: null, error: failure };
+    } finally {
+      session.control.close(name);
+    }
     if (result.status === "parked" || program.state === "parked") {
       const site = call.parkedSite ?? program.site ?? null;
       session.tenure.noteParked(name);
@@ -332,17 +359,24 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
           name,
           question: site?.payload?.question ?? null,
           // The answer is the value of the parked expression (§3.3: an `ask`
-          // site takes the injected value like any other park). The park table
-          // owns that state change: `call.resume` wakes the SAME continuation
-          // the AI's `this.unpark(name, answer)` wakes, so both routes report
-          // the same thing. The site must NOT be consumed here — `resume` does
-          // it, and a site consumed twice would leave the body with nothing to
-          // continue from.
+          // site takes the injected value like any other park). The SESSION's
+          // `resume` owns that state change: it wakes the SAME continuation the
+          // AI's `this.unpark(name, answer)` wakes and finishes it the same way,
+          // so both routes report the same thing. The site must NOT be consumed
+          // here — `resume` does it, and a site consumed twice would leave the
+          // body with nothing to continue from.
           resume: (answer) => {
             if (program.state !== "parked") return false;
+            // The SESSION's resume is the finishing route (根 §3.3): it wakes
+            // the continuation, lets the call reach its terminal state, retires
+            // the name, notes the park finished and closes the park entry. The
+            // call's own `resume` only answered the continuation, so a program
+            // the operator answered stayed parked forever: its name stayed
+            // live and the Idle Hint kept listing it.
+            //
             // The continuation runs on; its outcome is the resumed program's,
             // and the operator's message does not wait for it.
-            void call.resume(name, answer);
+            void session.resume(name, answer);
             return true;
           },
           surface,
@@ -413,8 +447,20 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
     call.attachSurface(surface);
     // The tenure owns the request boundary (§2.3): this call is its round's
     // request, and the window was checked open above.
-    const fn = compile(code, Object.freeze({ ...surface.reviewSurface({ openRound: true }) }));
-    const result = await call.run(() => fn());
+    let result;
+    try {
+      const fn = compile(code, Object.freeze({ ...surface.reviewSurface({ openRound: true }) }));
+      result = await call.run(() => fn());
+    } catch (error) {
+      const failure = {
+        name: error?.name ?? "Error",
+        message: String(error?.message ?? error),
+        code: typeof error?.code === "string" ? error.code : "PROGRAM_COMPILE_FAILED",
+      };
+      call.settleContinuation({ status: "failed", error: failure });
+      session.tenure.noteFinished(name);
+      return { ...surface.receipt(), value: null, error: failure };
+    }
     if (result.status === "parked" || program.state === "parked") {
       session.tenure.noteParked(name);
       return surface.receipt({

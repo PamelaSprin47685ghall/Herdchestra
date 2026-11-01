@@ -394,8 +394,9 @@ one question is what made the drift recur.
 read `.Herdchestra/<session>.requests.jsonl` (one line per `context` call), and
 compare `incoming.shapes` with `presented.shapes`: the same message must have
 one digest in every line it appears in. If a new host field changes between
-lines, the chain will drift again and that field belongs in the exclusion list —
-the record names it without exposing the conversation.
+lines, the chain will drift again and that field must be classified by the
+canonical allowlist (never a blacklist) — the record names it without exposing
+the conversation.
 
 **Not claimed.** The exact call path that let the hook see the placeholder
 mid-stream is not reproduced: the record shows both copies existed, not which
@@ -741,8 +742,11 @@ context step will win and the record step becomes dead weight to remove.
 **Not claimed.** The worker's module instance is separate from the host's, and
 no shared mutable state crosses that boundary by design. A subagent started this
 way is a real runtime in the host process, but it is not registered in the
-host's own `sessions` table — that is why `steer_message` still reports
-`NO_PER_RUNTIME_STEER` for it.
+host's own `sessions` table. The host's `steer_message` therefore silently drops
+a steer aimed at it; the adapter steers through the runtime's own
+`consumePendingUserMessage` channel instead (see "Cline: a steered brief rides
+the turn that is running" below). `NO_PER_RUNTIME_STEER` is only the answer of
+the operator seam when no steer channel is wired at all.
 
 **Follow-up: the model was not the whole connection (same day).** With the SDK
 reachable, a delegated runtime still died at the provider: `finishReason:
@@ -1012,6 +1016,34 @@ run: a request the host composes before any tool ran legitimately carries no
 `js-*` result, so "provider request has a CUE tool result" fails when the model
 answers without calling a tool. The counts above are read from the capture
 files directly.
+
+## Cline's plugin-sandbox warning is the host's payload, not our return (2026-11-01)
+
+The host logs `hook "beforeTool"/"afterTool" received a payload that is not
+JSON-serializable` once per hook name. It is not caused by the adapter's hook
+return values. `@cline/core`'s `callWithSerializableFallback` wraps the payload
+the HOST SENDS INTO the sandbox hook (`makeHookHandler` →
+`sandbox.call("invokeHook", { payload })`): `payload.tool` is the host's own
+`AgentTool`, which carries an `execute` function, and `payload.snapshot` may
+carry live host objects. Structured clone rejects that payload, the host warns,
+retries with `toJsonSafePayload` (functions and cycles dropped), and the hook
+runs. Our `beforeTool` returns only `{ skip: true, reason: <string> }` and
+`afterTool` only `{ appendContext: <string> }` or `undefined`; both are
+JSON-cloneable. Two warnings therefore mean each hook fired at least once, not
+that a return value was unserializable. A plugin cannot remove the warning; only
+the host can, by omitting `execute` and live objects from the hook payload. Do
+not add a JSON sanitizer to our returns.
+
+## OpenCode v2 needs the Effect plugin shape for its hooks (2026-11-01)
+
+`src/host-opencode/index.js` is the directory entry OpenCode resolves
+(`<dir>/index`). It re-exports `spec/effect-entry.mjs`, whose default is
+`{ id, effect }`, not `{ id, setup }`. On OpenCode v2.1.4+ only the Effect
+plugin shape wires the `session`, `tool` and `event` hooks; a `setup`-only
+export loads without those capabilities. The package root's `package.json`
+main/exports name `./index.js`, so both the directory route and a package-name
+import reach the same module. Keep the re-export; do not replace it with a
+`setup` shim.
 
 ## Cline narrows a subagent's face before the plugin sees it (2026-11-01)
 

@@ -14,6 +14,11 @@ import { fakeClock } from "../../core/clock.mjs";
 // with one. It is never executed: these tests call members directly.
 const SOURCE = "class Js extends JsProgram {\n  async run() { return null; }\n}\n";
 
+const root = async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  return dir;
+};
 
 const ports = () => ({
   command: { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }) },
@@ -35,8 +40,8 @@ const surfaceOf = (role, state, dir, extra = {}) =>
     views: new Map(),
   });
 
-test("unpark resumes another program through core's control surface", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-"));
+test("unpark resumes another program through core's control surface", async (t) => {
+  const dir = await root(t);
   const registry = new ProgramRegistry();
   const control = new ControlSurface(registry);
   const target = registry.begin("target");
@@ -72,8 +77,8 @@ test("unpark resumes another program through core's control surface", async () =
   assert.equal(target.state, "running");
 });
 
-test("the surface hands core the controller's own capability set", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "compose-"));
+test("the surface hands core the controller's own capability set", async (t) => {
+  const dir = await root(t);
   const registry = new ProgramRegistry();
   const control = new ControlSurface(registry);
   const target = registry.begin("target", { capabilities: ["write"] });

@@ -7,7 +7,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -24,8 +23,13 @@ import {
   relayRecord,
   writeRelay,
 } from "./relay-record.mjs";
+import { tempRoot as tempRootDir } from "./test-temp.mjs";
 
-const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "herd-relay-"));
+// One workspace per test; the registry removes it when the process exits, so no
+// file can forget one.
+const tempRoot = (prefix) => tempRootDir(prefix);
+
+
 
 const recordFor = (overrides = {}) =>
   relayRecord({

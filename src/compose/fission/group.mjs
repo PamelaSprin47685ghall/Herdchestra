@@ -45,6 +45,12 @@ export const lanesOf = (groupId, prompts) =>
 
 const refusal = (rejection, extra = {}) => ({ ok: false, rejection, ...extra });
 
+// The identity a broadcast completion is claimed by. A host may name it with
+// `key`, `name` or `id`; the group normalizes once, at `broadcast`, so the
+// claim and the convergence test always compare the same value.
+const completionKey = (completion) =>
+  completion?.key ?? completion?.name ?? completion?.id ?? completion;
+
 // Validate the prompt list before anything is created.
 export const validatePrompts = (prompts) => {
   expectArray("prompts", prompts);
@@ -151,14 +157,15 @@ export class LaneGroup {
     return this.#lanes.map((lane) => lane.index);
   }
 
-  // The next lane after `index` that has not delivered its work, going round
-  // the ring; null when every lane already delivered.
+  // The next OTHER lane after `index` that has not delivered its work, going
+  // round the ring; null when every other lane already delivered. The caller
+  // itself is never its own successor.
   successorOf(index) {
     if (!Number.isInteger(index) || index < 0 || index >= this.#lanes.length) {
       throw invalidArgument(`no lane ${index} in group ${this.#groupId}`);
     }
     const open = (candidate) => !this.#delivered.has(candidate);
-    for (let step = 1; step <= this.#lanes.length; step += 1) {
+    for (let step = 1; step < this.#lanes.length; step += 1) {
       const candidate = (index + step) % this.#lanes.length;
       if (open(candidate)) return candidate;
     }
@@ -200,8 +207,11 @@ export class LaneGroup {
   // nothing to announce yet.
   announcement() {
     if (this.#terminal !== null) return null;
+    // The takeover lane announces only after the group reached `ready`: the
+    // state is the conjunction, and a group still being built (admitted or
+    // started) has not replaced its present yet.
+    if (this.phase !== GROUP_STATES.READY) return null;
     if (!this.#delivered.has(this.terminalLane)) return null;
-    if (!this.convergenceReady()) return null;
     return { lane: this.terminalLane, result: this.#results.get(this.terminalLane) ?? null };
   }
 
@@ -209,7 +219,7 @@ export class LaneGroup {
   // claims it once; repeated delivery to the same lane does nothing.
   broadcast(completion) {
     this.#refuseAfterTerminal("broadcast");
-    this.#broadcasts.push(completion);
+    this.#broadcasts.push(completionKey(completion));
     this.#refresh();
     return this.convergenceReady();
   }
@@ -229,10 +239,9 @@ export class LaneGroup {
   // every lane.
   convergenceReady() {
     if (this.#delivered.size !== this.#lanes.length) return false;
-    const keys = this.#broadcasts.map((completion) => completion.key ?? completion);
     for (let index = 0; index < this.#lanes.length; index += 1) {
       const claimed = this.#broadcasted.get(index) ?? new Set();
-      for (const key of keys) if (!claimed.has(key)) return false;
+      for (const key of this.#broadcasts) if (!claimed.has(key)) return false;
     }
     return true;
   }

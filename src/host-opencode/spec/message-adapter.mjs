@@ -309,7 +309,12 @@ export const messagesFromItems = (items) => {
     // A result without a call is still dropped: the provider rejects a result
     // it never asked for, and no host sends one. That is the half-pair the
     // guard exists for, and it is the only half that is unsafe.
-    if (item.kind === KIND.TOOL_RESULT && !calls.has(item.callId)) continue;
+    // A `tool` message with NO result part (`itemsFromMessages` emits it with
+    // `callId: undefined` on purpose) is kept whole. The guard below is for a
+    // REAL result whose call is missing — the provider rejects a result it never
+    // asked for — and `calls` never contains `undefined`, so applying it to the
+    // resultless shape dropped exactly the message the producer preserved.
+    if (item.kind === KIND.TOOL_RESULT && item.callId !== undefined && !calls.has(item.callId)) continue;
     const last = messages[messages.length - 1];
     if (item.kind === KIND.TOOL_RESULT) {
       // The result's own message, the host's object, when the item carries it.

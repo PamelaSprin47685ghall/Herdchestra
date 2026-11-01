@@ -23,6 +23,7 @@ export class ProgramCalls {
   #sources;
   #stops;
   #calls;
+  #receipts;
 
   // `calls` is this session's durable record of used call ids (`call-record.mjs`):
   // `{ ok, ids }` when it could be read, `{ ok: false, reason }` when it could
@@ -36,6 +37,11 @@ export class ProgramCalls {
     // Park stops of suspended programs: what the resumer waits on.
     this.#stops = new Map();
     this.#calls = calls ?? { ok: true, ids: new Set() };
+    // Receipts restored from the durable record, by call id. They are kept
+    // whole: a replay after a restart must answer the ORIGINAL receipt, and the
+    // record holds more than the state and the value (`reason`, `payload`,
+    // `command`, `delta`, `remainingWaitMs`, `error`).
+    this.#receipts = new Map();
   }
 
   // Bring a call id used in an EARLIER process back into this process's tables,
@@ -75,10 +81,14 @@ export class ProgramCalls {
       // and re-running is what the rule forbids.
       return { used: true, receipt: null };
     }
+    // The record's value is `{ kind, value }`; the program's result is the
+    // same pair in the shape `replayAnswer` reads (`{ value, error }`), so a
+    // restored replay answers the first run's value and failure.
+    const restoredValue = stored.value !== null && typeof stored.value === "object" ? (stored.value.value ?? null) : null;
     const program = ProgramState.restored({
       name: id,
       state: stored.state,
-      result: stored.value ?? null,
+      result: { value: restoredValue, error: stored.error ?? null },
       payload: this.#calls.payloads.get(id) ?? null,
     });
     this.#registry.restore(program);
@@ -86,6 +96,7 @@ export class ProgramCalls {
     // beside the program: a restored call that reported a different source
     // would not be the original receipt.
     this.#sources.set(id, stored.source ?? null);
+    this.#receipts.set(id, stored);
     return { used: true, restored: true, receipt: stored };
   }
 
@@ -96,7 +107,12 @@ export class ProgramCalls {
     const promise = new Promise((settle) => {
       resolve = settle;
     });
-    this.#stops.set(name, { promise, resolve });
+    // `awaited` is what lets a SECOND park reach the resumer. A resumer waits
+    // on this entry (`waitStop` marks it), and a park that happens while it
+    // waits must resolve it; a first park — which no resumer is waiting on —
+    // must not, or the next `waitStop` would find an already-settled entry and
+    // report a suspended program as "running".
+    this.#stops.set(name, { promise, resolve, awaited: false });
     return promise;
   }
 
@@ -114,6 +130,15 @@ export class ProgramCalls {
     return true;
   }
 
+  // A park that stopped a RESUMED body: the resumer that settled the previous
+  // site is waiting for this program's next stop, and a second park is that
+  // stop (§3.3: 恢复后的程序可以再次挂起). Only a waiting resumer is woken.
+  wakePark(name, site) {
+    const entry = this.#stops.get(name);
+    if (entry === undefined || entry.awaited !== true) return false;
+    return this.wake(name, { status: "parked", site: site ?? null });
+  }
+
   // Await the next stop of a program. Resolves to null when the program is
   // already finished, so a resumer never hangs.
   async waitStop(name) {
@@ -121,6 +146,10 @@ export class ProgramCalls {
     if (program === null || program.terminal) return null;
     const entry = this.#stops.get(name);
     if (entry === undefined) return null;
+    // Mark the entry as awaited BEFORE yielding: the resumed body continues on
+    // its own microtask, and the park it may reach has to find a waiting
+    // resumer to wake.
+    entry.awaited = true;
     return await entry.promise;
   }
 
@@ -210,7 +239,7 @@ export class ProgramCalls {
   replayOf(name) {
     const program = this.#registry.get(name);
     if (program === null) return null;
-    return programView(program, { source: this.source(name) });
+    return this.#withStored(name, programView(program, { source: this.source(name) }));
   }
 
   // What a replay answers with: the ORIGINAL receipt, value and source
@@ -224,11 +253,31 @@ export class ProgramCalls {
     const result = program.result;
     const value = result !== null && typeof result === "object" && "value" in result ? result.value : result;
     const error = result !== null && typeof result === "object" && "error" in result ? result.error : null;
-    return {
+    return this.#withStored(name, {
       ...programView(program, { source: this.source(name) ?? source }),
       value: value ?? null,
       error: error ?? null,
       replayed: true,
+    });
+  }
+
+  // The stored receipt's own fields, over the view rebuilt from the program.
+  // A program restored from the record knows its state and value; the reason,
+  // payload, command view, delta and remaining time lived only in the receipt,
+  // and dropping them made a replayed failure answer `error: null`.
+  #withStored(name, view) {
+    const stored = this.#receipts.get(name) ?? null;
+    if (stored === null) return view;
+    return {
+      ...view,
+      reason: stored.reason ?? view.reason ?? null,
+      payload: stored.payload ?? view.payload ?? null,
+      command: stored.command ?? view.command ?? null,
+      delta: typeof stored.delta === "string" ? stored.delta : (view.delta ?? ""),
+      remainingWaitMs:
+        typeof stored.remainingWaitMs === "number" ? stored.remainingWaitMs : (view.remainingWaitMs ?? 0),
+      value: stored.value !== null && typeof stored.value === "object" ? (stored.value.value ?? null) : view.value,
+      error: stored.error ?? view.error ?? null,
     };
   }
 

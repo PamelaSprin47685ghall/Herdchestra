@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fc from "fast-check";
 
 import { ReviewLedger } from "../../core/review.mjs";
 import { ReviewMember } from "./review.mjs";
+import { fcRuns } from "../../core/test-runs.mjs";
 
 const recorder = () => {
   const calls = [];
@@ -48,6 +50,30 @@ test("a non-empty ledger is recorded and performs no side effect", async () => {
   const receipt = await review.review([{ key: "tests", value: "add tests" }]);
   assert.equal(receipt.kind, "recorded");
   assert.deepEqual(port.calls, []);
+});
+
+test("a receipt with no host effect is returned synchronously", async () => {
+  // 根 §2.4: the ledger decides synchronously, so `const r = review(f)` must
+  // read the same fields `await review(f)` would. Only relay/handoff/askUser
+  // answer with a promise.
+  const port = recorder();
+  const review = member("manager", port);
+  const recorded = review.review([{ key: "tests", value: "add tests" }]);
+  assert.equal(typeof recorded?.then, "undefined");
+  assert.equal(recorded.ok, true);
+  assert.equal(recorded.kind, "recorded");
+
+  const confirmed = review.review([{ key: "tests", value: null }]);
+  // Clearing the ledger at `execute` relays; that one needs the host.
+  assert.equal(typeof confirmed?.then, "function");
+  assert.equal((await confirmed).kind, "relay");
+
+  // A fresh manager's first empty review is its `confirm`, decided alone.
+  const fresh = member("manager", recorder());
+  const first = fresh.review([]);
+  assert.equal(typeof first?.then, "undefined");
+  assert.equal(first.kind, "confirm");
+  assert.equal((await fresh.review([])).kind, "relay");
 });
 
 test("an empty ledger relays once and opens the successor in the same step", async () => {
@@ -286,4 +312,109 @@ test("the same call id with another payload is refused before any side effect", 
   assert.equal(refused.rejection, "REPLAY_MISMATCH");
   assert.equal(port.calls.length, callsBefore);
   assert.deepEqual(review.ledger.obligations, []);
+});
+
+// ------------------------------------------------ properties (§2.4 第 6 步)
+
+test("property: one physical review call performs its side effect at most once", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(
+        fc.record({
+          key: fc.string({ minLength: 1, maxLength: 8 }),
+          value: fc.option(fc.string({ maxLength: 12 }), { nil: null }),
+        }),
+        { maxLength: 4 },
+      ),
+      fc.array(fc.string({ minLength: 1, maxLength: 6 }), { minLength: 1, maxLength: 4 }),
+      fc.boolean(),
+      async (findings, callIds, handOverOk) => {
+        const port = recorder();
+        if (!handOverOk) {
+          port.handOver = async (decision) => {
+            port.calls.push(["handOver", decision]);
+            return { ok: false, reason: "NO_SESSION_CONTROL" };
+          };
+        }
+        const review = member("manager", port);
+        const unique = [...new Set(callIds)];
+        const receipts = [];
+        for (const callId of unique) {
+          receipts.push(await review.review(findings, null, { callId }));
+        }
+        const relays = receipts.filter((receipt) => receipt.kind === "relay").length;
+        assert.equal(
+          port.calls.filter(([name]) => name === "handOver").length,
+          relays,
+          "each relay performs exactly one hand-over",
+        );
+        const callsBefore = port.calls.length;
+        for (const [index, callId] of unique.entries()) {
+          const again = await review.review(findings, null, { callId });
+          assert.equal(again.replayed, true, callId);
+          assert.equal(again.kind, receipts[index].kind, callId);
+        }
+        assert.equal(port.calls.length, callsBefore, "a replay performs no port call");
+
+        // The same physical id with a different payload is refused before any
+        // side effect, whatever state the ledger is in.
+        const mismatched = await review.review(
+          [...findings, { key: "property-other", value: "x" }],
+          null,
+          { callId: unique[0] },
+        );
+        assert.equal(mismatched.ok, false);
+        assert.equal(mismatched.rejection, "REPLAY_MISMATCH");
+        assert.equal(port.calls.length, callsBefore, "a mismatch performs no port call");
+      },
+    ),
+    { ...fcRuns(60) },
+  );
+});
+
+test("property: one physical handoff call starts at most one Manager", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.string({ minLength: 1, maxLength: 12 }),
+      fc.array(fc.string({ minLength: 1, maxLength: 6 }), { minLength: 1, maxLength: 3 }),
+      fc.boolean(),
+      async (draft, callIds, startOk) => {
+        const port = recorder();
+        if (!startOk) {
+          port.startManager = async (bytes) => {
+            port.calls.push(["startManager", bytes]);
+            return { ok: false, reason: "NO_CAPACITY" };
+          };
+        }
+        const ledger = new ReviewLedger({ kind: "plan" });
+        const review = new ReviewMember({ ledger, port });
+        // Walk to 待执行 the way 根 §2.4 does: the S1 question, then three
+        // relay-plus-successor verdict pairs.
+        assert.equal(ledger.review([]).kind, "askUser");
+        for (let step = 0; step < 3; step += 1) {
+          assert.equal(ledger.review([]).kind, "relay");
+          ledger.openSuccessor();
+          assert.equal(ledger.review([]).kind, "confirm");
+        }
+        const unique = [...new Set(callIds)];
+        const receipts = [];
+        for (const callId of unique) {
+          receipts.push(await review.review([], draft, { callId }));
+        }
+        assert.equal(
+          port.calls.filter(([name]) => name === "startManager").length,
+          unique.length,
+          "each distinct physical hand-off starts exactly one Manager",
+        );
+        const callsBefore = port.calls.length;
+        for (const [index, callId] of unique.entries()) {
+          const again = await review.review([], draft, { callId });
+          assert.equal(again.replayed, true, callId);
+          assert.equal(again.kind, receipts[index].kind, callId);
+        }
+        assert.equal(port.calls.length, callsBefore, "a replayed hand-off starts nobody");
+      },
+    ),
+    { ...fcRuns(40) },
+  );
 });

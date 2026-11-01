@@ -9,7 +9,7 @@
 // projection reads: everything up to it is the retired tenure's conversation
 // and never reaches the successor.
 
-import { ReviewLedger, ReviewWindow, REVIEW_KINDS, MANAGER_MILESTONES } from "../core/review.mjs";
+import { ReviewLedger, ReviewWindow, REVIEW_KINDS, MANAGER_MILESTONES, PLAN_MILESTONES } from "../core/review.mjs";
 import { systemClock } from "../core/clock.mjs";
 import { PairHint } from "../core/pair-hint/index.mjs";
 import { ScopeHooks } from "../core/scope/hooks.mjs";
@@ -51,9 +51,15 @@ const restore = ({ file, kind }) => {
   const fence =
     saved.fence === null || typeof saved.fence !== "object" ? { ...EMPTY_FENCE } : { ...EMPTY_FENCE, ...saved.fence };
   const successorRecord = fence.successor !== null && fence.successor !== undefined;
-  const target = MANAGER_MILESTONES.indexOf(saved.milestone);
-  if (target < 0) return { ledger: new ReviewLedger({ kind }), fence };
-  // The fence first: it names the tenure that is judging.
+  // The milestone list is the LEDGER's, never one side's: a Plan's file records
+  // `S1`…`待执行`, and indexing it against the Manager's names found `-1` for
+  // every Plan restart — the ledger came back fresh at `S1` with its obligations
+  // discarded, and the fence branch below was unreachable.
+  const milestones = kind === "plan" ? PLAN_MILESTONES : MANAGER_MILESTONES;
+  // The fence first: it names the tenure that is judging. It is evaluated BEFORE
+  // the milestone lookup because the fence's own milestone is the one that
+  // matters, and a file written between the fence and the ledger advance carries
+  // the fence's milestone, not the stale ledger field.
   if (successorRecord) {
     const ledger = new ReviewLedger({ kind });
     try {
@@ -66,9 +72,11 @@ const restore = ({ file, kind }) => {
       // the milestone the file really describes.
     }
   }
+  const target = milestones.indexOf(saved.milestone);
+  if (target < 0) return { ledger: new ReviewLedger({ kind }), fence };
   const ledger = new ReviewLedger({ kind });
   for (let step = 0; step < target; step += 1) {
-    if (ledger.milestone !== MANAGER_MILESTONES[step]) break;
+    if (ledger.milestone !== milestones[step]) break;
     const receipt = ledger.review([]);
     if (receipt.ok !== true) break;
     if (receipt.kind === REVIEW_KINDS.RELAY) ledger.openSuccessor();

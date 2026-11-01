@@ -54,14 +54,23 @@ export const relayRefusal = (state, sessionID) => {
 //
 // Only a finished call id is compared. A live one is `PROGRAM_BUSY` (the call is
 // still running) and an unknown one is simply a new call.
-const replayRefusal = (event, state) => {
+//
+// The answer is one of three facts:
+//
+//   "replay"   the same call id with the same payload: it performs nothing and
+//              answers the original receipt, so NO gate may refuse it
+//              (§2.4 第 6 步, unconditionally);
+//   null       not a replay: a new call, or (with `record: false`) an id whose
+//              durable line is written only once the other gates pass;
+//   a refusal  the id was used differently, or cannot be shown at all.
+const replayVerdict = (event, state, { record = true } = {}) => {
   if (!ADAPTER_TOOL_NAMES.includes(event.tool)) return null;
   if (typeof event.id !== "string" || event.id.length === 0) return null;
   const calls = state?.calls ?? null;
   if (calls === null) return null;
   // In this process: compare the payload.
   if (calls.retired(event.id)) {
-    if (calls.matchesPayload(event.id, event.input)) return null;
+    if (calls.matchesPayload(event.id, event.input)) return "replay";
     return refusal(REFUSALS.REPLAY_MISMATCH, { callId: event.id, tool: event.tool });
   }
   // In an earlier process: the receipt and payload lived in that process, so
@@ -71,7 +80,8 @@ const replayRefusal = (event, state) => {
     id: event.id,
     // The payload is written WITH the id, so a cold start can compare it and
     // answer the mismatch exactly as this process would.
-    recordCall: typeof state.noteCall === "function" ? (id) => state.noteCall(id, event.input) : null,
+    recordCall:
+      record === true && typeof state.noteCall === "function" ? (id) => state.noteCall(id, event.input) : null,
   });
   if (before.unreadable !== undefined) {
     return refusal(REFUSALS.REPLAY_LOST, {
@@ -82,7 +92,7 @@ const replayRefusal = (event, state) => {
   }
   if (before.restored === true) {
     // The record now holds this call: compare it like any other replay.
-    if (calls.matchesPayload(event.id, event.input)) return null;
+    if (calls.matchesPayload(event.id, event.input)) return "replay";
     return refusal(REFUSALS.REPLAY_MISMATCH, { callId: event.id, tool: event.tool });
   }
   if (before.used === true && before.receipt === null) {
@@ -109,6 +119,14 @@ const replayRefusal = (event, state) => {
 // The refusal that stops a call, or null. `role` is null for host agents the
 // adapter does not own: they are left alone.
 export const beforeCall = (event, { state }) => {
+  // §2.4 第 6 步 first, before every other gate. A replayed call id with the
+  // same payload performs nothing and answers the ORIGINAL receipt, so neither a
+  // retirement (第 3 步 forbids ACTING, not replaying) nor a role change nor a
+  // spent budget may turn the same physical call into a refusal. The check is
+  // read-only here: a new id is recorded only after the gates below pass.
+  const replay = replayVerdict(event, state, { record: false });
+  if (replay === "replay") return null;
+  if (replay !== null) return replay;
   // A retired tenure is more fundamental than a spent budget or a role: both
   // describe what a session may do with work it still holds.
   const retired = relayRefusal(state, event.sessionID);
@@ -121,11 +139,12 @@ export const beforeCall = (event, { state }) => {
   if (ADAPTER_TOOL_NAMES.includes(event.tool) && !ownsTool(role, event.tool)) {
     return refusal(REFUSALS.ROLE, { tool: event.tool, role });
   }
-  // A replayed call id must carry the payload it was first made with. Checked
-  // before admission so a mismatched replay neither books a scope entry nor
-  // reaches an executor.
-  const replay = replayRefusal(event, state);
-  if (replay !== null) return replay;
+  // A new call id is recorded before admission, so a crash mid-call still leaves
+  // the fact that it was spent. A record that cannot be written refuses the call:
+  // a restart would otherwise perform it a second time.
+  const recorded = replayVerdict(event, state, { record: true });
+  if (recorded === "replay") return null;
+  if (recorded !== null) return recorded;
   // Every call is admitted; `Admission` decides that an exempt member needs no
   // annotation and no budget.
   return admitCall(state.scope(), event);

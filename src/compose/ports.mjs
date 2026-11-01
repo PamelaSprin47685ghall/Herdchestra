@@ -18,10 +18,12 @@ export const PORT_METHODS = Object.freeze({
   // the answer is the reply text. Only a top-level program has `ask`, so only a
   // top-level surface receives this port.
   ask: ["ask"],
-  // Lane creation for fission (spec §4.2). `createLane(lane)` builds one
-  // present; `replacePresent(group)` silences the owner's old present;
-  // `abortLanes(groupId)` undoes a group that failed to start.
-  fission: ["createLane", "replacePresent", "abortLanes"],
+  // Lane creation for fission (spec §4.2). Every step the orchestrator calls
+  // directly is named here, so a host missing one is refused at assembly, not
+  // at the first `this.fission`. `buildLane`/`createLane` are the either/or
+  // builder pair: `Fission` refuses a port with neither, and checks it at the
+  // call because either one satisfies the contract.
+  fission: ["ownerView", "persistGroup", "startLane", "replacePresent", "abortLanes"],
   // Ledger relay (根 §2.3). `handOver(decision)` performs retirement, barrier
   // and successor start as one record; `startManager(draft)` opens a Manager
   // session from draft bytes; `askOperator(question)` asks for the first

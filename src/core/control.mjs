@@ -219,7 +219,10 @@ export const resumeValue = (site, value) => {
   }
   if (value !== null && value !== undefined) return value;
   if (site.reason === PARK_REASONS.ASK && site.value !== undefined) return site.value;
-  // An omitted value stays `undefined` for an explicit park (§3.3), and an `ask`
-  // with no recorded answer has none either.
+  // `ControlSurface#unpark` defaults an omitted `value` to `null` before this
+  // function sees it (§3.3: an omitted value is equivalent to injecting null),
+  // so a real resume never reaches here with `undefined`. A direct caller that
+  // does passes it through when the site has no recorded answer; an `ask` with
+  // a recorded answer already fell back to it above.
   return value;
 };

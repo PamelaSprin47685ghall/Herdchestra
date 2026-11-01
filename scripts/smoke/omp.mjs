@@ -1,16 +1,19 @@
 // Real-host smoke: Oh My Pi.
 //
-// One isolated git workspace, one OMP process, three short turns. The middle
-// turn calls a `js-*` tool, so the run exercises the program surface, the Scope
-// gate, the request gate and the CUE presentation — not just the model call.
+// One isolated git workspace, one OMP process per turn, three short turns. The
+// middle turn calls a `js-*` tool, so the run exercises the program surface, the
+// Scope gate, the request gate and the CUE presentation — not just the model
+// call.
 //
-// The checks are the four facts a session must leave behind:
+// The checks are the five facts a session must leave behind:
 //
 //   1. the host exited 0;
 //   2. no PREFIX_DRIFT / CONTEXT_PROJECTION_FAILED / REQUEST_GATE_UNWRITABLE in
 //      the host's own stream or in the records under `.Herdchestra/`;
 //   3. a `js-*` tool answered CUE, not JSON;
-//   4. the adapter wrote `<session>.*` records for the session the host ran.
+//   4. its output carries no program refusal code (SCOPE_REFUSED /
+//      INVALID_ARGUMENT / SYNTAX_ERROR / PROGRAM_FAILED);
+//   5. the adapter wrote `<session>.*` records for the session the host ran.
 //
 // A failing check is the result. The script prints every row, then exits
 // nonzero; it never retries a turn to make a check pass.
@@ -24,15 +27,16 @@ import { promisify } from "node:util";
 import {
   cleanupRoot,
   createTable,
+  FORBIDDEN_CODES,
   isCue,
   makeRoot,
   makeWorkspace,
   ompModel,
   parseArgs,
+  programRefusalsOf,
   readRecords,
   refusalsOf,
   spawnHost,
-  until,
 } from "./lib.mjs";
 
 const exec = promisify(execFile);
@@ -54,9 +58,6 @@ const TURNS = Object.freeze([
   ].join(" "),
   "Reply with the single word ok and stop.",
 ]);
-
-// The refusal codes this smoke treats as a failed session.
-const FORBIDDEN = Object.freeze(["PREFIX_DRIFT", "CONTEXT_PROJECTION_FAILED", "REQUEST_GATE_UNWRITABLE"]);
 
 // The CUE detector is shared: `isCue` in ./lib.mjs, because all three hosts
 // write the same document and the rule must not drift per script.
@@ -83,7 +84,7 @@ const runTurn = async ({ workspace, root, prompt, label }) => {
       ENTRY,
       prompt,
     ],
-    { cwd: workspace, env: { HERDCHESTRA_PROJECT_ROOT: workspace } },
+    { cwd: workspace, env: { HERDCHESTRA_PROJECT_ROOT: workspace }, timeout: 600_000 },
   );
   const exit = await host.exited;
   return { exit, stdout: host.state.stdout, stderr: host.state.stderr, ms: performance.now() - started, label };
@@ -172,9 +173,9 @@ const main = async () => {
     for (const run of runs) check(`exit ${run.label}`, run.exit.code === 0, run.exit.code === 0 ? undefined : `code ${run.exit.code}`);
 
     // 2. no refusal code anywhere the adapter can write it.
-    const inStream = FORBIDDEN.filter((code) => stream.includes(code));
+    const inStream = FORBIDDEN_CODES.filter((code) => stream.includes(code));
     const refused = refusalsOf(records).map((record) => record.code ?? record.failure?.code ?? record.kind ?? "refused");
-    const inRecords = FORBIDDEN.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
+    const inRecords = FORBIDDEN_CODES.filter((code) => records.some((record) => JSON.stringify(record).includes(code)));
     check("no refusal codes", inStream.length === 0 && inRecords.length === 0 && refused.length === 0, [
       inStream.length > 0 ? `stream: ${inStream.join(",")}` : "",
       inRecords.length > 0 ? `records: ${inRecords.join(",")}` : "",
@@ -191,8 +192,11 @@ const main = async () => {
     if (answer !== undefined) {
       const text = answer.text;
       check("tool output is CUE", isCue(text), isCue(text) ? undefined : `first 120 bytes: ${JSON.stringify(text.slice(0, 120))}`);
+      const programRefusals = programRefusalsOf(text);
+      check("js tool did not refuse", programRefusals.length === 0, programRefusals.length === 0 ? undefined : `program refusal: ${programRefusals.join(",")}`);
     } else {
       check("tool output is CUE", false, "no js-* tool result to read");
+      check("js tool did not refuse", false, "no js-* tool result to read");
     }
 
     // 4. records for the session the host ran.

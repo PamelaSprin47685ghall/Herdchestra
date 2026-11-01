@@ -125,7 +125,11 @@ const viewOf = (ledger) => {
 // `execute` would end the work on the first tenure's own word — the one thing
 // the relay exists to prevent — so the successor must record that judgement
 // through `review` before any turn may stop.
-export const verifiedCompletion = ({ kind, milestone, tenure }, { handedOff = false } = {}) => {
+export const verifiedCompletion = ({ kind, milestone, tenure, obligations }, { handedOff = false } = {}) => {
+  // 根 §2.2/§2.3: the exit is reached only after the ledger is empty. A `done`
+  // Manager or a `待执行` Plan that still owes an obligation has not finished
+  // the work it claims to have verified.
+  if (!Array.isArray(obligations) || obligations.length !== 0) return false;
   if (kind === "plan") {
     return milestone === COMPLETION_MILESTONE.plan && Number.isInteger(tenure) && tenure >= 1 && handedOff === true;
   }
@@ -218,17 +222,28 @@ export const operatorInterruptOf = (record = null) => {
   if (record === true || record === false) return record;
   if (typeof record === "string") return OPERATOR_INTERRUPT_PATTERN.test(record);
   if (typeof record !== "object") return false;
-  // omp: the aborted assistant message.
-  if (record.stopReason === "aborted") {
-    return typeof record.errorMessage === "string" && OPERATOR_INTERRUPT_PATTERN.test(record.errorMessage);
-  }
-  // OpenCode: the host's own event type.
-  if (typeof record.type === "string") {
-    return record.type === "session.execution.interrupted" || OPERATOR_INTERRUPT_PATTERN.test(record.type);
-  }
+  // The shapes are evaluated CONJUNCTIVELY: a record may carry an omp stop
+  // reason beside a cline status, and returning from the first shape that
+  // happens to exist would miss the one that really names the operator. Each
+  // shape is also exact: an arbitrary `type` string is not an interrupt merely
+  // because it contains "abort" (a compaction can be aborted internally), and
+  // a bare string is only read through the documented reason pattern.
+  //
+  // omp: the aborted assistant message. The stop reason alone is not enough —
+  // an internal abort is also `aborted` — so the operator's own label must be
+  // there too.
+  const stopReason =
+    record.stopReason === "aborted" &&
+    typeof record.errorMessage === "string" &&
+    OPERATOR_INTERRUPT_PATTERN.test(record.errorMessage);
+  // OpenCode: the host's own event type, exactly.
+  const eventType = record.type === "session.execution.interrupted";
   // Cline: the run's terminal status.
-  if (typeof record.status === "string") return record.status !== "completed" && OPERATOR_INTERRUPT_PATTERN.test(record.status);
-  return false;
+  const status =
+    typeof record.status === "string" &&
+    record.status !== "completed" &&
+    OPERATOR_INTERRUPT_PATTERN.test(record.status);
+  return stopReason || eventType || status;
 };
 
 // Decide what a turn exit means (根 §2.2, §2.3).
@@ -266,8 +281,11 @@ export const evaluateTurnExit = ({
   if (operatorInterruptOf(interrupted)) {
     return { stopAllowed: true, reason: STOP_REASONS.OPERATOR_INTERRUPT, nudge: null };
   }
-  // A worker's turn ending is its report to its Manager.
-  if (!USER_FACING.includes(role)) {
+  // A worker's turn ending is its report to its Manager. Only the two explicit
+  // worker roles are exempt: an unknown, missing or mis-spelled role is NOT a
+  // worker, and treating it as one would silently disable the nudge for a
+  // top-level agent — the one outcome §2.2 forbids.
+  if (role === "coder" || role === "devops") {
     return { stopAllowed: true, reason: STOP_REASONS.NOT_USER_FACING, nudge: null };
   }
   const view = viewOf(ledger);

@@ -781,3 +781,133 @@ test("property: a roster reloaded from the table's own snapshot is the same rost
     { ...fcRuns(50) },
   );
 });
+
+// ---------------------------------------------------------------------------
+// One DevOps at a time (根 §2.1, §2.3)
+// ---------------------------------------------------------------------------
+
+test("a second active devops is refused by name; the same name is a steer", async () => {
+  const host = makeHost();
+  const table = new WorkerTable({ create: host.create });
+  assert.equal((await table.fork({ name: "d1", brief: "role: devops — run it", role: "devops" })).started, true);
+  const refused = await table.fork({ name: "d2", brief: "role: devops — run it too", role: "devops" });
+  assert.equal(refused.started, false);
+  assert.equal(refused.steered, false);
+  assert.equal(refused.rejection, "DEVOPS_ALREADY_ACTIVE");
+  assert.equal(refused.detail.name, "d1", "the refusal names the worker to steer");
+  // The same name is not a second worker: it steers the one that exists.
+  const steered = await table.fork({ name: "d1", brief: "role: devops — more", role: "devops" });
+  assert.deepEqual(steered, { name: "d1", steered: true, started: false });
+  // A coder is unaffected.
+  assert.equal((await table.fork({ name: "c1", brief: "role: coder — edit", role: "coder" })).started, true);
+  // A devops whose turns all settled owes nothing, so a new one may start.
+  host.current("d1").settle({ finishReason: "stop", text: "done" });
+  await flush();
+  assert.equal(table.isLive("d1"), false);
+  assert.equal((await table.fork({ name: "d3", brief: "role: devops — next", role: "devops" })).started, true);
+});
+
+// ---------------------------------------------------------------------------
+// A replaced present (spec §4.2 step 6)
+// ---------------------------------------------------------------------------
+
+test("a replacement the host cannot perform is a refusal compose can read", async () => {
+  const table = new WorkerTable({
+    create: async () => ({
+      started: true,
+      run: () => new Promise(() => {}),
+      addTools() {},
+      notifyPendingUserMessage() {},
+    }),
+  });
+  assert.deepEqual(table.replacePresent("nope"), { ok: false, replaced: false, reason: "OWNER_UNKNOWN", owner: "nope" });
+  await table.fork({ name: "w", brief: "b", role: "coder" });
+  // This handle has neither an abort nor a turn-end boundary: compose's
+  // `portRefused` reads `ok: false`, so the group rolls back instead of going
+  // live beside a present that keeps producing turns.
+  const refused = table.replacePresent("w");
+  assert.equal(refused.ok, false);
+  assert.equal(refused.replaced, false);
+  assert.equal(refused.reason, "NO_ABORT_SURFACE");
+});
+
+test("a same-name fork never restarts a replaced present", async () => {
+  const turns = [];
+  const table = new WorkerTable({
+    create: async () => ({
+      started: true,
+      run: async (brief) => {
+        turns.push(brief);
+        return null;
+      },
+      abort() {},
+      addTools() {},
+      notifyPendingUserMessage() {},
+      atTurnEnd: () => true,
+    }),
+  });
+  await table.fork({ name: "w", brief: "first", role: "coder" });
+  assert.equal(table.replacePresent("w").replaced, true);
+  const refused = await table.fork({ name: "w", brief: "again", role: "coder" });
+  assert.equal(refused.started, false);
+  assert.equal(refused.rejection, "WORKER_REPLACED");
+  assert.deepEqual(turns, [], "the silenced present runs no further turn");
+});
+
+// ---------------------------------------------------------------------------
+// A settlement counts only the steered briefs the turn actually read (§4.1)
+// ---------------------------------------------------------------------------
+
+test("the table settles only the steered briefs the turn actually read", async () => {
+  const host = makeHost();
+  const table = new WorkerTable({ create: host.create });
+  await table.fork({ name: "w", brief: "first", role: "coder" });
+  assert.deepEqual(await table.fork({ name: "w", brief: "second", role: "coder" }), {
+    name: "w",
+    steered: true,
+    started: false,
+  });
+  // The turn ends without another request boundary, so the runtime reports that
+  // it read NO steer. Settling the queued brief anyway handed `join` work
+  // nobody did.
+  host.current("w").settle({ finishReason: "stop", text: "first only", steered: 0 });
+  await flush();
+  const carrier = await table.join();
+  assert.equal(carrier.text, "first only", "the carrier's own turn is handed over");
+  assert.equal(await table.join(), null, "the unread brief is not reported as finished work");
+});
+
+test("the FORK record reaches the journal before a buffered settlement", async () => {
+  // The runtime can settle its first turn while `create` is still awaited. The
+  // listener is registered AFTER the FORK record, so a replay never sees a
+  // SETTLE for a name it has not met (it would drop it, and `join` would wait
+  // forever on the next load).
+  const records = [];
+  const table = new WorkerTable({
+    create: async () => ({
+      started: true,
+      onSettled: (callback) => callback({ finishReason: "stop", text: "early" }),
+      run: async () => null,
+      addTools() {},
+      notifyPendingUserMessage() {},
+    }),
+    onRecord: (record) => records.push(record.type),
+  });
+  await table.fork({ name: "w", brief: "b", role: "coder" });
+  assert.deepEqual(records.slice(0, 2), ["fork", "settle"]);
+});
+
+test("a restored roster never offers a lane's settlement to join", () => {
+  const table = new WorkerTable({
+    create: async () => ({ started: true, run: async () => null }),
+    restored: {
+      entries: [],
+      completions: [
+        { id: "g#0", name: "g#0", role: "coder", turn: 1, outcome: { finishReason: "stop", text: "lane" }, lane: true },
+      ],
+      claims: [],
+    },
+  });
+  assert.deepEqual(table.unclaimed(), [], "a lane's turn is its group's delivery, never a join completion");
+  assert.equal(table.owed(), 0);
+});

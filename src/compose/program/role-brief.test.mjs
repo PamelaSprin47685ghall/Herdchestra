@@ -59,6 +59,16 @@ test("what a brief talks about is not what it declares", () => {
   assert.equal(roleOfBrief("role: coder.\n```\nrole: devops\n```\n"), "coder");
 });
 
+test("an apostrophe inside a word is not a quoted string", () => {
+  // A contraction is ordinary prose: treating its apostrophe as an opening
+  // quote swallowed the declaration that followed it.
+  assert.equal(roleOfBrief("The worker's job: role: coder. It's static."), "coder");
+  assert.equal(roleOfBrief("role: devops. Don't guess; it's the runner's job."), "devops");
+  assert.equal(forkRequest("w", "The worker's job: role: coder. It's static.").role, "coder");
+  // A real quoted declaration is still what the brief talks ABOUT.
+  assert.equal(roleOfBrief("role: coder. The brief says 'role: devops' as an example."), "coder");
+});
+
 test("the two worker roles are the only accepted identities", () => {
   assert.deepEqual([...WORKER_ROLES], ["coder", "devops"]);
   assert.equal(isWorkerRole("coder"), true);

@@ -45,6 +45,21 @@ export const rowOf = (records, kind) => {
   return saved;
 };
 
+// Whether one tenure of one side really handed its draft to a Manager. The fact
+// is written by the hand-off itself (`SessionState#noteHandoff`), so a Plan
+// promoted to 待执行 by a successor's `confirm` — or one whose hand-off was
+// refused `DRAFT_MISSING` — is not read as an earned exit.
+export const handedOffIn = (records, kind, tenure = null) => {
+  for (const record of records) {
+    if (record?.type !== RECORD_TYPES.REVIEW) continue;
+    if (record.kind !== kind) continue;
+    if (record.handoff !== true) continue;
+    if (tenure !== null && record.tenure !== tenure) continue;
+    return true;
+  }
+  return false;
+};
+
 // What one completion event means for one session.
 export const handleTurnEnd = async ({ activation, sessionID, event }) => {
   // An execution the OPERATOR stopped is not a turn exit to judge: §2.2's nudge
@@ -76,7 +91,12 @@ export const handleTurnEnd = async ({ activation, sessionID, event }) => {
   // The live ledger is the authority while this process holds it. A side whose
   // ledger was never opened is read from its last row.
   const ledger = state.hasLedger(kind) ? state.ledgerFor(kind) : null;
-  const row = ledger === null ? rowOf(readRecords(state.file), kind) : null;
+  // The records are read for a Plan (its hand-off fact lives there) and for a
+  // side whose ledger is not open (its last row is the authority). A Manager
+  // with a live ledger needs neither.
+  const records = role === "plan" || ledger === null ? readRecords(state.file) : [];
+  const row = ledger === null ? rowOf(records, kind) : null;
+  const tenure = ledger?.tenure ?? row?.tenure ?? null;
   const decision = turnExit({
     role,
     ledger,
@@ -85,6 +105,9 @@ export const handleTurnEnd = async ({ activation, sessionID, event }) => {
     // No ask channel means no pending question, and no round table means no
     // round was booked: both are facts a partial activation legitimately lacks.
     asked: activation?.asks?.hasPending?.(sessionID) === true,
+    // Plan's exit is the hand-off, and the hand-off is a durable fact of THIS
+    // tenure — never "the milestone is the last one".
+    handedOff: role === "plan" && handedOffIn(records, "plan", tenure),
     lastRound: activation?.nudgedRounds?.get?.(sessionID) ?? null,
   });
   if (decision.hold !== null) {

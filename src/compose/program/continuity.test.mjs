@@ -73,7 +73,8 @@ test("a refused announcement does not count the announcing lane as delivered", (
   // Lane 0 delivered, the broadcast is claimed by lane 0 only.
   lanes.deliver(0);
   assert.throws(() => lanes.converge({ lane: 1 }), /not ConvergenceReady/);
-  assert.equal(lanes.successorOf(1), 1, "lane 1 is still the first open lane");
+  // Lane 1 is the only open lane, and a lane is never its own successor.
+  assert.equal(lanes.successorOf(1), null, "no OTHER open lane");
 });
 
 test("a terminal group takes no further deliveries", () => {

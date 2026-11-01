@@ -76,7 +76,21 @@ const assertExtends = (previous, next, what) => {
 
 // ------------------------------------------------------------- fixtures
 
-const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "herd-prefix-"));
+// Every root this file creates is removed once at exit. The property runs make
+// one root per case, so a single sweep is the only cleanup that cannot miss one.
+const ROOTS = [];
+process.once("exit", () => {
+  for (const root of ROOTS) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {}
+  }
+});
+const tempRoot = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "herd-prefix-"));
+  ROOTS.push(root);
+  return root;
+};
 
 // A PairHint over a real journal under a fresh root, as every adapter opens it.
 // `root` is passed in so one case can reopen the same journal.

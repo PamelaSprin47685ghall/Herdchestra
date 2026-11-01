@@ -25,6 +25,7 @@ import {
   deadlineFor,
   Deadline,
   fakeClock,
+  systemClock,
   CommandView,
   buildReceipt,
   programView,
@@ -87,6 +88,89 @@ test("payload keeps nearest only for zero matches, bounded", () => {
   assert.equal(nearestLine("a\n\nneedle-ish\n", "needle-ish").text, "needle-ish");
 });
 
+// An independent expression of "every exact, non-overlapping occurrence": the
+// reference the property below compares `whereAll` against.
+const referenceSpans = (text, needle) => {
+  const spans = [];
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(needle, from);
+    if (at < 0) return spans;
+    spans.push([at, at + needle.length]);
+    from = at + needle.length;
+  }
+};
+
+test("property: where and whereAll are exact UTF-16 spans over arbitrary text", () => {
+  // Quotes, backslashes, CR, LF, NUL, a lone surrogate and multi-byte
+  // characters: every shape a host can hand over, including the ones that make
+  // a line-oriented or UTF-8-oriented matcher drift.
+  const units = ["a", "b", "中", "𝄞", '"', "'", "\\", "\r", "\n", "\0", " ", "\t", "\u2028", "\uD83D"];
+  const textArb = fc.array(fc.constantFrom(...units), { maxLength: 40 }).map((parts) => parts.join(""));
+  const needleArb = fc
+    .array(fc.constantFrom(...units), { minLength: 1, maxLength: 6 })
+    .map((parts) => parts.join(""));
+  fc.assert(
+    fc.property(textArb, needleArb, (content, needle) => {
+      const reference = referenceSpans(content, needle);
+      const parked = [];
+      const text = new TextMembers({ park: (payload) => parked.push(payload) });
+
+      const all = text.whereAll(content, needle);
+      assert.deepEqual(all, reference);
+      for (const [begin, end] of all) {
+        assert.equal(content.slice(begin, end), needle, "every span slices to the needle");
+      }
+      for (let index = 1; index < all.length; index += 1) {
+        assert.ok(all[index - 1][1] <= all[index][0], "spans are ordered and non-overlapping");
+      }
+
+      const answer = text.where(content, needle);
+      if (reference.length === 1) {
+        assert.deepEqual(answer, reference[0]);
+        assert.equal(parked.length, 0, "a unique match never parks");
+        return;
+      }
+      assert.equal(parked.length, 1, "anything but a unique match parks exactly once");
+      const payload = parked[0];
+      assert.equal(payload.needle, needle, "the payload carries the needle byte for byte");
+      assert.equal(payload.candidates.length, Math.min(8, reference.length));
+      for (let index = 0; index < payload.candidates.length; index += 1) {
+        const [begin, end] = reference[index];
+        assert.deepEqual(payload.candidates[index].span, reference[index]);
+        assert.equal(
+          payload.candidates[index].context,
+          content.slice(Math.max(0, begin - 80), Math.min(content.length, end + 80)),
+          "context is 80 UTF-16 units on each side",
+        );
+      }
+      if (reference.length === 0) assert.ok("nearest" in payload);
+    }),
+    { ...fcRuns(300) },
+  );
+});
+
+test("where diagnostics cap candidates at 8 and cut context to 80 units a side", () => {
+  const parked = [];
+  const text = new TextMembers({ park: (payload) => parked.push(payload) });
+  const content = `${"x".repeat(200)}needle${"y".repeat(200)}`.repeat(10);
+  assert.equal(text.whereAll(content, "needle").length, 10);
+  text.where(content, "needle");
+  const payload = parked[0];
+  assert.equal(payload.candidates.length, 8, "the ninth and tenth matches are not named");
+  for (const { span, context } of payload.candidates) {
+    const [begin, end] = span;
+    assert.equal(context, content.slice(begin - 80, end + 80));
+    assert.equal(context.length, end - begin + 160, "80 units on each side");
+  }
+  // At the edges the cut follows the text: a window cannot reach past it.
+  const edges = `needle${"z".repeat(200)}needle`;
+  text.where(edges, "needle");
+  const [first, last] = parked[1].candidates;
+  assert.equal(first.context, edges.slice(0, 6 + 80));
+  assert.equal(last.context, edges.slice(edges.length - 6 - 80));
+});
+
 test("strict utf-8 decoding reports bad bytes", () => {
   assert.equal(decodeUtf8(Buffer.from("中", "utf8")), "中");
   assert.throws(() => decodeUtf8(Buffer.from([0xff, 0xfe])), (error) => error.code === "INVALID_UTF8");
@@ -133,6 +217,52 @@ test("a retired name replays its old receipt instead of starting again", () => {
   assert.deepEqual(registry.list().map((item) => item.name), ["r"]);
   assert.equal(registry.live("r"), next);
   assert.equal(registry.live("nope"), null);
+});
+
+test("reusing a retired name keeps every generation's replays", () => {
+  const registry = new ProgramRegistry();
+  const first = registry.begin("gen");
+  registry.record(first, "call-1", { code: "one" }, () => ({ generation: 1 }));
+  first.finish(STATES.COMPLETED, 1);
+  registry.retire("gen");
+  const second = registry.begin("gen");
+  registry.record(second, "call-2", { code: "two" }, () => ({ generation: 2 }));
+  second.finish(STATES.COMPLETED, 2);
+  registry.retire("gen");
+
+  // A cold start restores a third generation under the same name. Restoring it
+  // must not hide the two already retired (§3.3: an old receipt still replays
+  // after its name was reused).
+  const restored = ProgramState.restored({ name: "gen", state: STATES.COMPLETED, result: 3 });
+  restored.replay("call-3", { code: "three" }, () => ({ generation: 3 }));
+  registry.restore(restored);
+
+  assert.equal(registry.get("gen"), restored, "the name answers with the newest generation");
+  for (const [callId, payload, generation] of [
+    ["call-1", { code: "one" }, 1],
+    ["call-2", { code: "two" }, 2],
+    ["call-3", { code: "three" }, 3],
+  ]) {
+    assert.deepEqual(registry.replayRetired(callId, payload), {
+      receipt: { generation },
+      replayed: true,
+    });
+  }
+
+  // A newer generation that booked the same call id answers for it; the older
+  // payload is still the mismatch §3.3 forbids, never a silent second run.
+  const fourth = registry.begin("gen");
+  registry.record(fourth, "call-1", { code: "four" }, () => ({ generation: 4 }));
+  fourth.finish(STATES.COMPLETED, 4);
+  registry.retire("gen");
+  assert.throws(
+    () => registry.replayRetired("call-1", { code: "one" }),
+    (error) => error.code === "CALL_REPLAY_MISMATCH",
+  );
+  assert.deepEqual(registry.replayRetired("call-1", { code: "four" }), {
+    receipt: { generation: 4 },
+    replayed: true,
+  });
 });
 
 test("resume checks in order and is single-shot", () => {
@@ -337,7 +467,33 @@ test("a park cancels the run's deadline and a resume replaces it", () => {
   target.park({ reason: PARK_REASONS.EXPLICIT, payload: null });
   control.observe("c", "t");
   control.unpark({ controllerId: "c", name: "t", value: 2 });
-  assert.equal(target.remainingWaitMs(), 0);
+  assert.equal(target.remainingWaitMs(), null, "a resume with no deadline clears the spent one");
+  assert.equal(programView(target).remainingWaitMs, 0, "a receipt reports 0 when there is no deadline");
+});
+
+test("a resume without a deadline clears the expired one instead of re-expiring", () => {
+  const clock = fakeClock(0);
+  const registry = new ProgramRegistry();
+  const spent = Deadline.forIntent(clock, "ab"); // 100 ms
+  const target = registry.begin("exp", { deadline: spent });
+  clock.advance(100);
+  assert.equal(spent.expired, true);
+  assert.equal(spent.signal.aborted, true);
+  // Expiry parks the run without cancelling its deadline: the signal that
+  // announced the expiry must not be cancelled mid-abort.
+  assert.equal(target.expire(), true);
+  assert.equal(target.state, STATES.PARKED);
+
+  const control = new ControlSurface(registry);
+  control.open("c");
+  control.observe("c", "exp");
+  const resumed = control.unpark({ controllerId: "c", name: "exp" });
+  assert.equal(resumed.state, STATES.RUNNING);
+  assert.equal(target.deadline, null, "no controlling deadline means no deadline");
+  assert.equal(target.remainingWaitMs(), null);
+  assert.equal(target.expirySignal, null, "nothing can re-expire the resumed run");
+  assert.equal(target.expired, false);
+  assert.equal(target.acceptsExpressions, true);
 });
 
 test("a parked or finished program accepts no new expressions", () => {
@@ -417,6 +573,31 @@ test("waiting returns to running and only a park settles a site", () => {
   assert.throws(() => program.takeSite(), (e) => e.code === "STALE_CONTROL");
 });
 
+test("moveTo refuses terminal targets and parked; park requires a real site", () => {
+  const program = new ProgramState("mv");
+  assert.throws(() => program.moveTo(STATES.PARKED), (e) => e.code === "INVALID_ARGUMENT");
+  assert.throws(() => program.moveTo(STATES.COMPLETED), (e) => e.code === "INVALID_ARGUMENT");
+  assert.throws(() => program.moveTo(STATES.FAILED), (e) => e.code === "INVALID_ARGUMENT");
+  assert.equal(program.state, STATES.RUNNING, "a refused move changes nothing");
+
+  // Every reason a receipt knows is accepted; nothing else is. Walking
+  // `PARK_REASONS` here also keeps core's local reason table from drifting.
+  for (const reason of Object.values(PARK_REASONS)) {
+    const site = { reason, payload: null };
+    const parked = new ProgramState(`park-${reason}`);
+    assert.deepEqual(parked.park(site), site);
+    assert.equal(parked.state, STATES.PARKED);
+    // A host that released its own park promise may move the resumed program
+    // back to running; that is a legal transition out of parked.
+    assert.equal(parked.moveTo(STATES.RUNNING), STATES.RUNNING);
+  }
+  for (const site of [null, undefined, "explicit", [], {}, { reason: "bogus" }, { payload: null }]) {
+    const fresh = new ProgramState("bad");
+    assert.throws(() => fresh.park(site), (e) => e.code === "INVALID_ARGUMENT", String(site));
+    assert.equal(fresh.state, STATES.RUNNING, "a refused park changes nothing");
+  }
+});
+
 test("the review window exposes `open` as a boolean, never as a method", () => {
   const window = new ReviewWindow({ kind: "manager" });
   // The property is the gate every adapter reads: a method of the same name
@@ -486,6 +667,25 @@ test("review relay, confirm, close and reopen", () => {
     rejection: REVIEW_REJECTIONS.AGENT_MESSAGE,
   });
   assert.equal(ledger.reopen({ operator: true }).kind, "reopened");
+});
+
+test("only a finished manager reopens; a Plan at 待执行 is never reopened", () => {
+  const plan = new ReviewLedger({ kind: "plan" });
+  plan.review([]); // askUser (S1, first tenure)
+  for (let step = 0; step < 3; step += 1) {
+    assert.equal(plan.review([]).kind, REVIEW_KINDS.RELAY);
+    plan.openSuccessor();
+    assert.equal(plan.review([]).kind, REVIEW_KINDS.CONFIRM);
+  }
+  assert.equal(plan.milestone, PLAN_MILESTONES.at(-1));
+  // 根 §2.2 keeps a Plan at 待执行 and starts a Manager from the saved draft; a
+  // message for the Plan is a new planning task, not a mutation of its ledger.
+  assert.deepEqual(plan.reopen({ operator: true }), {
+    ok: false,
+    rejection: REVIEW_REJECTIONS.NOT_FINISHED,
+  });
+  assert.equal(plan.milestone, PLAN_MILESTONES.at(-1));
+  assert.equal(plan.empty, true);
 });
 
 test("manager closing waits for real resources", () => {
@@ -886,6 +1086,59 @@ test("a reader never sees a half-written file", async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test("property: FileMembers.write replaces atomically under concurrent readers", async () => {
+  // Well-formed strings only: `write` encodes UTF-8, and a lone surrogate would
+  // come back as U+FFFD — a fact about encoding, not about atomicity.
+  const contentsArb = fc.array(
+    fc.oneof(
+      fc.string({ unit: "grapheme", maxLength: 120 }),
+      fc.constant(""),
+      fc.constant('中\r\n\0\\"quoted"\n'.repeat(40)),
+      fc.constant("z".repeat(50000)),
+    ),
+    { minLength: 1, maxLength: 4 },
+  );
+  await fc.assert(
+    fc.asyncProperty(contentsArb, async (contents) => {
+      const root = await tempRoot();
+      const files = new FileMembers({ root });
+      const target = path.join(root, "atomic.txt");
+      try {
+        assert.equal((await files.write("atomic.txt", contents[0])).ok, true);
+        const allowed = new Set(contents);
+        const seen = new Set();
+        let running = true;
+        const reader = (async () => {
+          while (running) {
+            seen.add(await fs.readFile(target, "utf8"));
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+        })();
+        try {
+          for (const content of contents.slice(1)) {
+            assert.equal((await files.write("atomic.txt", content)).ok, true);
+            // Give the reader a turn between writes, so a torn read would be
+            // observable if the replace were not atomic.
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+        } finally {
+          running = false;
+          await reader;
+        }
+        assert.ok(seen.size >= 1, "the reader observed the file");
+        for (const text of seen) {
+          assert.ok(allowed.has(text), "a read saw a partial or foreign payload");
+        }
+        assert.equal(await fs.readFile(target, "utf8"), contents.at(-1));
+        assert.deepEqual(await fs.readdir(root), ["atomic.txt"], "no temp file remains");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    }),
+    { ...fcRuns(50) },
+  );
+});
+
 test("guard refuses before any access and onWrite sees the program path", async () => {
   const root = await tempRoot();
   const writes = [];
@@ -899,6 +1152,21 @@ test("guard refuses before any access and onWrite sees the program path", async 
   await files.write("ok.txt", "x");
   assert.deepEqual(writes, ["ok.txt"]);
   assert.equal((await files.cat(path.join(root, "ok.txt"))).text, "x");
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test("mv guards the destination as well as the source", async () => {
+  const root = await tempRoot();
+  const files = new FileMembers({
+    root,
+    guard: (target) => (target.startsWith("deny") ? { ok: false, code: "EACCES", path: target } : null),
+  });
+  await fs.writeFile(path.join(root, "src.txt"), "x");
+  const refused = await files.mv("src.txt", "deny.txt");
+  assert.deepEqual(refused, { ok: false, code: "EACCES", path: "deny.txt" });
+  assert.equal(await fs.readFile(path.join(root, "src.txt"), "utf8"), "x", "the source did not move");
+  assert.equal((await files.mv("src.txt", "ok.txt")).ok, true);
+  assert.equal(await fs.readFile(path.join(root, "ok.txt"), "utf8"), "x");
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -921,6 +1189,23 @@ test("deadline budget is 50ms per utf-8 byte and cancel stops it", () => {
   deadline.cancel();
   assert.equal(deadline.expired, false);
   assert.equal(deadline.remainingMs(), 0);
+});
+
+test("a deadline's signal fires at expiry without a getter read", async () => {
+  // The armed timer is the only actor here: the `expired` getter is never read
+  // between construction and the abort, so a deadline that merely answers on
+  // read would never settle this promise.
+  const deadline = new Deadline(systemClock, 25);
+  const aborted = new Promise((resolve) => deadline.signal.addEventListener("abort", resolve, { once: true }));
+  let guard;
+  const failed = new Promise((resolve) => {
+    guard = setTimeout(() => resolve(false), 2000);
+  });
+  const fired = await Promise.race([aborted.then(() => true), failed]);
+  clearTimeout(guard);
+  assert.equal(fired, true, "the armed timer aborts the signal at expiresAt");
+  assert.equal(deadline.expired, true);
+  deadline.cancel();
 });
 
 test("receipts always carry the nine fields and a live command view", () => {

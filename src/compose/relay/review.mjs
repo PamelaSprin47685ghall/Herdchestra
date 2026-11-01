@@ -32,11 +32,17 @@ export const handOverCompleted = (done) =>
   done.successor !== null &&
   done.successor !== undefined;
 
+const isThenable = (value) =>
+  value !== null &&
+  (typeof value === "object" || typeof value === "function") &&
+  typeof value.then === "function";
+
 export class ReviewMember {
   #ledger;
   #port;
   #queue;
   #park;
+  #pending;
 
   // The evaluation window is NOT booked here (spec §2.3). It has one owner:
   // `ProgramSurface.noteReview`, which every face of a review reaches — the
@@ -56,6 +62,9 @@ export class ReviewMember {
     // relay, and the second would retire the successor the first just opened.
     // Serializing keeps the decision and its side effect one step.
     this.#queue = Promise.resolve();
+    // Reviews currently executing or waiting for one that must finish first.
+    // Zero means the queue is idle, so the next review can decide now.
+    this.#pending = 0;
   }
 
   get ledger() {
@@ -68,22 +77,72 @@ export class ReviewMember {
   // another payload is refused by the ledger. A host without a call identity
   // omits it and books exactly as before.
   //
-  // The returned promise is this review's own; a failure does not stall the
-  // queue behind it.
+  // When the queue is idle and the decision needs no host effect — a recorded
+  // obligation, a `confirm`/`closed` verdict, a `nextReview`, or a synchronous
+  // refusal — the RECEIPT is returned directly. The ledger decides
+  // synchronously, so the answer exists before this method returns, and a body
+  // that wrote `const r = review(f)` reads `r.ok` without an `await` (§2.4;
+  // the spec's own examples do exactly that). Only the three effect-bearing
+  // kinds — `relay`, `handoff`, `askUser` — answer with a promise, because they
+  // call a host port or park the body; a caller that awaits them receives the
+  // same receipt.
+  //
+  // A review that arrives while another is executing waits for it, then
+  // decides. The returned promise is this review's own; a failure does not
+  // stall the queue behind it.
   review(findings, source = null, { callId = null } = {}) {
-    const run = this.#queue.then(() => this.#reviewNow(findings, source, callId));
-    this.#queue = run.then(
+    if (this.#pending === 0) {
+      this.#pending += 1;
+      let outcome;
+      try {
+        outcome = this.#decide(findings, source, callId);
+      } catch (error) {
+        this.#pending -= 1;
+        throw error;
+      }
+      if (isThenable(outcome)) {
+        const run = outcome.then(
+          (value) => {
+            this.#pending -= 1;
+            return value;
+          },
+          (error) => {
+            this.#pending -= 1;
+            throw error;
+          },
+        );
+        this.#queue = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      }
+      this.#pending -= 1;
+      return outcome;
+    }
+    this.#pending += 1;
+    const run = this.#queue.then(() => this.#decide(findings, source, callId));
+    const observed = run.then(
+      (value) => {
+        this.#pending -= 1;
+        return value;
+      },
+      (error) => {
+        this.#pending -= 1;
+        throw error;
+      },
+    );
+    this.#queue = observed.then(
       () => undefined,
       () => undefined,
     );
-    return run;
+    return observed;
   }
 
-  async #reviewNow(findings, source, callId = null) {
-    return await this.#decide(findings, source, callId);
-  }
-
-  async #decide(findings, source, callId = null) {
+  // The ledger's answer, plus the host effect it asks for. Synchronous whenever
+  // no effect is involved; the three effect-bearing kinds return the promise
+  // that performs it.
+  #decide(findings, source, callId = null) {
     const receipt = this.#ledger.review(findings, source, { callId });
     // A replayed call is answered by the receipt the first one produced, and
     // its side effect already happened: the port must not run again (根 §2.4 第 6
@@ -98,87 +157,101 @@ export class ReviewMember {
     // the answer, so the caller can tell the two apart without comparing ids.
     if (receipt.replayed === true) return receipt;
     if (receipt.kind === REVIEW_KINDS.RELAY) {
-      const done = await this.#port.handOver({
-        retire: receipt.retire === true,
-        openSuccessor: receipt.openSuccessor === true,
-        barrier: receipt.barrier === true,
-        // The findings that emptied the ledger. A host that cannot perform the
-        // relay inside this turn records them with its deferred intent, so the
-        // later step acts on the obligation this review actually established.
-        findings,
-      });
-      // A host may DEFER rather than perform: a session cannot switch its own
-      // transcript while its turn is live. That is not a failure of the review —
-      // the intent is durable and the relay will run at the host's idle
-      // boundary — but nothing has changed yet either, so the tenure does not
-      // advance and the receipt must say `deferred`, not success.
-      if (done?.deferred === true && done?.ok !== true) {
-        return {
-          ok: false,
-          kind: REVIEW_KINDS.RELAY,
-          rejection: "RELAY_DEFERRED",
-          milestone: receipt.milestone,
-          tenure: receipt.tenure,
-          obligations: receipt.obligations,
-          handedOver: done,
-        };
-      }
-      // Retirement, barrier and successor open are one step (根 §2.4 第 3 步). The
-      // host must report `ok: true` *and* the three parts actually done; an
-      // `ok: true` next to `{retired: false, successor: null}` is a partial
-      // hand-over, and accepting it would advance the tenure while nothing
-      // changed.
-      if (!handOverCompleted(done)) {
-        return {
-          ok: false,
-          kind: REVIEW_KINDS.RELAY,
-          rejection: "RELAY_UNAVAILABLE",
-          milestone: receipt.milestone,
-          tenure: receipt.tenure,
-          obligations: receipt.obligations,
-          handedOver: done,
-        };
-      }
-      this.#ledger.openSuccessor();
-      return { ...receipt, handedOver: done };
+      return this.#relay(receipt, findings);
     }
     if (receipt.kind === REVIEW_KINDS.HANDOFF) {
-      const started = await this.#port.startManager(receipt.draft);
-      // §2.2: the handoff starts a Manager session or it fails. A host that
-      // reports `{ok: false}` (or a missing receipt) did not start one, and
-      // saying "handoff" would tell the Plan its draft is running when it is
-      // not. The Plan stays at `ready`, so the next empty review retries.
-      if (started === null || started === undefined || started.ok === false) {
-        return {
-          ok: false,
-          kind: REVIEW_KINDS.HANDOFF,
-          rejection: "HANDOFF_UNAVAILABLE",
-          milestone: receipt.milestone,
-          tenure: receipt.tenure,
-          obligations: receipt.obligations,
-          started,
-        };
-      }
-      return { ...receipt, started };
+      return this.#handoff(receipt);
     }
     if (receipt.kind === REVIEW_KINDS.ASK_USER) {
-      // The park comes FIRST and it is the suspension: a body that wrote
-      // `await review([])` must not run on with an answer nobody gave. The
-      // promise the channel returns is the parked expression's value, so the
-      // answer arrives when the operator's next prompt resumes it — not from
-      // this call.
-      const site = { reason: PARK_REASONS.ASK, payload: { question: receipt.question } };
-      const parked = this.#park === null ? null : this.#park(site);
-      if (parked !== null && typeof parked?.then === "function") {
-        // The refusal of a body that never resumes is not an unhandled
-        // rejection: the parked program owns that outcome.
-        parked.catch?.(() => {});
-        return parked;
-      }
-      const answer = await this.#port.askOperator(receipt.question);
-      return { ...receipt, answer };
+      return this.#askUser(receipt);
     }
     return receipt;
+  }
+
+  async #relay(receipt, findings) {
+    const done = await this.#port.handOver({
+      retire: receipt.retire === true,
+      openSuccessor: receipt.openSuccessor === true,
+      barrier: receipt.barrier === true,
+      // The findings that emptied the ledger. A host that cannot perform the
+      // relay inside this turn records them with its deferred intent, so the
+      // later step acts on the obligation this review actually established.
+      findings,
+    });
+    // A host may DEFER rather than perform: a session cannot switch its own
+    // transcript while its turn is live. That is not a failure of the review —
+    // the intent is durable and the relay will run at the host's idle
+    // boundary — but nothing has changed yet either, so the tenure does not
+    // advance and the receipt must say `deferred`, not success.
+    if (done?.deferred === true && done?.ok !== true) {
+      return {
+        ok: false,
+        kind: REVIEW_KINDS.RELAY,
+        rejection: "RELAY_DEFERRED",
+        milestone: receipt.milestone,
+        tenure: receipt.tenure,
+        obligations: receipt.obligations,
+        handedOver: done,
+      };
+    }
+    // Retirement, barrier and successor open are one step (根 §2.4 第 3 步). The
+    // host must report `ok: true` *and* the three parts actually done; an
+    // `ok: true` next to `{retired: false, successor: null}` is a partial
+    // hand-over, and accepting it would advance the tenure while nothing
+    // changed.
+    if (!handOverCompleted(done)) {
+      return {
+        ok: false,
+        kind: REVIEW_KINDS.RELAY,
+        rejection: "RELAY_UNAVAILABLE",
+        milestone: receipt.milestone,
+        tenure: receipt.tenure,
+        obligations: receipt.obligations,
+        handedOver: done,
+      };
+    }
+    this.#ledger.openSuccessor();
+    return { ...receipt, handedOver: done };
+  }
+
+  async #handoff(receipt) {
+    const started = await this.#port.startManager(receipt.draft);
+    // §2.2: the handoff starts a Manager session or it fails. A host that
+    // reports `{ok: false}` (or a missing receipt) did not start one, and
+    // saying "handoff" would tell the Plan its draft is running when it is
+    // not. The Plan stays at `ready`, so the next empty review retries.
+    if (started === null || started === undefined || started.ok === false) {
+      return {
+        ok: false,
+        kind: REVIEW_KINDS.HANDOFF,
+        rejection: "HANDOFF_UNAVAILABLE",
+        milestone: receipt.milestone,
+        tenure: receipt.tenure,
+        obligations: receipt.obligations,
+        started,
+      };
+    }
+    return { ...receipt, started };
+  }
+
+  #askUser(receipt) {
+    // The park comes FIRST and it is the suspension: a body that wrote
+    // `await review([])` must not run on with an answer nobody gave. The
+    // promise the channel returns is the parked expression's value, so the
+    // answer arrives when the operator's next prompt resumes it — not from
+    // this call.
+    const site = { reason: PARK_REASONS.ASK, payload: { question: receipt.question } };
+    const parked = this.#park === null ? null : this.#park(site);
+    if (isThenable(parked)) {
+      // The refusal of a body that never resumes is not an unhandled
+      // rejection: the parked program owns that outcome.
+      parked.catch?.(() => {});
+      return parked;
+    }
+    return Promise.resolve(this.#port.askOperator(receipt.question)).then((answer) => ({
+      ...receipt,
+      answer,
+    }));
   }
 
   // A real operator message reopens a finished work; an agent message does not.

@@ -4,7 +4,8 @@
 //
 //   ctx.agent.transform   four agents; every other agent hidden
 //   ctx.tool.transform    js-manager, js-worker, js-review, plan, fork, join
-//   ctx.session.hook      "context" (request copy), "prompt" (operator message)
+//   ctx.session.hook      "context"/"compaction"/"generate" (request copy),
+//                         "prompt" (operator message)
 //   ctx.tool.hook         "execute.before" (admit), "execute.after" (settle)
 //   ctx.event.subscribe   session lifecycle (language, worker completion)
 //
@@ -13,10 +14,11 @@
 // Every stateful fact hangs off the activation (`activation.mjs`): one
 // `SessionState` per host session, one worker table per Manager session, one
 // fission table per worker session, the ask channel, the relay host and the
-// command views. A port call carries no session id, so the plugin sets the
-// current session for the duration of one tool call and the ports read it from
-// there — the same reason `fork` needs the plugin's action rather than a plain
-// port.
+// command views. A port call carries no session id, so the program executor
+// states the calling session and its physical call id per call
+// (`activation.portsFor`); nothing is kept in an activation-wide slot that a
+// concurrent tool call could overwrite. `fork`/`join` need the plugin's own
+// action for the same reason.
 //
 // What the setup does NOT do is stated in `gaps.mjs`. A member that depends on a
 // fact the host does not offer refuses with the gap it waits on, instead of
@@ -26,9 +28,9 @@ import path from "node:path";
 
 import { definePlugin } from "./plugin-definition.mjs";
 import { AGENT_DEFINITIONS, OTHER_AGENTS_HIDDEN } from "./agent-definitions.mjs";
-import { TOOL_NAMES, hostFacts } from "./capabilities.mjs";
+import { STATIC_REMOVED_TOOLS, TOOL_NAMES, hostFacts } from "./capabilities.mjs";
 import { registerTools } from "./tool-registrations.mjs";
-import { makeActivation, disposeActivation, stateOf, workerTableOf, fissionTableOf, laneRoleOf } from "./activation.mjs";
+import { makeActivation, disposeActivation, stateOf, workerTableOf, devopsRoadOf, laneRoleOf } from "./activation.mjs";
 import { makeProgramExecutor, makeResumer } from "./program-tool.mjs";
 import { forkReceipt, joinReceipt } from "./steer-receipt.mjs";
 import { settledOutcomeOf } from "./worker-sessions.mjs";
@@ -251,59 +253,6 @@ export const setup = async (ctx) => {
   };
   const rootOfSession = (sessionID) => roots.get(sessionID) ?? root;
 
-  // The calling session of the tool call in flight. A port call does not carry
-  // it; the program executor and the tool wrappers set it and clear it.
-  let current = null;
-
-  // The owner's identity for the duration of one worker call (§4.2): a lane the
-  // call creates is a parallel present of that worker, so its role is the
-  // worker's own. Restored afterwards, because two nested calls must not leak
-  // one worker's identity into the other's lanes.
-  const withWorkerRole = async (role, run) => {
-    const previous = activation.laneRole;
-    activation.laneRole = role === "devops" || role === "coder" ? role : null;
-    try {
-      return await run();
-    } finally {
-      activation.laneRole = previous;
-    }
-  };
-
-  const withCall = async (context, run) => {
-    const previous = current;
-    current = { sessionID: context.sessionID, agent: context.agent, id: context.id };
-    activation.askSession = context.sessionID;
-    activation.devopsSession = context.sessionID;
-    // A ledger-driven question (Plan's first empty review, 根 §2.4 第 1 步) is
-    // asked from inside the `review` port. The park itself belongs to the
-    // executor's channel (`program-tool.mjs`); this name only says which program
-    // the port is asking for.
-    activation.askProgram = context.id ?? null;
-    // The relay needs the incumbent session and its ledger; the ledger is the
-    // side the calling agent reviews under (§5).
-    const role = roleOf(context.agent);
-    activation.relayContext =
-      role === null
-        ? null
-        : {
-            sessionID: context.sessionID,
-            // The host's call id for this physical call. It is the only thing a
-            // replay is matched on (§2.4 第 6 步): the same call reports what it
-            // already started, and a new call starts its own Manager (§2.2).
-            id: context.id ?? null,
-            ledger: stateOf(activation, context.sessionID).ledgerFor(role === "plan" ? "plan" : "manager"),
-          };
-    try {
-      return await run();
-    } finally {
-      current = previous;
-      activation.askSession = previous?.sessionID ?? null;
-      activation.devopsSession = previous?.sessionID ?? null;
-      activation.askProgram = null;
-      activation.relayContext = null;
-    }
-  };
-
   // `fork(name, brief)` (§4.1). A live name steers; a new name starts a child
   // session whose completion the host delivers to the parent.
   //
@@ -313,17 +262,9 @@ export const setup = async (ctx) => {
   // coder, and nothing infers an identity from the worker's name.
   const forkWorker = async ({ sessionID, name, brief, role = null, model, wait = false }) => {
     if (sessions === null) return refusal(REFUSALS.GAP, { gap: "FORK_SESSIONS" });
-    // The child runs the parent's model. The host does not inherit it for a
-    // created child (`model-inherit.mjs`), and the agent default is the free
-    // model that answers 429. A fork that names a model keeps it; otherwise the
-    // parent's own model is read from the host, and a parent without one is a
-    // refusal rather than a silent default.
-    let inherited = model;
-    if (inherited === undefined || inherited === null) {
-      const found = await requireModelOf(sessions, sessionID);
-      if (found.ok !== true) return found.refusal;
-      inherited = found.model;
-    }
+    // The identity is decided BEFORE the first await: a devops road has to be
+    // reserved synchronously, or two concurrent forks both see an empty road
+    // and two devops run at once (§2.3).
     let declared = role;
     if (declared === null || declared === undefined) {
       try {
@@ -335,22 +276,59 @@ export const setup = async (ctx) => {
     const picked = workerRole(declared);
     if (picked === null) return refusal(REFUSALS.ROLE_ARG);
     const table = workerTableOf(activation, sessionID);
-    if (picked === "devops") {
+    // A same-name fork of a LIVE worker is a steer (§2.3), not a new devops:
+    // the bound devops is exactly what a steer is for, so it never meets the
+    // road guard.
+    const live = table.get(name);
+    const steering = live !== null && live.state === "running";
+    const reserve = picked === "devops" && !steering;
+    const road = devopsRoadOf(activation, sessionID);
+    if (reserve) {
       // A devops the journal restored may have finished while no plugin was
       // loaded. The table's first use reconciles it against the host, and a
       // finished one has released the road; keeping it in the set would refuse
       // every later devops for a worker that is no longer running.
-      for (const name of [...activation.devopsInFlight]) {
-        const worker = table.get(name);
-        if (worker === null || worker.state !== "running") activation.devopsInFlight.delete(name);
+      for (const held of [...road]) {
+        const worker = table.get(held);
+        if (worker === null || worker.state !== "running") road.delete(held);
       }
-      const busy = devopsRefusal(activation.devopsInFlight);
+      const busy = devopsRefusal(road);
       if (busy !== null) return busy;
+      // Reserved before any await, so a second fork of this session sees it.
+      road.add(name);
+    }
+    const release = () => {
+      if (reserve) road.delete(name);
+    };
+    // The child runs the parent's model. The host does not inherit it for a
+    // created child (`model-inherit.mjs`), and the agent default is the free
+    // model that answers 429. A fork that names a model keeps it; otherwise the
+    // parent's own model is read from the host, and a parent without one is a
+    // refusal rather than a silent default.
+    let inherited = model;
+    if (inherited === undefined || inherited === null) {
+      const found = await requireModelOf(sessions, sessionID);
+      if (found.ok !== true) {
+        release();
+        return found.refusal;
+      }
+      inherited = found.model;
     }
     const create = createInput({ parentID: sessionID, name, role: picked, model: inherited });
-    if (create.rejection !== undefined) return create;
-    const receipt = await table.fork({ ...create, brief, role: picked, title: name });
-    if (receipt.started && picked === "devops") activation.devopsInFlight.add(receipt.name);
+    if (create.rejection !== undefined) {
+      release();
+      return create;
+    }
+    let receipt;
+    try {
+      receipt = await table.fork({ ...create, brief, role: picked, title: name });
+    } catch (error) {
+      release();
+      throw error;
+    }
+    // The reservation stands only while the worker this fork STARTED runs; a
+    // steer leaves the road exactly as it was.
+    if (receipt.started !== true) release();
     // The child is a fork-started worker: only such a program may fission
     // (§4.2), and only it keeps the worker identity for its lanes. The key is
     // the child's SESSION id, because that is what a later `fission` call
@@ -379,7 +357,10 @@ export const setup = async (ctx) => {
       const report = await lastAnswer(sessions, child);
       return { ok: true, name: receipt.name, report };
     } finally {
-      activation.devopsInFlight.delete(receipt.name);
+      // Only a worker this fork STARTED holds the road this call reserved. A
+      // steer (`started: false`) belongs to the live devops the reservation was
+      // never taken for; releasing here would free a road that is still in use.
+      if (receipt.started === true) road.delete(receipt.name);
     }
   };
 
@@ -392,7 +373,7 @@ export const setup = async (ctx) => {
     // record preserved.
     const table = workerTableOf(activation, sessionID);
     const record = await table.join();
-    if (record !== null) activation.devopsInFlight.delete(record.name);
+    if (record !== null) devopsRoadOf(activation, sessionID).delete(record.name);
     return joinReceipt({ record });
   };
 
@@ -537,12 +518,15 @@ export const setup = async (ctx) => {
   });
 
   // A program call: the surface is built for the calling session's state.
+  //
+  // The executor receives the host's call context and states it per call
+  // (`activation.portsFor`); nothing is stored on the activation for the
+  // duration of the call, so two interleaved tool calls of different sessions
+  // cannot read each other's relay or devops context.
   const programFor =
     (role, options = {}) =>
     (input, context) =>
-      withCall(context, () =>
-        makeProgramExecutor(activation, role, { session: (id) => stateOf(activation, id), ...options })(input, context),
-      );
+      makeProgramExecutor(activation, role, { session: (id) => stateOf(activation, id), ...options })(input, context);
 
   // `js-worker` is the one tool two identities share (§7.1): `coder` and
   // `devops` run the same surface under their own role. The role is read from
@@ -553,31 +537,31 @@ export const setup = async (ctx) => {
   // identities is refused there, and a null role reaches that same refusal.
   // The owner's identity for the duration of one call: a lane this call creates
   // is a parallel present of THIS worker (§4.2), so a devops that fissions
-  // starts devops lanes. Stated here, where the identity is already proven by
-  // the call itself, and restored with the call.
+  // starts devops lanes. The identity is a property of the SESSION (its agent),
+  // so it is recorded by session id, not in a slot "for the duration of the
+  // call": two sessions never overwrite each other's identity.
   const workerProgram = (input, context) => {
     const role = workerRole(roleOf(context.agent));
-    return withWorkerRole(role, () => programFor(role)(input, context));
+    if (role !== null) activation.laneRoles.set(context.sessionID, role);
+    return programFor(role)(input, context);
   };
 
   const forkTool = async (input, context) => {
     // §4.1: every dispatching role may fork; Plan never does.
     if (!ownsTool(roleOf(context.agent), TOOL_NAMES.fork)) return refusal(REFUSALS.ROLE, { tool: "fork" });
-    return withCall(context, () =>
-      forkWorker({
-        sessionID: context.sessionID,
-        name: input?.name ?? input?.workerName,
-        brief: input?.brief,
-        // No `role` from the model: §4.1 gives `fork` two arguments, and the
-        // brief declares the identity. `input.role` is not read.
-        model: input?.model,
-      }),
-    );
+    return forkWorker({
+      sessionID: context.sessionID,
+      name: input?.name ?? input?.workerName,
+      brief: input?.brief,
+      // No `role` from the model: §4.1 gives `fork` two arguments, and the
+      // brief declares the identity. `input.role` is not read.
+      model: input?.model,
+    });
   };
 
   const joinTool = async (_input, context) => {
     if (!ownsTool(roleOf(context.agent), TOOL_NAMES.join)) return refusal(REFUSALS.ROLE, { tool: "join" });
-    return withCall(context, () => joinWorker({ sessionID: context.sessionID }));
+    return joinWorker({ sessionID: context.sessionID });
   };
 
   await ctx.tool.transform((editor) => {
@@ -591,6 +575,14 @@ export const setup = async (ctx) => {
       [TOOL_NAMES.fork]: forkTool,
       [TOOL_NAMES.join]: joinTool,
     });
+    // §7.1's static half: a host builtin no role may use is removed from the
+    // registry itself, so a request path that advertises the catalog without
+    // running the `context` hook cannot offer it. The per-request narrowing
+    // (`narrowTools`) remains the Manager's own half; this list is only what
+    // every agent forbids (`STATIC_REMOVED_TOOLS`).
+    if (typeof editor.remove === "function") {
+      for (const name of STATIC_REMOVED_TOOLS) editor.remove(name);
+    }
   });
 
   await ctx.tool.hook("execute.before", (event) => {
@@ -625,7 +617,7 @@ export const setup = async (ctx) => {
     }),
   );
 
-  await ctx.session.hook("context", async (event) => {
+  const contextHandler = async (event) => {
     await resolveSessionRoot(event.sessionID);
     // The identity a session runs as, as its requests report it. A completion
     // event names the session and not the agent, so the turn-exit controller
@@ -675,6 +667,28 @@ export const setup = async (ctx) => {
     // booked (§6.2). The turn is closed inside `applyContextHook`, exactly
     // once per request; this hook only returns what it decided.
     return applied;
+  };
+
+  // §7.1: the same projection runs on every request that borrows the
+  // conversation. `context` is the session's own model request; `compaction`
+  // summarises it; `generate` is a one-shot branch built from the history.
+  // A request that skipped the projection would be sent without the Pair Hint,
+  // the Scope projection or the relay barrier — exactly what §6.1 forbids.
+  await ctx.session.hook("context", contextHandler);
+  await ctx.session.hook("compaction", contextHandler);
+  await ctx.session.hook("generate", async (event) => {
+    // A generate request is a BRANCH of the chain, not a step of it: it must not
+    // overwrite the prefix the main conversation presented. The marker is set
+    // before the projection; a host that already named the kind keeps it.
+    if (event !== null && typeof event === "object" && event.kind === undefined) {
+      try {
+        event.kind = "ephemeral";
+      } catch {
+        // A frozen event keeps its own (unmarked) kind; `requestKind` reads the
+        // absence as `main`, the stricter behaviour.
+      }
+    }
+    return contextHandler(event);
   });
 
   await ctx.session.hook("prompt", async (event) => {
@@ -720,6 +734,8 @@ export const setup = async (ctx) => {
       state,
       sessionID: event.sessionID,
       resume: activation.resume,
+      parentID: parent.parentID,
+      registeredParentID: registered === null ? undefined : registered.parentID,
     });
     if (process.env.HERDCHESTRA_TRACE === "1") {
       process.stderr.write(
@@ -826,7 +842,6 @@ export const setup = async (ctx) => {
 
   const cleanup = async () => {
     hints.clear();
-    current = null;
     // The subscription is an iterator whose `return` is synchronous on a fake
     // host and a Promise on the host's bridge; both are released the same way.
     try {
