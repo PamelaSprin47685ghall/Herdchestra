@@ -748,6 +748,13 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
   - 用 `session.hook("prompt")` 处理 `scope` 注解注入；
   - 用 `tool.hook("execute.before")` 解析并核验 `scope` 注解，用 `tool.hook("execute.after")` 追加投影事实。所有改写均只作用于发往 provider 的请求副本。
 
+#### 已实测的绕行方案（一种可行解，未必最优）
+
+下面几条都是在 OpenCode 2.1.4+ 上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
+
+- 插件入口必须是 Effect 形状，而不是本节首条所写的 Promise 版 `Plugin.define({ id, setup })`。宿主按 `{ id, effect }` 或 `{ id, setup }` 解码模块，但在 2.1.4+ 上只有 Effect 形状能拿到 `session`、`tool`、`event`、`agent` 四个域，`setup` 形状加载成功却没有这些能力。适配器让 `index.js` 转出 `spec/effect-entry.mjs`（默认导出 `{ id, effect }`），在 Effect 里建桥、跑同一个 `setup(ctx)`，并登记一个卸载时停事件泵、释放全部注册的 finalizer；包的 `main` 与 `exports` 都指向 `./index.js`，目录装载与包名装载因此走同一模块。顺带一条实测：宿主 2.1.4 不扫描 `.opencode/plugins/`，本地目标必须写进 `opencode.json` 的 `plugins`，且只能是目录或 `index.js`，不能是 `plugin.mjs`（见 `spec/gaps.mjs` 的 `LOCAL_PLUGIN_ENTRY`）。何时不再需要：宿主把完整的 Promise 上下文交给 `setup` 时，这层 Effect 桥就是死重量。
+- 越权拦截是适配器自己的两层检查，而不是本节所说的在工具 `execute` 里调 `permission.assert`。宿主确有 `Permission.assert`（`permission` 域在插件上下文里），但它不在工具执行器拿到的 `Tool.Context` 上（那里只有 `sessionID`、`agent`、`messageID`、`id`、`progress`），宿主的工具运行时也不会替插件工具断言（`Tool.execute` 只触发 `execute.before` 钩子）。适配器的第一层是可见性：`agent-definitions.mjs` 的 `permissions` 规则集决定目录里出现哪些工具，`narrowing.mjs` 再按请求从 `event.tools` 里删名；第二层是拒绝：`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错——因为 `permission.assert` 被拒时是以 `Tool.Error` 结束这一步，而适配器的规矩是拒绝必须是一张模型读得懂、改得动的回执，何况 §5.4 的常授权无人值守本就不该弹操作员审批。何时不再需要：宿主开始替插件工具做权限断言时，这一层对宿主级权限才变得多余；角色、重放与任期三道闸仍要自己判。
+
 ### 7.2 Cline Desktop 适配方案（只以 Cline 插件身份装载，不 fork 宿主）
 
 - 装载方式：打包为标准 Cline 插件（导出 `setup(api, ctx)` 与 `manifest.capabilities`），通过 `package.json` 的 `cline.plugins[].paths` 声明，或由宿主 `pluginPaths` 指向。Cline Desktop 的 sidecar 已随包分发 `plugin-runtime`，用户无需额外安装运行时。
@@ -757,6 +764,19 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
   - 若子代理 frontmatter 显式列出了 `tools`，宿主会按该列表收窄工具面；万象术必须在 `createSubAgentTools` 层统一覆盖为 `js-worker` 投影，确保 `Coder` 照常保有 `this.call`（禁 bash 仅由任务提示词约束）。
 - 子代理调度（`fork` / `join`）：宿主的 `spawn_agent` 是阻塞的，而 `team_*` 系列（`team_run_task` / `team_await_runs`）带有宿主自己的一套团队账本，万象术均不复用。万象术的 `fork` 直接调用 `createDelegatedAgent({ kind: "subagent", prompt, tools, configProvider, extensions })` 自建非阻塞子 runtime——必须将 `extensions` 原样转发给子代理，否则子代理拿不到万象术的钩子；`delivery` 支持 `"steer"` 与 `"queue"`。
 - 消息投影入口：Cline 没有独立的主代理 system prompt 替换钩子，且 Desktop 强制开启了 `compaction.enabled = true` 与 `checkpoint.enabled = true`。万象术以 `prepareTurn`（配合按序链式执行的 `messageBuilder`）作为唯一的请求级改写入口：它返回的 `messages` 与 `systemPrompt` 只作用于当次 provider 请求，不写入宿主持久转录，且不依赖“宿主不做压缩”的假设。
+
+#### 已实测的绕行方案（一种可行解，未必最优）
+
+下面几条都是在 Cline Desktop 0.0.49 与它随包的 `@cline/core` 0.2.0 上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
+
+- 装载单元是一个入口文件加根 `package.json`，不是 `localRuntime.pluginPaths`。宿主扫描 `<workspace>/.cline/plugins`、`<cline-home>/plugins` 与 `~/Documents/Cline/Plugins`；能交给装载器的是入口文件（`…/src/host-cline/index.js`），目录只有在自带 `package.json` 的 `cline.plugins[].paths` 时才解析得开，而目录里一旦出现 `plugin.json`，两条发现路径都会直接放弃。适配器因此在根 `package.json` 声明 `cline.plugins[].paths`，靠 `files: ["src"]` 把整棵树装进去（`src/host-cline` 有 17 个指向 `../core`、`../compose` 的相对导入，单独装它必死在第一次导入），并且绝不生成 `plugin.json`。何时不再需要：宿主开始接受目录或 `plugin.json` 作为装载单元，或者安装器会解析工作区成员的依赖闭包。
+- 插件拿不到 `@cline/core`，所以适配器按阶梯自己找。插件跑在 `worker_thread` 沙箱里，`argv[1]` 是沙箱引导脚本，`module.paths` 只覆盖插件自己的目录，`require.resolve("@cline/core")` 答 `MODULE_NOT_FOUND`。阶梯是：裸 `@cline/core` → `CLINE_CORE_MODULE` → 从 `argv[1]`、`argv[0]`、`execPath`、`cwd` 与插件自身目录向上走的宿主模块树（每个基点都同时探 `<base>/node_modules/@cline/core` 与 `<base>/plugin-runtime/node_modules/@cline/core`，后者才是本机答话的那一级）；结果按进程缓存，`hostModuleSource()` 说明是哪一级答的。何时不再需要：宿主把工厂注入插件，或公开一个稳定位置；那时阶梯的后两级直接删掉，而不是留三个答案。
+- `fork` 要的三样东西（SDK、连接、凭据）都在宿主自己的记录里，不在钩子里。`setup` 上下文与 `beforeModel` 的请求都不带 provider 与 model，宿主会话记录带；宿主还把每个 provider 的 key、base URL 与协议存在 `~/.cline/data/settings/providers.json`，而 `createDelegatedAgentConfigProvider(connection)` 原样返回它拿到的东西——只给 `{ providerId, modelId }` 就是一个没有凭据的连接。适配器用宿主自己的 `ProviderSettingsManager.read()` 与 `createProviderConfig(entry.settings)` 取凭据（只留凭据字段，不写日志、不进回执、不发模型），模型走「上一次请求 → setup 上下文 → 宿主会话记录 → 环境变量」的阶梯，两半都在才算一条连接；裂变组按组写一行到 `.Herdchestra/<session>.fission.jsonl`，写不进去就如实答 `ok: false` 而不是声称提交。何时不再需要：宿主把连接交给 `setup`，或公开 SDK 的稳定位置；那时模型阶梯的前几级与安装布局表都成为死重量。
+- 请求改写走 `beforeModel`，不走本节末条所说的 `prepareTurn` + `messageBuilder`。在 `@cline/core` 0.2.0 上，`beforeModel` 返回的 `messages` 就是这一次 provider 请求的副本（运行时不写回转录）；`prepareTurn` 根本不是插件 API——宿主永远用自己那份 `createCompactionStateAwarePrepareTurn` 填它；`registerMessageBuilder` 的 `build` 只在宿主 `prepareTurn` 里被调用，因此插件注册的 builder 一次都不会跑（实测 Pair Hint 只对到了 0/24 个 provider 请求）。适配器于是把整份请求副本（继任屏障、Scope、Pair Hint、CUE 渲染）放进 `beforeModel` 的 `messages`，角色提示词改成一条 `registerRule`（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不再在 manifest 里申请这项能力。何时不再需要：宿主把 `prepareTurn` 开放给插件，或开始采纳 `beforeModel` 返回的 `systemPrompt`；那时把投影搬过去，删掉对应的那一条。
+- 沙箱里那条「payload 不是 JSON 可序列化」的告警是宿主的载荷，不是我们的返回值。`@cline/core` 的 `callWithSerializableFallback` 包的是宿主自己送进沙箱的钩子载荷（`payload.tool` 是带 `execute` 函数的宿主对象），结构化克隆拒绝它、宿主告警、改用 `toJsonSafePayload` 重试。我们的 `beforeTool` 只回 `{ skip, reason }`，`afterTool` 只回 `{ appendContext }` 或 `undefined`。每条钩子名各告警一次只说明该钩子触发过至少一次；插件消不掉它，也不要为此给返回值加 JSON 清洗。何时不再需要：宿主不再把活对象放进钩子载荷。
+- 子代理的工具面由适配器在工厂上补，而不是信任 frontmatter。宿主用 `createSubAgentTools` 按 frontmatter 的 `tools:` 列表收窄子代理工具面，这发生在 `createDelegatedAgent` 之前，插件既看不到也包不住。适配器改为包住自己交出去的那个工厂：`guardedCreateDelegatedAgent` 对返回的每个 runtime 调用它自己的 `addTools` 补回 `js-worker` 面（`runtimeHandle` 自建的 runtime 同理），回执里的 `face` 说明补没补上，没有工具面就答 `NO_TOOL_SURFACE` 而不是声称防住了。何时不再需要：`@cline/core` 把子代理工具构建器开放给插件，那时把这个包装换成一个装饰器。
+- 同名 `fork` 的「转向」借用运行中那一回合的待处理输入通道。`SessionRuntime.run()` 在回合进行中会直接拒绝，hub 的 `send_input` 又够不到不在 `LocalRuntimeHost.sessions` 里的委派 runtime。适配器在宿主没装的时候给 runtime 装上 `consumePendingUserMessage` 这个成员：`steer(brief)` 把文本放进队列，正在跑的那一回合在自己的下一个请求边界取走它；`notifyPendingUserMessage()` 只打断模型请求，在飞的工具照常跑完。回执就是 `{ name, steered, started }`，一次结算同时交回载体与被它带上路的那份说明。何时不再需要：宿主给委派 runtime 一条真正的转向通道（宿主的 `steer_message` 能到达它）。
+- 崩溃在「屏障」与「台账推进」之间时，以耐久屏障为准，不以台账字段为准。§2.4 第 3 步让退役、屏障与继任启动成为一条耐久记录，台账推进稍后才发生；中间崩溃会留下一个屏障已指向继任、台账字段还停在旧任期的文件，朴素回放会把已退役的前任复活，继任的第一次 review 被永久拒成 `TENURE_RETIRED`。适配器的 `restore` 先读屏障：屏障指名的继任经 `adoptSuccessor({ tenure, milestone })` 原样落到台账（正是 `openSuccessor` 产生的状态），再把文件里的义务叠加上去；屏障不可用就退回朴素回放，让拒绝在下一次 review 浮出来而不是被抹平。何时不再需要：屏障与台账推进合成同一次写入时，这条特殊回放路径就该删掉。
 
 ### 7.3 Oh My Pi 适配方案（只注册一个扩展，不碰宿主内建 Vibe 模式）
 
@@ -781,6 +801,18 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 
 **自然停止的拦截（根 §2.2）。** 规则只有一份（`src/compose/nudge.mjs` 的 `evaluateTurnExit` / `buildNudgeMessage`），三家宿主各自只做「把文本送进下一次请求」：OpenCode 在 `session.execution.*` 上经 `spec/turn-nudge.mjs` 用 `sessions.prompt({ delivery: "queue" })` 投递；Cline 在 `afterModel`/`beforeModel`/`afterRun` 三处经 `guard.mjs` 用会话自己的输入通道继续；Oh My Pi 在 `agent_end` 经 `host-omp/nudge.mjs` 用 `pi.sendUserMessage(..., { deliverAs: "followUp" })` 投递。每个回合只投递一次，投递失败如实报告，不重试、不伪造。
 
+#### 已实测的绕行方案（一种可行解，未必最优）
+
+下面几条都是在 omp 18.14.2（部分条目标为 18.14.x）上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
+
+- 接力的耐久记录只在回合内写得进去，转录切换推迟到终态 `agent_end`。宿主在终态 `agent_end` 到达扩展之前就已 `seal()` 会话管理器（`#released = true` 并抬 `#diskEpoch`），此后一切提交守卫恒假：实测在 `agent_end` 里写 `appendEntriesAtomically` 落地为假，写普通 `appendCustomEntry` 返回了 id 却既不在内存日志也不在磁盘；而在回合进行中写同一入口两次都落地。`isStreaming` 又在整个工具调用期间为真（`agent.state.isStreaming || #promptInFlightCount > 0`），所以 `review()` 当刻切换必被 `SESSION_STREAMING` 拒绝，而 `waitForIdle()` 在那里是自死锁。适配器因此把「记录」与「切换」拆开：回合内发布一条 `herdchestra.relay` 记录（退役、屏障、继任三个字段靠 `appendEntriesAtomically` 一次改名整体可见），再写一条 `herdchestra.relay.pending` 意图，切换本身留到终态 `agent_end`、先让出事件循环再单独执行。顺序不可交换：记录先提交、转录后重置，中间崩溃留下的是一条已指名继任、仍持旧转录的日志，`context` 钩子保证旧转录不进任何请求。写不进去时如实答 `RELAY_RECORD_NOT_DURABLE`；`successor.replaced: false` 配 `ok: true` 说的是「记录已提交、任期已推进，但转录没换」。何时不再需要：宿主在 `agent_end` 之后才封存、或把记录自己抄进继任头、或提供不等待空闲的中断；三者任一成立，边界写回或同步切换就重新可用。
+- 继任切换只能走 `ctx.sessionManager`，而它比自己的类型更宽。`ExtensionContext.sessionManager` 的类型是 `ReadonlySessionManager`（`Pick` 里没有 `newSession`），但运行器传的是真实例，`newSession`、`getSessionFile`、`appendEntriesAtomically`、`appendCustomEntry`、`getEntries` 运行时都在；`session_start` 的 `ctx` 自己没有 `newSession`，也没有 `sessionFile`。适配器的 `switchTarget()` 先读会话、再读 `session.sessionManager`，从不假设类型面；因为每次 emit 都重建上下文，它也从不缓存某个事件的 `ctx`（缓存 `session_start` 那份会让 `ctx.sessionManager`、`ctx.agent`、`ctx.abort` 全是 `undefined`，推迟的切换就永远够不到）。继任头里的 `parentSession` 写被替换转录的路径（宿主的列表与清理都按路径读），旧文件保留原记录，但按 `successorSessionId` 过滤后不再治理。何时不再需要：宿主真的执行只读类型时，接力会以 `NO_SESSION_CONTROL` 诚实地失败——那时不要绕过，要承认这条路没了。
+- 封存之后内存日志会空，磁盘文件还在。实测在 `seal()` 之后 `getEntries()` 里已没有任何接力记录，而同一次运行的转录文件里那条记录清清楚楚。适配器查「记录在不在」时，日志答否就回退到转录文件，按宿主自己的条目 id 与本适配器的 `customType` 比对；否则边界会把一条明明存在的记录判成没写，跳过唯一不需要写入的那一步。何时不再需要：宿主在封存后仍可写，或自己把记录抄进继任头。
+- 宿主的 `context` 钩子会把「正在回答的那条消息」就地重写。宿主在 provider 回答之前就构造一条占位的 assistant 消息，随流增量就地改写（文本、工具调用、用量、`stopReason`），而 `context` 钩子拿到的是同一个对象；于是同一个请求在流未收时看到占位副本，下一个请求从宿主日志重建时看到定稿副本，逐字节比对就把它判成 `PREFIX_DRIFT`，工具闸随即拒掉每个调用。适配器不再维护「哪些字段不算对话」的黑名单，改由 `core/pair-hint/canonical.mjs` 用正向语义白名单定义「同一条消息」（角色，以及每个部分的类型与该类型的语义字段），宿主重算的一切字段天然被忽略。何时不再需要：宿主把定稿副本交给钩子时，这条测量的理由消失，但白名单与宿主版本无关，不要退回黑名单。
+- 宿主的侧回合也走 `context` 钩子，必须按形状识别并放行。`transformContext` 是 `context` 钩子唯一的触发点，主代理与会话代理都装了它，`runEphemeralTurn` 把每个瞬时回合都送进来（标题、输入预测、`btw-turn`、空闲维护等）；这些副本是真实前缀的延长，若不识别，它会把 Pair Hint 的 `#presented` 抢走，几毫秒后真请求就被判成漂移。宿主给这些消息打的 symbol 标记在 `structuredClone` 时被丢掉，所以只能按两条宿主写出的形状同时识别：一条 `developer` 消息带 `attribution: "agent"`，加一条 `user` 消息带 `attribution: "agent"`。适配器把它们交给 core 当作 `REQUEST_KINDS.EPHEMERAL`：配对照常注入（侧回合本就是为了预热缓存），但不记账、不移动、不开不关闸门。何时不再需要：宿主用一个可读字段标出侧回合。
+- `setActiveTools` 在加载阶段调不了，只能让阶段切换来付这笔账。宿主交给扩展工厂的只有 `api`，加载时没有会话、没有角色、也没有可收窄的活动工具集，`setActiveTools` 在会话的扩展运行时初始化之前会抛错。适配器因此在会话的第一个事件（`installHooks`）里做首次收窄；`js-review` 的阶段切换另付一笔，且从不落在 `before_agent_start`：本轮评估在 `turn_start` 打开（`beginEvaluation()` 每轮只答一次真，`openEvaluation()` 据此收窄），在本轮第一条 review 被接受时由 `onReviewAccepted` 收面并再次收窄。`before_agent_start` 一次也不调 `setActiveTools`，它返回的整段 `systemPrompt` 是角色的纯函数，重跑得到同样的字节。这与本节所说的「在扩展加载阶段调用一次 `setActiveTools`」有意不同：那条要防的是宿主为每次请求重跑最多三次 policy preparation，阶段切换这一层同样防住了它。何时不再需要：宿主在工厂期就给出会话，那时把首次收窄搬过去，阶段切换规则只留给 review 面。
+- `fork` 不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用。扩展没有派发器（`ExtensionAPI` 没有 dispatch，`ctx.invokeTool` 只转给同名的内建工具），`fork` 根本调不到 `task`；而那个上限是在宿主为会话构造 task 工具时施加的，经 `createAgentSession` 建出来的会话根本没有 task 工具可限。适配器让 `fork` 用宿主注入的 SDK 起真会话，深度只作为事实随 lane 携带，不用来表达权限。这与本节所说的「抬高或绕过 `task.maxRecursionDepth`」有意不同：那条绕行要等宿主真把扩展工作塞进 `task` 才需要，届时用 `settings.overlay({ "task.maxRecursionDepth": -1 })` 传给 `createAgentSession`（`Settings.overlay` 对未知键抛错，不会静默忽略）。何时不再需要：宿主把扩展工作路由到 `task` 时，那条绕行才登场。
+
 ### 7.4 与 Oh My Pi 内建 Vibe Mode 的设计取舍对照
 
 万象术受 Oh My Pi 的 Vibe Mode 启发，但做了根本性的精简与强化（且绝不引用宿主的 `/vibe`、`vibe_*`、`sessionModes`、`vibe-mode-active.md`、`vibe-mode-context` 等内部标识符）：
@@ -794,6 +826,15 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 | 同身并行能力 | 无 | 提供 `this.fission(prompts)`，允许同一 worker 身份裂变为多条并行泳道并按拓扑顺序收束 |
 | 保留的优秀基因 | 结果自投递、只等第一个完成、worker 不继承导演对话（`brief` 必须自足）、进程重启后被打断的那一回合不自动续跑 | 全部采纳 |
 
+### 7.5 跨宿主的绕行方案（一种可行解，未必最优）
+
+下面几条不是在某一家的版本上单独量出来的，而是三家一起量、一起守的做法（OpenCode 2.1.4+、Cline Desktop 0.0.49 / `@cline/core` 0.2.0、omp 18.14.2）：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
+
+- 工具文本一律是 CUE，而 CUE 的字面量规则是承重的。根 §6.3 与 §8.2 第 7 条禁止模型读到裸 JSON，各适配器都用 `src/core/cue.mjs` 的 `toCue` 渲染模型可见的结构化数据：OpenCode 只把 `content` 转 CUE（`output` 仍是普通值，宿主按声明 schema 编码它，从不给模型看），Cline 把每份结构化 `appendContext` 载荷转 CUE，而 `scope: CODE: message` 这类拒绝串是散文、不是结构化数据，保持原样。七条容易写错的文法（围栏内唯一的转义是「反斜杠 + 同长 `#` 串」、围栏本身要压过正文里的 `\#` 串、`\r` 永不字面输出、块正文按结束符缩进且空行保持裸行、以 `"` 开头的串必须走块且块不能带尾随换行、列表元素分行要逗号、字段标签走不围栏的字符串文法）都是对 `cue` v0.11.0 实测出来的。何时不再需要：渲染器是我们自己的，这套规则不会随宿主消失；只有宿主开始把 `content` 当 JSON 预解析时，OpenCode 这一侧才需要改，而 schema 检查一直在 `output` 上，不受影响。
+- `this.ask` 就是 `this.park({ question })` 加一次中断，没有任何宿主缺这个能力。`HOST_HAS_NO_OPERATOR_CHANNEL` 已从所有路径删除：真正该问的不是「插件能否证明人读过问题」，而是「程序挂起了吗、回合结束了吗、答复恢复它了吗」，三家都能做到。回执形状统一为 `{ ok: true, asked: true, question, program, interrupt: true }`，只有中断按宿主各走各的（OpenCode 调 `Session.interrupt`，OMP 调本事件自己的 `ctx.abort()`，Cline 的回合随工具结果收尾，不需要额外的 abort 调用）；恢复则统一是一次普通的 `unpark`，core 的 `resumeValue` 把注入值交给 `ask` 站点，与显式 `park` 和 `where` 歧义完全一样。宿主程序还必须带着角色的能力集注册（`[role]`），否则同会话的两个程序不共享能力集，Plan 就无法恢复自己做的 `ask` 挂起。何时不再需要：宿主若能一次调用里既挂起又交还控制权，这套按宿主分工的中断表就塌缩成那一次调用。
+- 插件重载不是进程重启，worker 名册必须落盘。三家都会在不重启进程的情况下重载插件（OpenCode 监视文件变化、OMP 每次 emit 重建上下文并重新绑定工厂、Cline 在宿主与已启动的委派 runtime 都还跑着时重载会话插件），而谁都不会提前通知插件「你的内存表马上要作废」。实测过的失败是：四名 worker 已 fork、两名已 join，插件重载后每次 `join` 都在一毫秒内答 `{ ok: false, record: null }`，而 worker 还在同一个服务里跑。适配器因此把名册当耐久事实写在 `.Herdchestra/` 下并在建表时回放：OpenCode 读会话日志里 `worker` 类型的记录，Cline 读 `<session>.workers.jsonl` 追加日志加 `<session>.workers.restored.json` 快照（释放记录说不清「下一次运行从零开始」，快照才是那条边界），OMP 把 lane 事实放在会话状态里、与台账和屏障并列。不变量是 `join` 绝不能在有名 worker 还在跑或还握着未领取结果时答「没东西可收」。何时不再需要：宿主跨重载保留插件的模块实例时，回放变成多余但无害；真正不能发生的是「只凭内存答话的表」。
+- 从自己的回合内部替换现任（裂变）只能推迟中断。§4.2 第 6 步要求旧物理现任在组建成后沉默，而正常情形就是 worker 在自己的工具调用里调 `this.fission(prompts)`：这一回合正等着这次调用，调用不能等它结束。宿主没有「打断正在执行本次调用的那一轮」的办法——`AgentSession.abort` 会 `waitForIdle()` 等回自己，`ExtensionContext.abort` 只停事件所属的那一回合，在 lane 上还是同一个等待。适配器的做法分三步：把「已替换」的标记写在 SESSION 对象上（`Symbol.for("herdchestra.presentReplaced")`，因为每次 `bind`/`refreshContext` 都会重建控制包装），`stop()` 只做回合内安全的部分（丢队列、回读 `isStreaming`），`atTurnEnd(fn)` 把宿主的 abort 挂到回合边界、由 `agent_end` 排空。回执如实区分 `settled`、`deferredAbort`、`stoppedNow`，两样都做不到时答 `PRESENT_NOT_REPLACED`（Cline 侧为 `ABORT_NOT_ARMED` / `NO_ABORT_SURFACE`），让组回滚而不是谎称替换成功。何时不再需要：宿主提供真正的中断而不等待空闲，那就把第三步换成它，删掉推迟。
+
 ---
 
 ## 8 工程纪律与实现规范
@@ -804,7 +845,7 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 
 万象术不设根目录 `LEMMA.md` 或 `README.md`，直接围绕 `src/` 展开实现与维护：
 
-1. 根目录配置与核查账本：项目工程配置文件统一放在根目录；适配宿主时的随机应变与绕行方案统一记录在根目录 `HACK.md`。
+1. 根目录配置与核查账本：项目工程配置文件统一放在根目录；适配宿主时的随机应变与绕行方案统一记录在根目录 `HACK.md`，摘要写在本文 §7 与 §7.5，`HACK.md` 保留测量数据、宿主源码行号与复检步骤。
 2. 架构师笔记（`src/AGENTS.md`）：`src/AGENTS.md` 存放全局架构师笔记，承担传统项目中 `ARCHITECTURE.md` 的职责，阐明核心库划分、组合层装配关系与跨包边界。
 3. 包级规格说明书（`src/{core,compose,host-opencode,host-cline,host-omp}/{包名}/AGENTS.md`）：每个子包维护对应的局部规格说明书，体例参照本文，AI 可自动创建与修改。
 4. 自动追赶义务：当根目录 `AGENTS.md` 更新后，AI 有权利和义务直接同步更新 `src/AGENTS.md`、各包局部 `AGENTS.md`、`HACK.md` 以及 `src/` 下的源码实现，无需请示。
@@ -818,3 +859,7 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 5. 组合优于继承，Mise en place 布局：遵循 Gall 定律与备料（Mise en place）原则，先准备好职责完整、彼此独立的最小部件，再显式把它们组合起来；用可拆卸的装饰器增强功能。
 6. 结构化程序设计：遵循 Dijkstra 结构化程序设计原则，用清晰的自然控制流表达生命周期，严禁在程序中显式存储程序计数器（Program Counter）或其变种。
 7. 面向 LLM 的 CUE 格式化呈现：任何面向 LLM 的结构化数据（含 prompt 与工具返回值等）严禁输出 raw JSON，必须转为 CUE Pretty Print 格式（单行优先行内字符串，多行用 CUE 变长多行字符串 `"""` / `#"""..."""#` 并按结束符缩进对齐，彻底杜绝 escape 污染；详见 §6.3）。
+
+### 8.3 共享路径的删除纪律
+
+1. 绝不删除共享路径。`.Herdchestra/`、`/tmp/hc-devops/` 以及任何不是本回合自己创建的路径都是只读的；清理只删除本进程本回合创建、并逐一具名的路径，且必须是单独的一次调用——禁止把 `rm` 写进复合命令。理由与两次事故的完整记录见 `HACK.md` 的 INCIDENT 条目：脏文件比丢失证据便宜，而「这只是噪音」正是当初判断错的那句话。

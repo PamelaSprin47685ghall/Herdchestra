@@ -1,5 +1,9 @@
 # HACK.md
 
+Root `AGENTS.md` §7 (and §7.5) now carries the summary of these workarounds;
+this file keeps the measurements, the host source references and how to
+re-check them.
+
 Host workarounds and unverified host assumptions, per root AGENTS.md §7.
 Each entry names what the adapter does that the host does not promise, so a
 later reader can re-check it against a newer host instead of trusting it.
@@ -894,20 +898,23 @@ tool set to narrow. The first moment a session exists is its first event
 host never announces), and `setActiveTools` throws until the session's extension
 runtime is initialized.
 
-**So:** the narrowing runs on the session's first event (`installHooks`), and
-`before_agent_start` narrows **only when the phase actually moves** — the round
-opens (a Manager's evaluation window) or closes. `beginEvaluation()` answers
-"did the phase move" (`true` once per round, `false` for a repeat), and
-`openEvaluation()` writes the tool set only on `true`. A second preparation of
-the same request therefore calls `setActiveTools` zero times, which is the
-property §7.3 is protecting (the host re-runs policy preparation up to three
-times per request when this hook narrows). The hook's `systemPrompt` is a pure
-function of the role, so a re-run produces identical bytes.
+**So:** the narrowing runs on the session's first event (`installHooks`). The
+`js-review` phase change pays its own write, and it **never** happens inside
+`before_agent_start`: the round opens at `turn_start` (`beginEvaluation()`
+answers "did the phase move" — `true` once per round, `false` for a repeat —
+and `openEvaluation()` writes the tool set only on `true`), and the round's
+first accepted review closes the face in `onReviewAccepted`, which narrows
+again. A second preparation of the same request therefore calls
+`setActiveTools` zero times, which is the property §7.3 is protecting (the host
+re-runs policy preparation up to three times per request when this hook
+narrows). `before_agent_start` never calls `setActiveTools`; its `systemPrompt`
+is a pure function of the role, so a re-run produces identical bytes.
 
 **Verified offline:** `src/host-omp/host-omp.test.mjs`
-"before_agent_start is idempotent: same prompt twice, and no second
-setActiveTools in one round" — two calls in one round produce identical
-`systemPrompt` and exactly one tool-set write.
+"turn_start opens the round; before_agent_start is idempotent and never calls
+setActiveTools" — the round opens at `turn_start`, two request preparations
+produce identical `systemPrompt`, and `setActiveTools` is never called from the
+request hook.
 
 **Not claimed:** the host gives no load-time hook *with a session*, so the
 literal "once at load" cannot be honoured. If a future host exposes the session
@@ -1044,6 +1051,61 @@ export loads without those capabilities. The package root's `package.json`
 main/exports name `./index.js`, so both the directory route and a package-name
 import reach the same module. Keep the re-export; do not replace it with a
 `setup` shim.
+
+## §7.1 `permission.assert` in `execute`: the host has it, this adapter does not call it (2026-11-01)
+
+Root §7.1 says every refusal must be a hard block made by calling
+`permission.assert` inside the adapter's own tool `execute`. The host does have
+that method, and the adapter deliberately refuses with its own checks instead.
+This entry records the difference so neither text is read as a contradiction.
+
+**The host fact (OpenCode v2.1.4, `../opencode`).** `Permission.assert` is real
+and exposed to a plugin as the `permission` domain
+(`packages/plugin/src/effect/plugin.ts:42`,
+`packages/plugin/src/effect/permission.ts:32`,
+`packages/plugin/src/promise/permission.ts:31`). It is NOT on the context a tool
+executor receives: `Tool.Context` (`packages/schema/src/tool.ts:14`) carries only
+`sessionID`, `agent`, `messageID`, `id` and `progress`, so an executor could
+reach `assert` only by closing over the domain captured at setup. The host's own
+builtin tools call it from their own executors (`tool/plugin/write.ts:78`,
+`tool/plugin/shell.ts:138`, `tool/plugin/edit.ts:275`, …); the tool runtime does
+not assert on a plugin tool's behalf — `Tool.execute`
+(`packages/core/src/tool.ts:115`) only triggers the `execute.before` hook and
+runs the executor.
+
+**Why the adapter refuses with its own checks.** `assert` evaluates the
+session's rules and, when approval is required, prompts the operator; a
+rejection fails with a `Tool.Error` and the doc says to rethrow it "rather than
+returning it as tool output" (`packages/plugin/src/promise/permission.ts:31`).
+That contradicts two rules this project holds: §5.4 makes the system unattended
+and always-authorized, so an operator approval prompt is not a channel the
+adapter may open; and a refusal must be a receipt the model can read and correct
+(`src/host-opencode/spec/refusals.mjs`), never a thrown error. It would also not
+cover the refusals that actually matter here — role ownership, replay, relay
+tenure and Scope admission are not permission rules at all.
+
+**What the adapter does instead.** Layer one is visibility:
+`agent-definitions.mjs` gives each agent a `permissions` ruleset, which the host
+uses in `Tool.snapshot(permissions)` (`packages/core/src/tool.ts:249-255`) to
+decide what the catalog offers, and `narrowing.mjs` deletes names from
+`event.tools` per request. Layer two is refusal:
+`tool.hook("execute.before")` (`spec/execute-hooks.mjs` `beforeCall`) answers
+`ROLE_DENIED` — plus the relay, replay and Scope gates — before the executor is
+reached, and every executor re-checks its role and returns a refusal receipt.
+`spec/role-tools.mjs` owns the role→tool table; `spec/narrowing.mjs` owns the
+catalog.
+
+**How to re-check.** With the plugin loaded, have a `Manager` call `js-worker`
+(or `js-review` after the round's review was accepted): the receipt must be
+`ROLE_DENIED` / `REVIEW_WINDOW_CLOSED` and no program may run. If a future host
+starts asserting permissions for plugin tools itself, the visibility layer
+becomes advisory and the role check stays; nothing about replay, tenure or Scope
+changes.
+
+**Not claimed.** Whether the bridged Effect context carries a usable
+`permission` domain was never exercised: the adapter does not request it. Do not
+add `permission.assert` back without also deciding what an operator prompt means
+in an unattended run.
 
 ## Cline narrows a subagent's face before the plugin sees it (2026-11-01)
 
