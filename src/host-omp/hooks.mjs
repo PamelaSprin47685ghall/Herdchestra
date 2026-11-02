@@ -254,7 +254,12 @@ const draftSegment = (draft) => {
       "Do not invent another path. Report this and stop; no hand-off is possible without a draft.",
     ].join("\n");
   }
-  return ["# Draft", "", `Your draft is \`${draft.path}\`. That is the path \`cat\` and \`write\` name.`].join("\n");
+  return [
+    "# Draft",
+    "",
+    `Your draft is \`${draft.path}\` — under the workspace-root \`plans/\` directory, never under \`.Herdchestra\`.`,
+    "That is the path `cat` and `write` name. It is your only output: apart from it and the operator's attachments, you are read-only.",
+  ].join("\n");
 };
 
 // A deferred relay that could not run is stated to the model, once, in the same
@@ -307,7 +312,14 @@ export const createBeforeAgentStartHandler = ({
 const failureOf = (error) => {
   const code = typeof error?.code === "string" && error.code.length > 0 ? error.code : null;
   const name = code ?? (typeof error?.name === "string" && error.name.length > 0 ? error.name : "Error");
-  return { code: name, detail: String(error?.message ?? error) };
+  // The error's own attached facts travel beside the code and message: a
+  // `PREFIX_DRIFT` carries its first divergence there, and the request
+  // diagnostic must be able to name it without parsing the message.
+  return {
+    code: name,
+    detail: String(error?.message ?? error),
+    ...(error?.details === undefined ? {} : { details: error.details }),
+  };
 };
 
 // The same list when nothing changed, a new array otherwise. `changed` is
@@ -539,10 +551,10 @@ export const createContextHandler = ({
   // says whether that record landed; a record that cannot land is stated in the
   // refusal text instead (`gateUnrecorded`).
   //
-  // `phase` is the gate's own moment: "open" is written BEFORE the projections
-  // run (it is the refusal a crash leaves behind), "settle" after they decided.
-  // The request record is written last and cannot stand in for either: it does
-  // not exist yet at the open, and the host may end this handler before it.
+  // `phase` is the gate's own moment: "settle" after the projections decided
+  // AND the verdict changed, "unwritable" when the file could not hold it. An
+  // unchanged verdict writes no line (root §1.1 item 1). The request record is
+  // separate and is written only for a failure.
   const tellGate = (phase, verdict) => {
     if (typeof onGate !== "function") return true;
     try {
@@ -583,16 +595,16 @@ export const createContextHandler = ({
     const gateRequest = side ? null : nextRequestId();
     const gateOpenable = side ? null : await openGate(gateRequest);
     const notices = [];
-    // The open is a durable change of the verdict, so it is recorded before
-    // anything else this request does. A record that cannot land is a refusal
-    // the request cannot explain later, so it is reported in the copy.
+    // The open writes NOTHING (root §1.1 item 1). The file carries the last
+    // SETTLED verdict, which is what a tool call is judged by; a request that is
+    // still projecting cannot have issued one. Writing "pending" here and
+    // "allowed" at the settle was two whole-file rewrites per request for a
+    // verdict that usually did not change. `openGate` still mints the request id
+    // and, on a host that keeps no gate, answers `null`.
     let gateUnrecorded = false;
-    if (!side) {
-      gateUnrecorded = !tellGate("open", { request: gateRequest, allowed: false, stage: "request", code: "CONTEXT_PROJECTION_PENDING" });
-    }
     const gateFailure =
       gateOpenable === false
-        ? { stage: "request", code: "REQUEST_GATE_UNWRITABLE", detail: "the request gate could not be written" }
+        ? { stage: "request", code: "REQUEST_GATE_UNWRITABLE", detail: "the request gate could not be opened" }
         : null;
     if (gateFailure !== null) {
       // Nothing can be written, so the refusal lives in this object until a
@@ -738,25 +750,18 @@ export const createContextHandler = ({
     // A side turn neither opens nor settles the gate: it has no tool calls to
     // refuse, and its verdict must not speak for the conversation.
     //
-    // The record of the verdict is written BEFORE the verdict itself. The order
-    // is the opposite of the copy's and for the same reason: a refusal that the
-    // tools will read must already be readable in `.requests.jsonl`, so a host
-    // that ends this handler — or a process that dies — between the two leaves
-    // a refusal that is explained. A gate written first and recorded second is
-    // the one shape that leaves `CONTEXT_PROJECTION_FAILED` with no line.
-    if (!side) {
-      const verdict =
-        failure === null
-          ? { request: gateRequest, allowed: true, stage: null, code: null }
-          : { request: gateRequest, allowed: false, stage: failure.stage, code: failure.code, detail: failure.detail };
-      if (!tellGate("settle", verdict)) gateUnrecorded = true;
-    }
+    // The gate writes only when the verdict CHANGES (root §1.1 item 1). The
+    // diagnostic line follows the same rule: an unchanged "allowed" is not news,
+    // and a refusal that repeats is already on disk. The line is written after
+    // the verdict lands, because it describes a verdict a reader can find.
     const settled = side ? null : await settleGate(failure, gateRequest);
-    if (settled === false) {
+    const gateWriteFailed = settled === false || (settled !== null && settled?.ok === false);
+    if (gateWriteFailed) {
       // The verdict could not be recorded, so it cannot be relied on: the file
-      // says "refused" (the open wrote it) and the memory holds the same, until
-      // a later request settles one the file really carries.
+      // still says whatever the last request settled, and the memory holds the
+      // refusal, until a later request settles one the file really carries.
       gateHeld = { request: gateRequest, stage: "request", code: "REQUEST_GATE_UNWRITABLE", detail: "the request gate verdict could not be written" };
+      if (!tellGate("unwritable", gateHeld)) gateUnrecorded = true;
       // The gate is ONE failure, not two. When the open already failed, the
       // request is unprojected for that reason and the verdict failure is the
       // same fact seen twice; reporting it twice would read as two independent
@@ -788,6 +793,16 @@ export const createContextHandler = ({
       // 'allowed' verdict` covers the first direction; a clean request after a
       // failed one covers this one.
       gateHeld = null;
+      // `changed` is the gate's own answer; `true` is the older shape (a bare
+      // success) and is treated as a change so a host that answers less still
+      // records the verdict.
+      if (settled === true || settled?.changed === true) {
+        const verdict =
+          failure === null
+            ? { request: gateRequest, allowed: true, stage: null, code: null }
+            : { request: gateRequest, allowed: false, stage: failure.stage, code: failure.code, detail: failure.detail };
+        if (!tellGate("settle", verdict)) gateUnrecorded = true;
+      }
     }
     // The notices go after the copy, in the order the failures happened. They
     // are messages the host does not store, so the next request does not carry
@@ -810,21 +825,20 @@ export const createContextHandler = ({
     // the session's next refusal may not be explained by `.requests.jsonl`.
     if (gateUnrecorded) notices.push(GATE_UNRECORDED_NOTICE);
     const result = notices.length === 0 ? current : [...current, ...notices.map((text) => ({ role: "user", content: text }))];
-    // The request record, written last: it states what this hook received and
-    // what it decided, including the verdict that was just settled. A reader
-    // holding a `refused` record from the Pair Hint journal and this line can
-    // name the drifted index in both and see which messages the host grew
-    // between them. Shapes and digests only — never the conversation.
+    // The request record is written ONLY for a failure (root §1.1 item 1): a
+    // clean request leaves no line. It states the request's length, its root
+    // digest, the first divergence the prefix rule reported, and (capped) the
+    // messages the copy dropped. A reader holding a `refused` record from the
+    // Pair Hint journal and this line can name the drifted index in both.
+    // Shapes and digests only — never the conversation.
     //
     // `current` is the copy before the notices: the notices are messages the
     // host does not store, and recording them as "presented" would make the
     // next request look shorter than the one before it for a reason that is
     // not a drift.
-    if (typeof requestLog === "function") {
-      // The line is written here whatever happened above, including a gate that
-      // could not be opened or settled: a refused request that leaves no line is
-      // the state this record exists to end. `incoming` stays the copy the host
-      // handed over — a fallback copy must not be recorded as "the request".
+    if (typeof requestLog === "function" && failure !== null) {
+      // `incoming` stays the copy the host handed over — a fallback copy must
+      // not be recorded as "the request".
       //
       // The writer reports where the line landed (`drift-log.mjs`): `ok: false`
       // means the session's own file refused it and a fallback file holds it,
@@ -978,7 +992,15 @@ export const createTurnStartHandler = ({ scopeOpenTurn }) => {
 // Scope refuse a turn that staged `meToo` and nothing else; the refusal is
 // reported to the model through the result's extra context, because the turn
 // already happened and cannot be blocked retroactively (spec §6.2).
-export const createTurnEndHandler = ({ scopeCloseTurn, noteTurnEnd = null, closeRequestTurn = null }) => {
+export const createTurnEndHandler = ({
+  scopeCloseTurn,
+  noteTurnEnd = null,
+  closeRequestTurn = null,
+  // Root §1.1 item 2: a real operator interrupt at a user-facing session
+  // cancels the whole descendant subtree. The adapter supplies the walk; this
+  // hook only hands it the host's own ending message, at the moment it exists.
+  onOperatorInterrupt = null,
+}) => {
   return async (event) => {
     // The request gate's turn is final from here: its verdict may no longer be
     // moved by a later request (`requestRefusal`). Done first, so a slow Scope
@@ -990,6 +1012,10 @@ export const createTurnEndHandler = ({ scopeCloseTurn, noteTurnEnd = null, close
     // (`agent-session.ts:11240`), and §2.2's nudge must not answer it. The record
     // is handed on before Scope closes the turn, so no path can lose it.
     if (typeof noteTurnEnd === "function") noteTurnEnd(event?.message ?? null);
+    // The interrupt is propagated HERE, before Scope closes the turn: the
+    // message is this event's own, and the adapter's guard (an S1 ask, a
+    // replaced present, a relay) is what decides whether it is the operator.
+    if (typeof onOperatorInterrupt === "function") await onOperatorInterrupt(event?.message ?? null);
     if (typeof scopeCloseTurn !== "function") return undefined;
     // Keep the `await`. `ScopeHooks.closeTurn` answers a Promise, and a caller
     // that compares the Promise itself (`refusal === null`, `refusal.ok`) never

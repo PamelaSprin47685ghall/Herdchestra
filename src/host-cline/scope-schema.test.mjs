@@ -116,7 +116,7 @@ test("a first call with resetScope, and later calls with keepLast/removeLast/meT
     "js-worker": { code: "return 1" },
     "js-plan": { code: "return 1" },
     "js-review": { code: "return 1" },
-    fork: { name: "w", brief: "do the thing" },
+    fork: { name: "w", verboseIntent: "do the thing" },
     join: {},
   };
   for (const name of NAMES) {
@@ -207,4 +207,18 @@ test("withScope keeps the tool's own fields and adds nothing else", () => {
   const bare = withScope({});
   assert.deepEqual(Object.keys(bare.properties), ["scope"]);
   assert.deepEqual([...bare.required], ["scope"]);
+});
+
+test("the schema text is a pointer to the system prompt, not a second essay", () => {
+  // Root §1.1 item 5: the mechanism is explained once, in the system prompt.
+  // Every tool copies its schema, so the schema carries the field shape only.
+  assert.match(SCOPE_SCHEMA.description, /system prompt's Scope section/);
+  assert.ok(SCOPE_SCHEMA.description.length < 360, `description is ${SCOPE_SCHEMA.description.length} chars`);
+  for (const branch of SCOPE_SCHEMA.oneOf) {
+    for (const [name, field] of Object.entries(branch.properties)) {
+      if (name === "kind") continue;
+      assert.equal(typeof field.description, "string", `${name} has a description`);
+      assert.ok(field.description.length < 80, `${name}'s description is short`);
+    }
+  }
 });

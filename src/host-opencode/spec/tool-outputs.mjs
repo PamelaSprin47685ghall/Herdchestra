@@ -58,6 +58,11 @@ const FORK_RECEIPT = {
     name: { type: "string" },
     steered: { type: "boolean" },
     started: { type: "boolean" },
+    // Where the child's model came from (root §1.1 item 6). Absent for a steer
+    // or a reuse, which create no session and choose no model.
+    modelSource: { type: ["string", "null"] },
+    reused: { type: "boolean" },
+    cancelled: { type: "boolean" },
     rejection: { type: ["string", "null"] },
   },
   required: ["name", "steered", "started"],

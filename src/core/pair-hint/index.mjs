@@ -7,6 +7,7 @@
 //   RESOURCE_IDS, ResourceLibrary, loadPair
 //   renderPresentation, renderHandles, parseHint, factFor, PresentationFact,
 //   syntheticMessages, digestOf, assertIndex
+//   Chain, messageDigest, rootOf, firstDivergence, startsWith, digestSide
 //   canonicalMessage, canonicalMessages, canonicalKey, CANONICAL_PART
 //   findInjection, findAllInjections, callIdParts
 //   PairHintInjector, INJECTION_MODES
@@ -18,6 +19,7 @@ export * from "./language.mjs";
 export * from "./resources.mjs";
 export * from "./presentation.mjs";
 export * from "./canonical.mjs";
+export * from "./chain.mjs";
 export * from "./injection.mjs";
 export * from "./facts.mjs";
 export * from "./pair-hint.mjs";

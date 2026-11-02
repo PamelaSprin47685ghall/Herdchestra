@@ -136,7 +136,7 @@ export const isWorkerRole = (role) => role === ROLE.CODER || role === ROLE.DEVOP
 
 // The OMP agent definition that runs a worker of this role. It reads the ROLE
 // and nothing else: a worker's NAME is not an identity (§2.1, §4.1). The role
-// itself comes from the brief's explicit declaration, which `roleOfBrief` reads
+// itself comes from the verboseIntent's explicit declaration, which `roleOfVerboseIntent` reads
 // in the composition layer; this function only maps it to a host definition.
 export const agentForRole = (role) => {
   // The planner is top-level (§2.1) and is never created by `fork`. Answering
@@ -160,19 +160,39 @@ export const stateDir = (root = projectRoot()) => path.join(root, ".Herdchestra"
 
 export const statePath = (...segments) => path.join(stateDir(), ...segments);
 
-// Plan's draft (root spec §6): the one persistent product of a planning tenure,
-// and the only file a Plan may read or write. §6 says the path is derived from
-// the task and the system names it to the model; the adapter has no task
-// metadata, so the path is derived from the SESSION — the same rule `host-cline`
-// uses (`drafts.mjs`), so one work item keeps one draft across both hosts.
+// Plan's draft (root spec §1.1 item 3): the one persistent product of a planning
+// tenure, and the only file a Plan may read or write. It lives at the WORKSPACE
+// ROOT under `plans/`, never under `.Herdchestra`: the draft is the operator's
+// visible deliverable, and `.Herdchestra` holds the adapter's private state.
 //
-// The Plan may still `write` any path it names (§6 calls the single-file reach a
-// responsibility boundary, not a runtime gate). This is the path the adapter
-// reads when a hand-off names no note, so a Plan that wrote somewhere else is
-// refused `DRAFT_MISSING` rather than silently handed an empty draft.
-export const PLAN_DRAFT_DIR = path.join(".Herdchestra", "drafts");
+// §1.1 says the path is derived from the task and the system names it to the
+// model; the adapter has no task metadata, so the path is derived from the
+// SESSION. The Plan may still `write` any path it names (§1.1 calls the
+// single-file reach a responsibility boundary, not a runtime gate), and this is
+// the path the adapter reads when a hand-off names no note, so a Plan that wrote
+// somewhere else is refused `DRAFT_MISSING` rather than silently handed an empty
+// draft.
+export const PLAN_DRAFT_DIR = "plans";
 
 export const planDraftPath = (root, name) => path.join(root, PLAN_DRAFT_DIR, `${name}.md`);
+
+// The model a worker lane must run on (root §1.1 item 6): the user's configured
+// TASK model, never the main/default model the top-level session runs on.
+//
+// Measured in `../oh-my-pi` 18.14.1: `createAgentSession` accepts
+// `modelPattern` (`sdk.ts:607`), and `config/model-resolver.ts` expands a role
+// alias such as `@task` through `settings.getModelRole("task")` (with the
+// role's built-in priority chain when it is unconfigured). The host's own task
+// agent declares exactly `model: "@task"` (`task/agents.ts:56`), so this is the
+// host's supported selector, not a guess.
+export const TASK_MODEL_PATTERN = "@task";
+
+// The model pattern one lane role is created with. The Manager is the
+// top-level director and keeps the session's main/default model; the two worker
+// roles get the task model. A host that cannot resolve `@task` leaves the lane
+// on its own default and the lane receipt reports the pattern it asked for, so
+// the fallback is visible rather than silent.
+export const laneModelPattern = (role) => (role === ROLE.MANAGER ? null : TASK_MODEL_PATTERN);
 
 // The durable record of a fission group (§4.2 step 4). One append-only journal
 // per session lineage, so a group committed before its lanes ran can be

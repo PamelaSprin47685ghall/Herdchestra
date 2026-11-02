@@ -13,8 +13,9 @@
 // Three turns, each its own session (a second prompt on a live session is not
 // reachable through this SDK): two plain, the middle one asking for
 // `js-manager`. A fourth Plan session drives the `ask` park. The tool result is
-// read from the adapter's `presented` journal and from the host's provider
-// capture, which is what the model actually received.
+// read from the host's provider capture, which is what the model actually
+// received; the adapter's `presented` journal holds the prefix chain's digests,
+// not a request copy, so it cannot answer that question.
 
 import { cp, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -382,35 +383,6 @@ const settled = (messages) => {
   return lastRole === "assistant";
 };
 
-// The text a tool result puts in front of the model, read from the adapter's
-// `presented` record: the request it projected, one line per request. The
-// host's own display messages keep the raw receipt (`{"name":…,"value":2}`),
-// so they say what the tool answered, not what the model read; §6.3 is a rule
-// about the latter, and `presented` is where the adapter writes it.
-const presentedResults = async (workspace) => {
-  const records = await readRecords(workspace);
-  const out = [];
-  for (const record of records) {
-    if (record.kind !== "presented" || !Array.isArray(record.messages)) continue;
-    for (const message of record.messages) {
-      if (!Array.isArray(message?.content)) continue;
-      for (const part of message.content) {
-        // The worker transcript is `{session}-child-{id}.jsonl`; both carry the
-        // same `presented` lines, so a name that starts with the session id is
-        // this run's.
-        if (part?.type !== "tool-result" || typeof part.toolName !== "string" || !part.toolName.startsWith("js-")) continue;
-        // The `presented` record holds the copy the adapter built, which carries
-        // the host's tagged value (`{type:"text", value}`), not the plain string
-        // the provider finally sent.
-        const raw = part.output;
-        const text = typeof raw === "string" ? raw : typeof raw?.value === "string" ? raw.value : null;
-        if (text !== null) out.push({ name: part.toolName, text });
-      }
-    }
-  }
-  return out;
-};
-
 // Waits until the newest message is the assistant's answer and every tool call
 // has its result. Polling is the only signal this SDK offers for "turn done".
 //
@@ -538,51 +510,62 @@ const main = async () => {
 
     // 3. A `js-*` tool was called, and the model read CUE.
     //
-    //    The display view says the call happened (`tool_use` with the name), but
-    //    its `tool_result` carries the raw receipt as a JSON string; the text the
-    //    model actually read is what the adapter projected, and `presented`
-    //    holds exactly that. Both are read, from their own source.
-    //    Two sources, and only one of them is what the model read. The `presented`
-    //    journal holds the copy the adapter handed to `beforeModel` (a tagged
-    //    `{type:"text", value}`), while §6.3 is about what the LLM SAW: the host's
-    //    provider capture. The capture is authoritative when it exists; without
-    //    one the text is reported unverified, never passed.
-    const presented = await presentedResults(workspace);
-    check("js tool called", presented.length > 0, presented.length === 0 ? "no js-* tool result in any request" : `${presented.length} result(s)`);
-    const presentedText = presented.at(-1)?.text;
+    //    §6.3 is about what the LLM SAW, and the host's provider capture is the
+    //    only record of that. The `presented` journal is not a substitute: it
+    //    stores the prefix chain's digests, never the request copy. The display
+    //    messages keep the raw receipt (`{"name":…,"value":2}`), not the
+    //    projected text, so they can only label what is unverified; without a
+    //    capture every check below is `unverified`, never a pass.
+    const displayJs = runs
+      .flatMap((run) => partsOf(run.messages))
+      .filter((part) => part.kind === "result" && String(part.name).startsWith("js-"))
+      .map((part) => (typeof part.content === "string" ? part.content : JSON.stringify(part.content)));
+    const displayNote =
+      displayJs.length === 0
+        ? "no js-* display receipt either"
+        : `display receipt (not the projected copy): ${JSON.stringify(String(displayJs.at(-1) ?? "").slice(0, 80))}`;
+
     const seen = await sentCueResults(capture);
     const cueNote = (text) => (isCue(text) ? undefined : `first 120 bytes: ${JSON.stringify(String(text ?? "").slice(0, 120))}`);
+    check(
+      "js tool called",
+      seen.unverified ? null : seen.length > 0,
+      seen.unverified
+        ? `unverified (no provider capture); ${displayNote}`
+        : seen.length === 0
+          ? "no js-* tool result reached a provider request"
+          : `${seen.length} result(s) in the capture`,
+    );
     if (seen.length > 0) {
       const last = seen.at(-1);
       check("tool output is CUE", isCue(last), isCue(last) ? `${seen.length} js-* result(s) in the capture` : cueNote(last));
     } else if (seen.unverified) {
-      // No capture to read: the journal copy is the adapter's intent, not proof.
-      check("tool output is CUE", null, `unverified (no provider capture): journal holds ${JSON.stringify(String(presentedText ?? "").slice(0, 80))}`);
+      check("tool output is CUE", null, `unverified (no provider capture); ${displayNote}`);
     } else {
       check("tool output is CUE", false, "no js-* tool result reached a provider request");
     }
-    const programRefusals = [
-      ...new Set([...presented.map((result) => result.text), ...seen].flatMap((text) => programRefusalsOf(text))),
-    ];
+    const programRefusals = [...new Set(seen.flatMap((text) => programRefusalsOf(text)))];
     check(
       "js tool did not refuse",
-      (presented.length > 0 || seen.length > 0) && programRefusals.length === 0,
+      seen.unverified ? null : seen.length > 0 && programRefusals.length === 0,
       programRefusals.length > 0
         ? `program refusal: ${programRefusals.join(",")}`
-        : presented.length === 0 && seen.length === 0
-          ? "no js-* tool result to read"
-          : undefined,
+        : seen.unverified
+          ? `unverified (no provider capture); ${displayNote}`
+          : seen.length === 0
+            ? "no js-* tool result reached a provider request"
+            : undefined,
     );
 
     // 3b. The provider request itself: the host's capture of what it sent.
     //
-    //     The checks above read the adapter's own record of the copy it built.
-    //     This one reads the host's capture, so "the role prompt reached the
-    //     provider" is a measurement of the request, not of the adapter's
-    //     intent. Every request AFTER a session's cold start must carry the role
-    //     rule and the Pair Hint pair; the host composes the first request of a
-    //     session before the rule runs, so that one legitimately carries
-    //     neither (HACK.md "Cline request rewrite").
+    //     The checks above read the js-* result in the capture; this one reads
+    //     the whole request, so "the role prompt reached the provider" is a
+    //     measurement of the request, not of the adapter's intent. Every request
+    //     AFTER a session's cold start must carry the role rule and the Pair
+    //     Hint pair; the host composes the first request of a session before the
+    //     rule runs, so that one legitimately carries neither (HACK.md "Cline
+    //     request rewrite").
     const captured = await capturedRequests(capture);
     const allMarked = captured.map((request) => markersOf(request));
     const sessionKeyOf = (request) => {

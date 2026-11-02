@@ -37,17 +37,18 @@ const OPTIONS_PROPERTY = Object.freeze({
 });
 
 // The scope annotation is a top-level parameter, not part of `source`: the host
-// gate reads `input.scope` before the program runs (spec §6.2). Its schema
-// names the four legal kinds, so the model reads them instead of guessing —
-// on the real host it guessed and every call was refused.
+// gate reads `input.scope` before the program runs (spec §6.2). The mechanism
+// is explained ONCE in the system prompt's Scope section; this description only
+// points there and states the required field pairs, because every tool repeats
+// its own copy and a second full explanation costs tokens on every call.
 export const SCOPE_PROPERTY = Object.freeze({
   type: "object",
   description:
-    "Scope annotation. Exactly one of: " +
-    '{"kind":"keepLast"} — this call is the one to keep; ' +
-    '{"kind":"removeLast"} — drop the previous kept item; ' +
-    '{"kind":"meToo"} — same intent as the previous call; ' +
-    '{"kind":"resetScope","newScopeGoal":"<goal>","newScopeRetentionBudget":<positive int>} — start a new scope and set its budget (required on the first call of a session).',
+    "Scope annotation; the system prompt's Scope section explains the mechanism. " +
+    "Required fields by kind: keepLast, meToo — only `kind`; " +
+    "removeLast — `kind` and a non-empty `replacement`; " +
+    "resetScope — `kind`, a non-empty `newScopeGoal` and a positive integer `newScopeRetentionBudget` " +
+    "(required on the first call of a session).",
   properties: {
     kind: { type: "string", enum: ["keepLast", "removeLast", "meToo", "resetScope"] },
     newScopeGoal: { type: "string" },
@@ -60,13 +61,6 @@ const parameters = objectSchema(
   { source: SOURCE_PROPERTY, options: OPTIONS_PROPERTY, scope: SCOPE_PROPERTY },
   ["source"],
 );
-
-// The first call of a session has no budget yet, so it must open the scope.
-export const SCOPE_HINT =
-  " Every call needs `scope`: the first call of a session must be " +
-  '{"kind":"resetScope","newScopeGoal":"...","newScopeRetentionBudget":N}; later calls use ' +
-  '{"kind":"keepLast"}, {"kind":"removeLast"} or {"kind":"meToo"}.';
-
 
 // The deadline budget is 50 ms per UTF-8 byte of the intent (core/clock.mjs).
 const intentOf = (params) => {
@@ -211,35 +205,42 @@ export const programTool = ({
 // The member list is stated in the one spelling §3.1 allows: members as
 // `this.xxx`, the top-level primitives as bare names. Saying "park, unpark,
 // fork" without the distinction is what taught the model to write `this.fork`.
-const SPELLING =
-  "Call members as this.xxx (this.cat(...), this.park(...)). Call the top-level primitives fork(name, brief), " +
-  "join() and review(findings) as bare functions; there is no this.fork, this.join or this.review.";
+//
+// `devops` is Plan's alone (root §1.1 item 3): it is a bare primitive, never a
+// member, so the Plan face's spelling says `devops(verboseIntent)` and says that
+// `this.devops` does not exist. Every other face leaves it out entirely.
+const spelling = ({ devops = false } = {}) =>
+  "Call members as this.xxx (this.cat(...), this.park(...)). Call the top-level primitives " +
+  "fork(name, verboseIntent), join(), review(findings)" +
+  (devops ? " and devops(verboseIntent)" : "") +
+  " as bare functions; there is no this.fork, this.join or this.review" +
+  (devops ? ", and no this.devops" : "") +
+  ".";
 
 export const MANAGER_DESCRIPTION =
   "Run a JavaScript program against the Manager programming face. Members: this.park, this.unpark, this.ask; " +
   "primitives: fork, join, review. There is no file access, no this.call and no this.fission. " +
-  SPELLING +
-  " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run()." +
-  SCOPE_HINT;
+  spelling() +
+  " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run().";
 
 export const WORKER_DESCRIPTION =
   "Run a JavaScript program against the worker programming face. Members: this.cat, this.stat, this.ls, " +
   "this.write, this.mkdir, this.rm, this.mv, this.where, this.whereAll, this.park, this.unpark, this.call, " +
   "this.fission; primitives: fork, join. There is no this.ask. " +
-  SPELLING +
-  " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run()." +
-  SCOPE_HINT;
+  spelling() +
+  " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run().";
 
 export const PLAN_DESCRIPTION =
   "Run a JavaScript program against the Plan programming face. Members: this.cat, this.write, this.ask, " +
-  "this.unpark, this.devops; primitive: review. " +
-  "You read and write ONE file — the draft at the path the system gives you — and nothing else in the " +
-  "repository. Use this.devops(intent) to have the single DevOps investigate the repo and return its whole " +
-  "report; use this.ask(question) to put a question to the operator (the program parks until the answer " +
-  "arrives as this.unpark(name, answer) from a later program). The draft is read-only until your first " +
-  "accepted review(this round's findings); after that " +
-  "this.write is allowed. At the final milestone, review([]) hands the saved draft to a Manager. " +
-  SPELLING +
+  "this.unpark; primitives: review and devops. " +
+  "You read and write ONE file — the draft at plans/<name>.md, the path the system gives you — and nothing " +
+  "else in the repository. Use the bare primitive devops(verboseIntent) to have the single dedicated DevOps " +
+  "investigate the repo and return its whole report; it is synchronous and reused across calls, and there is " +
+  "no this.devops. Use this.ask(question) to put a question to the operator (the program parks until the " +
+  "answer arrives as this.unpark(name, answer) from a later program). The draft is read-only until your " +
+  "first accepted review(this round's findings); after that this.write is allowed. At the final milestone, " +
+  "review([]) hands the saved draft to a Manager. " +
+  spelling({ devops: true }) +
   " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value from run()." +
   "\n" +
   "There is no fork, no join, no this.call, no glob/grep/exec, and no this.fission.";
@@ -247,7 +248,6 @@ export const PLAN_DESCRIPTION =
 export const REVIEW_DESCRIPTION =
   "Read-only evaluation face, open only until this round's first review is accepted. Members: this.cat, " +
   "this.stat, this.ls, this.where, this.whereAll. " +
-  SPELLING +
+  spelling() +
   " Write `class Js extends JsProgram { async run() { ... } }`; return a JSON value " +
-  "from run(). After the review is accepted this tool closes for the round: fork a read-only coder instead." +
-  SCOPE_HINT;
+  "from run(). After the review is accepted this tool closes for the round: fork a read-only coder instead.";

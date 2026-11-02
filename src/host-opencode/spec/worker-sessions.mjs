@@ -85,7 +85,11 @@ export class WorkerTable {
   #onCreated;
   #onRecord;
   #workers = new Map();
-  #unclaimed = [];
+  // Results waiting for a `join`, keyed by session id. A Map keeps arrival order
+  // and makes the three operations a roster replay performs (insert, replace,
+  // remove) O(1); an array with `findIndex`/`splice` made a long roster replay
+  // quadratic (root §1.1 item 1 forbids that).
+  #unclaimed = new Map();
   // Set while the roster restored from the journal has not been checked against
   // the host yet. `join` reconciles first, so a worker that finished during a
   // reload becomes claimable instead of staying "live" forever.
@@ -204,8 +208,9 @@ export class WorkerTable {
     }
     for (const entry of unclaimed) {
       if (!isSessionID(entry?.sessionID)) continue;
-      if (this.#unclaimed.some((existing) => existing.sessionID === entry.sessionID)) continue;
-      this.#unclaimed.push(
+      if (this.#unclaimed.has(entry.sessionID)) continue;
+      this.#unclaimed.set(
+        entry.sessionID,
         Object.freeze({
           name: typeof entry.name === "string" ? entry.name : null,
           role: typeof entry.role === "string" ? entry.role : null,
@@ -353,18 +358,24 @@ export class WorkerTable {
   // Start or steer. `role` is already validated by the caller.
   // `parentID` is the forking session: the child's family, and the session that
   // receives its completion (§7.1 `Session.create({ parentID })`).
-  async fork({ name, brief, role, parentID, model, title }) {
+  async fork({ name, verboseIntent, role, parentID, model, title, reuse = false }) {
     // The worker name travels in `title` (Session.create's title) and in the
     // table; it is also the receipt's name. A caller that passes only a title
     // still gets a named worker.
     const workerName = name ?? title;
     const existing = this.#workers.get(workerName);
+    // A cancelled worker is not steerable: the operator stopped the work it
+    // belonged to, and sending it a new task would resurrect it under the same
+    // name. The caller answers `CANCELLED` instead of a delivery receipt.
+    if (existing !== undefined && existing.cancelled === true) {
+      return { name: workerName, steered: false, started: false, cancelled: true };
+    }
     if (existing !== undefined && existing.state === LIVE) {
       // §7.1: a same-name live worker is STEERED, and the host's steer delivery
-      // is `"steer"`. `"queue"` is the new-fork delivery: it admits the brief
+      // is `"steer"`. `"queue"` is the new-fork delivery: it admits the task
       // only after the worker's current turn ends, so a worker that keeps
       // working never reads it while the receipt still says `steered: true`.
-      await this.#sessions.prompt({ sessionID: existing.sessionID, text: brief, delivery: "steer" });
+      await this.#sessions.prompt({ sessionID: existing.sessionID, text: verboseIntent, delivery: "steer" });
       // The steered turn is new work on a session that may still carry the
       // outcome of its previous turn (the host writes `idle_outcome` only at a
       // terminal). Forgetting it here is what keeps a later `join` from
@@ -380,6 +391,25 @@ export class WorkerTable {
       this.#record({ type: WORKER_RECORD_TYPES.STEER, name: workerName, sessionID: existing.sessionID });
       return { name: workerName, steered: true, started: false };
     }
+    // A finished worker can be REUSED under the same name. Root §1.1 item 3
+    // gives Plan ONE dedicated devops: replacing the session on every
+    // investigation would abandon its accumulated context and pay a new session
+    // each time. `queue` is the delivery for a fresh turn on an idle session;
+    // the stale outcome is withdrawn exactly as a steer withdraws it, because
+    // the host keeps the previous turn's outcome until the next terminal.
+    if (existing !== undefined && reuse === true) {
+      await this.#sessions.prompt({ sessionID: existing.sessionID, text: verboseIntent, delivery: "queue" });
+      existing.state = LIVE;
+      existing.outcome = null;
+      existing.steered = true;
+      // The result of the turn that just finished is not a result of the new
+      // investigation. Leaving it in the claim queue would make a later `join`
+      // report the previous answer as this one's.
+      this.#unclaimed.delete(existing.sessionID);
+      this.#record({ type: WORKER_RECORD_TYPES.STEER, name: workerName, sessionID: existing.sessionID });
+      this.#wake();
+      return { name: workerName, steered: false, started: false, reused: true, sessionID: existing.sessionID };
+    }
     const child = await this.#sessions.create({
       ...(parentID === undefined || parentID === null ? {} : { parentID }),
       title: title ?? workerName,
@@ -390,17 +420,17 @@ export class WorkerTable {
     if (typeof sessionID !== "string" || sessionID.length === 0) {
       throw new Error("the host returned no worker session id");
     }
-    // Registered before the brief: the prompt that follows is this adapter's own
-    // delivery, and a child's brief is never the operator's original input
+    // Registered before the task text: the prompt that follows is this adapter's
+    // own delivery, and a child's task is never the operator's original input
     // (`identity.mjs`, `original-input.mjs`).
     this.#onCreated?.(sessionID, { parentID: parentID ?? null, role, origin: "fork" });
     const worker = { name: workerName, role, sessionID, state: LIVE, outcome: null, title: title ?? workerName };
     this.#workers.set(workerName, worker);
-    // The roster reaches the disk BEFORE the brief: a reload between the two
+    // The roster reaches the disk BEFORE the task text: a reload between the two
     // steps must still know this session exists, or the worker would run with
     // nobody holding its name.
     this.#record(forkRecord(worker));
-    await this.#sessions.prompt({ sessionID, text: brief, delivery: "queue" });
+    await this.#sessions.prompt({ sessionID, text: verboseIntent, delivery: "queue" });
     // A worker that is already finished before it is registered still has to be
     // claimable: `join` waits on the roster's own arrival signal, and this is
     // that signal.
@@ -437,7 +467,7 @@ export class WorkerTable {
       // Nothing to wait for: the roster holds no worker and no result. This is
       // the honest "nothing to collect" of §4.1, not a timeout — and it is only
       // reachable because the roster above was read back from the journal.
-      if (live.length === 0 && this.#unclaimed.length === 0) return null;
+      if (live.length === 0 && this.#unclaimed.size === 0) return null;
       // Read every live worker before waiting, not only the one the host
       // answered for. A worker whose turn ended between two calls is already
       // finished, and a wait on its session would answer at once without
@@ -448,7 +478,7 @@ export class WorkerTable {
       }
       // An answer is a change only when it finished a worker; the loop claims it
       // at the top, so reading the same answer twice cannot grow the queue.
-      if (this.#unclaimed.length > 0 || live.some((worker) => worker.state !== LIVE)) continue;
+      if (this.#unclaimed.size > 0 || live.some((worker) => worker.state !== LIVE)) continue;
       const remaining = [...this.#workers.values()].filter((worker) => worker.state === LIVE);
       if (remaining.length === 0) continue;
       // Nothing polls and nothing spins. `#awaitHostOrChange` answers "changed"
@@ -488,8 +518,11 @@ export class WorkerTable {
       sessionID: worker.sessionID,
       outcome: worker.outcome,
       title: worker.title,
+      ...(worker.cancelled === true ? { cancelled: true } : {}),
     });
-    this.#unclaimed = [...this.#unclaimed.filter((existing) => existing.sessionID !== worker.sessionID), entry];
+    // `set` on an existing key keeps its arrival position, which is what the
+    // filter-then-append did with more work.
+    this.#unclaimed.set(worker.sessionID, entry);
     this.#record({
       type: WORKER_RECORD_TYPES.SETTLE,
       name: entry.name,
@@ -503,9 +536,9 @@ export class WorkerTable {
   // The oldest unclaimed result, taken out of the queue. Arrival order is the
   // order workers finished, which is what "first to come back" means.
   #claim() {
-    const [first] = this.#unclaimed;
+    const first = this.#unclaimed.values().next().value;
     if (first === undefined) return null;
-    this.#unclaimed = this.#unclaimed.slice(1);
+    this.#unclaimed.delete(first.sessionID);
     // The claim reaches the disk too: a reload after a result was handed over
     // must not offer it a second time.
     this.#record({ type: WORKER_RECORD_TYPES.CLAIM, name: first.name, sessionID: first.sessionID });
@@ -515,6 +548,7 @@ export class WorkerTable {
       sessionID: first.sessionID,
       outcome: first.outcome ?? null,
       title: first.title ?? null,
+      ...(first.cancelled === true ? { cancelled: true } : {}),
     });
   }
 
@@ -545,9 +579,35 @@ export class WorkerTable {
     return worker;
   }
 
+  // The operator stopped the work this worker belongs to (root §1.1 item 2).
+  // The worker is not disposed — its session is the host's — but it may not be
+  // steered or reused, and a `join` reports it as cancelled instead of as a
+  // worker that happened to stop.
+  markCancelled(sessionID) {
+    const worker = this.workerOfSession(sessionID);
+    if (worker === null) return null;
+    worker.cancelled = true;
+    if (worker.state === LIVE) {
+      // A cancelled worker is an arrival: a `join` already waiting must see it,
+      // and the host may never emit a terminal for a session we interrupted.
+      this.#arrive(worker, { outcome: "cancelled" });
+    } else {
+      const entry = this.#unclaimed.get(sessionID);
+      if (entry !== undefined) {
+        this.#unclaimed.set(sessionID, Object.freeze({ ...entry, cancelled: true }));
+      }
+      this.#wake();
+    }
+    return worker;
+  }
+
+  isCancelled(name) {
+    return this.#workers.get(name)?.cancelled === true;
+  }
+
   // Results that finished but were never joined, in arrival order.
   unclaimed() {
-    return [...this.#unclaimed];
+    return [...this.#unclaimed.values()];
   }
 
   // Take back results a predecessor left unclaimed (根 §2.4).
@@ -560,8 +620,9 @@ export class WorkerTable {
         refused.push({ sessionID: null, reason: "ADOPT_INCOMPLETE" });
         continue;
       }
-      if (this.#unclaimed.some((existing) => existing.sessionID === sessionID)) continue;
-      this.#unclaimed.push(
+      if (this.#unclaimed.has(sessionID)) continue;
+      this.#unclaimed.set(
+        sessionID,
         Object.freeze({
           name: typeof entry.name === "string" ? entry.name : null,
           role: typeof entry.role === "string" ? entry.role : null,
@@ -677,19 +738,22 @@ export class WorkerTable {
 export const restoreRoster = (records) => {
   const byName = new Map();
   const claimed = new Set();
-  const unclaimed = [];
+  // Keyed by session id: one entry per session, arrival order preserved, and
+  // insert/replace/remove are O(1). The array version scanned the whole queue
+  // for every record, which is quadratic on a long journal (root §1.1 item 1).
+  const unclaimed = new Map();
   const pushUnclaimed = (worker) => {
     if (claimed.has(worker.sessionID)) return;
-    const index = unclaimed.findIndex((entry) => entry.sessionID === worker.sessionID);
-    const entry = Object.freeze({
-      name: worker.name,
-      role: worker.role ?? null,
-      sessionID: worker.sessionID,
-      outcome: worker.outcome ?? null,
-      title: worker.title ?? null,
-    });
-    if (index === -1) unclaimed.push(entry);
-    else unclaimed[index] = entry;
+    unclaimed.set(
+      worker.sessionID,
+      Object.freeze({
+        name: worker.name,
+        role: worker.role ?? null,
+        sessionID: worker.sessionID,
+        outcome: worker.outcome ?? null,
+        title: worker.title ?? null,
+      }),
+    );
   };
   for (const record of Array.isArray(records) ? records : []) {
     const type = record?.type;
@@ -716,8 +780,7 @@ export const restoreRoster = (records) => {
       // answer (measured: a reload between a steer and its join did exactly
       // that).
       worker.steered = true;
-      const index = unclaimed.findIndex((entry) => entry.sessionID === worker.sessionID);
-      if (index !== -1) unclaimed.splice(index, 1);
+      unclaimed.delete(worker.sessionID);
       continue;
     }
     if (type === WORKER_RECORD_TYPES.SETTLE) {
@@ -731,8 +794,7 @@ export const restoreRoster = (records) => {
     }
     if (type === WORKER_RECORD_TYPES.CLAIM) {
       if (isSessionID(record.sessionID)) claimed.add(record.sessionID);
-      const index = unclaimed.findIndex((entry) => entry.sessionID === record.sessionID);
-      if (index !== -1) unclaimed.splice(index, 1);
+      unclaimed.delete(record.sessionID);
       continue;
     }
     if (type === WORKER_RECORD_TYPES.RELEASE) {
@@ -743,7 +805,7 @@ export const restoreRoster = (records) => {
     }
   }
   const entries = [...byName.values()];
-  return { entries, unclaimed: unclaimed.filter((entry) => !claimed.has(entry.sessionID)) };
+  return { entries, unclaimed: [...unclaimed.values()].filter((entry) => !claimed.has(entry.sessionID)) };
 };
 
 // Whether a journal record belongs to the worker roster.

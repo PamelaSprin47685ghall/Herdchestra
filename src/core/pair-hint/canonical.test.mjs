@@ -28,6 +28,7 @@ import fc from "fast-check";
 
 import { PairHint, MemoryJournal } from "./pair-hint.mjs";
 import { JournalStore } from "./facts.mjs";
+import { Chain } from "./chain.mjs";
 import { findAllInjections, findInjection } from "./presentation.mjs";
 import { canonicalKey, canonicalMessage } from "./canonical.mjs";
 import { PAIR_HINT_CODES, isPairHintError } from "./errors.mjs";
@@ -630,7 +631,7 @@ test("re-base: the journal names the projection that replaced the chain, and a c
 // The live failure this models (2026-11-01, session `01a19547`): OMP fires its
 // `<title-request>` side turn through the same `context` hook 4 ms before the
 // main turn's tool calls finish. The side copy extended the pair-free prefix,
-// the chain accepted it, `#presented` became the side turn, and the main turn's
+// the chain accepted it, the chain state became the side turn, and the main turn's
 // very next request differed at index 1 — every request of the session refused.
 //
 // The property is stated as three facts about ANY ephemeral copy a host can
@@ -667,7 +668,7 @@ test("ephemeral: a side turn gets the pair, records nothing and never moves the 
         await hint.bind({ sessionId: "eph", ladder: { explicit: "English" } });
         const semantics = buildSemantics(turns);
         const main = await hint.project({ messages: copyOf(semantics, 0, {}) });
-        const before = { presented: hint.presented, after: hint.fact.after, epoch: hint.epoch };
+        const before = { chain: hint.chain, after: hint.fact.after, epoch: hint.epoch };
 
         const side = await hint.project({
           messages: ephemeralCopy(semantics, { streamedText, prompt }),
@@ -677,7 +678,7 @@ test("ephemeral: a side turn gets the pair, records nothing and never moves the 
         assert.equal(findAllInjections(side.messages).length, 1, "the side turn still carries the pair");
         assert.equal(side.text, main.text, "the side turn shows the epoch's frozen bytes");
         // And the chain is exactly where it was.
-        assert.equal(hint.presented, before.presented, "the side turn did not become the chain");
+        assert.equal(hint.chain, before.chain, "the side turn did not become the chain");
         assert.equal(hint.fact.after, before.after, "the placement did not move");
         assert.equal(hint.epoch, before.epoch, "the side turn opened no epoch");
         // The next main request is still measured against the last real one.
@@ -748,9 +749,8 @@ test("ephemeral: a branch may drop a TAIL (a per-call compaction), and the pair 
   assert.equal(findAllInjections(side.messages).length, 1, "the truncated branch still carries the pair");
   assert.equal(side.fact.after, head.length, "the pair sits at the branch's own end");
   assert.equal(hint.fact.after, after, "the chain's placement did not move");
-  assert.deepEqual(
-    hint.injector.withoutInjection(hint.presented),
-    whole,
+  assert.ok(
+    hint.chain.withoutPair().equals(Chain.fromMessages(whole)),
     "the chain still holds the conversation, not the branch",
   );
 
@@ -766,5 +766,5 @@ test("ephemeral: an unknown request kind is refused before anything moves", asyn
     hint.project({ messages: [], kind: "sideways" }),
     (error) => error.code === PAIR_HINT_CODES.INVALID_ARGUMENT,
   );
-  assert.equal(hint.presented, null, "a bad kind recorded nothing");
+  assert.equal(hint.chain, null, "a bad kind recorded nothing");
 });

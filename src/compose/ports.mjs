@@ -10,8 +10,9 @@ import { refuse } from "./errors.mjs";
 // Every port function is named here so a surface can be checked at build time.
 export const PORT_METHODS = Object.freeze({
   // Worker control (spec §4.1). Both return receipts; neither waits for work.
-  // `fork(name, brief, role)`: compose resolves the role from the brief's
-  // explicit declaration and passes it along, so no host re-derives it.
+  // `fork(name, verboseIntent, role)`: compose resolves the role from the
+  // verboseIntent's explicit declaration and passes it along, so no host
+  // re-derives it.
   fork: ["fork"],
   join: ["join"],
   // User channel (spec §3.1, §3.3 example 7): the question parks the program;
@@ -29,7 +30,9 @@ export const PORT_METHODS = Object.freeze({
   // session from draft bytes; `askOperator(question)` asks for the first
   // incumbent.
   relay: ["handOver", "startManager", "askOperator"],
-  // Plan-only: one synchronous devops investigation (spec §6).
+  // Plan-only: one synchronous devops investigation (spec §6). The member is a
+  // top-level primitive `devops(verboseIntent)`; `investigate` receives the
+  // verboseIntent and answers the one dedicated report.
   devops: ["investigate"],
   // The saved draft of a Plan (spec §6). `read()` returns its bytes or "" when
   // it is missing; the review ledger refuses an empty draft before a Manager

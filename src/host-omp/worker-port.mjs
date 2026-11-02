@@ -12,13 +12,13 @@
 // `agent_start`), never when the turn ends: that is the fire-and-forget half.
 // `join` waits for the first lane of the caller's roster to leave a report.
 //
-// Steer. `fork` under a live worker's name delivers the brief to that worker's
-// own session (`session.steer` while it streams, `session.prompt` when idle),
-// and the receipt says `steered: true` only when that delivery returned.
+// Steer. `fork` under a live worker's name delivers the verbose intent to that
+// worker's own session (`session.steer` while it streams, `session.prompt` when
+// idle), and the receipt says `steered: true` only when that delivery returned.
 
 import { objectSchema, STRING, guard, present, textResult, receiptResult } from "./tool-schema.mjs";
 import { forkRequest } from "../compose/program/role-brief.mjs";
-import { SCOPE_PROPERTY, SCOPE_HINT } from "./program-tools.mjs";
+import { SCOPE_PROPERTY } from "./program-tools.mjs";
 import { CAPABILITY } from "./host-binding.mjs";
 
 export class TaskPort {
@@ -75,14 +75,15 @@ export class TaskPort {
     return out;
   }
 
-  // `fork(name, brief, role)`. Returns `{ name, steered, started }`. A steer that
-  // did not reach a live worker, and a spawn that failed, are both reported with
-  // a reason; the receipt never claims a delivery that did not happen.
+  // `fork(name, verboseIntent, role)`. Returns `{ name, steered, started }`. A
+  // steer that did not reach a live worker, and a spawn that failed, are both
+  // reported with a reason; the receipt never claims a delivery that did not
+  // happen.
   //
-  // The third argument is compose's resolved role, read from the brief's own
+  // The third argument is compose's resolved role, read from the intent's own
   // declaration (§2.1, §4.1). This port never derives it from the worker's name:
-  // a worker called `devops` with a coder brief is a coder.
-  async fork(name, brief, role) {
+  // a worker called `devops` with a coder intent is a coder.
+  async fork(name, verboseIntent, role) {
     // A session that has not bound yet has no roster. That is a fact about this
     // call, not a refusal to make up a worker: the answer names it.
     if (this.#lanes === null || this.#lanes === undefined) {
@@ -91,23 +92,29 @@ export class TaskPort {
     if (typeof name !== "string" || name.length === 0) {
       return { name, steered: false, started: false, reason: "INVALID_NAME" };
     }
-    if (typeof brief !== "string" || brief.trim().length === 0) {
-      return { name, steered: false, started: false, reason: "INVALID_BRIEF" };
+    if (typeof verboseIntent !== "string" || verboseIntent.trim().length === 0) {
+      return { name, steered: false, started: false, reason: "INVALID_VERBOSE_INTENT" };
     }
-    // The identity comes from the brief's declaration, never from the name and
+    // The identity comes from the intent's declaration, never from the name and
     // never from a default (§2.1, §4.1). A caller that did not resolve one — a
     // bare port used without compose — gets the same refusal compose would give.
     if (role !== "coder" && role !== "devops") {
       try {
-        role = forkRequest(name, brief).role;
+        role = forkRequest(name, verboseIntent).role;
       } catch (error) {
         return { name, steered: false, started: false, reason: error.details?.reason ?? "UNDECLARED_ROLE" };
       }
     }
-    // A live worker of the same name is steered, not duplicated: the brief goes
+    // A cancelled subtree accepts no new work (§1.1 item 2): the operator
+    // stopped this branch, and a `fork` that started a child now would be the
+    // background token burn the cancellation exists to prevent.
+    if (this.#lanes.cancelled !== null && this.#lanes.cancelled !== undefined) {
+      return { name, steered: false, started: false, reason: "SESSION_CANCELLED" };
+    }
+    // A live worker of the same name is steered, not duplicated: the intent goes
     // into its own session through `write agent://<id>`.
     if (this.#lanes.live(name) !== null) {
-      const steered = await this.#lanes.steer(name, brief);
+      const steered = await this.#lanes.steer(name, verboseIntent);
       return steered
         ? { name, steered: true, started: false }
         : { name, steered: false, started: false, reason: CAPABILITY.STEER_UNDELIVERED };
@@ -116,7 +123,7 @@ export class TaskPort {
     const started = await this.#lanes.start({
       name,
       role: this.#agentFor(role),
-      brief,
+      verboseIntent,
       ...(typeof depth === "number" ? { depth } : {}),
     });
     if (started.ok === true) {
@@ -194,6 +201,10 @@ export class TaskPort {
       // A detached roster owes nothing to THIS call: its lanes no longer hear
       // the turn ends that now reach the table which replaced it.
       if (this.#lanes.detached === true) return this.#disposedRefusal();
+      // A cancelled subtree (root §1.1 item 2) never ends another turn. Every
+      // result it already produced was claimed above, so the honest answer now
+      // names the cancellation instead of waiting for work the operator stopped.
+      if (this.#lanes.cancelled !== null && this.#lanes.cancelled !== undefined) return this.#cancelledRefusal();
       // Nothing claimable, and nothing owed: the honest "nothing to collect".
       // The refusal says what the roster holds, so an empty `roster` (a fork in
       // another table) is distinguishable from a listed name (already
@@ -237,6 +248,20 @@ export class TaskPort {
     };
   }
 
+  // What a `join` on a cancelled subtree is told. Its unclaimed results were
+  // handed over first (the loop claims before it reads this), so nothing the
+  // workers really produced is lost; what remains is the fact that the operator
+  // stopped this branch and no further turn will arrive.
+  #cancelledRefusal() {
+    const names = typeof this.#lanes.names === "function" ? this.#lanes.names() : [];
+    return {
+      ok: false,
+      reason: "SESSION_CANCELLED",
+      detail: "the operator interrupted this session; its descendant workers were aborted and no further turn will arrive",
+      roster: names,
+    };
+  }
+
 }
 
 // `port` is `(ctx) => TaskPort`: the port belongs to the session the call runs
@@ -248,14 +273,14 @@ export const forkTool = ({ port }) => ({
   label: "Fork Worker",
   description:
     "Start a worker and return at once, or steer a live worker of the same name. " +
-    "Two arguments: name and brief. The brief must declare the identity once, as `role: coder` " +
-    "or `role: devops`; a brief that names neither, or both, is refused. " +
-    "Receipt: { name, steered, started }. steered:true means the brief reached the existing worker; " +
-    "steered:false with started:true means a new worker started." +
-    SCOPE_HINT,
+    "Two arguments: name and verboseIntent. The verboseIntent must declare the identity once, as `role: coder` " +
+    "or `role: devops`; an intent that names neither, or both, is refused. " +
+    "Receipt: { name, steered, started }. steered:true means the verboseIntent reached the existing worker; " +
+    "steered:false with started:true means a new worker started.",
   // No `role` parameter: §4.1 gives `fork` two arguments, and the identity is
-  // read from the brief. `role` in params is accepted from compose's port only.
-  parameters: objectSchema({ name: STRING, brief: STRING, scope: SCOPE_PROPERTY }),
+  // read from the verboseIntent. `role` in params is accepted from compose's
+  // port only.
+  parameters: objectSchema({ name: STRING, verboseIntent: STRING, scope: SCOPE_PROPERTY }),
   async execute(_id, params, _signal, _onUpdate, ctx) {
     return await guard(async () => {
       const worker = typeof port === "function" ? port(ctx) : port;
@@ -263,7 +288,7 @@ export const forkTool = ({ port }) => ({
         const refused = { name: params.name, steered: false, started: false, reason: "NO_SESSION" };
         return textResult(present(refused), refused);
       }
-      const receipt = await worker.fork(params.name, params.brief, params.role);
+      const receipt = await worker.fork(params.name, params.verboseIntent, params.role);
       return textResult(present(receipt), receipt);
     });
   },
@@ -272,7 +297,7 @@ export const forkTool = ({ port }) => ({
 export const joinTool = ({ port }) => ({
   name: "join",
   label: "Join One Worker",
-  description: "Wait for the first worker to finish its turn and return its report. Takes no argument besides `scope`." + SCOPE_HINT,
+  description: "Wait for the first worker to finish its turn and return its report. Takes no argument besides `scope`.",
   parameters: objectSchema({ scope: SCOPE_PROPERTY }),
   async execute(_id, _params, _signal, _onUpdate, ctx) {
     return await guard(async () => {
@@ -297,11 +322,16 @@ export const joinTool = ({ port }) => ({
 // answer is synchronous and comes from the newest committed facts; while a call
 // is still settling it is the refusal `SCOPE_SNAPSHOT_BUSY`, which the model
 // reads as "ask again", never as a budget.
+//
+// Their schema has NO `scope` property on purpose: an exempt tool neither needs
+// the annotation nor spends the budget, and offering the field would teach the
+// model to annotate a call the book never books. The description says so in one
+// line.
 const scopeSnapshotTool = ({ member, label, description, port }) => ({
   name: member,
   label,
-  description: description + SCOPE_HINT,
-  parameters: objectSchema({ scope: SCOPE_PROPERTY }),
+  description: description + " Exempt: no `scope` annotation is needed or accepted.",
+  parameters: objectSchema({}),
   async execute(_id, _params, _signal, _onUpdate, ctx) {
     return await guard(async () => {
       const ask = typeof port === "function" ? port(ctx) : port;

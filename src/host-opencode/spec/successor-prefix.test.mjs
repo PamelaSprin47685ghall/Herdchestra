@@ -25,6 +25,7 @@ import path from "node:path";
 import { applyContextHook, opensPrefixChain } from "./context-hook.mjs";
 import { openPairHint } from "./pair-hint-request.mjs";
 import { toHintMessages } from "./message-adapter.mjs";
+import { messageDigest } from "../../core/pair-hint/chain.mjs";
 import { SessionState } from "./session-state.mjs";
 import { RELAY_GATE, RELAY_PHASES, relayFile, relayRecord, writeRelay } from "./relay-record.mjs";
 import { tempRoot as tempRootDir } from "./test-temp.mjs";
@@ -73,6 +74,11 @@ const seedRelay = (root, { incumbent, successor }) => {
   });
   const written = writeRelay(relayFile(root, incumbent), record);
   assert.equal(written.ok, true);
+  // The successor reads its own copy, not a directory scan (root §1.1 item 1).
+  // The real hand-over writes both; a test that wrote only the incumbent's file
+  // would describe a successor that never learned it inherited a relay.
+  const pointer = writeRelay(relayFile(root, successor), record);
+  assert.equal(pointer.ok, true);
   return record;
 };
 
@@ -98,11 +104,16 @@ test("a successor's first request starts a new chain instead of drifting", async
   const applied = await applyContextHook(first, { state, hint });
   assert.equal(applied.hint, "placed", "the first request places the pair");
 
-  // What the provider received, in the hint's own vocabulary.
-  const sent = hint.presented;
-  assert.ok(Array.isArray(sent), "the chain has an anchor");
-  assert.equal(sent[0].role, "user");
-  assert.match(String(sent[0].content?.[0]?.text ?? ""), /previous tenure/);
+  // What the provider received, in the hint's own vocabulary. The chain keeps
+  // digests, not the copy (root §1.1 item 1): the barrier's single opening
+  // message is the pair-free chain, and its digest names the notice plus the
+  // operator's request.
+  const sent = hint.chain;
+  assert.ok(sent !== null, "the chain has an anchor");
+  const opening =
+    "You continue work a previous tenure started.\n\n# 操作员的原始请求\n\nship the parser fix";
+  const expected = messageDigest(toHintMessages([{ role: "user", content: text(opening) }])[0]);
+  assert.deepEqual(sent.pairFreeDigests(), [expected]);
 });
 
 test("the next request of the same tenure extends the successor's chain", async () => {
@@ -114,18 +125,18 @@ test("the next request of the same tenure extends the successor's chain", async 
 
   const first = request(successor, successorRequest());
   await applyContextHook(first, { state, hint });
-  const afterFirst = hint.presented;
+  const afterFirst = hint.chain;
 
   // The host rebuilds its own history and adds the turn's messages; the barrier
   // cuts the same prefix again, so the second request must start with the first.
   const second = request(successor, successorRequest([{ role: "assistant", content: text("answer") }]));
   const applied = await applyContextHook(second, { state, hint });
   assert.equal(applied.hint, "placed");
-  const afterSecond = hint.presented;
+  const afterSecond = hint.chain;
   assert.ok(afterSecond.length >= afterFirst.length);
   assert.deepEqual(
-    afterSecond.slice(0, afterFirst.length),
-    afterFirst,
+    afterSecond.pairFreeDigests().slice(0, afterFirst.pairFreeDigests().length),
+    afterFirst.pairFreeDigests(),
     "the second request begins with every message of the first",
   );
 
@@ -139,7 +150,10 @@ test("the next request of the same tenure extends the successor's chain", async 
     ]),
   );
   await applyContextHook(third, { state, hint });
-  assert.deepEqual(hint.presented.slice(0, afterSecond.length), afterSecond);
+  assert.deepEqual(
+    hint.chain.pairFreeDigests().slice(0, afterSecond.pairFreeDigests().length),
+    afterSecond.pairFreeDigests(),
+  );
 });
 
 test("the anchor opens once per relay record", async () => {

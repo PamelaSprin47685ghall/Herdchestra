@@ -258,6 +258,7 @@ export const makeProgramExecutor =
     const call = startProgram({
       code: input.code,
       members: built.members,
+      primitives: built.primitives,
       program,
       parks: state.calls.parks,
     });

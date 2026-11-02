@@ -14,7 +14,7 @@
 // replayed into a table that starts after a reload:
 //
 //   worker-fork      a worker was registered for this session
-//   worker-steer     the brief went to a live worker of the same name
+//   worker-steer     the verbose intent went to a live worker of the same name
 //   worker-settle    the worker's turn ended (finished, or failed)
 //   worker-claim     a `join` handed the result to the caller
 //   worker-release   a finished worker started a new turn under the same name
@@ -56,6 +56,13 @@ const RECORD_TYPES = Object.freeze(Object.values(WORKER_RECORD_TYPES));
 const RECORD_VERSION = 1;
 const RUNNING = "running";
 const FINISHED = "finished";
+
+// When a claim strips a claimed answer from the journal. A small journal is
+// rewritten at every claim (the rewrite is bounded by these records, so the
+// total stays linear); a large one only when the stale text is worth the
+// rewrite, which keeps the cost amortized instead of one full rewrite per join.
+const COMPACT_ALWAYS_RECORDS = 64;
+const COMPACT_MIN_BYTES = 64 * 1024;
 
 const isName = (value) => typeof value === "string" && value.length > 0;
 
@@ -116,14 +123,20 @@ export const replayRoster = (records) => {
   const entries = new Map();
   // The names whose result a claim took, in the order the claims were replayed.
   const claimed = [];
-  const order = [];
+  // Unclaimed results, keyed by worker name. A name's turns are a queue: a
+  // later settle queues BEHIND an earlier one nobody claimed (results are per
+  // TURN and are never withdrawn). A claim shifts that name's queue, so replay
+  // never scans or splices the whole roster — the O(n) `findIndex`/`splice`
+  // pair this replaces ran once per claim and made a long journal quadratic.
+  const queues = new Map();
+  let seq = 0;
   // One turn's result, queued in settle order. Results are per TURN: a later
   // settle of the same name queues BEHIND an earlier one that nobody claimed,
   // it never replaces it (a finished turn's report is work the Manager has not
   // seen, and §4.1 hands over whoever came back).
   const pushResult = (entry) => {
-    order.push(
-      workerResult({
+    const result = {
+      ...workerResult({
         name: entry.name,
         agentId: entry.agentId,
         role: entry.role,
@@ -132,7 +145,13 @@ export const replayRoster = (records) => {
         error: entry.error,
         restored: true,
       }),
-    );
+      // The global settle order, kept beside the frozen result and stripped
+      // before it is handed to a caller.
+      seq: (seq += 1),
+    };
+    const queue = queues.get(entry.name);
+    if (queue === undefined) queues.set(entry.name, [result]);
+    else queue.push(result);
   };
   for (const record of Array.isArray(records) ? records : []) {
     if (!isWorkerRecord(record)) continue;
@@ -190,9 +209,10 @@ export const replayRoster = (records) => {
       // It is ignored only when no result of that name is queued: then it took
       // nothing, and there is nothing to remove.
       if (entry === null) continue;
-      const index = order.findIndex((result) => result.name === name);
-      if (index === -1) continue;
-      order.splice(index, 1);
+      const queue = queues.get(name);
+      if (queue === undefined || queue.length === 0) continue;
+      queue.shift();
+      if (queue.length === 0) queues.delete(name);
       claimed.push(name);
       continue;
     }
@@ -200,14 +220,18 @@ export const replayRoster = (records) => {
       // The name now points at a session that has its own fork record; dropping
       // the old entry keeps a stale worker from answering for the name.
       if (entry !== null) entries.delete(name);
-      const index = order.findIndex((result) => result.name === name);
-      if (index !== -1) order.splice(index, 1);
+      queues.delete(name);
     }
   }
+  // Every queued turn nobody claimed, in the order the turns ended. The sort is
+  // once per replay, not per claim.
+  const unclaimed = [...queues.values()]
+    .flat()
+    .sort((left, right) => left.seq - right.seq)
+    .map(({ seq: _seq, ...result }) => result);
   return {
     entries: [...entries.values()],
-    // Every queued turn nobody claimed, in the order the turns ended.
-    unclaimed: order,
+    unclaimed,
     // A claim is one result, not a fact about the name: the list is kept for
     // callers that read it, but a rebuild no longer suppresses a name's later
     // turns from it.
@@ -228,6 +252,15 @@ export class WorkerRoster {
   #write;
   #restored;
   #lastWriteFailure = null;
+  // The SETTLE records whose answer text is still unclaimed, per worker name.
+  // A claim shifts that name's queue and STRIPS the text from the record, so
+  // the journal stops carrying an answer the caller already received.
+  #settleQueues = new Map();
+  // Bytes of answer text that a claim has made stale in the file. The journal
+  // is compacted when this debt is worth a rewrite, so the cost is amortized:
+  // a small journal compacts on every claim (bounded by `COMPACT_ALWAYS_BYTES`),
+  // and a large one only when the stale text dominates.
+  #staleBytes = 0;
 
   // `file` is the journal path; `write` performs one append. A roster built
   // without a `file` (a test, or a session with no state directory) is the
@@ -242,6 +275,7 @@ export class WorkerRoster {
           ? null
           : (entry) => appendDurable(this.#file, { v: RECORD_VERSION, ...entry });
     this.#restored = this.#read();
+    this.#indexSettles();
   }
 
   get file() {
@@ -271,27 +305,137 @@ export class WorkerRoster {
     return replayRoster(this.#restored);
   }
 
+  // Rebuild the per-name queues of SETTLE records that still carry answer text.
+  // Only a record with a non-empty `text` is worth stripping.
+  #indexSettles() {
+    this.#settleQueues = new Map();
+    this.#staleBytes = 0;
+    for (const record of this.#restored) {
+      if (record.type !== WORKER_RECORD_TYPES.SETTLE) continue;
+      if (typeof record.text !== "string" || record.text.length === 0) continue;
+      const queue = this.#settleQueues.get(record.name);
+      if (queue === undefined) this.#settleQueues.set(record.name, [record]);
+      else queue.push(record);
+    }
+  }
+
+  // The journal with every claimed answer removed. A record is copied only when
+  // it changes; the rest are shared, so a compaction is one pass and one
+  // atomic replace.
+  #compacted() {
+    const stripped = new Set();
+    for (const queue of this.#settleQueues.values()) {
+      for (const record of queue) stripped.add(record);
+    }
+    // A SETTLE record still queued keeps its text; every other SETTLE text was
+    // claimed (or released) and is dropped.
+    return this.#restored.map((record) =>
+      record.type === WORKER_RECORD_TYPES.SETTLE && typeof record.text === "string" && !stripped.has(record)
+        ? { ...record, text: null }
+        : record,
+    );
+  }
+
+  // Rewrite the journal atomically with claimed answers removed.
+  //
+  // A roster without a file (a test, a session with no state directory) keeps
+  // its records in memory and needs no rewrite: the next `restored` replay
+  // already leaves a claimed result out.
+  #compact() {
+    if (this.#file === null || this.#write === null) {
+      this.#restored = this.#compacted();
+      this.#staleBytes = 0;
+      return true;
+    }
+    const records = this.#compacted();
+    const temp = `${this.#file}.${process.pid}.tmp`;
+    try {
+      fs.mkdirSync(path.dirname(this.#file), { recursive: true });
+      const fd = fs.openSync(temp, "w", 0o644);
+      try {
+        for (const record of records) {
+          fs.writeFileSync(fd, `${JSON.stringify({ v: RECORD_VERSION, ...record })}\n`, "utf8");
+        }
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      fs.renameSync(temp, this.#file);
+      this.#restored = records;
+      this.#staleBytes = 0;
+      return true;
+    } catch (error) {
+      try {
+        fs.rmSync(temp, { force: true });
+      } catch {}
+      this.#lastWriteFailure = {
+        code: typeof error?.code === "string" ? error.code : "EIO",
+        detail: String(error?.message ?? error),
+        entry: { type: "worker-compact" },
+      };
+      return false;
+    }
+  }
+
+  // A claim took the oldest unclaimed result of `name`. Strip that answer from
+  // the journal when the compaction is cheap; otherwise remember the debt and
+  // compact once it is worth a rewrite. Either way the replay immediately
+  // stops offering the text: the CLAIM record already removes the result.
+  #claimed(name) {
+    const queue = this.#settleQueues.get(name);
+    if (queue === undefined || queue.length === 0) return;
+    const record = queue.shift();
+    if (queue.length === 0) this.#settleQueues.delete(name);
+    const bytes = typeof record.text === "string" ? Buffer.byteLength(record.text, "utf8") : 0;
+    this.#staleBytes += bytes;
+    const small = this.#restored.length <= COMPACT_ALWAYS_RECORDS;
+    const worthIt = this.#staleBytes >= COMPACT_MIN_BYTES;
+    if (small || worthIt) this.#compact();
+  }
+
   // Append one record. A failed append is remembered, never thrown: a worker
   // that started must not be torn down because a disk write failed, and the
   // failure is reported by the caller that reads `lastWriteFailure`.
   record(entry) {
     if (!isWorkerRecord(entry)) return false;
-    if (this.#write === null) {
-      this.#restored.push(entry);
-      return true;
+    // The append goes FIRST, before any compaction: a compaction rebuilds the
+    // journal from the in-memory records, so a claim that is compacted before
+    // its own record landed would strip the answer while leaving no claim on
+    // disk — and the next reload would hand the same result over twice. A write
+    // failure is reported, not thrown.
+    let written = true;
+    if (this.#write !== null) {
+      try {
+        this.#write(entry);
+        this.#lastWriteFailure = null;
+      } catch (error) {
+        written = false;
+        this.#lastWriteFailure = {
+          code: typeof error?.code === "string" ? error.code : "EIO",
+          detail: String(error?.message ?? error),
+          entry,
+        };
+      }
     }
-    try {
-      this.#write(entry);
-      this.#restored.push(entry);
-      this.#lastWriteFailure = null;
-      return true;
-    } catch (error) {
-      this.#lastWriteFailure = {
-        code: typeof error?.code === "string" ? error.code : "EIO",
-        detail: String(error?.message ?? error),
-        entry,
-      };
-      return false;
+    const appended = { ...entry };
+    this.#restored.push(appended);
+    if (appended.type === WORKER_RECORD_TYPES.SETTLE && typeof appended.text === "string" && appended.text.length > 0) {
+      const queue = this.#settleQueues.get(appended.name);
+      if (queue === undefined) this.#settleQueues.set(appended.name, [appended]);
+      else queue.push(appended);
     }
+    if (appended.type === WORKER_RECORD_TYPES.RELEASE) {
+      // A release drops that name's unclaimed results, so their text is no
+      // longer owed and becomes compaction debt.
+      const queue = this.#settleQueues.get(appended.name);
+      if (queue !== undefined) {
+        for (const record of queue) {
+          this.#staleBytes += typeof record.text === "string" ? Buffer.byteLength(record.text, "utf8") : 0;
+        }
+        this.#settleQueues.delete(appended.name);
+      }
+    }
+    if (appended.type === WORKER_RECORD_TYPES.CLAIM) this.#claimed(appended.name);
+    return written;
   }
 }

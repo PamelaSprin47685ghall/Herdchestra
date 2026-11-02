@@ -43,6 +43,7 @@
 // `NO_SESSION_FACTORY` and starts no lane.
 
 import { WORKER_RECORD_TYPES, workerResult } from "./worker-roster.mjs";
+import { laneModelPattern } from "./host-facts.mjs";
 
 // The SDK entry the host injects. `api.pi` is the whole coding-agent module, so
 // the factory is read from it rather than assumed.
@@ -170,7 +171,7 @@ export const workerSdk = (parentPi, lanes) => {
         ...options,
         name: options.name ?? options.agentId ?? null,
         role: options.role ?? options.agentName ?? null,
-        brief: options.brief ?? "",
+        verboseIntent: options.verboseIntent ?? "",
       });
       return started.ok === true ? { session: started.lane.session } : undefined;
     },
@@ -186,7 +187,7 @@ export const HANDSHAKE = "herdchestraHandshake";
 
 // The parameters of one worker start. A lane is created through the SDK, so
 // there is no `task` payload; kept for readers and tests.
-export const laneStart = ({ name, brief, agent }) => ({ name, brief, agent });
+export const laneStart = ({ name, verboseIntent, agent }) => ({ name, verboseIntent, agent });
 
 
 // Wire a worker session's extension runtime exactly as the host wires its own
@@ -429,6 +430,15 @@ export class Lane {
   // number lets the roster tell "already settled" from "settled before the
   // tail was armed".
   #turnSeq = 0;
+  // The model this lane was created with, and where the pattern came from.
+  // Reported in the lane's own record so a caller can see whether the user's
+  // task model was really requested (root §1.1 item 6).
+  #modelPattern;
+  #modelSource;
+  // The cancellation this lane received, or null. A cancelled lane produces no
+  // further turn, and its `ended` promise is settled with the cancellation even
+  // when the host never reports an end for the aborted turn.
+  #cancelled = null;
   // The end promise a roster has already armed a settle tail for. It is the
   // TURN's identity: `start` replaces `ended`, so a new turn is a new watch.
   watchedTurn = null;
@@ -442,12 +452,14 @@ export class Lane {
   // the live lane, and replaying them here would count one turn end twice. So
   // an adopted lane starts listening at that event and ignores everything the
   // session emitted before it.
-  constructor({ name, role, session, agentId, clock, release = null, observeFrom = null }) {
+  constructor({ name, role, session, agentId, clock, release = null, observeFrom = null, modelPattern = null, modelSource = null }) {
     this.#name = name;
     this.#role = role;
     this.#session = session;
     this.#release = typeof release === "function" ? release : null;
     this.#agentId = agentId;
+    this.#modelPattern = typeof modelPattern === "string" && modelPattern.length > 0 ? modelPattern : null;
+    this.#modelSource = typeof modelSource === "string" && modelSource.length > 0 ? modelSource : null;
     this.#text = "";
     this.#settled = false;
     this.#startedAt = clock();
@@ -510,6 +522,19 @@ export class Lane {
     return this.#turnError ?? null;
   }
 
+  // The cancellation this lane received, or null.
+  get cancelled() {
+    return this.#cancelled;
+  }
+
+  get modelPattern() {
+    return this.#modelPattern;
+  }
+
+  get modelSource() {
+    return this.#modelSource;
+  }
+
   // The assistant text of the turn, as it stands. A finished lane's report and
   // the roster's own record both read it here, so the two cannot disagree.
   get text() {
@@ -570,11 +595,12 @@ export class Lane {
   }
 
   // Start a turn WITHOUT waiting for it.
-  start(brief) {
+  start(verboseIntent) {
+    if (this.#cancelled !== null) return this;
     this.#turnError = null;
     this.#turnSeq += 1;
     // A lane whose turn already ended can start another one (§4.1: a finished
-    // worker's next brief continues in the same session). The END is a fact of
+    // worker's next intent continues in the same session). The END is a fact of
     // the TURN, not of the lane, so each start gets its own promise: reusing
     // the settled one made the next `settleTail` observe an end that had
     // already happened and record the old answer as the new turn's result.
@@ -588,7 +614,7 @@ export class Lane {
     this.#submitted = new Promise((resolve) => {
       this.#settleSubmitted = resolve;
     });
-    const turn = this.#session.prompt(brief);
+    const turn = this.#session.prompt(verboseIntent);
     this.#turn = Promise.resolve(turn)
       .then((value) => {
         this.#settleSubmitted({ ok: true });
@@ -603,7 +629,7 @@ export class Lane {
     return this;
   }
 
-  async steer(brief) {
+  async steer(verboseIntent) {
     // The branch is the LANE's own turn, never the host's `isStreaming`.
     //
     // The host flag is true for the whole in-flight bracket of a prompt, which
@@ -613,19 +639,56 @@ export class Lane {
     // otherwise: after `start()` and before the host accepts the prompt, and
     // after the turn ended but before the bracket closed.
     //
-    //   - unsettled turn: the brief joins the turn already running. A second
+    //   - unsettled turn: the intent joins the turn already running. A second
     //     `start()` here would replace `#ended` and send a second prompt whose
     //     own `agent_end` may never come (a prompt accepted while the agent is
     //     busy is queued, and the queue's turn end is the one the first tail
     //     already watches), leaving the lane unsettled forever;
-    //   - settled turn: the brief starts the NEXT turn in the same session
+    //   - settled turn: the intent starts the NEXT turn in the same session
     //     (§4.1), even while the host still reports streaming — `start()` is
     //     what gives that turn its own end promise and its own terminal event.
+    if (this.#cancelled !== null) return false;
     if (!this.#settled) {
-      await this.#session.steer(brief);
+      await this.#session.steer(verboseIntent);
       return true;
     }
-    this.start(brief);
+    this.start(verboseIntent);
+    return true;
+  }
+
+  // Abort this lane's session (root §1.1 item 2). The adapter created the
+  // session, so it owns the object: `AgentSession.abort({reason})` is called
+  // directly, not through the host's `ctx.abort` (which only ever reaches the
+  // caller's own turn).
+  //
+  // The turn is marked cancelled BEFORE the host is asked: an abort that never
+  // reports an end (an idle lane, a host that swallows the interrupt) must not
+  // leave `join` waiting for a turn the operator already stopped. The lane is
+  // NOT disposed — its transcript and its unclaimed results stay readable.
+  async abort(reason = "the operator interrupted this session") {
+    if (this.#cancelled !== null) return { ok: true, alreadyCancelled: true, lane: this.#name };
+    this.#cancelled = { reason, at: Date.now() };
+    // A turn that is still running is settled here with the cancellation; the
+    // roster queues it like any other result, so `join` reports it honestly.
+    this.#cancelTurn(reason);
+    const session = this.#session;
+    const abort = typeof session?.abort === "function" ? session.abort : null;
+    if (abort === null) return { ok: false, reason: "NO_ABORT", lane: this.#name };
+    try {
+      await abort.call(session, { reason });
+      return { ok: true, lane: this.#name };
+    } catch (error) {
+      return { ok: false, reason: "ABORT_FAILED", detail: String(error?.message ?? error), lane: this.#name };
+    }
+  }
+
+  // Settle the current turn as cancelled, once. `#finish` is the same path a
+  // host end takes, so the roster writes one SETTLE record and `join` can hand
+  // the cancellation over in settle order.
+  #cancelTurn(reason) {
+    if (this.#settled) return false;
+    this.#turnError = { name: "CANCELLED", message: reason };
+    this.#finish({ name: this.#name, agentId: this.#agentId, text: this.#text, error: this.#turnError });
     return true;
   }
 
@@ -637,6 +700,9 @@ export class Lane {
       role: this.#role,
       text: this.#text,
       startedAt: this.#startedAt,
+      modelPattern: this.#modelPattern,
+      modelSource: this.#modelSource,
+      ...(this.#cancelled === null ? {} : { cancelled: this.#cancelled }),
     };
   }
 
@@ -731,6 +797,11 @@ export class LaneTable {
   // Set when a rebuild replaced this table (`detach`). Its lanes stop listening,
   // so a `join` waiting here is released with the disposal-style refusal.
   #detached;
+  // Set when an operator interrupt cancelled this subtree (root §1.1 item 2).
+  // It is a fact of the ROSTER, not of one lane: every later `fork`/`steer`
+  // refuses by name, and `join` reports the cancellation after handing over the
+  // results that already existed.
+  #cancelled = null;
   // The workers this roster held when it was torn down. The teardown empties
   // the table, so without this the refusal could not say what the caller was
   // waiting for — and "you were waiting for w1" is the only useful part of it.
@@ -944,6 +1015,37 @@ export class LaneTable {
     return this.#detached === true;
   }
 
+  // The cancellation this roster received, or null. A cancelled roster accepts
+  // no new work and ends no new turn.
+  get cancelled() {
+    return this.#cancelled;
+  }
+
+  // Cancel every lane in this roster (root §1.1 item 2). Each lane's own
+  // session is aborted directly (`Lane.abort`); the lanes are NOT disposed, so
+  // their transcripts and unclaimed results stay readable.
+  //
+  // Idempotent: the first call marks the roster and aborts the lanes, a second
+  // call reports the same fact without touching the sessions again. The
+  // cancellation is written to each lane's current turn through the normal
+  // settle path, so `join` receives a CANCELLED result in settle order.
+  async cancelAll(reason = "the operator interrupted this session") {
+    if (this.#cancelled !== null) {
+      return { ok: true, alreadyCancelled: true, reason: this.#cancelled.reason, lanes: this.names() };
+    }
+    this.#cancelled = { reason, at: this.#clock() };
+    const lanes = this.all();
+    const results = [];
+    for (const lane of lanes) results.push(await lane.abort(reason));
+    this.#wake();
+    return {
+      ok: results.every((result) => result?.ok === true),
+      reason,
+      lanes: lanes.map((lane) => lane.name),
+      results,
+    };
+  }
+
   // Release this table on a rebuild that replaces it: stop every lane listening
   // to its session and wake the waiters. The sessions are NOT disposed — the
   // successor adopts them through `runningSession` and re-arms its own tail.
@@ -1087,7 +1189,7 @@ export class LaneTable {
   }
 
   // The lane for a name, running or finished: a finished lane is a durable
-  // worker whose next brief continues in the same session (spec §4.1).
+  // worker whose next verbose intent continues in the same session (spec §4.1).
   live(name) {
     return this.#lanes.get(name) ?? null;
   }
@@ -1113,7 +1215,7 @@ export class LaneTable {
     const names = new Set(this.#lanes.keys());
     for (const entry of this.#restored.entries) names.add(entry.name);
     // A name whose result was already handed over is still a worker this
-    // session knows: a later brief continues it. Listing it is what lets a
+    // session knows: a later verbose intent continues it. Listing it is what lets a
     // caller tell "already collected" from "another roster".
     for (const name of this.#handedOver) names.add(name);
     return [...names];
@@ -1161,7 +1263,7 @@ export class LaneTable {
     // nothing for that name, and keeping the entry would make `owed()` true
     // forever.
     this.#restored.entries = this.#restored.entries.filter((entry) => entry.name !== first.name);
-    // The name still exists (a later brief continues that worker), so `names`
+    // The name still exists (a later verbose intent continues that worker), so `names`
     // keeps listing it. The set is the roster's memory of "this name was
     // offered before", which a reload reads back from the journal.
     this.#handedOver.add(first.name);
@@ -1264,9 +1366,10 @@ export class LaneTable {
     return lane;
   }
 
-  // Steer a live worker: the brief joins its running turn, or starts its next
-  // one when it is idle.
-  async steer(name, brief) {
+  // Steer a live worker: the verbose intent joins its running turn, or starts
+  // its next one when it is idle.
+  async steer(name, verboseIntent) {
+    if (this.#cancelled !== null) return false;
     const lane = this.#lanes.get(name);
     if (lane === undefined) return false;
     // A steer starts new work on the same worker. Results are per TURN and a
@@ -1276,7 +1379,7 @@ export class LaneTable {
     // turn (no result yet) can be steered, and that steer produces no extra
     // result. The new turn is recorded so a reload knows a turn is running.
     if (lane.settled) this.#record({ type: WORKER_RECORD_TYPES.STEER, name, agentId: lane.agentId });
-    const steered = await lane.steer(brief);
+    const steered = await lane.steer(verboseIntent);
     // A steer on a STREAMING session joins the turn already running, and that
     // turn's tail is already armed; a steer on an idle one starts a new turn
     // (`Lane.start` makes a new end promise). `#settleTail` is a no-op when the
@@ -1296,10 +1399,15 @@ export class LaneTable {
     // The lane's role is a required fact (§2.1, §4.1): it decides the face, the
     // gate and the identity a fission group inherits. An absent one is refused
     // by name below rather than defaulted to coder; the `null` default only
-    // makes "absent" observable, and the literals keep this module import-free
-    // (its own tests run it without `host-facts.mjs`).
+    // makes "absent" observable. The role literals are repeated here because
+    // this table is also built by tests that do not import `host-facts.mjs`.
     role = null,
-    brief,
+    verboseIntent,
+    // The model pattern this lane is created with. A worker runs on the user's
+    // TASK model (root §1.1 item 6); the Manager keeps the session's main
+    // model. `null` means "do not pass a model", which is what the Manager gets.
+    modelPattern = laneModelPattern(role),
+    modelSource = modelPattern === null ? null : "task-role",
     systemPrompt = null,
     cwd = null,
     model = null,
@@ -1335,6 +1443,9 @@ export class LaneTable {
     depth = null,
   }) {
     if (typeof depth === "number" && Number.isFinite(depth) && depth >= 1) taskDepth = depth;
+    // A cancelled subtree starts no worker (root §1.1 item 2). The refusal is
+    // by name, so a caller cannot mistake it for a host failure.
+    if (this.#cancelled !== null) return { ok: false, reason: "SESSION_CANCELLED" };
     // The RAW module, never a wrapper: a wrapper resolves back to this very
     // table and `start` would re-enter itself (see `rawFactoryOf`).
     const create = rawFactoryOf(this.#api);
@@ -1348,13 +1459,13 @@ export class LaneTable {
     const existing = this.#lanes.get(name);
     if (existing !== undefined) {
       if (!existing.settled) return { ok: false, reason: "NAME_TAKEN" };
-      // A finished lane's next brief continues in the same session (§4.1). The
+      // A finished lane's next intent continues in the same session (§4.1). The
       // new turn is recorded before it starts; the previous turn's result stays
       // queued (results are per turn and are never withdrawn), so `join` still
       // hands over the answer nobody collected.
       this.#record({ type: WORKER_RECORD_TYPES.STEER, name, agentId: existing.agentId });
       try {
-        existing.start(brief);
+        existing.start(verboseIntent);
       } catch (error) {
         // The session refused the prompt synchronously. `Lane.start` has
         // already replaced `#ended` and cleared `#settled`, so leaving the lane
@@ -1368,7 +1479,13 @@ export class LaneTable {
         return { ok: false, reason: "TURN_START_FAILED", detail: String(error?.message ?? error) };
       }
       this.#settleTail(existing);
-      return { ok: true, lane: existing, continued: true };
+      return {
+        ok: true,
+        lane: existing,
+        continued: true,
+        modelPattern: existing.modelPattern,
+        modelSource: existing.modelSource,
+      };
     }
 
     // The worker face is built for THIS worker. It cannot travel as
@@ -1417,6 +1534,11 @@ export class LaneTable {
       const created = await create({
         ...(cwd === null ? {} : { cwd }),
         ...(model === null ? {} : { model }),
+        // Root §1.1 item 6: a worker runs on the user's configured TASK model.
+        // The host expands the role alias after extensions load
+        // (`sdk.ts` `deferredModelPatterns`), so `@task` is the supported
+        // selector. A Manager lane passes none and keeps the main model.
+        ...(modelPattern === null ? {} : { modelPattern }),
         ...(systemPrompt === null ? {} : { systemPrompt }),
         taskDepth: Math.max(1, taskDepth),
         agentId,
@@ -1451,6 +1573,8 @@ export class LaneTable {
       session,
       agentId: typeof session.getAgentId === "function" ? (session.getAgentId() ?? name) : name,
       clock: this.#clock,
+      modelPattern,
+      modelSource,
       // The worker's own adapter is released when the lane is disposed.
       release: workerBuild === null ? null : () => workerBuild.dispose?.(),
     });
@@ -1538,7 +1662,8 @@ export class LaneTable {
     // holds and disposes it. It is never in the table, not even for a moment:
     // `join` and `steer` read this table, and a lane of an unconverged group is
     // not theirs to collect.
-    // `brief === null` builds the session WITHOUT its first turn: the lane is
+    // `verboseIntent === null` builds the session WITHOUT its first turn: the
+    // lane is
     // fully created, wired, authorized and narrowed, but it produces no turn and
     // is therefore not a live tenure. A relay needs exactly that shape — a
     // successor that exists and has an identity, before the record that names it
@@ -1546,8 +1671,8 @@ export class LaneTable {
     //
     // An inert lane is never registered: `join` and `steer` read this table, and
     // a lane that has not worked is not theirs to collect. `null` is the only
-    // unambiguous marker; an empty brief is a legal (if pointless) brief.
-    const inert = brief === null || brief === undefined;
+    // unambiguous marker; an empty intent is a legal (if pointless) intent.
+    const inert = verboseIntent === null || verboseIntent === undefined;
     if (!inert && register !== false) {
       this.#lanes.set(name, lane);
       // The registration reaches the disk BEFORE the first turn: a reload
@@ -1558,9 +1683,9 @@ export class LaneTable {
     // Returning here also skips `await lane.submitted`, which is correct twice
     // over: `#submitted` is created INSIDE `Lane.start`, so an inert lane has
     // none, and awaiting it would hang forever on a promise nobody resolves.
-    if (inert) return { ok: true, lane, inert: true };
+    if (inert) return { ok: true, lane, inert: true, modelPattern, modelSource };
     try {
-      lane.start(brief);
+      lane.start(verboseIntent);
     } catch (error) {
       // A synchronous throw from `session.prompt` used to escape AFTER the lane
       // was in the table and its FORK record was on disk: `#submitted` never
@@ -1597,7 +1722,7 @@ export class LaneTable {
       await lane.dispose();
       return { ok: false, reason: "TURN_START_FAILED", detail: submitted.error?.message ?? "turn rejected" };
     }
-    return { ok: true, lane };
+    return { ok: true, lane, modelPattern, modelSource };
   }
 
   async disposeAll() {

@@ -24,7 +24,7 @@ import { directorPromptFor } from "../compose/prompt/director.mjs";
 import { PLAN_PROMPT } from "../compose/prompt/plan.mjs";
 
 import { ParkTable } from "./execution.mjs";
-import { WorkerTable, restoredRoster } from "./workers.mjs";
+import { WorkerTable } from "./workers.mjs";
 import { TenureState } from "./tenure.mjs";
 import { commandPort, relayPort } from "./ports.mjs";
 import { appendJsonLine } from "./files.mjs";
@@ -42,7 +42,7 @@ import { REBASE_REASONS } from "../core/pair-hint/pair-hint.mjs";
 import {
   PINNED_MEMBERS,
   barrierCutIndex,
-  compactionIdentity,
+  compactionDigest,
   isCompactedCopy,
   lastOperatorText,
   selectKept,
@@ -105,9 +105,16 @@ const modelFromRecord = (record) => {
 // reading.
 const modelFromEnvironment = () => connectionOf(process.env.CLINE_PROVIDER_ID, process.env.CLINE_MODEL_ID);
 
+// The connection the operator pinned for SUBAGENTS (root §1.1 item 6): a task
+// model is cheaper or faster than the main one, and starting every worker on
+// the main model spends the wrong budget. Both halves are required, exactly as
+// in every other reading: one env var alone is not a connection.
+const modelFromTaskEnvironment = () =>
+  connectionOf(process.env.HERDCHESTRA_TASK_PROVIDER_ID, process.env.HERDCHESTRA_TASK_MODEL_ID);
+
 // A stable identity for one conversation that is NOT this session's main chain.
 //
-// A delegated runtime's first message is its brief; every later request of that
+// A delegated runtime's first message is its verboseIntent; every later request of that
 // same runtime repeats the conversation from its own beginning, so the opening
 // message identifies it. Hashing keeps the key file-safe and short — the key
 // names a Pair Hint epoch, and an epoch name reaches a file path.
@@ -224,14 +231,14 @@ export class SessionState {
     this.#prepareDraftDir();
     // The roster is durable: a plugin loaded again into the same host process
     // must not answer `join` with "nothing to collect" for workers that are
-    // still running (§4.1). The table reads what the previous run of this
-    // session left in `.Herdchestra/<session>.workers.restored.json`, writes
-    // its journal as it changes, and saves the snapshot when the session ends.
+    // still running (§4.1). The journal is the ONE source: the table replays
+    // `.Herdchestra/<session>.workers.jsonl` as it is built (a torn last line is
+    // a crash during append, not a record), so a mid-session reload and a cold
+    // start read the same facts. There is no second snapshot to disagree with.
     this.#workers = new WorkerTable({
       create: (input) => this.startWorker(input),
       root: this.#root,
       sessionId: this.#stateName,
-      restored: restoredRoster(this.#root, this.#stateName),
     });
     // Fission is one group per session (§4.2: no second group of one owner).
     // Its group record is committed to this session's own journal, beside the
@@ -301,10 +308,9 @@ export class SessionState {
   // a hand-off that reused a guessed provider would start the successor on the
   // wrong connection. `null` until a reading exists, and never a guess.
   //
-  // `fork`, a fission lane, a Plan hand-off and `this.devops` all need this
-  // BEFORE the session's own first request has been made — a Manager that is
-  // asked to fork on its very first call has not run a model turn yet. So when
-  // no request has been seen, the reading falls back, in order of proof:
+  // A Plan hand-off (and the session's own top-level model) needs this BEFORE
+  // the session's own first request has been made. So when no request has been
+  // seen, the reading falls back, in order of proof:
   //
   //   1. the setup context (`ctx.model`, `ctx.config.providerId/modelId`,
   //      `ctx.session.provider/model`) — a host that hands the connection over;
@@ -380,6 +386,46 @@ export class SessionState {
     return {
       model: resolved.model,
       source: resolved.source,
+      credentials,
+      credentialSource: credentials === null ? "hostHasNone" : "providerSettings",
+    };
+  }
+
+  // The connection a SUBAGENT runs on (root §1.1 item 6): the task ladder when
+  // the operator pinned one, the main ladder otherwise.
+  //
+  // The task ladder is the environment pair `HERDCHESTRA_TASK_PROVIDER_ID` /
+  // `HERDCHESTRA_TASK_MODEL_ID`; both halves are required. It sits BEFORE the
+  // main ladder, and its `source` is `"task"`. A session that pinned nothing
+  // falls back to the main ladder and reports `"main"` — the receipt names
+  // which ladder answered, so a worker started on the main model is visible as
+  // such instead of looking like a task-model start.
+  //
+  // Manager and Plan top-level sessions do NOT use this: they are the main
+  // conversation, and their model is the session's own (`resolveModel`).
+  async resolveTaskModel(host = null) {
+    const pinned = modelFromTaskEnvironment();
+    if (pinned !== null) return { model: pinned, source: "task" };
+    const main = await this.resolveModel(host);
+    return { model: main.model, source: main.model === null ? null : "main" };
+  }
+
+  // `resolveTaskModel` plus the credentials the task provider needs. The
+  // credential reader is the same one the main ladder uses: the host stores one
+  // key per provider, not one per model.
+  async resolveTaskConnection(host = null) {
+    const pinned = modelFromTaskEnvironment();
+    if (pinned === null) {
+      const main = await this.resolveConnection(host);
+      return { ...main, source: main.model === null ? null : "main" };
+    }
+    const credentials = await providerCredentials({
+      providerId: pinned.providerId,
+      modelId: pinned.modelId,
+    });
+    return {
+      model: pinned,
+      source: "task",
       credentials,
       credentialSource: credentials === null ? "hostHasNone" : "providerSettings",
     };
@@ -591,12 +637,31 @@ export class SessionState {
     this.#asked = null;
     // The lane listener reports to a session that is over; it goes with it.
     this.#fission.stop();
+    // Plan's dedicated DevOps is not in the worker table; it stops with the
+    // session like any other runtime this adapter started.
+    if (this.#plan !== null) this.#plan.devops.cancel("SESSION_ENDED");
     const receipt = this.#workers.abortAll();
-    // What the next load of this session starts from. A snapshot that could not
-    // be written is reported beside the teardown receipt rather than dropped:
-    // the roster on disk is then the one from the load before, and a caller
-    // reading `roster` knows that.
+    // The journal is already on disk: `save` answers where the next load will
+    // read the roster from, and a journal that cannot be named is reported
+    // beside the teardown receipt rather than dropped.
     return { ...receipt, roster: this.#workers.save() };
+  }
+
+  // Root §1.1 item 2: an operator interrupt at a user-facing session must reach
+  // every descendant, or the cancelled work keeps spending the operator's
+  // tokens in the background. This is NOT teardown (`release`): the session
+  // lives on, so unclaimed completions stay collectable, and no runtime is
+  // disposed beyond the abort the cancellation asks for.
+  //
+  // The worker table holds every descendant — forked workers and fission lanes
+  // alike — because a worker's own `fork` goes through this same session.
+  cancelDescendants(reason = "OPERATOR_CANCELLED") {
+    const receipt = this.#workers.cancelAll(reason);
+    // Plan's dedicated DevOps is a descendant too, and it is not in the worker
+    // table: the session holds its one handle directly. A runner that never
+    // built a handle answers `cancelled: false`; that is not a failure.
+    const devops = this.#plan === null ? null : this.#plan.devops.cancel(reason);
+    return devops === null ? receipt : { ...receipt, devops };
   }
 
   // The factory this session starts other sessions with (a Plan entry, a
@@ -659,7 +724,7 @@ export class SessionState {
 
   // The role of the agent making a call. A child this adapter started is its
   // recorded role; any other child is a coder, because coder and devops share one
-  // surface (spec §5) and differ only in the brief. A top-level caller is the
+  // surface (spec §5) and differ only in their verboseIntent. A top-level caller is the
   // Manager; whether it may use a worker face is `hooks.beforeTool`'s decision.
   //
   // The test is the VALUE, never the key. `parentAgentId` is optional on the
@@ -734,7 +799,7 @@ export class SessionState {
         ...ports,
         ...planPorts({
           file: plan.file,
-          devops: { investigate: (intent) => plan.devops.investigate(intent) },
+          devops: { investigate: (verboseIntent) => plan.devops.investigate(verboseIntent) },
           // A Plan and a Manager each ask for their own relay, and the port
           // records the hand-off as it performs it (`#relayPort`).
           relay: this.#relayPort(),
@@ -743,10 +808,11 @@ export class SessionState {
     }
     // `fork`/`join` belong to every role that may dispatch (§3.1, §4.1): the
     // Manager and every worker. Plan never gets them (§2.2, §6). The role is
-    // the one compose resolved from the brief — never a default here, because a
+    // the one compose resolved from the verboseIntent — never a default here, because a
     // port that filled in "coder" would silently downgrade a devops request.
     ports.fork = {
-      fork: (name, brief, forkRole) => this.#workers.fork({ name, brief, role: forkRole }),
+      fork: (name, verboseIntent, forkRole) =>
+        this.#workers.fork({ name, verboseIntent, role: forkRole }),
       join: () => this.#workers.join(),
     };
     // The two exempt snapshot queries (§6.2). `ScopeHooks#ask` is synchronous
@@ -934,10 +1000,11 @@ export class SessionState {
         ctx: this.#ctx,
         cwd: this.#root,
         extension: this.#extension,
-        // The devops runtime runs on this session's own connection, read by the
-        // same ladder as `fork` and the hand-off — credentials included, or the
-        // runtime dies at the provider on "no API key".
-        resolveConnection: () => session.resolveConnection(),
+        // The devops runtime is a SUBAGENT: it runs on the task ladder when the
+        // operator pinned one (root §1.1 item 6), and on the main ladder
+        // otherwise. Credentials travel with it, or the runtime dies at the
+        // provider on "no API key".
+        resolveConnection: () => session.resolveTaskConnection(),
         get tools() {
           return session.workerTools();
         },
@@ -1451,11 +1518,17 @@ export class SessionState {
     // request that cannot extend the chain is not part of it. Each such
     // conversation gets its own epoch, keyed by its own opening message, so two
     // workers never share one either.
-    if (hint.bound && hint.presented !== null && hint.presented !== undefined) {
+    // The chain, not the previous copy: the journal keeps `{length, digests,
+    // root}` and no full request copy (root §1.1 item 1), so a cold start can
+    // still compare this request with what was presented. `chain`
+    // is the pair-free view — the same view `copy` carries — so the comparison
+    // is one rule, not two.
+    const chain = hint.chain ?? null;
+    if (hint.bound && Number.isInteger(chain?.length) && chain.length > 0) {
       const copy = toPairHintMessages(current);
       let extendsChain = true;
       try {
-        extendsChain = hint.injector.extendsPrefix({ previous: hint.presented, next: copy });
+        extendsChain = hint.injector.extendsPrefix({ previous: chain, next: copy });
       } catch {
         // An unreadable comparison is not a licence to re-base: fall through to
         // the normal path, which decides (and refuses) on its own evidence.
@@ -1488,7 +1561,14 @@ export class SessionState {
     // Identity is: the host merges a second compaction into NEW summary text, so
     // that is a new rewrite, while a request built from the same compacted
     // history is not.
-    const compacted = isCompactedCopy(current) && compactionIdentity(current) !== compactionIdentity(hint.presented ?? []);
+    // The summary's DIGEST, not its text: the chain keeps one digest per
+    // message (`chain.digests`), and after a cold start there is no previous
+    // copy to read the text from. The PAIR-FREE view is the host copy, so its
+    // first entry is the summary; `digests` itself may carry the synthetic pair
+    // at index 0 in a copy the host handed back with the pair already in it.
+    const presentedSummary =
+      Number.isInteger(chain?.length) && chain.length > 0 ? chain.pairFreeDigests?.()[0] ?? null : null;
+    const compacted = isCompactedCopy(current) && compactionDigest(current) !== presentedSummary;
     // The barrier rewrote the copy, so the successor's first request cannot
     // start with the bytes the predecessor presented. That cut is one
     // legitimate chain break (根 §2.4 第 3 步): the frozen text and the epoch stay,
@@ -1502,7 +1582,7 @@ export class SessionState {
     // throw away the comparison that catches a real rewrite.
     const boundary = projectionBoundary({
       durableRewrite: compacted ? REBASE_REASONS.HISTORY_COMPACTED : null,
-      presented: hint.presented,
+      presented: chain,
       projected: toPairHintMessages(current),
       incoming: messages,
       givenItems: scopeGiven,
@@ -1603,7 +1683,7 @@ export class SessionState {
   // Workers
   // ---------------------------------------------------------------------
 
-  async startWorker({ name, brief, role, start = true }) {
+  async startWorker({ name, verboseIntent, role, start = true }) {
     // The guarded door (root §7.2, gap 2): every delegated runtime this session
     // builds gets the worker face, whatever list the host or a frontmatter
     // narrowed it to.
@@ -1616,23 +1696,24 @@ export class SessionState {
         detail: { searched: "bare specifier, CLINE_CORE_MODULE, argv/execPath/cwd ancestors, installation layouts" },
       };
     }
-    // A worker runs the session's own model. The reading comes from the last
-    // request, the setup context, the environment, or the host's session record
-    // — in that order of proof (`resolveModel`). A worker started on a GUESSED
-    // connection would answer from the wrong account, so a session that has no
-    // reading anywhere is refused instead of defaulted.
+    // A worker runs the TASK model (root §1.1 item 6): the operator's
+    // `HERDCHESTRA_TASK_*` pair when set, the session's own ladder otherwise.
+    // A worker started on a GUESSED connection would answer from the wrong
+    // account, so a session with no reading anywhere is refused instead of
+    // defaulted. `source` says which ladder answered (`task` / `main`).
     //
     // The model alone is not enough to RUN: the config provider forwards
     // exactly what it is given, so the credentials the host stores for that
     // provider (`providerSettings`) travel with it. Without them the runtime
     // starts and dies at the provider on "no API key" — measured live.
-    const { model, source, credentials, credentialSource } = await this.resolveConnection();
+    const { model, source, credentials, credentialSource } = await this.resolveTaskConnection();
     if (model === null) {
       return {
         started: false,
         rejection: "MODEL_UNKNOWN",
-        message: "no source named this session's provider and model (no request yet, none in the setup context, none in the host session record)",
-        detail: { tried: ["request", "context", "sessionRecord", "environment"] },
+        message:
+          "no source named the task provider and model (no HERDCHESTRA_TASK_* pair, no request yet, none in the setup context, none in the host session record)",
+        detail: { tried: ["taskEnvironment", "request", "context", "sessionRecord", "environment"] },
       };
     }
     const extensions = this.#extension === null ? [] : [this.#extension];
@@ -1652,7 +1733,7 @@ export class SessionState {
     // carries the worker face and the steer channel; only the turn waits.
     return runtimeHandle({
       name,
-      brief,
+      verboseIntent,
       role,
       start,
       create: delegated.createDelegatedAgent,

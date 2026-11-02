@@ -6,7 +6,7 @@
 //
 // Port method names are compose's (`PORT_METHODS`), not the host's:
 //
-//   fork      fork(name, brief)                 Manager surface `fork`
+//   fork      fork(name, verboseIntent)         Manager surface `fork`
 //   join      join()                            Manager surface `join`
 //   relay     handOver(decision) | startManager(draft) | askOperator(question)
 //   control   unpark({ controllerId, name, value })
@@ -32,7 +32,7 @@ import { readFile } from "node:fs/promises";
 
 import { refusal, REFUSALS } from "./refusals.mjs";
 import { stateOf, FISSION_CAPACITY, laneRoleOf } from "./activation.mjs";
-import { requireModelOf } from "./model-inherit.mjs";
+import { resolveChildModel } from "./model-inherit.mjs";
 import { roleOf } from "./agent-role.mjs";
 
 // Plan's first empty review asks the operator (根 §2.4 第 1 步). It is the SAME
@@ -160,41 +160,63 @@ export const makeControlPort = (activation, sessionID) =>
     },
   });
 
-// `fork(name, brief, role)`: compose resolved the role from the brief's own
-// declaration (§2.1, §4.1) and passes it here, so this port neither defaults nor
-// re-reads the brief. `join()` takes nothing (§4.1).
+// `fork(name, verboseIntent, role)`: compose resolved the role from the task
+// description's own declaration (§2.1, §4.1) and passes it here, so this port
+// neither defaults nor re-reads the text. `join()` takes nothing (§4.1).
 export const makeForkJoinPorts = (activation, sessionID) =>
   Object.freeze({
-    fork: async (name, brief, role) => activation.forkWorker({ sessionID, name, brief, role }),
+    fork: async (name, verboseIntent, role) => activation.forkWorker({ sessionID, name, verboseIntent, role }),
     join: async () => activation.joinWorker({ sessionID }),
   });
 
-// `devops` (spec §6): one investigation for Plan. It starts a devops worker and
-// waits for that one answer, then returns the report whole; nothing here
-// summarises it. At most one devops is in flight per Plan session.
+// `devops` (root §1.1 item 3): one investigation for Plan. It is a bare
+// top-level primitive with join semantics: it waits for the ONE dedicated devops
+// and returns the report whole; nothing here summarises it.
+//
+// The worker is DEDICATED and reused, not a fresh `plan-devops-<timestamp>` per
+// call. A live worker is steered; a finished one is reused in place, so the
+// session keeps the repository facts it already gathered. The name is fixed, and
+// the road-bound machinery (`devopsRoadOf`) holds it across investigations.
+//
+// At most one investigation is in flight per Plan session; the guard is the
+// single-flight refusal root §2.2 asks for.
+export const PLAN_DEVOPS_NAME = "plan-devops";
+
 export const makeDevopsPort = (activation, scope = null) =>
   Object.freeze({
-    investigate: async (intent) => {
+    investigate: async (verboseIntent) => {
       const sessionID = scope?.sessionID ?? null;
       if (sessionID === null) return refusal(REFUSALS.ROLE, { member: "devops" });
       const inFlight = activation.devopsRuns.get(sessionID);
       if (inFlight !== undefined) return refusal(REFUSALS.DEVOPS_BUSY, { name: inFlight });
-      const name = `plan-devops-${Date.now().toString(36)}`;
+      const name = PLAN_DEVOPS_NAME;
       activation.devopsRuns.set(sessionID, name);
       try {
-        // The identity is stated in the brief itself, exactly as a Manager's
-        // brief must (§2.1, §4.1); `role` is passed beside it for the same
-        // resolution every other fork uses.
+        // The identity is stated in the task text itself, exactly as a
+        // Manager's fork must (§2.1, §4.1); `role` is passed beside it for the
+        // same resolution every other fork uses.
+        //
+        // `reuse` lets a finished `plan-devops` take the next investigation in
+        // its own session; `keepRoad` keeps the name bound to Plan's road after
+        // the answer, so the next call reaches the same worker instead of a
+        // replacement.
         const run = await activation.forkWorker({
           sessionID,
           name,
-          brief: `role: devops — ${intent}`,
+          verboseIntent: `role: devops — ${verboseIntent}`,
           role: "devops",
           wait: true,
+          reuse: true,
+          keepRoad: true,
         });
         if (run === null) return refusal(REFUSALS.GAP, { gap: "FORK_SESSIONS" });
         if (run.ok === false) return run;
-        return { ok: true, name: run.name ?? name, report: run.report ?? null };
+        return {
+          ok: true,
+          name: run.name ?? name,
+          report: run.report ?? null,
+          modelSource: run.modelSource ?? null,
+        };
       } finally {
         activation.devopsRuns.delete(sessionID);
       }
@@ -202,11 +224,11 @@ export const makeDevopsPort = (activation, scope = null) =>
   });
 
 // Plan's saved draft (§2.2). One persistent product, one path, derived from the
-// session — the same rule `host-cline` (`drafts.mjs`) and `host-omp`
-// (`host-facts.mjs`) use, so one work item keeps one draft across every host.
-// A missing draft is an empty string, and the review ledger refuses to start a
-// Manager session from it.
-export const PLAN_DRAFT_DIR = path.join(".Herdchestra", "drafts");
+// session. The directory is at the WORKSPACE ROOT (`plans/<name>.md`), because
+// the draft is the operator's output: root §1.1 item 3 keeps it out of the
+// adapter's own `.Herdchestra` state. A missing draft is an empty string, and
+// the review ledger refuses to start a Manager session from it.
+export const PLAN_DRAFT_DIR = "plans";
 
 export const planDraftPath = (root, name) => path.join(root, PLAN_DRAFT_DIR, `${name}.md`);
 
@@ -230,7 +252,7 @@ export const readDraftFile = async (file) => {
 // Create the directory a draft lives in, once, before anything can write it.
 //
 // `atomicWriteFile` creates its temp file INSIDE the target's directory
-// (`core/fs.mjs`), so a draft written before `.Herdchestra/drafts/` exists fails
+// (`core/fs.mjs`), so a draft written before `plans/` exists fails
 // with a bare `ENOENT` from `write` — an error about a temp file, in a
 // directory the Plan never named and cannot create (Plan has no `mkdir`). The
 // directory is therefore prepared where the port is built, and a directory that
@@ -303,12 +325,18 @@ export const makeFissionPorts = (activation) => {
       // create hook) answers that in the start step, which then confirms it.
       buildLane: async (lane) => {
         if (activation.sessions === null) return refusal(REFUSALS.GAP, { gap: "FORK_SESSIONS" });
-        // A lane is the owner's parallel present (§4.2): it runs what the owner
-        // runs. The host does not inherit a model for a created child
-        // (`model-inherit.mjs`), and the agent default is the free model that
-        // answers 429.
-        const inherited = await requireModelOf(activation.sessions, owner);
-        if (inherited.ok !== true) return inherited.refusal;
+        // A lane is the owner's parallel present (§4.2), but it is a SUBAGENT
+        // for model purposes (root §1.1 item 6): it runs the operator's task
+        // model when one is configured, otherwise the owner's model. The host
+        // does not inherit a model for a created child (`model-inherit.mjs`),
+        // and the agent default is the free model that answers 429.
+        const inherited = await resolveChildModel({ sessions: activation.sessions, parentID: owner });
+        if (inherited.ok !== true) {
+          return (
+            inherited.refusal ??
+            refusal(inherited.reason ?? "TASK_MODEL_INCOMPLETE", { detail: inherited.detail ?? null })
+          );
+        }
         // A lane is the owner's parallel present, so it runs the owner's
         // identity (§4.2): a devops that fissions starts devops lanes.
         const laneRole = laneRoleOf(activation, owner);
@@ -338,6 +366,7 @@ export const makeFissionPorts = (activation) => {
           // The identity the lane runs as, recorded with the session so a later
           // event that names only the session can still tell what it is.
           role: laneRole,
+          modelSource: inherited.modelSource,
           index: lane.index,
           // Compose fixes the group's lane count once (§4.2 step 3) and sends
           // it on the lane. It is stored here so the start step prints the same
@@ -391,6 +420,10 @@ export const makeFissionPorts = (activation) => {
         if (activation.sessions === null || typeof activation.sessions.interrupt !== "function") {
           throw new Error("the host cannot silence a session");
         }
+        // A deliberate silencing, not the operator stopping the work: its lanes
+        // are this identity's new presents, so cancellation must not reach them
+        // (`cancel.mjs`).
+        activation.presentReplacements.add(owner);
         await activation.sessions.interrupt({ sessionID: owner });
         return { ok: true, groupId: group.groupId };
       },

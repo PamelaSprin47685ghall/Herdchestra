@@ -84,7 +84,8 @@
   Plan 的 `system` 是
   它自己的角色段 `compose/prompt/plan.mjs`（`PLAN_PROMPT`），既不拼 `common`，也不借用
   Manager 的组合。`prompt/plan.mjs` 只写 §2.2 给出的内容：三个打磨里程碑加待执行、唯一底稿、
-  编程面、`devops(intent)` 的同步性与单飞、空账 review 的交接。
+  编程面、裸 `devops(verboseIntent)` 的同步性与单飞、空账 review 的交接。底稿在
+  `plans/<name>.md`（工作区根），不在 `.Herdchestra`。
 - 导演消息不进系统提示的组合（根 §5）。它在 `session.hook("context")` 里作为 system 的最后
   一段追加给 Manager，且幂等：已经有这一段就不再追加。
 
@@ -100,7 +101,7 @@
   （外加 compose 面里的 `fork`/`join`）。**任何角色都不留 `question`**：§2.2 只允许 Plan 在 `S1` 用
   `this.ask`（park + interrupt），§2.3 的 Manager 无提问通道，§3.1 的子代理没有提问通道。
 
-  第 0 条：`js-worker` 是 `coder` 与 `devops` **共用的同一个工具**（§2.1：两者系统提示词逐字相同，差别只在 brief）。
+  第 0 条：`js-worker` 是 `coder` 与 `devops` **共用的同一个工具**（§2.1：两者系统提示词逐字相同，差别只在 `verboseIntent`）。
   注册必须写成 `workerProgram`（`workerRole(roleOf(context.agent))`），绝不能用 `programFor("coder")` 这类字面角色：
   `makeProgramExecutor` 会用 `actual !== role` 拒绝另一种身份，真机症状就是 `ROLE_DENIED tool:'coder' role:'devops'`。
   这个等式检查保留（第二层授权），错的是注册处写死角色。
@@ -160,20 +161,28 @@
 
 ## 6 子代理
 
-- `fork(name, brief)`：根 §4.1 的两参数原语，身份由 brief 的显式声明给出（`role: coder` / `role: devops`）；
+- `fork(name, verboseIntent)`：根 §4.1 的两参数原语，身份由 `verboseIntent` 的显式声明给出（`role: coder` / `role: devops`）；
   无声明或声明两个一律拒绝，缺省值已删除；`role-tools` 因此把 `fork`/`join` 给 `manager`、`coder`、`devops`，Plan 不给。
-  **模型可见的 `tool-inputs.mjs` 里 `fork` 只有 `name` 与 `brief`（外加 `scope`），`required` 也只列这两个**：
+  **模型可见的 `tool-inputs.mjs` 里 `fork` 只有 `name` 与 `verboseIntent`（外加 `scope`），`required` 也只列这两个**：
   曾经声明并必填的 `role` 是一个适配器根本不读的第三通道，且会让合规调用在 schema 层就失败。测试
-  `scope-schema.test.mjs` 钉住这条形状（属性名、required、brief 描述里必须写明两种身份）。`devops`
+  `scope-schema.test.mjs` 钉住这条形状（属性名、required、`verboseIntent` 描述里必须写明两种身份）。`devops`
   同一时刻只允许一个（`spec/session-creation.mjs`）。建子会话用
-  `Session.create({ parentID, title, agent, model })`，**新建** worker 的首个 brief 用
+  `Session.create({ parentID, title, agent, model })`，**新建** worker 的首个任务描述用
   `Session.prompt({ sessionID, text, delivery: "queue" })` 投递——宿主缺省是 `"steer"`。
+  **模型不能自己挑模型**：`fork` 输入没有 `model` 字段（根 §1.1 item 6）。
 - 重名且在途即 steer，**steer 用 `delivery: "steer"`**（§7.1：`queue` 只用于新建；排队会让一直在干活的
   worker 永远读不到，而回执仍写 `steered: true`），回执显式给 `steered: true`；否则新建，回执 `steered: false`。
+- **子代理跑 task 模型**（根 §1.1 item 6）：`model-inherit.mjs` 的 `resolveChildModel` 先读
+  `HERDCHESTRA_TASK_PROVIDER_ID` + `HERDCHESTRA_TASK_MODEL_ID`（两个都设才算配置好，半配置是
+  `TASK_MODEL_INCOMPLETE` 拒绝，不静默退回父模型）；未设时退回父会话模型。回执的
+  `modelSource` 写明 `"task"` 或 `"parent"`。`forkWorker`、fission lane 与 Plan 的 devops 用它；
+  relay 继任者与 Plan→Manager 交接仍用父/Plan 模型。
 - **devops 的道路按会话记**：`activation.devopsInFlight` 是 `Map<sessionID, Set<name>>`
   （`devopsRoadOf`）。同名 fork 打到**本会话**已在跑的 devops 是 steer，**不**回 `DEVOPS_BUSY`；
   只有本会话还没有 devops 时才检查并**在任何 await 之前同步预留**名字，失败路径释放，
   `wait: true` 的 `finally` 只在 `receipt.started === true` 时释放。
+  Plan 的 devops 用固定名 `plan-devops`、`reuse: true`、`keepRoad: true`：在途即 steer，
+  已结束则**复用同一会话**跑下一次调查，不换新会话；单飞拒绝仍由 `activation.devopsRuns` 守。
 - `join()` 不带参数，等第一个归来的 worker：对每个在途 worker 并发 `Session.wait`，
   取最先返回者，再读 `Session.get` 的 `outcome`；`outcome` 缺失即仍在忙，不冒充完成。
   返回记录形如 `{ name, role, sessionID, outcome, title }`。
@@ -185,6 +194,12 @@
   `PROGRAM_BUSY`（一条关于程序占用的拒绝，用在一个根本没有程序的会话上），继任者的第一次 `join`
   于是看不到记录替它保下来的结果。
 - `session.execution.*` 事件把 worker 从在途名单里移出（`WorkerTable.settled`）。
+- **Esc 传播到全部子孙**（根 §1.1 item 2）：`session.execution.interrupted` 在顶层 Plan/Manager
+  上由 `cancel.mjs` 广度优先遍历 `activation.workers` 名册、relay 记录的 roster 与
+  `activation.lanes`，对每个子孙调 `Session.interrupt`；不 dispose。`this.ask` 挂起、relay
+  对退休者的静默、fission present replacement 三种中断**不传播**。被取消的会话记进
+  `activation.cancelled`：之后的 `fork`/steer 回 `CANCELLED`，`join` 回带
+  `cancelled: true`、`outcome: "cancelled"` 的记录。重复事件幂等。
 - fork 成功的子会话登记进 `activation.fissionOrigins`：只有 `fork` 启动的 worker 才能 fission。
 - **花名册是持久事实（`spec/worker-roster.test.mjs`）。** `fork` / `steer` / `settle` / `claim` 每次变化都经
   `SessionState.recordWorker` 追加进会话日志，`SessionState.workerRoster` 按序重放成
@@ -199,23 +214,26 @@
 ## 7 Plan（根 §2.2）
 
 - `Plan` 是第四个 agent（`mode: "primary"`），不由 `fork` 创建，没有 `fork`/`join`。
-- 程序面是 compose 的 `plan`：`cat`、`write`、`park`、`unpark`、`ask`、`devops`、`review`。没有 glob、grep、exec。
+- 程序面是 compose 的 `plan`：成员 `cat`、`write`、`unpark`、`ask`；顶层原语 `devops`、`review`。
+  没有 `this.devops`，也没有 glob、grep、exec。
 - `ask` 只在 `S1` 可用；`Plan` 的 `S1` 初任空账 `review([])` 会代问「我需要干什么？」（§8.1）。
   `ask` 就是 `park({ question })` + `interrupt`，所以 `plan` 必须同时有 `unpark`：操作员的答复由
   AI 在新程序里 `this.unpark(name, answer)` 注入原挂起点（本节 §8）。
-- `devops(intent)` 经 `makeDevopsPort` 启动一个 devops worker 并等它这一个答复，报告原样返回，
+- `devops(verboseIntent)` 是**裸顶层原语**（join 语义），经 `makeDevopsPort` 使用固定的
+  `plan-devops` worker：在途即 steer，已结束即复用同一会话；等它这一个答复，报告原样返回，
   不做二次摘要；同一任务同时至多一个未决 devops（`activation.devopsRuns`）。
 - `review([])` 在「待执行」交给 `startManager(draft)`：创建独立的 `Manager` 会话并用
   `delivery: "queue"` 投递底稿字节。底稿为空时 core 在创建会话之前拒绝（`DRAFT_MISSING`）。
-  review 本身不带文本：`source` 只来自 `draft` 端口，路径是 `.Herdchestra/drafts/<safeName(session)>.md`
-  （与 `host-cline`、`host-omp` 同一条规则，见 `gaps.mjs DRAFT_PATH`），适配器不替模型挑路径。
+  review 本身不带文本：`source` 只来自 `draft` 端口，路径是工作区根的
+  `plans/<safeName(session)>.md`（根 §1.1 item 3：产出物必须用户可见，不放进 `.Herdchestra`；
+  见 `gaps.mjs DRAFT_PATH`），适配器不替模型挑路径。
 - Plan 的 `write` 不做路径门禁：§2.2 把单文件读写叫作职责边界，不是运行时门禁。
 - **底稿路径告诉 Plan 本人。** §2.2 说「系统会告知确切路径」，而系统提示词是按 agent 的、装不下按会话的值，
   所以 `plan` 的**每一份**回执都带 `draft: activation.draftPath(sessionID)`（与 `draft` 端口写的是同一个
   `planDraftPath`，用该会话自己的工作区）。字段在 `tool-outputs.mjs` 的 `PROGRAM_RESULT` 里声明，
   不是靠 `additionalProperties` 兜着。
 - **底稿目录在端口建立时创建好。** `atomicWriteFile`（`core/fs.mjs`）把临时文件建在目标
-  **同目录**里，所以 `.Herdchestra/drafts/` 不存在时，Plan 的第一次 `write` 会以 `ENOENT`
+  **同目录**里，所以 `plans/` 不存在时，Plan 的第一次 `write` 会以 `ENOENT`
   失败——而那个错误说的是一个 Plan 从未命名、也无法创建的临时文件（Plan 没有 `mkdir`，
   只有 `cat` 与 `write`）。因此 `makeDraftPort` 在建立时调 `ensureDraftDir`（与 `host-cline`
   `drafts.mjs` 同一契约），并把结果留在 `dirFailure()` 上。
@@ -367,13 +385,14 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
   OMP 没有 id 参数，那边记录里 `briefId: null`，`recoverRelay` 回 `undeliverable`——**不重投、不假装成功**。
 - **恢复**：`handOver` 先 `recoverRelay(file)`。`done` → 直接报同一继任者；`resume` → 同 id 重投后报成功；
   `corrupt` → `RELAY_CORRUPT`，不动任何东西；`undeliverable` → `RELAY_UNDELIVERABLE`。
-- **继任者怎么找到自己的记录**：记录写在**前任**的 `{incumbent}.relay.json` 下，继任者没有自己的文件。
-  `RelayFacts.record()` 因此先看自己的文件，不存在时扫 `.Herdchestra/*.relay.json` 找 `successor === 本会话` 的那份；
-  每次未命中都重扫，所以进程重启后仍能找到（进程内不缓存跨会话的答案）。
-  三种情况**fail closed**，回一个 `{corrupt: true}` 记录让闸门拒绝，而不是当作"没有记录"放行：
-  两份及以上记录都指向本会话（多代接力的链接点歧义，`RELAY_RECORD_AMBIGUOUS`）；
-  命名本会话的那份读不出来（`RELAY_RECORD_*`）；状态目录本身列不出来（`RELAY_RECORD_UNREADABLE`）。
-  自己的文件存在但损坏时，**绝不**用扫到的记录顶替：同一身份两份记录正是闸门拒绝猜测的那种歧义。
+- **继任者怎么找到自己的记录**：记录仍写在**前任**的 `{incumbent}.relay.json` 下；交接提交时
+  另外把**同一份记录**写到继任者自己的 `{successor}.relay.json`（`relay-host.mjs` 的
+  `writePointer`，在投递之前、与 `sent` 相同步）。`RelayFacts.record()` 因此**只读自己那一个路径**：
+  没有目录扫描，也没有未命中重扫的负缓存（根 §1.1 item 1：32k 条目的 `readdirSync` 曾在每次
+  工具调用与每次请求上跑）。继任者后来自己成为退休者时，这份指针被它自己的接力记录覆盖，
+  从那一刻起它就是 incumbent 的记录。自己的文件损坏 → `{corrupt: true}`，闸门拒绝；
+  文件不存在 → 没有记录。指针写失败时交接不投递（继任者的首个请求会缺屏障），
+  重放同一次交接会先修指针。
 - **屏障口径**：`fenceThrough` 是接力发生时前任已上屏的消息条数，由 `handOver` 在写记录前取真实计数。
   `fenceThrough > 0` 时，先在副本里找**屏障自己写出的那一句 `notice`**（`firstAnchor`）：命中就从它开始保留，
   那是继任者自己回合的起点；命中不到才退回计数裁剪（`list.slice(fenceThrough)`，副本仍是宿主继承的前任历史时）。
@@ -517,17 +536,20 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
 - **`atomic` 只是说明字段**：compose 的 `handOverCompleted` 只认 `ok`/`retired`/`barrier`/`successor`。
 - `startManager(draft)`：Plan 的空账 review 用规范路径上的底稿启动独立 Manager 会话；建好但投递失败时
   同样删除该会话，不留半开的 Manager。
-  **记录先于提示，且记录里写着这次交接的物理 callId。** 顺序是 `create` → 写 `kind: "plan-handoff"` 记录
-  （含 `from: <planSession>`、`handoffId: <callId>` 与 `draft`）→ 注册身份 → 投递底稿 → 写 Manager
-  自己的第一行台账。记录在提示之前，是因为「会话已经建出来」是唯一无法回头的一步：崩溃发生在它之后时，
+  **记录先于提示，且记录里写着这次交接的物理 callId。** 顺序是 `create` → 写**两份**
+  `kind: "plan-handoff"` 记录（含 `from: <planSession>`、`handoffId: <callId>` 与 `draft`）：
+  先写由 callId 派生的确定性去重路径 `.Herdchestra/handoff-<sha256(callId) 前 32 位>.relay.json`，
+  再写 Manager 自己的 `{manager}.relay.json`（`RelayFacts` 读它做屏障与操作员原文）→ 注册身份 →
+  投递底稿 → 写 Manager 自己的第一行台账。记录在提示之前，是因为「会话已经建出来」是唯一无法回头的一步：崩溃发生在它之后时，
   Plan 的台账仍停在「待执行」，同一次空账 review 会再来一次。
   **去重只认 callId，绝不认底稿内容。** 根 §2.2 说每次新的空账 review 都创建独立 Manager；
-  根 §2.4 第 6 步说同一物理调用重放时返回原回执。因此 `planHandoffOf(root, handoffId)` 只匹配
-  `handoffId` 相同的那份记录：同一 callId 再来一次 → 报原 Manager（`recovered: true`）、不建第二个、
+  根 §2.4 第 6 步说同一物理调用重放时返回原回执。因此 `planHandoffOf(root, handoffId)` 只读
+  那一条确定性路径（不再扫描 `.Herdchestra`，根 §1.1 item 1）：同一 callId 再来一次 → 报原 Manager
+  （`recovered: true`）、不建第二个、修复缺失的 Manager 副本、
   不重投底稿；**不同 callId 即使底稿逐字节相同，也照常新建**——按内容去重会把「两次评审各起一个
   Manager」这条规格悄悄取消。调用方没有 callId 时记录写 `handoffId: null`，它永不匹配：
   分不清重放与新评审时，新建是诚实的答案，猜一个匹配不是。
-  callId 由 `plugin.mjs` 的 `withCall` 放进 `activation.relayContext.id`，`program-ports.mjs` 的
+  callId 由 `program-tool.mjs` 的 `scope.id` 逐调用传入，`program-ports.mjs` 的
   `startManager` 原样传给 `relayHost`。重放不再读父会话模型、不再碰宿主，所以崩溃后的重试是修复而不是复制。
   Manager 自己的台账行同样在成功返回前写入（`recordSuccessorRow(..., "execute")`）：重启后的 Manager
   从「执行」判定，而不是从初任的提问开始。
@@ -561,13 +583,18 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
   3. **回执**：`execute` 里同样的判定再兜一次，回执带 `rejection: CALL_REPLAY_MISMATCH` 与 `detail`，
      并把原回执一并带上（原回执是事实，不是可覆盖的答案）。
   载荷没记录过的程序一律判不等：无法证明相同就不是相同，猜「相同」等于放行一个改过的调用。
-- **跨进程的重放要有持久事实（`spec/call-record.mjs`）。** 程序、载荷与回执都是内存，进程一换就没了；
+- **跨进程的重放要有持久事实（`spec/call-record.mjs`）。** 程序与回执都是内存，进程一换就没了；
   而 §2.4 第 6 步不因重启失效。适配器因此为每个会话追加写 `.Herdchestra/<session>.calls.jsonl`：
-  - **准入时**写 `{ id, payload }`——调用还没跑就先记下 id，所以崩在半路也留下「这个 id 用过了」；
-  - **结束时**再写一条 `{ id, receipt }`，回执按九字段 + 值保存（值是 JSON 就存 `json`，
-    存不下就存 `text`，并说明它是文本，而不是悄悄换成 null）。
+  - **准入时**写 `{ id, payloadDigest }`——调用还没跑就先记下 id，所以崩在半路也留下「这个 id 用过了」。
+    载荷只留 `sha256(stableJson(input))`，**不再存整个工具输入**（根 §1.1 item 1：源码与注解被
+    每条调用复制一遍，却没有增加任何重放需要的事实）；旧行里的 `payload` 读取时哈希，仍能比对。
+  - **结束时**再写一条 `{ id, receipt }`，只存重放需要的事实：`state`、`source`、值
+    （JSON 存 `json`，存不下存 `text` 并说明是文本）、`error`，以及非空的 `reason`/`payload`/`command`。
+    `name` 就是 call id、`pendingOperations` 终局为 0、`delta`/`remainingWaitMs` 属于一次请求窗口，
+    都不再落盘。
   `ProgramCalls#restoreFrom` 在闸门里做三件事：本进程没见过、磁盘上也没有 → 记下来、照常执行；
-  磁盘上有且带回执 → 用 `ProgramState.restored` 把它放回已退休表，于是**与同进程完全一样**地比对载荷
+  磁盘上有且带回执 → 用 `ProgramState.restored` 把它放回已退休表，载荷用记录的 digest 比对，
+  于是**与同进程完全一样**地判定
   （相同 → 原回执，不同 → `CALL_REPLAY_MISMATCH`）；磁盘上有却没有回执（崩在半路）→ `CALL_REPLAY_LOST`，
   既不放行也不重跑。记录读不出来同样回 `CALL_REPLAY_LOST`：不知道就等于用过，这是唯一不会重复执行的判断。
   记录写不进去时调用被拒（`CALL_REPLAY_LOST` 且 `detail` 说明原因）：记不住的调用不许跑。
@@ -593,6 +620,9 @@ interrupt: true }`），只是操作员可能没有在会话里看到那段 synt
 - **工具输入里的 `scope` 由 `spec/scope-schema.mjs` 声明，不是自由对象。** 它按四种 kind 展开成
   `oneOf`，每个分支 `additionalProperties: false`，`resetScope` 分支强制 `newScopeGoal` 与
   `newScopeRetentionBudget`。这份 schema 从 core 的 `SCOPE_KIND_VALUES` 派生，不另抄一份枚举。
+- **注解语言的说明只写一遍，在系统提示词里。** `SCOPE_DESCRIPTION` 只留指向系统提示词 Scope 一节
+  的一句话加字段形状；`tool-descriptions.mjs` 的 `SCOPE_NOTE` 已删除，不再往六个工具描述里
+  复制同一段（根 §1.1 item 5）。字段名仍由 schema 分支声明，模型照着写就能解码。
 - 宿主的顺序是「先按输入 schema 解码，再触发 `execute.before`」，所以形状错误在宿主这一层就被挡下，
   而 `execute.before` 拿到的仍是**未解码的原始输入**——越权字段仍由 Scope 书判定。两层分工：
   schema 只描述注解语言，准入与记账仍归 core。
@@ -695,7 +725,7 @@ cause，`packages/core/src/session/execution.ts` 记为 `Failed to drain Session
 | `FORK_SESSIONS` | 会话域可达性 | 插件持有 `ctx.session` 并交给 activation |
 | `PLAN_ENTRY` | Plan 角色 | 已注册 `Plan`（根 §2.2 优先于 §7.1 的三 agent 列表）；系统提示是 Plan 专有段，不是 `common + manager` |
 | `RELAY_SESSION_CONTROL` | 接力的一笔记录 | 适配器自有记录并强制执行：惰性继任者 → 原子写记录 → 同 id 投递 → `sent` → `interrupt`；两道闸门读记录；`briefId: null`（OMP）时 `undeliverable`、不重投。细节见 §6.1 |
-| `DRAFT_PATH` | 底稿路径 | 无任务元数据时按会话派生 `.Herdchestra/drafts/<safeName(session)>.md`；目录由 `makeDraftPort` 建立，建不出来则 Plan 面以 `DRAFT_DIR_UNWRITABLE` 在开始处拒绝；盘上没有底稿则 `draft.read()` 为空，review 以 `DRAFT_MISSING` 拒绝，绝不拿别处文字顶替 |
+| `DRAFT_PATH` | 底稿路径 | 无任务元数据时按会话派生工作区根的 `plans/<safeName(session)>.md`（根 §1.1 item 3：用户可见产出，不放 `.Herdchestra`）；目录由 `makeDraftPort` 建立，建不出来则 Plan 面以 `DRAFT_DIR_UNWRITABLE` 在开始处拒绝；盘上没有底稿则 `draft.read()` 为空，review 以 `DRAFT_MISSING` 拒绝，绝不拿别处文字顶替 |
 | `CONTEXT_HOOK_FAILURE` | 请求钩子如何阻止一次请求 | 宿主无失败通道，钩子抛出即让本次执行失败、请求不发出（`hooks.trigger` → drain cause）；适配器据此抛出 `ContextRefusal` |
 | `MESSAGE_SHAPE` | 请求副本的部件形状 | 已闭合（源码）：`{type:"tool-call", id, name, input}` / `{type:"tool-result", id, name, result}`，`result` 为带标签值；副本经 `message-adapter.mjs` 两次跨形状转换 |
 | `HINT_PAIR_PLACEMENT` | 合成对是否随宿主历史回来 | 宿主不存合成对：每次请求由 hint 按持久位置重新放置；适配器先摘除已有的一对，避免两份 |
@@ -720,6 +750,9 @@ fission 的准入/建组/回滚、以及语言继承；接力覆盖顺序（crea
 effect 运行时覆盖 `tool.transform` 的 Effect 执行器包装；`tool-result-contract.test.mjs` 覆盖
 `{ output, content }` 结果契约与每种工具的拒绝回执；`message-adapter.test.mjs` 覆盖宿主
 `Message` 形状的往返与合成对摘除/放回；`context-refusal.test.mjs` 覆盖 §6.2 的每个失败分支。
+`cancel.test.mjs` 覆盖 Esc 的广度优先传播、`ask`/relay/fission 三种豁免与重复事件幂等；
+`features.test.mjs` 另覆盖固定名 `plan-devops` 的复用、task 模型（含半配置拒绝）与
+「继任者指针取代目录扫描」。
 `nudge-ask.test.mjs` 用 `fast-check` 证明 §8.1–§8.2 的三条不变量：`ask` 除 `S1` 外一律
 `ASK_FORBIDDEN_OUTSIDE_S1`；`S1` 的 `ask` 挂起 + 中断后经 `unpark` 注入答复并只续跑一遍；
 未到出口的自然停止 100% 投递含全部未完成项与常授权口令的 Nudge，出口处立即停止，同一回合只 Nudge 一次。
@@ -815,7 +848,8 @@ reset 无法开闭环——错的是**模型无从知道要写这两个字段**�
 4. 同一会话再发一条普通消息，确认 `GET /api/session/<id>/context` 中**没有** id 以
    `pair-hint:` 开头的部件（合成对只在请求副本里）。
 5. `POST /api/session {"agent":"Manager"}`，让模型调用 `fork`
-   `{"name":"w1","brief":"Say ok and stop.","role":"coder"}`，看回执 `{name, steered, started}`
+   `{"name":"w1","verboseIntent":"role: coder. Say ok and stop."}`，看回执
+   `{name, steered, started, modelSource}`
    与子会话是否收到首个 prompt。
 
 任何一步失败时，日志里的 `ContextRefusal` code（`PAIR_HINT_UNAVAILABLE`、
@@ -873,3 +907,45 @@ reset 无法开闭环——错的是**模型无从知道要写这两个字段**�
 - **死代码**：`session-state` 的重复 `get root()`、`program-tool` 的 `withSignal`、插件里未用的
   `fissionTableOf` 导入、`activation.disposed` / `fissionWorker` 已删除；`disposeActivation`
   清空 `fissionOrigins` / `identities` / `laneRoles`；`park-table` 头注释改为真实语义（恢复在原地继续，不重跑）。
+
+## 15 2026-11-02 契约修订（根 §1.1 六项）
+
+本节只记**行为改变**；理由在对应源码注释里。
+
+- **Plan 的 `devops` 是裸原语**（`spec/primitives.mjs`、`program-execution.mjs`）：
+  compose 的 `SURFACE_PRIMITIVES`、本宿主的 `HOST_PRIMITIVES`，以及一条真实的宿主事实
+  ——`fork`/`join`/`review` 仍列在 compose 的 `SURFACE_MEMBERS` 里（处理器由 `surface()` 提供），
+  但按 §3.1 由宿主绑定为顶层原语——三者合并；`compile` 把原语从 `this` 移进顶层参数。
+  `this.devops` 不存在；`devops(verboseIntent)` 是 join 语义，等一个答复并原样返回报告。
+- **dedicated devops**（`program-ports.mjs`、`plugin.mjs`、`worker-sessions.mjs`）：
+  固定名 `plan-devops`；在途即 steer，已结束则 `reuse: true` 复用同一会话（`delivery: "queue"`），
+  `keepRoad: true` 让名字留在 Plan 的道路上；`activation.devopsRuns` 的单飞拒绝不变。
+- **`verboseIntent` 统一命名**：`fork` 输入、`forkWorker`、`WorkerTable.fork`、
+  `makeForkJoinPorts`、`makeDevopsPort` 与测试全部改名；`briefId`（relay 记录）保持原名。
+  没有 `brief` 别名。
+- **task 模型**（`model-inherit.mjs`）：`resolveChildModel` 读
+  `HERDCHESTRA_TASK_PROVIDER_ID` + `HERDCHESTRA_TASK_MODEL_ID`，两个都设才用；
+  半配置是 `TASK_MODEL_INCOMPLETE` 拒绝；未设退回父模型。`forkWorker`、fission lane、
+  Plan devops 用它，回执报 `modelSource`；relay 继任者与 Plan→Manager 仍用父/Plan 模型。
+  `fork` 输入没有 `model`。
+- **Esc 传播**（`cancel.mjs`、`plugin.mjs`）：顶层 Plan/Manager 的
+  `session.execution.interrupted` 广度优先中断全部子孙（worker 名册、relay roster、fission lanes），
+  不 dispose；`ask` 挂起、relay 静默退休者、fission present replacement 不传播。
+  `activation.cancelled` 让后续 `fork`/steer 回 `CANCELLED`，`join` 报
+  `cancelled: true` / `outcome: "cancelled"`；重复事件幂等。
+- **接力指针**（`relay-facts.mjs`、`relay-host.mjs`）：继任者只读自己的
+  `{successor}.relay.json`，交接提交时写入同一份记录；目录扫描与未命中重扫删除。
+  指针写失败则不投递，重放先修指针；指针/`plan-handoff` 记录不会被误当成本会话自己的退休记录。
+- **calls journal**（`call-record.mjs`、`program-calls.mjs`）：只存
+  `sha256(stableJson(input))` 与重放所需回执（`state`/`source`/值/`error`，非空
+  `reason`/`payload`/`command`）；旧 `payload` 行读取时哈希。`name`、`pendingOperations`、
+  `delta`、`remainingWaitMs` 不再落盘。
+- **花名册重放去二次方**（`worker-sessions.mjs`）：`restoreRoster` 与 `WorkerTable` 的未认领队列
+  改为 `Map<sessionID, entry>`，插入/替换/删除 O(1)。
+- **Scope 文案**（`scope-schema.mjs`、`tool-descriptions.mjs`）：`SCOPE_DESCRIPTION` 只留
+  系统提示词指针与字段形状，`SCOPE_NOTE` 与六处追加删除；`oneOf`、必填字段与 schema 结构不变。
+- **底稿路径**（`program-ports.mjs`）：`PLAN_DRAFT_DIR = "plans"`，`plans/<name>.md` 在工作区根；
+  Plan 的模型可见文字写明产出位置、不得放进 `.Herdchestra`，除产出与操作员附件外只读。
+- **Pair Hint 的 Chain 切换**（`context-hook.mjs`、测试）：`projectionBoundary` 收
+  `presented: hint.chain`；冷启动测试与 successor 前缀测试改断言 `length`/`digests`/`root`/
+  `pairIndex`，不再比较完整消息数组。拒绝诊断的链一侧只保留 digest 形状。

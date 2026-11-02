@@ -49,8 +49,8 @@
 // supplied; `ctx.invokeTool` exists only on a tool's context, delegates only to
 // a native built-in of the SAME name (extensions/types.ts:877), and is absent
 // on the real `session_start` context. `ExtensionAPI` has no general tool
-// dispatcher. The devops investigation (`Plan`'s `this.devops`) still answers
-// `NO_HOST_DISPATCH` rather than pretend.
+// dispatcher. Plan's DevOps investigation is a dedicated lane in the session's
+// own roster (`ports.mjs` `devopsPort`), not a host tool.
 //
 // `fork`/`join`/steer do NOT need it: a worker is a real session started
 // through the SDK the host injects as `api.pi` (`lane.mjs`), not the `task`
@@ -70,6 +70,7 @@ import {
   WORKER_TOOLS,
   PLAN_TOOLS,
   SCOPE_QUERY_TOOLS,
+  TASK_MODEL_PATTERN,
 } from "./host-facts.mjs";
 import {
   programTool,
@@ -118,9 +119,10 @@ const MANAGER_HIDDEN = Object.freeze([...MANAGER_FORBIDDEN, "js-worker"]);
 // expand one identity into parallel lanes can equally start another worker.
 const WORKER_HIDDEN = Object.freeze([...REPLACED_TOOLS, "js-manager", "js-review"]);
 // A Plan keeps `fork`/`join` out as well: §2.2 gives it exactly five
-// capabilities and no dispatch — the only agent it reaches is `this.devops`,
-// which is synchronous and single-flight. Starting a worker from the planner
-// would let it build instead of plan.
+// capabilities and no dispatch — the only agent it reaches is the bare
+// primitive `devops(verboseIntent)`, which is synchronous, single-flight and
+// backed by one dedicated lane. Starting a worker from the planner would let it
+// build instead of plan.
 const PLAN_HIDDEN = Object.freeze([
   ...REPLACED_TOOLS,
   "js-manager",
@@ -413,6 +415,72 @@ export const adapterForTool = (ctx) => {
     if (adapter.ctx === ctx) return adapter;
   }
   return null;
+};
+
+// The adapter bound to one session OBJECT (a lane's `AgentSession`), or null.
+// The registry is keyed by session id; a child session created through the SDK
+// also answers that id, so the registry is asked first and the live list is the
+// fallback for a session whose id the manager has not re-reported yet.
+const adapterForSessionObject = (session) => {
+  if (session === null || session === undefined) return null;
+  const registered = adapterForCall(session);
+  if (registered !== null) return registered;
+  for (const adapter of LIVE) {
+    if (adapter.ctx === session) return adapter;
+    if (adapter.session?.ctx === session) return adapter;
+  }
+  return null;
+};
+
+// Cancel every descendant of one user-facing session (root §1.1 item 2).
+//
+// A real operator interrupt (Esc at the Plan/Manager session) must reach every
+// subagent, or the stopped session keeps paying for work nobody will read. The
+// walk is breadth-first over the sessions this adapter CREATED:
+//
+//   root session -> its LaneTable -> each lane's AgentSession
+//                -> that session's adapter -> its own LaneTable -> ...
+//
+// Each lane's own session is aborted directly (`Lane.abort` ->
+// `AgentSession.abort({reason})`): the adapter created it, so it owns the
+// object and does not need the host's per-event `ctx.abort`, which only reaches
+// the caller's own turn. Nothing is disposed: transcripts and unclaimed results
+// stay readable. Every roster on the way is marked cancelled, so a later
+// `fork`/`steer` refuses by name and `join` reports the cancellation after
+// handing over what the workers really produced.
+//
+// Idempotent: a roster that is already cancelled is not aborted again, so a
+// turn_end and a following agent_end for the same interrupt cost one walk.
+export const cancelSubtree = async (rootSession, { rootAdapter = null, reason = "the operator interrupted this session" } = {}) => {
+  if (rootSession === null || typeof rootSession !== "object") {
+    return { ok: false, reason: "NO_SESSION" };
+  }
+  const queue = [{ session: rootSession, adapter: rootAdapter ?? adapterForSessionObject(rootSession) }];
+  const seen = new Set();
+  const cancelled = [];
+  while (queue.length > 0) {
+    const { session, adapter } = queue.shift();
+    if (session === null || session === undefined || seen.has(session)) continue;
+    seen.add(session);
+    const lanes = adapter?.session?.lanes ?? session.lanes ?? null;
+    if (lanes === null || typeof lanes?.cancelAll !== "function") continue;
+    if (lanes.cancelled !== null && lanes.cancelled !== undefined) {
+      // Already cancelled: its children were enqueued by the walk that did it.
+      continue;
+    }
+    // The children are collected BEFORE the abort, so a lane that settles its
+    // turn during the abort is still visited.
+    for (const lane of lanes.all()) {
+      queue.push({ session: lane.session, adapter: adapterForSessionObject(lane.session) });
+    }
+    const receipt = await lanes.cancelAll(reason);
+    cancelled.push({
+      sessionId: sessionIdOf(session),
+      lanes: Array.isArray(receipt?.lanes) ? receipt.lanes : [],
+      ok: receipt?.ok === true,
+    });
+  }
+  return { ok: true, reason, cancelled };
 };
 
 // Whether a tool call may be refused as unbound.
@@ -943,6 +1011,12 @@ export class HostAdapter {
         // The turn's ending message, kept for the idle boundary: an operator
         // interrupt is written there and nowhere else.
         noteTurnEnd: (message) => session().noteTurnEnd(message),
+        // The gate's request id is flushed at the turn boundary; its VERDICT
+        // was written when it changed (root §1.1 item 1).
+        closeRequestTurn: () => session().state.flushContextGate(),
+        // Root §1.1 item 2: the operator's interrupt reaches every descendant
+        // here, at the moment the host's own message exists.
+        onOperatorInterrupt: (message) => this.cancelOnInterrupt(message),
       }),
       // The idle boundary: where a relay deferred during a live turn is
       // performed. A worker never has one (it has no ledger and no relay port),
@@ -961,6 +1035,14 @@ export class HostAdapter {
           // work continues instead of stopping silently. `turnExit` books the
           // round once; a worker's end is its report and is never nudged.
           const exit = session().turnExit(event);
+          // The same walk as `turn_end`, for a host that delivered the
+          // interrupt only at the idle boundary. `cancelSubtree` is idempotent,
+          // so the normal path (both events) aborts the descendants once.
+          if (exit.operatorInterrupt === true) await this.cancelOnInterrupt(event?.message ?? null);
+          // Root §1.1 item 1: the agent boundary is the second place the gate's
+          // request id is flushed (the turn boundary is the first). The verdict
+          // itself was written only when it changed.
+          session().state.flushContextGate();
           // `booked` is what makes it once per turn: the host may re-emit
           // `agent_end` for the same turn, and a second nudge would read as the
           // system nagging about work the model is already doing.
@@ -1136,6 +1218,23 @@ export class HostAdapter {
 
   get narrowFailure() {
     return this.#narrowFailure;
+  }
+
+  // Root §1.1 item 2: one operator interrupt cancels the whole descendant
+  // subtree. The guard lives on the session (it knows the S1 ask, the replaced
+  // present and the relay intent); the walk lives in `cancelSubtree`, because it
+  // crosses adapters the session does not own.
+  async cancelOnInterrupt(message = null) {
+    const verdict = this.#session?.operatorInterrupt?.(message) ?? { operator: false, reason: "NO_SESSION" };
+    if (verdict.operator !== true) return { ok: false, ...verdict };
+    const receipt = await cancelSubtree(this.#ctx ?? this.#session, {
+      rootAdapter: this,
+      reason: "the operator interrupted this session",
+    });
+    if (process.env.HERDCHESTRA_DEBUG === "1") {
+      console.error("[herd] cancel", JSON.stringify(receipt));
+    }
+    return receipt;
   }
 
   // Kept for a host or a test that wants the old single entry point.
@@ -1368,7 +1467,17 @@ export default function herdchestra(pi, options = {}) {
   // here, not per session, and it does not read the event's ctx. A child that
   // does not declare Coder or DevOps is refused by name; a declared one may
   // carry a model this adapter assigns (it assigns none, so `{}`).
-  pi.on("before_subagent_spawn", createSubagentSpawnHandler());
+  pi.on(
+    "before_subagent_spawn",
+    createSubagentSpawnHandler({
+      // Root §1.1 item 6: a declared worker runs on the user's task model. The
+      // host expands the role alias after extensions load
+      // (`task/structured-subagent.ts` `resolveConfiguredModelPatterns`), so
+      // `@task` is the supported selector — the same one the host's own task
+      // agent declares (`task/agents.ts:56`).
+      modelFor: (role) => (role === ROLE.CODER || role === ROLE.DEVOPS ? TASK_MODEL_PATTERN : null),
+    }),
+  );
   pi.on("agent_end", hookFor("agent_end"));
 }
 

@@ -45,15 +45,13 @@
 //     history: the successor's own transcript is what the host gave it.
 
 import fs from "node:fs";
-import path from "node:path";
-
 import { REVIEW_KINDS } from "../../core/review.mjs";
 import {
   RELAY_GATE,
   RELAY_PHASES,
   RELAY_RECORD_VERSION,
-  RELAY_STATE_DIR,
   briefIdFor,
+  handoffFile,
   readRelay,
   recoverRelay,
   relayBrief,
@@ -101,26 +99,21 @@ const discard = async (sessions, sessionID) => {
 // it" leaves the call id here, and the replay finds it. `handoffId` is null on a
 // record written by a caller that had no call id; such a record never matches,
 // because it cannot tell a replay from a new review.
+//
+// The lookup is ONE deterministic path, derived from the call id
+// (`handoffFile`), not a scan of `.Herdchestra`. The state directory grows with
+// every session, and reading every `*.relay.json` to answer "did this call
+// already start a Manager?" was O(directory) on the hand-off path (root §1.1
+// item 1).
 export const planHandoffOf = (root, handoffId) => {
   if (typeof root !== "string" || root.length === 0) return null;
   if (typeof handoffId !== "string" || handoffId.length === 0) return null;
-  const directory = path.join(root, RELAY_STATE_DIR);
-  let entries;
-  try {
-    entries = fs.readdirSync(directory);
-  } catch {
-    return null;
-  }
-  for (const entry of entries) {
-    if (!entry.endsWith(".relay.json")) continue;
-    const record = readRelay(path.join(directory, entry));
-    if (record === null || record.corrupt === true) continue;
-    if (record.kind !== "plan-handoff") continue;
-    if (record.handoffId !== handoffId) continue;
-    if (typeof record.successor !== "string" || record.successor.length === 0) continue;
-    return record;
-  }
-  return null;
+  const record = readRelay(handoffFile(root, handoffId));
+  if (record === null || record.corrupt === true) return null;
+  if (record.kind !== "plan-handoff") return null;
+  if (record.handoffId !== handoffId) return null;
+  if (typeof record.successor !== "string" || record.successor.length === 0) return null;
+  return record;
 };
 
 const NOT_GUARANTEED = Object.freeze([
@@ -231,10 +224,35 @@ export const makeRelayHost = ({
     }
   };
 
+  // The successor's own copy of the record (root §1.1 item 1). It is written
+  // under the successor's name, in the same workspace as the incumbent's file,
+  // so a successor reads ONE path instead of scanning `.Herdchestra` on every
+  // request. `workspace` is null only for a record that already lives at its
+  // successor's path (a Plan hand-off).
+  const writePointer = (workspace, record) => {
+    if (typeof workspace !== "string" || workspace.length === 0) return { ok: true, skipped: true };
+    return writeRelay(relayFile(workspace, record.successor), record);
+  };
+
   // Deliver one brief and settle the record. `record.briefId` is the message id
   // the host reconciles on, so a second delivery of the same brief is the same
   // input, not a second one.
-  const deliver = async (file, record) => {
+  //
+  // The pointer is written BEFORE the prompt: the successor's first request
+  // applies the barrier and inherits its facts from that file, so a successor
+  // that runs without it would be a session that never saw the relay. A pointer
+  // that cannot be written refuses the delivery; the incumbent's record already
+  // retired it, and a replay repairs the pointer before delivering.
+  const deliver = async (file, record, workspace = null) => {
+    const pointer = writePointer(workspace, record);
+    if (pointer.ok !== true) {
+      return {
+        ok: false,
+        reason: "RELAY_POINTER_FAILED",
+        detail: pointer.detail ?? pointer.reason ?? null,
+        record,
+      };
+    }
     const sending = writeRelay(file, { ...record, phase: RELAY_PHASES.SENDING });
     if (sending.ok !== true) {
       return { ok: false, reason: "RELAY_RECORD_FAILED", detail: sending.detail ?? null, record };
@@ -253,7 +271,15 @@ export const makeRelayHost = ({
       return { ok: false, reason: "RELAY_PROMPT_FAILED", detail: String(error?.message ?? error), record };
     }
     const sent = writeRelay(file, { ...record, phase: RELAY_PHASES.SENT });
-    return { ok: true, record: { ...record, phase: RELAY_PHASES.SENT }, durable: sent.ok === true };
+    // Keep the successor's copy in step. The barrier does not read the phase,
+    // but a reader must not have to know which of the two files it opened to
+    // learn whether the brief was delivered.
+    const pointerSent = writePointer(workspace, { ...record, phase: RELAY_PHASES.SENT });
+    return {
+      ok: true,
+      record: { ...record, phase: RELAY_PHASES.SENT },
+      durable: sent.ok === true && pointerSent.ok === true,
+    };
   };
 
   // The successor's starting row, written on every path that can complete a
@@ -305,13 +331,45 @@ export const makeRelayHost = ({
   // SAME deterministic message id — the host's durable admission table
   // reconciles the duplicate. A record written `sent` before the prompt could
   // instead leave an inert Manager nobody ever delivers to.
-  const deliverHandoff = async (file, record, draft) => {
-    const sending = writeRelay(file, { ...record, phase: RELAY_PHASES.SENDING });
+  //
+  // Two copies, one fact: `file` is the Manager's own path, which its
+  // `RelayFacts` reads for the barrier and the operator's words; `dedupFile` is
+  // the deterministic path keyed by the physical call id, which a replay reads
+  // without listing the state directory. The dedup copy is written FIRST: a
+  // crash after it is recoverable (the next call finds the Manager and repairs
+  // the other copy), while a crash after only the Manager copy would be found
+  // by neither.
+  const writeHandoff = (file, dedupFile, record) => {
+    if (dedupFile !== null) {
+      const dedup = writeRelay(dedupFile, record);
+      if (dedup.ok !== true) {
+        return { ok: false, detail: dedup.detail ?? dedup.reason ?? null };
+      }
+    }
+    const own = writeRelay(file, record);
+    if (own.ok !== true) {
+      return { ok: false, detail: own.detail ?? own.reason ?? null };
+    }
+    return { ok: true };
+  };
+
+  const removeFile = (file) => {
+    if (file === null) return;
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      // The record is left behind; a repeat re-delivers or repairs it, which is
+      // the safe direction.
+    }
+  };
+
+  const deliverHandoff = async (file, record, draft, dedupFile = null) => {
+    const sending = writeHandoff(file, dedupFile, { ...record, phase: RELAY_PHASES.SENDING });
     if (sending.ok !== true) {
       return failure("MANAGER_RECORD_FAILED", {
         session: null,
         record,
-        detail: sending.detail ?? sending.reason ?? null,
+        detail: sending.detail,
       });
     }
     try {
@@ -328,12 +386,8 @@ export const makeRelayHost = ({
       // not exist.
       const cleanup = await discard(sessions, record.successor);
       if (cleanup.removed === true) {
-        try {
-          fs.rmSync(file, { force: true });
-        } catch {
-          // The record is left in `sending`; a repeat re-delivers it, which is
-          // the safe direction.
-        }
+        removeFile(file);
+        removeFile(dedupFile);
       }
       return failure("MANAGER_PROMPT_FAILED", {
         session: null,
@@ -342,7 +396,7 @@ export const makeRelayHost = ({
         detail: String(error?.message ?? error),
       });
     }
-    const sent = writeRelay(file, { ...record, phase: RELAY_PHASES.SENT });
+    const sent = writeHandoff(file, dedupFile, { ...record, phase: RELAY_PHASES.SENT });
     return { ok: true, record: { ...record, phase: RELAY_PHASES.SENT }, durable: sent.ok === true };
   };
 
@@ -367,11 +421,38 @@ export const makeRelayHost = ({
       // is recovered, never repeated: `resume` delivers the same brief under the
       // same id, `done` reports the successor, and `corrupt` refuses because
       // nobody can tell who was retired.
-      const existing = recoverRelay(file);
+      let existing = recoverRelay(file);
       if (existing.kind === "corrupt") {
         return failure("RELAY_CORRUPT", { detail: existing.reason ?? null, notGuaranteed: NOT_GUARANTEED });
       }
+      // The file may be a record that NAMES this session as its successor: the
+      // pointer a previous hand-over wrote, or the Plan hand-off record that
+      // carries the operator's words into this Manager. Neither is this
+      // session's own retirement. It is ignored, and the new record below
+      // replaces it: from this point the session is the incumbent.
+      if (existing.kind !== "none" && existing.record !== undefined) {
+        const own = existing.record?.incumbent === predecessor && existing.record?.kind !== "plan-handoff";
+        if (!own) existing = { kind: "none" };
+      }
       if (existing.kind === "done") {
+        // Repair the successor's pointer before reporting the hand-over done.
+        // A crash between the incumbent's record and the pointer leaves a
+        // successor that would never apply its barrier; this repeat is the
+        // recovery, and the pointer write is idempotent.
+        const pointer = writePointer(workspace, existing.record);
+        if (pointer.ok !== true) {
+          return {
+            ok: false,
+            reason: "RELAY_POINTER_FAILED",
+            retired: true,
+            barrier: true,
+            successor: existing.record.successor,
+            record: existing.record,
+            detail: pointer.detail ?? pointer.reason ?? null,
+            recovered: true,
+            notGuaranteed: NOT_GUARANTEED,
+          };
+        }
         // A record that already finished still owes its successor's row. The
         // first delivery may have ended with `SUCCESSOR_LEDGER_NOT_DURABLE`, and
         // this repeat is the recovery: `recordRelayStart` is idempotent, so it
@@ -427,7 +508,7 @@ export const makeRelayHost = ({
         });
       }
       if (existing.kind === "resume") {
-        const delivered = await deliver(file, existing.record);
+        const delivered = await deliver(file, existing.record, workspace);
         if (delivered.ok !== true) return { ...delivered, recovered: true, notGuaranteed: NOT_GUARANTEED };
         const row = recordSuccessorRow(
           stateOf,
@@ -624,7 +705,7 @@ export const makeRelayHost = ({
       // Steps 3-4. From here the record is the authority even if this process
       // dies: the incumbent is refused by the gates, and the successor's brief
       // is recognised by its id when it is delivered again.
-      const delivered = await deliver(file, record);
+      const delivered = await deliver(file, record, workspace);
       if (delivered.ok !== true) {
         return {
           ...delivered,
@@ -707,6 +788,10 @@ export const makeRelayHost = ({
       if (typeof planSession !== "string" || planSession.length === 0) {
         return failure("NO_PARENT_SESSION", { session: null, detail: "NO_SESSION" });
       }
+      // A caller with no call id cannot tell a replay from a new review: its
+      // record has no deterministic path and never matches (`planHandoffOf`
+      // answers null). Every record still carries the field, for audit.
+      const callId = typeof handoffId === "string" && handoffId.length > 0 ? handoffId : null;
       // A Manager that restarts must judge from `execute` as a session the Plan
       // started. Its row is the durable half of that, so a hand-off that cannot
       // write it is not reported as complete — the same rule `handOver` keeps
@@ -723,27 +808,40 @@ export const makeRelayHost = ({
         // The Plan's own tenure records the hand-off (根 §2.2: the hand-off is
         // the exit it earns). The turn-exit controller reads this fact instead
         // of inferring it from the milestone.
-        noteHandoff(planSession, session, handoffId);
+        noteHandoff(planSession, session, callId);
         return { ok: true, session, ledger: row };
       };
       // The replay of THIS call id reports the Manager it already started
       // instead of starting a second one (see `planHandoffOf`). No host call
       // happens here: the fact is the record on disk. A different call id is a
       // different hand-off, even with byte-identical draft text (§2.2).
-      const existing = planHandoffOf(root, handoffId);
+      const existing = planHandoffOf(root, callId);
       if (existing !== null) {
+        const managerFile = relayFile(root, existing.successor);
+        const dedupFile = handoffFile(root, callId);
         // A record in `sent` is a finished hand-off; its row and the Plan's own
         // hand-off fact are repaired here because the crash may have happened
         // between the delivery and either write.
         if (existing.phase === RELAY_PHASES.SENT) {
+          // The Manager's own copy is what its `RelayFacts` reads for the
+          // barrier. A crash after the dedup copy but before this one leaves it
+          // missing; repair it before reporting the hand-off done.
+          const own = writeRelay(managerFile, existing);
+          if (own.ok !== true) {
+            return failure("MANAGER_RECORD_FAILED", {
+              session: null,
+              record: existing,
+              detail: own.detail ?? own.reason ?? null,
+              recovered: true,
+            });
+          }
           return { ...settledHandoff(existing.successor, existing), recovered: true };
         }
         // The record landed but the delivery was never confirmed: re-deliver the
         // same draft under the same message id, then settle.
-        const file = relayFile(root, existing.successor);
         const text =
           typeof existing.draft === "string" && existing.draft.length > 0 ? existing.draft : draft;
-        const delivered = await deliverHandoff(file, existing, text);
+        const delivered = await deliverHandoff(managerFile, existing, text, dedupFile);
         if (delivered.ok !== true) return { ...delivered, recovered: true };
         return { ...settledHandoff(existing.successor, delivered.record), recovered: true };
       }
@@ -788,7 +886,10 @@ export const makeRelayHost = ({
       // `plan-handoff` names no incumbent and retires nobody; it carries the
       // operator's original words (§2.4 第 4 步) so the barrier can put them
       // into the Manager's first request.
-      const handoffFile = relayFile(root, session);
+      const managerFile = relayFile(root, session);
+      // The dedup copy is derived from the physical call id, so a replay reads
+      // one path instead of listing the state directory.
+      const dedupFile = callId === null ? null : handoffFile(root, callId);
       // The message id is a function of the two identities, so a process that
       // crashed before `sent` derives the same id and the host reconciles the
       // second delivery instead of admitting a duplicate. The record itself is
@@ -815,17 +916,18 @@ export const makeRelayHost = ({
         // (`planHandoffOf`); the Plan alone must never deduplicate, because the
         // same Plan starts a new Manager on every new empty review (§2.2).
         from: planSession,
-        handoffId: typeof handoffId === "string" && handoffId.length > 0 ? handoffId : null,
+        handoffId: callId,
         at: Date.now(),
       };
-      const wrote = writeRelay(handoffFile, record);
+      const wrote = writeHandoff(managerFile, dedupFile, record);
       if (wrote.ok !== true) {
         const cleanup = await discard(sessions, session);
+        if (cleanup.removed === true) removeFile(dedupFile);
         return failure("MANAGER_RECORD_FAILED", {
           session: null,
           discarded: session,
           cleanup,
-          detail: wrote.detail ?? wrote.reason ?? null,
+          detail: wrote.detail,
         });
       }
       // Registered before the draft: the draft is this adapter's own delivery,
@@ -833,7 +935,7 @@ export const makeRelayHost = ({
       // top-level session (`identity.mjs`). Without this the host's plain prompt
       // is captured as the operator's words (`live5`).
       noteCreated(session, { parentID: null, role: successorAgent, origin: "plan-handoff" });
-      const delivered = await deliverHandoff(handoffFile, record, draft);
+      const delivered = await deliverHandoff(managerFile, record, draft, dedupFile);
       if (delivered.ok !== true) return delivered;
       return settledHandoff(session, delivered.record);
     },

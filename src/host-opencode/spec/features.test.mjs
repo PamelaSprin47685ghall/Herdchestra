@@ -20,6 +20,7 @@ import { devopsRoadOf } from "./activation.mjs";
 import { SURFACE_MEMBERS } from "../../compose/program/surface.mjs";
 import { planDraftPath } from "./program-ports.mjs";
 import { PORTS_FOR, makeSurface } from "./surface-factory.mjs";
+import { RELAY_GATE, RELAY_PHASES, relayFile, relayRecord, writeRelay } from "./relay-record.mjs";
 
 const RESET = (budget = 50) => ({
   kind: "resetScope",
@@ -278,6 +279,37 @@ test("a relay writes one durable record before the successor's brief, then retir
   assert.equal(record.barrier, true);
   assert.equal(record.inheritFrom, "ses_main");
   assert.equal(record.briefId, prompt.id);
+  // The successor reads its OWN copy, not a directory scan (root §1.1 item 1):
+  // the hand-over writes the record under the successor's name before the brief
+  // so its first request already applies the barrier.
+  const pointer = JSON.parse(
+    await fs.readFile(path.join(host.dir, ".Herdchestra", `${handed.successor}.relay.json`), "utf8"),
+  );
+  assert.equal(pointer.incumbent, "ses_main");
+  assert.equal(pointer.successor, handed.successor);
+  assert.equal(pointer.phase, "sent");
+  await host.cleanup();
+});
+
+test("a record that is not at the session's own path is not found by a scan", async () => {
+  // The scan fallback was removed with the pointer: a successor reads exactly
+  // one path. A stray record that names this session but lives under another
+  // name is not authority, and must not gate or cut this request.
+  const host = await fakeHost();
+  const record = relayRecord({
+    sessionID: "ses_other",
+    incumbent: "ses_other",
+    successor: "ses_main",
+    tenure: 1,
+    milestone: "execute",
+    phase: "sent",
+    requestGate: "host",
+    toolGate: "host",
+  });
+  await fs.mkdir(path.join(host.dir, ".Herdchestra"), { recursive: true });
+  assert.equal(writeRelay(relayFile(host.dir, "ses_other"), record).ok, true);
+  const out = await host.call("js-worker", { code: "return 1;" }, { agent: "coder", sessionID: "ses_main" });
+  assert.equal(out.state, "completed", JSON.stringify(out.error));
   await host.cleanup();
 });
 
@@ -1095,6 +1127,23 @@ test("after a cold start a call id replays its original receipt, or refuses a ch
   // An id that was admitted but whose receipt never landed (the process died
   // mid-call) is the other half of the same fact.
   first.state("ses_main").noteCall("call_unfinished", { code: "return 2;", scope });
+  // The journal keeps a payload DIGEST, not the tool input (root §1.1 item 1):
+  // the admission line names no program text, and the finished receipt carries
+  // only the fields a replay cannot rebuild.
+  const journal = (await fs.readFile(path.join(first.dir, ".Herdchestra", "ses_main.calls.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const admission = journal.find((row) => row.id === "call_cold" && row.receipt === undefined);
+  assert.match(admission.payloadDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal("payload" in admission, false, "the full tool input is not stored");
+  assert.equal(JSON.stringify(admission).includes("fixed: 1"), false, "no program text in the admission line");
+  const finished = journal.filter((row) => row.id === "call_cold").at(-1);
+  assert.equal(finished.receipt.state, "completed");
+  assert.deepEqual(finished.receipt.value, { kind: "json", value: { fixed: 1 } });
+  for (const redundant of ["name", "pendingOperations", "delta", "remainingWaitMs"]) {
+    assert.equal(redundant in finished.receipt, false, `${redundant} is not kept`);
+  }
   const dir = first.dir;
   await first.cleanup();
 
@@ -1188,9 +1237,24 @@ test("Plan has no file member other than cat and write, and no command", async (
   const host = await fakeHost();
   const description = host.tools.get("plan").description;
   // §3.1: each capability is named in its one spelling — members as `this.xxx`,
-  // the primitives `fork`/`join`/`review` as bare names.
-  const spellingOf = (member) => (["fork", "join", "review"].includes(member) ? member : `this.${member}`);
-  for (const member of SURFACE_MEMBERS.plan) assert.ok(description.includes(`\`${spellingOf(member)}\``), member);
+  // the primitives as bare names. Plan's `devops` is a primitive (root §1.1
+  // item 3), so `this.devops` must not exist.
+  const spellingOf = (member) =>
+    ["fork", "join", "review", "devops"].includes(member) ? member : `this.${member}`;
+  for (const member of [...SURFACE_MEMBERS.plan, "devops"]) {
+    assert.ok(description.includes(`\`${spellingOf(member)}\``), member);
+  }
+  // The prose says `this.devops` does NOT exist; the member list must not
+  // advertise it as a member.
+  const membersLine = description.split("\n").find((line) => line.startsWith("Members:"));
+  assert.equal(membersLine.includes("`this.devops`"), false);
+  assert.equal(membersLine.includes("`devops`"), true);
+  // The output's place and naming rule is model-facing text (root §1.1 item 3):
+  // workspace-root `plans/<name>.md`, never `.Herdchestra`, and Plan is read-only
+  // apart from that output and operator attachments.
+  assert.match(description, /plans\/<name>\.md/);
+  assert.match(description, /never lives under `\.Herdchestra`/);
+  assert.match(description, /read-only/);
   assert.equal(description.includes("`this.call`"), false);
   assert.equal(description.includes("`call`"), false);
   assert.equal(description.includes("`glob`"), false);
@@ -1199,7 +1263,7 @@ test("Plan has no file member other than cat and write, and no command", async (
   await host.cleanup();
 });
 
-test("Plan's devops member waits for the one answer and returns it whole", async () => {
+test("Plan's devops primitive waits for the one dedicated answer, returns it whole and reuses the worker", async () => {
   // The devops child is created through the fake domain, which records it.
   const host = await fakeHost({
     sessions: {
@@ -1208,7 +1272,7 @@ test("Plan's devops member waits for the one answer and returns it whole", async
       }),
     },
   });
-  const report = await host.call("plan", { code: 'return await this.devops("list the files");' }, { agent: "Plan" });
+  const report = await host.call("plan", { code: 'return await devops("list the files");' }, { agent: "Plan" });
   assert.equal(report.state, "completed", JSON.stringify(report.error));
   assert.equal(report.value.ok, true);
   assert.equal(report.value.report, "report: two files changed");
@@ -1216,8 +1280,24 @@ test("Plan's devops member waits for the one answer and returns it whole", async
   // The worker table sends `agent`, `title` and `parentID` (session-creation).
   const created = host.calls.find(([kind]) => kind === "create")[1];
   assert.equal(created.agent, "devops");
-  assert.equal(created.title.startsWith("plan-devops-"), true);
+  // Root §1.1 item 3: ONE dedicated worker, under a fixed name.
+  assert.equal(created.title, "plan-devops");
   assert.ok(host.calls.some(([kind]) => kind === "wait"));
+
+  // The host reports the worker finished; the next investigation reuses the
+  // SAME session instead of creating a replacement.
+  host.table("ses_main").settled(created.id, "succeeded");
+  const again = await host.call("plan", { code: 'return await devops("now the tests");' }, { agent: "Plan" });
+  assert.equal(again.state, "completed", JSON.stringify(again.error));
+  assert.equal(again.value.ok, true, JSON.stringify(again.value));
+  assert.equal(host.calls.filter(([kind]) => kind === "create").length, 1, "the dedicated worker is not replaced");
+  const prompts = host.calls.filter(([kind, input]) => kind === "prompt" && input.sessionID === created.id);
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1][1].text, /now the tests/);
+  // `this.devops` does not exist: the capability has exactly one spelling.
+  const wrong = await host.call("plan", { code: 'return await this.devops("x");' }, { agent: "Plan" });
+  assert.equal(wrong.state, "failed", JSON.stringify(wrong));
+  assert.match(String(wrong.error.message), /this\.devops is not a function/);
   await host.cleanup();
 });
 
@@ -1567,6 +1647,121 @@ test("a fission whose owner has no model refuses and builds no lane", async () =
   assert.equal(forked.value.reason, "HOST_SESSION_HAS_NO_MODEL");
   assert.equal(host.calls.some(([kind]) => kind === "create"), false, "no session was created without a model");
   await host.cleanup();
+});
+
+// ---------------------------------------------------------------------------
+// The task model (root §1.1 item 6)
+//
+// Subagents — a forked worker, a fission lane and Plan's dedicated devops — run
+// the operator's task model when it is configured. Manager and Plan keep the
+// parent model, and so do the relay successor and the Manager a Plan hands to.
+
+const TASK_ENV = Object.freeze({
+  PROVIDER: "HERDCHESTRA_TASK_PROVIDER_ID",
+  MODEL: "HERDCHESTRA_TASK_MODEL_ID",
+});
+const TASK_MODEL = Object.freeze({ providerID: "task-provider", id: "task-model" });
+
+const withTaskModel = async (providerID, id, run) => {
+  const saved = { provider: process.env[TASK_ENV.PROVIDER], model: process.env[TASK_ENV.MODEL] };
+  if (providerID === null) delete process.env[TASK_ENV.PROVIDER];
+  else process.env[TASK_ENV.PROVIDER] = providerID;
+  if (id === null) delete process.env[TASK_ENV.MODEL];
+  else process.env[TASK_ENV.MODEL] = id;
+  try {
+    return await run();
+  } finally {
+    if (saved.provider === undefined) delete process.env[TASK_ENV.PROVIDER];
+    else process.env[TASK_ENV.PROVIDER] = saved.provider;
+    if (saved.model === undefined) delete process.env[TASK_ENV.MODEL];
+    else process.env[TASK_ENV.MODEL] = saved.model;
+  }
+};
+
+test("a forked worker runs the task model and reports its source", async () => {
+  await withTaskModel(TASK_MODEL.providerID, TASK_MODEL.id, async () => {
+    const host = await fakeHost();
+    const out = await host.call("js-manager", { code: 'return await fork("w1", "role: coder. do it");' }, {
+      agent: "Manager",
+    });
+    assert.equal(out.value.started, true, JSON.stringify(out.value));
+    assert.equal(out.value.modelSource, "task");
+    const created = host.calls.find(([kind, input]) => kind === "create" && input.title === "w1");
+    assert.deepEqual(created[1].model, TASK_MODEL);
+    await host.cleanup();
+  });
+});
+
+test("a fission lane runs the task model", async () => {
+  await withTaskModel(TASK_MODEL.providerID, TASK_MODEL.id, async () => {
+    const host = await fakeHost();
+    const forked = await host.call("js-manager", { code: 'return await fork("w1", "role: coder. do it");' }, {
+      agent: "Manager",
+    });
+    const workerSession = host.calls.find(([kind, input]) => kind === "create" && input.title === "w1")[1].id;
+    const out = await host.call("js-worker", { code: 'return await this.fission(["one", "two"]);' }, {
+      sessionID: workerSession,
+    });
+    assert.equal(out.value.ok, true, JSON.stringify(out.value));
+    const lanes = host.calls.filter(([kind, input]) => kind === "create" && input.metadata?.herdchestra === "lane");
+    assert.equal(lanes.length, 2);
+    for (const [, input] of lanes) assert.deepEqual(input.model, TASK_MODEL);
+    await host.cleanup();
+  });
+});
+
+test("Plan's dedicated devops runs the task model", async () => {
+  await withTaskModel(TASK_MODEL.providerID, TASK_MODEL.id, async () => {
+    const host = await fakeHost({
+      sessions: {
+        context: async () => ({ data: [{ role: "assistant", content: [{ type: "text", text: "report" }] }] }),
+      },
+    });
+    const out = await host.call("plan", { code: 'return await devops("look");' }, { agent: "Plan" });
+    assert.equal(out.value.ok, true, JSON.stringify(out.value));
+    assert.equal(out.value.modelSource, "task");
+    const created = host.calls.find(([kind, input]) => kind === "create" && input.agent === "devops");
+    assert.deepEqual(created[1].model, TASK_MODEL);
+    await host.cleanup();
+  });
+});
+
+test("half a task model is a refusal, not a silent parent fallback", async () => {
+  await withTaskModel(TASK_MODEL.providerID, null, async () => {
+    const host = await fakeHost();
+    const out = await host.call("js-manager", { code: 'return await fork("w1", "role: coder. do it");' }, {
+      agent: "Manager",
+    });
+    assert.equal(out.value.ok, false, JSON.stringify(out.value));
+    assert.equal(out.value.rejection, "TASK_MODEL_INCOMPLETE");
+    assert.equal(host.calls.some(([kind]) => kind === "create"), false, "no session was created");
+    await host.cleanup();
+  });
+});
+
+test("a relay successor and a Plan's Manager keep the parent model even with a task model set", async () => {
+  await withTaskModel(TASK_MODEL.providerID, TASK_MODEL.id, async () => {
+    const host = await fakeHost();
+    host.seesSession("ses_main");
+    await host.operatorSays("ship the parser fix");
+    const handed = await host.relayHost.handOver({ predecessor: "ses_main", milestone: "execute", tenure: 0 });
+    assert.equal(handed.ok, true, JSON.stringify(handed));
+    const successor = host.calls.find(
+      ([kind, input]) => kind === "create" && input.metadata?.herdchestra === "relay-successor",
+    );
+    assert.deepEqual(successor[1].model, PARENT_MODEL, "the successor continues the parent's model");
+
+    const manager = await host.relayHost.startManager("the saved plan\n", {
+      planSession: "ses_main",
+      handoffId: "call_handoff",
+    });
+    assert.equal(manager.ok, true, JSON.stringify(manager));
+    const created = host.calls.find(
+      ([kind, input]) => kind === "create" && input.metadata?.herdchestra === "manager",
+    );
+    assert.deepEqual(created[1].model, PARENT_MODEL, "the Manager runs the Plan's model");
+    await host.cleanup();
+  });
 });
 
 // ---------------------------------------------------------------------------

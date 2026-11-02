@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
@@ -14,7 +14,8 @@ import { createPlugin } from "./index.mjs";
 import { COMMON, MANAGER, WORKER } from "../compose/prompt/files.mjs";
 import { systemPromptFor } from "../compose/prompt/projection.mjs";
 import { SURFACE_MEMBERS } from "../compose/program/surface.mjs";
-import { WorkerTable } from "./workers.mjs";
+import { WorkerTable, workerRosterFile } from "./workers.mjs";
+import { appendJsonLine, readJsonLines } from "./files.mjs";
 import { TenureState } from "./tenure.mjs";
 import { relayPort, fissionSteps, laneFraming } from "./ports.mjs";
 import { SessionFission } from "./fission.mjs";
@@ -31,7 +32,7 @@ import { ManagerSessions } from "./sessions.mjs";
 import { projectRoot, workspaceOf, workspaceRootOf, repoRootFromAdapter } from "./facts.mjs";
 import { toCue } from "../core/cue.mjs";
 import { delegatedAgentApi, hasCredentials, hostModuleSource, providerCredentials, sessionHostApi } from "./host-modules.mjs";
-import { createDevopsRunner } from "./devops.mjs";
+import { PLAN_DEVOPS_NAME, createDevopsRunner } from "./devops.mjs";
 import { runExit, turnExit } from "./guard.mjs";
 
 async function workspace(t) {
@@ -255,8 +256,8 @@ test("fork reports the one capability it still needs, by name, and never pretend
   // refuses with a named reason — it never answers `started: true` without one.
   const dir = await workspace(t);
   const { tools } = setup(dir);
-  // §4.1: two arguments. The brief declares the identity; there is no `role`.
-  const receipt = await tools.get("fork").execute({ name: "w1", brief: "role: coder. Do it." }, {});
+  // §4.1: two arguments. The verboseIntent declares the identity; there is no `role`.
+  const receipt = await tools.get("fork").execute({ name: "w1", verboseIntent: "role: coder. Do it." }, {});
   assert.equal(receipt.steered, false);
   if (receipt.started === true) {
     // The SDK was reachable and a connection existed: the receipt must say which
@@ -270,7 +271,7 @@ test("fork reports the one capability it still needs, by name, and never pretend
   // The receipt names what was missing when the adapter knows it: which sources
   // a `MODEL_UNKNOWN` tried, or which ladder a `HostCapabilityMissing` walked.
   if (receipt.rejection === "MODEL_UNKNOWN") {
-    assert.deepEqual(receipt.detail.tried, ["request", "context", "sessionRecord", "environment"]);
+    assert.deepEqual(receipt.detail.tried, ["taskEnvironment", "request", "context", "sessionRecord", "environment"]);
   } else if (receipt.detail !== undefined) {
     assert.equal(typeof receipt.detail.searched, "string");
   }
@@ -278,16 +279,16 @@ test("fork reports the one capability it still needs, by name, and never pretend
   assert.equal(typeof receipt.message, "string");
 });
 
-test("fork refuses a brief that does not declare exactly one worker identity", async (t) => {
+test("fork refuses a verboseIntent that does not declare exactly one worker identity", async (t) => {
   const dir = await workspace(t);
   const { tools } = setup(dir);
   const fork = tools.get("fork");
   // No declaration: no default role is invented (§2.1).
-  const undeclared = await fork.execute({ name: "w1", brief: "do it" }, {});
+  const undeclared = await fork.execute({ name: "w1", verboseIntent: "do it" }, {});
   assert.equal(undeclared.ok, false);
   assert.equal(undeclared.rejection, "UNDECLARED_ROLE");
-  // Two identities in one field: the brief does not decide.
-  const ambiguous = await fork.execute({ name: "w2", brief: "role: coder, devops. Do it." }, {});
+  // Two identities in one field: the verboseIntent does not decide.
+  const ambiguous = await fork.execute({ name: "w2", verboseIntent: "role: coder, devops. Do it." }, {});
   assert.equal(ambiguous.rejection, "AMBIGUOUS_ROLE");
   // A role input the schema no longer offers is not a way back in.
   assert.equal(fork.inputSchema.properties.role, undefined);
@@ -405,8 +406,8 @@ test("a fork-started worker can be steered, and the receipt says which happened"
   const steers = [];
   let settle = null;
   const table = new WorkerTable({
-    create: async ({ name, brief }) => {
-      turns.push({ turn: "start", brief });
+    create: async ({ name, verboseIntent }) => {
+      turns.push({ turn: "start", verboseIntent });
       return {
         started: true,
         // A steer goes into the turn that is running (§4.1): the fake's own
@@ -416,7 +417,7 @@ test("a fork-started worker can be steered, and the receipt says which happened"
           return true;
         },
         run: async (next) => {
-          turns.push({ turn: "steer", brief: next });
+          turns.push({ turn: "steer", verboseIntent: next });
           return { finishReason: "stop", text: next };
         },
         abort: () => {},
@@ -426,30 +427,30 @@ test("a fork-started worker can be steered, and the receipt says which happened"
       };
     },
   });
-  const started = await table.fork({ name: "w", brief: "first", role: "coder" });
+  const started = await table.fork({ name: "w", verboseIntent: "first", role: "coder" });
   assert.deepEqual(started, { name: "w", steered: false, started: true });
   assert.equal(table.isLive("w"), true);
 
   // While the first turn is in flight the steer enters that turn.
-  const steered = await table.fork({ name: "w", brief: "second", role: "coder" });
-  // The receipt is exactly the delivery (§4.1): the brief was steered into the
+  const steered = await table.fork({ name: "w", verboseIntent: "second", role: "coder" });
+  // The receipt is exactly the delivery (§4.1): the verboseIntent was steered into the
   // running turn, and no new session was started.
   assert.deepEqual(steered, { name: "w", steered: true, started: false });
-  assert.deepEqual(steers, ["second"], "the brief reached the runtime that is running");
-  assert.deepEqual(turns, [{ turn: "start", brief: "first" }]);
+  assert.deepEqual(steers, ["second"], "the verboseIntent reached the runtime that is running");
+  assert.deepEqual(turns, [{ turn: "start", verboseIntent: "first" }]);
 
   // The first turn settles; the steer was already delivered into it, so no
-  // second turn is started for the same brief (spec §4.1: a steer is not a new
+  // second turn is started for the same verboseIntent (spec §4.1: a steer is not a new
   // session and not a new turn).
   settle({ finishReason: "stop", text: "second" });
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(turns, [{ turn: "start", brief: "first" }]);
+  assert.deepEqual(turns, [{ turn: "start", verboseIntent: "first" }]);
   // The view is the last settled turn: the owner's fission start context.
   assert.equal(table.viewOf("w"), "second");
 
   // One report answered the carrier and the steer it took: the carrier keeps the
-  // brief that turn was given, the steered turn keeps the runtime's answer.
+  // verboseIntent that turn was given, the steered turn keeps the runtime's answer.
   const carrier = await table.join();
   assert.equal(carrier.name, "w");
   assert.equal(carrier.text, "first");
@@ -464,8 +465,8 @@ test("a steer accepted while the worker is idle starts a turn at once", async ()
   const turns = [];
   let settle = null;
   const table = new WorkerTable({
-    create: async ({ brief }) => {
-      turns.push(brief);
+    create: async ({ verboseIntent }) => {
+      turns.push(verboseIntent);
       return {
         started: true,
         run: async (next) => {
@@ -479,14 +480,14 @@ test("a steer accepted while the worker is idle starts a turn at once", async ()
       };
     },
   });
-  await table.fork({ name: "w", brief: "first", role: "coder" });
+  await table.fork({ name: "w", verboseIntent: "first", role: "coder" });
   settle({ finishReason: "stop", text: "first" });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(table.isLive("w"), false);
   // Drain the first record so the next `join` answers the steered turn.
   assert.equal((await table.join()).text, "first");
 
-  const again = await table.fork({ name: "w", brief: "second", role: "coder" });
+  const again = await table.fork({ name: "w", verboseIntent: "second", role: "coder" });
   assert.deepEqual(again, { name: "w", steered: true, started: false });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(turns, ["first", "second"]);
@@ -511,8 +512,8 @@ test("a lane the host cannot stop is orphaned, not reported as released", async 
       onSettled: () => {},
     }),
   });
-  await table.startLane({ name: "g#0", brief: "a", role: "coder", start: false });
-  await table.startLane({ name: "g#1", brief: "b", role: "coder", start: false });
+  await table.startLane({ name: "g#0", verboseIntent: "a", role: "coder", start: false });
+  await table.startLane({ name: "g#1", verboseIntent: "b", role: "coder", start: false });
 
   const receipt = table.abortLanes(["g#0", "g#1", "g#absent"]);
   assert.equal(receipt.ok, false);
@@ -538,12 +539,12 @@ test("a session that ends stops every runtime it started, and says which it coul
       onSettled: () => {},
     }),
   });
-  await table.fork({ name: "w1", brief: "a", role: "coder" });
-  await table.fork({ name: "w2", brief: "b", role: "coder" });
+  await table.fork({ name: "w1", verboseIntent: "a", role: "coder" });
+  await table.fork({ name: "w2", verboseIntent: "b", role: "coder" });
   // `startLane` records a LIVE lane: its runtime is a real session and must be
   // stopped like a worker's, so it is aborted here too. It is built INERT (no
   // first turn) because a lane's turn starts only after the group is durable.
-  await table.startLane({ name: "g#0", brief: "c", role: "coder", start: false });
+  await table.startLane({ name: "g#0", verboseIntent: "c", role: "coder", start: false });
 
   // Every LIVE runtime is aborted — workers and lanes alike; a worker whose
   // abort throws is orphaned and stays in the table, and every other entry is
@@ -595,7 +596,7 @@ test("join waits for the first completion instead of returning null too early", 
       },
     }),
   });
-  await table.fork({ name: "w", brief: "b", role: "coder" });
+  await table.fork({ name: "w", verboseIntent: "b", role: "coder" });
   const pending = table.join();
   // The first turn is the runtime handle's own; its record arrives through the
   // settle listener, exactly as the real handle reports it.
@@ -686,17 +687,17 @@ test("every lane of a real group starts with the group's lane count", async (t) 
   const dir = await workspace(t);
   // The worker table is the real one; only the host runtime behind it is a
   // fake, so the text asserted here is the text compose handed to the host.
-  const briefs = [];
+  const verboseIntents = [];
   const workers = new WorkerTable({
     // A lane is built INERT (`start: false`) and its first turn arrives through
     // `run`, exactly as the real handle reports it.
-    create: async ({ name, brief, start = true }) => {
-      if (start !== false) briefs.push({ name, brief });
+    create: async ({ name, verboseIntent, start = true }) => {
+      if (start !== false) verboseIntents.push({ name, verboseIntent });
       return {
         started: true,
         pending: start === false,
         run: async (next) => {
-          briefs.push({ name, brief: next });
+          verboseIntents.push({ name, verboseIntent: next });
           return null;
         },
         abort: () => {},
@@ -704,7 +705,7 @@ test("every lane of a real group starts with the group's lane count", async (t) 
       };
     },
   });
-  await workers.fork({ name: "w1", brief: "owner turn", role: "coder" });
+  await workers.fork({ name: "w1", verboseIntent: "owner turn", role: "coder" });
   // §4.2 step 4: the group's creation is one durable record, so a session with
   // no journal cannot start a group (that is the point of the step). The real
   // session names `<root>/.Herdchestra/<session>.fission.jsonl`; the test names
@@ -712,10 +713,10 @@ test("every lane of a real group starts with the group's lane count", async (t) 
   const session = new SessionFission({ workers, sessionId: "s1", groupJournal: join(dir, ".Herdchestra", "s1.fission.jsonl") });
   const receipt = await session.port().fission("w1", ["one", "two", "three"]);
   assert.equal(receipt.ok, true);
-  const lanes = briefs.filter(({ name }) => name.startsWith("w1:3:"));
+  const lanes = verboseIntents.filter(({ name }) => name.startsWith("w1:3:"));
   assert.equal(lanes.length, 3);
   // Spec §4.2 step 3: one count, the group's, in every lane's start text.
-  for (const { brief } of lanes) assert.equal(brief.startsWith(laneFraming(3)), true, brief);
+  for (const { verboseIntent } of lanes) assert.equal(verboseIntent.startsWith(laneFraming(3)), true, verboseIntent);
   // A lane without the count is refused rather than printed as "undefined".
   await assert.rejects(
     () => fissionSteps({ ownerView: async () => null, createLane: async () => ({ ok: true }) }).createLane({ laneId: "g#0", prompt: "p" }),
@@ -993,10 +994,10 @@ test("startWorker refuses an unknown connection by name instead of starting a gu
     if (previous.m !== undefined) process.env.CLINE_MODEL_ID = previous.m;
   });
   const { plugin } = setup(dir, { session: { sessionId: "worker-nomodel" } });
-  const receipt = await plugin.adapter.session.startWorker({ name: "w", brief: "role: coder — x", role: "coder" });
+  const receipt = await plugin.adapter.session.startWorker({ name: "w", verboseIntent: "role: coder — x", role: "coder" });
   assert.equal(receipt.started, false);
   assert.equal(receipt.rejection, "MODEL_UNKNOWN");
-  assert.deepEqual(receipt.detail.tried, ["request", "context", "sessionRecord", "environment"]);
+  assert.deepEqual(receipt.detail.tried, ["taskEnvironment", "request", "context", "sessionRecord", "environment"]);
 });
 
 test("a turn that only staged meToo is refused when the next model request opens", async (t) => {
@@ -1116,7 +1117,7 @@ test("js-plan's draft is read-only until the tenure's first review, then writabl
   const draft = planDraftPath(dir, "cline-test");
   // The draft's directory is the system's to prepare: the model is told the path
   // and writes the file, not the tree (根 §2.2).
-  await mkdir(join(dir, ".Herdchestra", "drafts"), { recursive: true });
+  await mkdir(join(dir, "plans"), { recursive: true });
 
   // 根 §2.4 第 5 步: before this tenure's first review the draft is read-only.
   const locked = await tools.get("js-plan").execute({ code: `await this.write(${JSON.stringify(draft)}, "# draft");` }, plan);
@@ -1162,14 +1163,14 @@ test("Plan's write lands on the canonical draft in a fresh workspace, with no di
   // directory before the session runs, so the first `write` has a parent. The
   // atomic replace goes through a temp file in that same directory and cannot
   // create it: without the directory every write failed with ENOENT, the model
-  // then made `drafts.md` a plain file, and every later write failed ENOTDIR.
+  // then made `plans.md` a plain file, and every later write failed ENOTDIR.
   assert.equal(existsSync(join(dir, ".Herdchestra")), false);
   const { plugin, tools, rules } = setup(dir, {}, { role: "plan" });
   const draft = planDraftPath(dir, "cline-test");
   const draftRule = rules.find((rule) => rule.id === "herdchestra-plan-draft");
-  assert.match(await draftRule.content(), /drafts[\\/]cline-test\.md/);
+  assert.match(await draftRule.content(), /plans[\\/]cline-test\.md/);
   assert.equal(plugin.adapter.session.planDraftFile, draft);
-  assert.equal(existsSync(join(dir, ".Herdchestra", "drafts")), true);
+  assert.equal(existsSync(join(dir, "plans")), true);
 
   // The draft opens after the tenure's first accepted review (根 §2.4 第 5 步):
   // the S1 question is not a review, the relay retires that tenure, and the
@@ -1197,12 +1198,12 @@ test("Plan's draft path is derived from the project root, not chosen by the mode
   const content = await draftRule.content();
   // The rule names the derived path, and says the two things a model otherwise
   // learns by failing: the directory exists, and a member has one spelling.
-  assert.match(content, /drafts[\\/]cline-test\.md/);
+  assert.match(content, /plans[\\/]cline-test\.md/);
   assert.match(content, /this\.write\(path, content\)/);
-  assert.match(content, /no `tools\.` or `plan\.` namespace/);
+  assert.match(content, /no `tools\.` and no `plan\.` namespace/);
   // Naming the path created its directory: the atomic write cannot, and a Plan
   // without it fails every write (ENOENT, then ENOTDIR).
-  assert.equal(existsSync(join(dir, ".Herdchestra", "drafts")), true);
+  assert.equal(existsSync(join(dir, "plans")), true);
   assert.equal(draftRule.whenToolAvailable, "js-plan");
 });
 
@@ -1210,18 +1211,17 @@ test("a draft directory that cannot be prepared is stated by the rule, not left 
   const dir = await workspace(t);
   // A plain file where the directory belongs: `mkdir` answers ENOTDIR/EEXIST,
   // and every `write` to the draft would fail for a cause the model cannot see.
-  await mkdir(join(dir, ".Herdchestra"), { recursive: true });
-  await writeFile(join(dir, ".Herdchestra", "drafts"), "not a directory");
+  await writeFile(join(dir, "plans"), "not a directory");
   const { plugin, rules } = setup(dir, {}, { role: "plan" });
   const failure = plugin.adapter.session.planDraftDirFailure;
   assert.equal(failure.reason, "DRAFT_DIR_UNWRITABLE");
-  assert.equal(failure.directory, join(dir, ".Herdchestra", "drafts"));
+  assert.equal(failure.directory, join(dir, "plans"));
   const content = await rules.find((rule) => rule.id === "herdchestra-plan-draft").content();
   assert.match(content, /could NOT be prepared/);
   assert.match(content, /DRAFT_DIR_UNWRITABLE/);
   // The path is still stated: the model is told what the task fixed, and why
   // writing it will fail.
-  assert.match(content, /drafts[\\/]cline-test\.md/);
+  assert.match(content, /plans[\\/]cline-test\.md/);
 });
 
 test("a review accepted inside a program is written to the session's ledger", async (t) => {
@@ -1237,7 +1237,7 @@ test("a review accepted inside a program is written to the session's ledger", as
   // operator what to do (`ASK_USER`, `core/review.mjs:331-336`), and that park is
   // what `ask` means on this host. So the review recorded here carries findings.
   const result = await tools.get("js-plan").execute(
-    { code: 'return await review([{ key: "read the brief", value: "src/a.mjs" }]);' },
+    { code: 'return await review([{ key: "read the verboseIntent", value: "src/a.mjs" }]);' },
     { toolCallId: "rev-1", agentId: "a" },
   );
   assert.equal(result.state, "completed", JSON.stringify(result.error ?? result.payload));
@@ -1314,7 +1314,7 @@ test("a devops investigation reports the missing host capability instead of inve
     `reason was ${answer.reason}`,
   );
   if (answer.reason === "MODEL_UNKNOWN") {
-    assert.deepEqual(answer.detail.tried, ["request", "context", "sessionRecord", "environment"]);
+    assert.deepEqual(answer.detail.tried, ["taskEnvironment", "request", "context", "sessionRecord", "environment"]);
   }
 });
 
@@ -1445,7 +1445,7 @@ test("a Manager review has no draft source and Plan's reviews carry the saved dr
   const dir = await workspace(t);
   const { plugin } = setup(dir, {}, { role: "plan" });
   const session = plugin.adapter.session;
-  await mkdir(join(dir, ".Herdchestra", "drafts"), { recursive: true });
+  await mkdir(join(dir, "plans"), { recursive: true });
   await writeFile(planDraftPath(dir, "cline-test"), "# saved draft");
 
   const seen = [];
@@ -1502,12 +1502,12 @@ test("Plan's draft path is derived from the project root, not chosen by the mode
   const content = await draftRule.content();
   // The rule names the derived path, and says the two things a model otherwise
   // learns by failing: the directory exists, and a member has one spelling.
-  assert.match(content, /drafts[\\/]cline-test\.md/);
+  assert.match(content, /plans[\\/]cline-test\.md/);
   assert.match(content, /this\.write\(path, content\)/);
-  assert.match(content, /no `tools\.` or `plan\.` namespace/);
+  assert.match(content, /no `tools\.` and no `plan\.` namespace/);
   // Naming the path created its directory: the atomic write cannot, and a Plan
   // without it fails every write (ENOENT, then ENOTDIR).
-  assert.equal(existsSync(join(dir, ".Herdchestra", "drafts")), true);
+  assert.equal(existsSync(join(dir, "plans")), true);
   assert.equal(draftRule.whenToolAvailable, "js-plan");
 });
 
@@ -1575,7 +1575,7 @@ test("a devops investigation with no connection refuses by name, on any machine"
     `reason was ${answer.reason}`,
   );
   if (answer.reason === "MODEL_UNKNOWN") {
-    assert.deepEqual(answer.detail.tried, ["request", "context", "sessionRecord", "environment"]);
+    assert.deepEqual(answer.detail.tried, ["taskEnvironment", "request", "context", "sessionRecord", "environment"]);
   }
 });
 
@@ -1603,7 +1603,7 @@ test("review reads the saved draft for Plan and leaves a Manager without a draft
   const dir = await workspace(t);
   const { plugin } = setup(dir);
   const session = plugin.adapter.session;
-  await mkdir(join(dir, ".Herdchestra", "drafts"), { recursive: true });
+  await mkdir(join(dir, "plans"), { recursive: true });
   await writeFile(planDraftPath(dir, "cline-test"), "# saved draft");
   const seen = [];
   session.reviewMember = () => ({
@@ -1961,12 +1961,12 @@ test("roleOf reads a host that exposes only core.get, the live ClineCore alias",
   // adapter's own handle may be a `RuntimeHost` with only `getSession`. Reading
   // `getSession` alone made a real Plan session answer "no reader", fall back to
   // Manager, and refuse every `js-plan` call the model made.
-  const metadata = { "herdchestra.role": "plan", "herdchestra.draft": "/repo/.Herdchestra/drafts/p.md" };
+  const metadata = { "herdchestra.role": "plan", "herdchestra.draft": "/repo/plans/p.md" };
   const coreLike = { get: async (id) => (id === "s1" ? { metadata } : undefined) };
   const viaGet = await roleOf({ host: coreLike, sessionId: "s1" });
   assert.equal(viaGet.role, "plan");
   assert.equal(viaGet.source, "sessionRecord");
-  assert.equal(viaGet.metadata["herdchestra.draft"], "/repo/.Herdchestra/drafts/p.md");
+  assert.equal(viaGet.metadata["herdchestra.draft"], "/repo/plans/p.md");
 
   // The same alias behind the `{ kind, handle }` wrapper `ManagerSessions` returns.
   const wrapped = await roleOf({ host: { kind: "clineCore", handle: coreLike }, sessionId: "s1" });
@@ -2952,7 +2952,7 @@ test("gap 2: a runtime whose host tool list was narrowed still runs the worker f
   const addedAgain = [];
   const handle = runtimeHandle({
     name: "w",
-    brief: "go",
+    verboseIntent: "go",
     role: "coder",
     tools: workerFace,
     create: () => ({
@@ -2981,7 +2981,7 @@ test("gap 3: a same-name fork onto a LIVE worker steers its running turn", async
   const pending = [];
   const handle = runtimeHandle({
     name: "w",
-    brief: "first",
+    verboseIntent: "first",
     role: "coder",
     tools: [],
     configProvider: {
@@ -2998,19 +2998,19 @@ test("gap 3: a same-name fork onto a LIVE worker steers its running turn", async
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const table = new WorkerTable({ create: async () => handle });
-  const started = await table.fork({ name: "w", brief: "first", role: "coder" });
+  const started = await table.fork({ name: "w", verboseIntent: "first", role: "coder" });
   assert.deepEqual(started, { name: "w", steered: false, started: true });
 
-  const steered = await table.fork({ name: "w", brief: "second", role: "coder" });
+  const steered = await table.fork({ name: "w", verboseIntent: "second", role: "coder" });
   assert.deepEqual(steered, { name: "w", steered: true, started: false });
-  // The brief is IN the running turn's queue — the host's next request boundary
+  // The verboseIntent is IN the running turn's queue — the host's next request boundary
   // takes it, with no second turn and no `queued` flag.
   const consume = handle.agent.read();
   assert.equal(await consume(), "second");
   assert.equal(await consume(), "");
 
   // The turn settles once, and its report answers the carrier AND the steer it
-  // took: the carrier's record keeps the brief that turn was given, and the
+  // took: the carrier's record keeps the verboseIntent that turn was given, and the
   // steered turn's record carries the text the runtime answered with.
   pending[0]({ finishReason: "stop", text: "done", iterations: 1 });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -3044,7 +3044,7 @@ test("gap 6a: the group record is committed before any lane starts", async () =>
   // what makes the rest survivable, so nothing may start without it.
   const noJournal = new WorkerTable({ create: build });
   const journalOrder = [];
-  await noJournal.fork({ name: "w1", brief: "owner", role: "coder" });
+  await noJournal.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const refused = new SessionFission({ workers: noJournal, sessionId: "s-order", groupJournal: () => null });
   await assert.rejects(() => refused.port().fission("w1", ["a", "b"]), (error) => error.step === "persistGroup");
   assert.deepEqual(
@@ -3066,14 +3066,14 @@ test("gap 6a: the group record is committed before any lane starts", async () =>
       if (request.start === false) journalOrder.push(`build:${request.name}`);
       const handle = await build(request);
       const run = handle.run;
-      handle.run = async (brief) => {
+      handle.run = async (verboseIntent) => {
         journalOrder.push(`run:${request.name}`);
-        return run(brief);
+        return run(verboseIntent);
       };
       return handle;
     },
   });
-  await workers.fork({ name: "w1", brief: "owner", role: "coder" });
+  await workers.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const session = new SessionFission({
     workers,
     sessionId: "s-order",
@@ -3103,7 +3103,7 @@ test("gap 6a: the group record is committed before any lane starts", async () =>
       return inertRuntime({ name });
     },
   });
-  await unbuildable.fork({ name: "w1", brief: "owner", role: "coder" });
+  await unbuildable.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const journal2 = join(dir, "groups2.jsonl");
   const refusedBuild = new SessionFission({ workers: unbuildable, sessionId: "s-order", groupJournal: () => journal2 });
   await assert.rejects(() => refusedBuild.port().fission("w1", ["a", "b"]), (error) => error.step === "buildLane");
@@ -3117,9 +3117,9 @@ test("gap 6a: the group record is committed before any lane starts", async () =>
   });
   // The second lane cannot start: its first turn is refused at `beginLane`.
   const refuseLane = failing.beginLane.bind(failing);
-  failing.beginLane = (name, brief) =>
-    name.endsWith("#1") ? { ok: false, name, rejection: "SESSION_START_FAILED" } : refuseLane(name, brief);
-  await failing.fork({ name: "w1", brief: "owner", role: "coder" });
+  failing.beginLane = (name, verboseIntent) =>
+    name.endsWith("#1") ? { ok: false, name, rejection: "SESSION_START_FAILED" } : refuseLane(name, verboseIntent);
+  await failing.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const journal3 = join(dir, "groups3.jsonl");
   const rolledBack = new SessionFission({ workers: failing, sessionId: "s-order", groupJournal: () => journal3 });
   await assert.rejects(() => rolledBack.port().fission("w1", ["a", "b"]), (error) => error.step === "startLane");
@@ -3143,7 +3143,7 @@ test("gap 6b: capacity is measured, so a group that does not fit is refused", as
     }),
   });
   const session = new SessionFission({ workers: table, sessionId: "s-cap" });
-  await table.fork({ name: "w1", brief: "owner", role: "coder" });
+  await table.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const prompts = Array.from({ length: LANE_CAPACITY + 1 }, (_, index) => `lane ${index}`);
   const refused = await session.port().fission("w1", prompts);
   assert.deepEqual(refused, { ok: false, rejection: "CapacityExceeded" });
@@ -3169,7 +3169,7 @@ test("gap 6c: a settled takeover lane announces the end and the group converges"
       notifyPendingUserMessage: () => {},
     }),
   });
-  await table.fork({ name: "w1", brief: "owner", role: "coder" });
+  await table.fork({ name: "w1", verboseIntent: "owner", role: "coder" });
   const dir = await workspace({ after: () => {} });
   const journal = join(dir, "g.jsonl");
   const session = new SessionFission({ workers: table, sessionId: "s-conv", groupJournal: () => journal });
@@ -3202,11 +3202,11 @@ test("gap 6d: replacing a present is deferred to the turn's end, never aborted i
   const turns = [];
   const handle = runtimeHandle({
     name: "w",
-    brief: "first",
+    verboseIntent: "first",
     role: "coder",
     tools: [],
     create: () => ({
-      run: (brief) => new Promise((resolve) => turns.push({ brief, resolve })),
+      run: (verboseIntent) => new Promise((resolve) => turns.push({ verboseIntent, resolve })),
       abort: () => aborted.push("abort"),
       addTools: () => {},
       notifyPendingUserMessage: () => {},
@@ -3214,7 +3214,7 @@ test("gap 6d: replacing a present is deferred to the turn's end, never aborted i
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const table = new WorkerTable({ create: async () => handle });
-  await table.fork({ name: "w", brief: "first", role: "coder" });
+  await table.fork({ name: "w", verboseIntent: "first", role: "coder" });
   const replaced = table.replacePresent("w");
   assert.equal(replaced.replaced, true);
   assert.equal(replaced.deferredAbort, true);
@@ -3432,7 +3432,7 @@ test("fork and join book their scope annotations like every other call", async (
 
   const fork = call(
     "fork",
-    { name: "w", brief: "role: coder — do", scope: { kind: "resetScope", newScopeGoal: "dispatch", newScopeRetentionBudget: 2 } },
+    { name: "w", verboseIntent: "role: coder — do", scope: { kind: "resetScope", newScopeGoal: "dispatch", newScopeRetentionBudget: 2 } },
     "fork-1",
   );
   // A Scope turn books one beat, and the reset is the beat of its turn.
@@ -3475,7 +3475,7 @@ test("a child runtime's hooks never move the parent's ask, turn or park stop", a
   const run = session.run;
   const turn = session.turn;
 
-  // The child receives this session's hooks; its brief is a USER message, which
+  // The child receives this session's hooks; its verboseIntent is a USER message, which
   // `resumeAsked` read as the operator's answer.
   const childCtx = { snapshot: { agentId: "kid", parentAgentId: "top" } };
   await plugin.hooks.beforeRun(childCtx);
@@ -3489,7 +3489,7 @@ test("a child runtime's hooks never move the parent's ask, turn or park stop", a
   });
   await plugin.hooks.afterRun({ ...childCtx, result: { status: "completed" } });
 
-  assert.deepEqual(session.asked, { name: "ask-child", question: "which file?" }, "the child's brief is not an answer");
+  assert.deepEqual(session.asked, { name: "ask-child", question: "which file?" }, "the child's verboseIntent is not an answer");
   assert.equal(session.askedInTurn, true);
   assert.equal(session.parkStopOwed, true);
   assert.equal(session.run, run, "a child's run does not advance the parent's run counter");
@@ -3572,7 +3572,7 @@ test("an equal-length projection is applied, not skipped", async (t) => {
   // No Pair Hint in this copy: it would add messages and hide the length.
   session.tenure.pairHint = async () => ({
     bound: false,
-    presented: null,
+    chain: null,
     text: null,
     handles: [],
     anchor() {},
@@ -3770,7 +3770,7 @@ test("a steer is delivered even when the host already wired its own queue", asyn
   const hostQueue = ["host-message"];
   const handle = runtimeHandle({
     name: "w",
-    brief: "first",
+    verboseIntent: "first",
     role: "coder",
     tools: [],
     configProvider: {
@@ -3785,9 +3785,9 @@ test("a steer is delivered even when the host already wired its own queue", asyn
     }),
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(handle.steer("steered brief"), true);
+  assert.equal(handle.steer("steered verboseIntent"), true);
   const consume = handle.agent.read();
-  assert.equal(await consume(), "steered brief", "the adapter's queue is drained first");
+  assert.equal(await consume(), "steered verboseIntent", "the adapter's queue is drained first");
   assert.equal(await consume(), "host-message", "the host's own consumer is chained behind it");
   assert.equal(await consume(), "");
 });
@@ -3804,8 +3804,8 @@ test("two workers' groups route each lane's settlement to its own owner", async 
       notifyPendingUserMessage() {},
     }),
   });
-  await table.fork({ name: "w1", brief: "one", role: "coder" });
-  await table.fork({ name: "w2", brief: "two", role: "coder" });
+  await table.fork({ name: "w1", verboseIntent: "one", role: "coder" });
+  await table.fork({ name: "w2", verboseIntent: "two", role: "coder" });
   const session = new SessionFission({ workers: table, sessionId: "s-two", groupJournal: () => join(dir, "g.jsonl") });
   const first = await session.port().fission("w1", ["a", "b"]);
   const second = await session.port().fission("w2", ["c", "d"]);
@@ -3817,4 +3817,335 @@ test("two workers' groups route each lane's settlement to its own owner", async 
   const two = session.laneSettled({ name: second.lanes[1].laneId, outcome: { text: "two" } });
   assert.equal(two.owner, "w2");
   assert.equal(two.groupId, second.groupId);
+});
+
+test("the Pair Hint chain survives a cold start, so the next request stays in the parent epoch", async (t) => {
+  const dir = await workspace(t);
+  const sessionId = "chain-cold-start";
+  const first = setup(dir, { session: { sessionId } }).plugin.adapter.session;
+  const hostCopy = [{ role: "user", content: [{ type: "text", text: "go" }] }];
+  const firstCopy = await first.projectMessages(hostCopy);
+  assert.equal(firstCopy.length > hostCopy.length, true, "the pair reached the first request");
+
+  // The host never stores our pair, so the next request is the host copy plus
+  // what the model wrote — never the pair.
+  const grown = [...hostCopy, { role: "assistant", content: [{ type: "text", text: "working" }] }];
+  await first.projectMessages(grown);
+  const hint = await first.tenure.pairHint(dir);
+  assert.equal(hint.chain instanceof Object, true);
+  assert.equal(hint.chain.length, 4, "two host messages and the pair");
+  assert.equal(hint.chain.pairIndex, 1, "the pair stands where the first request placed it");
+
+  // A second plugin load over the same workspace: the chain comes from the
+  // journal, not from a stored copy.
+  const second = setup(dir, { session: { sessionId } }).plugin.adapter.session;
+  const grownAgain = [...grown, { role: "user", content: [{ type: "text", text: "next" }] }];
+  const copy = await second.projectMessages(grownAgain);
+  assert.equal(copy.length > grownAgain.length, true, "the pair is placed again");
+  const reloaded = await second.tenure.pairHint(dir);
+  assert.equal(reloaded.epoch, 0, "the parent epoch continued; this was not treated as a child");
+  // A child conversation would have opened its own journal keyed by its
+  // opening message. None exists: the chain was compared, not bypassed.
+  const files = await readdir(join(dir, ".Herdchestra"));
+  assert.equal(files.some((name) => name.includes("child-")), false, files.join(", "));
+  // The journal carries the chain, not a request copy: the host's cold start
+  // above is the proof that it can project the next request from digests alone.
+  const presented = readJsonLines(join(dir, ".Herdchestra", `${sessionId}.jsonl`)).filter(
+    (record) => record.kind === "presented",
+  );
+  assert.equal(presented.length > 0, true, "the requests were journaled");
+  for (const record of presented) {
+    assert.equal("messages" in record, false, "a presented record carries no request copy");
+    assert.equal(Array.isArray(record.digests), true, "it carries one digest per message");
+    assert.equal(record.digests.length, record.length);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plan's devops primitive, the task model, cancellation and the roster journal
+// ---------------------------------------------------------------------------
+
+// A delegated-runtime host whose turns never finish on their own: the test
+// settles them, exactly as the host reports a turn.
+const runtimeHost = () => {
+  const runtimes = new Map();
+  return {
+    runtimes,
+    create: async ({ name, verboseIntent = "" }) => {
+      const listeners = [];
+      const runtime = {
+        name,
+        verboseIntent,
+        turns: [],
+        settle(record) {
+          for (const listener of listeners) listener(record);
+        },
+        run: async (text) => {
+          runtime.turns.push(text);
+          return null;
+        },
+        abort() {},
+        steer() {
+          return true;
+        },
+        onSettled: (callback) => listeners.push(callback),
+      };
+      runtimes.set(name, runtime);
+      return {
+        started: true,
+        name,
+        run: runtime.run,
+        abort: runtime.abort,
+        steer: runtime.steer,
+        onSettled: runtime.onSettled,
+        pending: false,
+      };
+    },
+    current: (name) => runtimes.get(name) ?? null,
+  };
+};
+
+const flushTicks = async () => {
+  for (let tick = 0; tick < 4; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+test("Plan's devops is a bare primitive; this.devops does not exist", async (t) => {
+  const dir = await workspace(t);
+  const { tools } = setup(dir, {}, { role: "plan" });
+  const plan = { agentId: "plan", toolCallId: "primitive-devops", snapshot: { agentId: "plan", parentAgentId: null } };
+  const receipt = await tools
+    .get("js-plan")
+    .execute({ code: "return { bare: typeof devops, member: typeof this.devops };" }, plan);
+  assert.equal(receipt.state, "completed", JSON.stringify(receipt.error));
+  assert.deepEqual(receipt.value, { bare: "function", member: "undefined" });
+  // Compose keeps it out of the member table; the host's PRIMITIVES list is what
+  // makes the one spelling bare (root §1.1 item 3).
+  assert.equal(SURFACE_MEMBERS.plan.includes("devops"), false);
+});
+
+test("Plan's devops worker is one dedicated runtime, fixed name, reused, and refuses after death", async () => {
+  const runs = [];
+  const created = [];
+  const runner = createDevopsRunner({
+    ctx: {},
+    cwd: "/tmp",
+    extension: null,
+    tools: [],
+    delegatedApi: async () => ({
+      createDelegatedAgentConfigProvider: () => ({}),
+      createDelegatedAgent: (options) => {
+        created.push(options);
+        return {
+          addTools() {},
+          abort() {},
+          run: async (text) => {
+            runs.push(text);
+            return { finishReason: "stop", text: `report ${text}`, iterations: 1 };
+          },
+        };
+      },
+    }),
+    resolveConnection: async () => ({
+      model: { providerId: "task-p", modelId: "task-m" },
+      source: "task",
+      credentials: null,
+      credentialSource: null,
+    }),
+  });
+  assert.equal(runner.name, PLAN_DEVOPS_NAME);
+  assert.deepEqual(await runner.investigate("one"), { ok: true, report: "report one" });
+  assert.deepEqual(await runner.investigate("two"), { ok: true, report: "report two" });
+  assert.equal(created.length, 1, "one runtime for the whole session");
+  assert.equal(created[0].role, "devops");
+  assert.equal(runner.handle.name, PLAN_DEVOPS_NAME);
+  assert.equal(runner.handle.modelSource, "task");
+  assert.deepEqual(runs, ["one", "two"], "each investigation is a turn on the same runtime");
+
+  // The session's cancel path aborts the one handle. The next investigation
+  // refuses by name instead of starting a second devops.
+  assert.deepEqual(runner.cancel("OPERATOR_CANCELLED"), {
+    ok: true,
+    cancelled: true,
+    name: PLAN_DEVOPS_NAME,
+  });
+  assert.equal(runner.cancel("OPERATOR_CANCELLED").reason, "ALREADY_DEAD");
+  const dead = await runner.investigate("three");
+  assert.equal(dead.ok, false);
+  assert.equal(dead.reason, "PLAN_DEVOPS_DEAD");
+  assert.equal(created.length, 1, "no second runtime after death");
+});
+
+test("subagents read the task ladder first, and the receipt says which ladder answered", async (t) => {
+  const dir = await workspace(t);
+  const previous = {
+    p: process.env.HERDCHESTRA_TASK_PROVIDER_ID,
+    m: process.env.HERDCHESTRA_TASK_MODEL_ID,
+  };
+  delete process.env.HERDCHESTRA_TASK_PROVIDER_ID;
+  delete process.env.HERDCHESTRA_TASK_MODEL_ID;
+  t.after(() => {
+    if (previous.p !== undefined) process.env.HERDCHESTRA_TASK_PROVIDER_ID = previous.p;
+    else delete process.env.HERDCHESTRA_TASK_PROVIDER_ID;
+    if (previous.m !== undefined) process.env.HERDCHESTRA_TASK_MODEL_ID = previous.m;
+    else delete process.env.HERDCHESTRA_TASK_MODEL_ID;
+  });
+  const { plugin } = setup(dir, {
+    session: { sessionId: "task-ladder" },
+    config: { providerId: "main-p", modelId: "main-m" },
+  });
+  const session = plugin.adapter.session;
+  assert.deepEqual(await session.resolveTaskModel(), {
+    model: { providerId: "main-p", modelId: "main-m" },
+    source: "main",
+  });
+  process.env.HERDCHESTRA_TASK_PROVIDER_ID = "task-p";
+  process.env.HERDCHESTRA_TASK_MODEL_ID = "task-m";
+  assert.deepEqual(await session.resolveTaskModel(), {
+    model: { providerId: "task-p", modelId: "task-m" },
+    source: "task",
+  });
+  // One half is not a connection: the main ladder answers again.
+  delete process.env.HERDCHESTRA_TASK_MODEL_ID;
+  assert.deepEqual(await session.resolveTaskModel(), {
+    model: { providerId: "main-p", modelId: "main-m" },
+    source: "main",
+  });
+  // The top-level ladder is untouched: Manager and Plan still read `model`.
+  assert.equal(session.modelSource, "context");
+});
+
+test("an operator interrupt cancels every descendant, keeps unclaimed results, and refuses later work", async () => {
+  const aborted = [];
+  const table = new WorkerTable({
+    create: async ({ name }) => ({
+      started: true,
+      run: async () => null,
+      steer: () => true,
+      abort: (reason) => aborted.push({ name, reason }),
+      onSettled: () => {},
+    }),
+  });
+  await table.fork({ name: "w1", verboseIntent: "one", role: "coder" });
+  await table.fork({ name: "w2", verboseIntent: "two", role: "coder" });
+  await table.startLane({ name: "g#0", verboseIntent: "lane", role: "coder", start: false });
+  // One result arrived before the interrupt and nobody claimed it. `settled` is
+  // the host event path; it books the owed turn without a handle.
+  table.settled("w2", { finishReason: "stop", text: "done" });
+  await flushTicks();
+  assert.equal(table.unclaimed().length, 1);
+
+  const receipt = table.cancelAll("OPERATOR_CANCELLED");
+  assert.equal(receipt.ok, true);
+  assert.deepEqual(receipt.cancelled.sort(), ["g#0", "w1", "w2"]);
+  assert.deepEqual(
+    aborted.map((entry) => entry.name).sort(),
+    ["g#0", "w1", "w2"],
+    "every live runtime is aborted with the reason",
+  );
+  assert.equal(aborted.every((entry) => entry.reason === "OPERATOR_CANCELLED"), true);
+  assert.equal(table.get("w1").cancelled, true);
+  assert.equal(table.get("g#0").cancelled, true);
+
+  // The result that really arrived is still collectable; the turn the interrupt
+  // stopped is reported as cancelled instead of being waited on forever.
+  const claimed = [];
+  for (;;) {
+    const record = await table.join();
+    if (record === null) break;
+    claimed.push(record);
+  }
+  assert.deepEqual(
+    claimed.map((record) => [record.name, record.finishReason]),
+    [
+      ["w2", "stop"],
+      ["w1", "cancelled"],
+    ],
+    "unclaimed results stay, and cancelled turns are reported honestly",
+  );
+  // A lane is not a `join` completion.
+  assert.equal(claimed.some((record) => record.name === "g#0"), false);
+
+  // Idempotent, and later work on the subtree is refused by name.
+  const again = table.cancelAll("OPERATOR_CANCELLED");
+  assert.deepEqual(again.cancelled, []);
+  assert.deepEqual(again.alreadyCancelled.sort(), ["g#0", "w1", "w2"]);
+  assert.equal((await table.fork({ name: "w1", verboseIntent: "more", role: "coder" })).rejection, "WORKER_CANCELLED");
+  assert.equal(table.beginLane("g#0", "more").rejection, "WORKER_CANCELLED");
+  assert.equal(
+    (await table.startLane({ name: "g#0", verboseIntent: "more", role: "coder", start: false })).rejection,
+    "WORKER_CANCELLED",
+  );
+});
+
+test("the ask park is not an operator interrupt, so the subtree survives it", () => {
+  const cancelled = [];
+  const session = {
+    declaredRole: "manager",
+    tenure: { ledger: { kind: "manager", milestone: "execute", tenure: 0, successor: false, obligations: [] } },
+    askedInTurn: true,
+    handedOff: false,
+    parkStopOwed: false,
+    parkStopped: true,
+    noteNudge() {},
+    clearNudge() {},
+    cancelDescendants: (reason) => cancelled.push(reason),
+  };
+  const aborted = { role: "assistant", content: [{ type: "text", text: "" }], stopReason: "aborted", errorMessage: "Interrupted by user" };
+  // The stop a parked ask claimed is the session's own, not the operator's
+  // interrupt of the work.
+  runExit({ session, result: { status: "aborted" } });
+  assert.deepEqual(cancelled, []);
+  session.parkStopped = false;
+  session.parkStopOwed = true;
+  turnExit({ session, assistantMessage: aborted });
+  assert.deepEqual(cancelled, []);
+  // Once the park is over, the same interrupt DOES reach the descendants.
+  session.parkStopOwed = false;
+  turnExit({ session, assistantMessage: aborted });
+  assert.deepEqual(cancelled, ["OPERATOR_CANCELLED"]);
+  runExit({ session, result: { status: "cancelled" } });
+  assert.deepEqual(cancelled, ["OPERATOR_CANCELLED", "OPERATOR_CANCELLED"]);
+});
+
+test("the worker table replays its own journal at construction, tolerating a torn last line", async (t) => {
+  const dir = await workspace(t);
+  const session = "journal-replay";
+  const host = runtimeHost();
+  const first = new WorkerTable({ create: host.create, root: dir, sessionId: session });
+  await first.fork({ name: "w", verboseIntent: "go", role: "coder" });
+  host.current("w").settle({ finishReason: "stop", text: "answer" });
+  await flushTicks();
+  assert.equal(first.unclaimed().length, 1);
+
+  // A mid-session reload: the table is built with no `restored` argument and
+  // reads the journal itself.
+  const second = new WorkerTable({ create: host.create, root: dir, sessionId: session });
+  assert.deepEqual(second.names(), ["w"]);
+  assert.deepEqual(second.unclaimed(), [{ name: "w", role: "coder", turn: 1, finishReason: "stop", text: "answer", iterations: 0 }]);
+
+  // A crash during append leaves half a line; the records before it stand.
+  const { file } = workerRosterFile(dir, session);
+  appendJsonLine(file, { v: 1, type: "settle", name: "w", turn: 2 });
+  const fs = await import("node:fs");
+  fs.appendFileSync(file, '{"v":1,"type":"claim","name":"w"');
+  const third = new WorkerTable({ create: host.create, root: dir, sessionId: session });
+  assert.equal(third.unclaimed().length, 1, "the torn line is not a record");
+});
+
+test("a claimed answer is not part of the roster a reload restores", async (t) => {
+  const dir = await workspace(t);
+  const session = "answer-text";
+  const host = runtimeHost();
+  const table = new WorkerTable({ create: host.create, root: dir, sessionId: session });
+  await table.fork({ name: "w", verboseIntent: "go", role: "coder" });
+  host.current("w").settle({ finishReason: "stop", text: "the full answer" });
+  await flushTicks();
+  assert.equal((await table.join()).text, "the full answer");
+
+  const reloaded = new WorkerTable({ create: host.create, root: dir, sessionId: session });
+  assert.deepEqual(reloaded.unclaimed(), [], "a claimed turn is not offered again");
+  assert.deepEqual(reloaded.snapshot().completions, []);
+  const claim = readJsonLines(workerRosterFile(dir, session).file).find((record) => record.type === "claim");
+  assert.equal(claim.textDropped, true, "the claim is the record that drops the answer");
+  assert.equal(claim.id, "w#1");
 });

@@ -223,7 +223,7 @@ test("a steered worker is still running after its previous outcome", async () =>
   const host = makeHost();
   const root = tempRoot();
   const { table } = tableOf({ host, root });
-  await table.fork({ name: "w1", brief: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "w1" });
+  await table.fork({ name: "w1", verboseIntent: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "w1" });
   const [sessionID] = host.sessionIDs();
 
   // The host finishes the first turn: the session now carries `succeeded`, and
@@ -233,7 +233,7 @@ test("a steered worker is still running after its previous outcome", async () =>
   // steers a LIVE name; a name whose worker already finished starts a new
   // session instead. The record is what says "busy again", and the session's
   // own outcome is now stale.
-  await table.fork({ name: "w1", brief: "role: coder\n\nmore", role: "coder", parentID: MANAGER });
+  await table.fork({ name: "w1", verboseIntent: "role: coder\n\nmore", role: "coder", parentID: MANAGER });
   assert.equal(table.isLive("w1"), true, "a steered worker is running again");
   assert.equal(table.size, 1, "a steer does not start a second session");
   assert.equal(host.running(sessionID), true, "the host reports the new turn as running");
@@ -260,7 +260,7 @@ test("a join waits when the host answers before the session has an outcome", asy
     if (input.sessionID === "ses_idle") return;
     return original(input);
   };
-  const forked = await table.fork({ name: "w1", brief: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "w1" });
+  const forked = await table.fork({ name: "w1", verboseIntent: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "w1" });
   // Replace the child with one the fake reports as idle without an outcome.
   const child = forked.sessionID;
   host.sessions.get(child).busy = 1;
@@ -281,7 +281,7 @@ test("a plugin reload keeps the roster and the running workers it forked", async
   for (const name of ["devops", "coder-core", "coder-hosts", "coder-tests"]) {
     const role = name === "devops" ? "devops" : "coder";
     forked.push(
-      await first.table.fork({ name, brief: `role: ${role}\n\ngo`, role, parentID: MANAGER, title: name }),
+      await first.table.fork({ name, verboseIntent: `role: ${role}\n\ngo`, role, parentID: MANAGER, title: name }),
     );
   }
   const ids = forked.map((receipt) => receipt.sessionID);
@@ -314,7 +314,7 @@ test("a worker that finished during the reload is claimable, not lost", async ()
   const first = tableOf({ host, root });
   const forked = await first.table.fork({
     name: "w1",
-    brief: "role: coder\n\ngo",
+    verboseIntent: "role: coder\n\ngo",
     role: "coder",
     parentID: MANAGER,
     title: "w1",
@@ -333,8 +333,8 @@ test("a claim survives a reload and is never handed over twice", async () => {
   const host = makeHost();
   const root = tempRoot();
   const first = tableOf({ host, root });
-  const a = await first.table.fork({ name: "a", brief: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "a" });
-  const b = await first.table.fork({ name: "b", brief: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "b" });
+  const a = await first.table.fork({ name: "a", verboseIntent: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "a" });
+  const b = await first.table.fork({ name: "b", verboseIntent: "role: coder\n\ngo", role: "coder", parentID: MANAGER, title: "b" });
   host.complete(a.sessionID, "succeeded");
   assert.equal((await first.table.join())?.name, "a");
   const second = tableOf({ host, root });
@@ -353,7 +353,7 @@ test("the road-bound devops is restored, and released once it finished", async (
   const first = tableOf({ host, root });
   const devops = await first.table.fork({
     name: "devops",
-    brief: "role: devops\n\ngo",
+    verboseIntent: "role: devops\n\ngo",
     role: "devops",
     parentID: MANAGER,
     title: "devops",
@@ -471,7 +471,7 @@ const runScenario = async (steps) => {
       const role = step.name === "devops" ? "devops" : "coder";
       const receipt = await world.table.fork({
         name: step.name,
-        brief: `role: ${role}\n\ngo`,
+        verboseIntent: `role: ${role}\n\ngo`,
         role,
         parentID: MANAGER,
         title: step.name,
@@ -489,7 +489,7 @@ const runScenario = async (steps) => {
       if (sessionID === null || host.running(sessionID) !== true) continue;
       await world.table.fork({
         name: step.name,
-        brief: `role: ${step.name === "devops" ? "devops" : "coder"}\n\nmore`,
+        verboseIntent: `role: ${step.name === "devops" ? "devops" : "coder"}\n\nmore`,
         role: step.name === "devops" ? "devops" : "coder",
         parentID: MANAGER,
       });
@@ -606,7 +606,7 @@ test("property: the restored roster matches the journal the table wrote", async 
         const role = step.name === "devops" ? "devops" : "coder";
         const receipt = await first.table.fork({
           name: step.name,
-          brief: `role: ${role}\n\ngo`,
+          verboseIntent: `role: ${role}\n\ngo`,
           role,
           parentID: MANAGER,
           title: step.name,

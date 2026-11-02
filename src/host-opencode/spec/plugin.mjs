@@ -35,7 +35,7 @@ import { makeProgramExecutor, makeResumer } from "./program-tool.mjs";
 import { forkReceipt, joinReceipt } from "./steer-receipt.mjs";
 import { settledOutcomeOf } from "./worker-sessions.mjs";
 import { createInput, devopsRefusal } from "./session-creation.mjs";
-import { requireModelOf } from "./model-inherit.mjs";
+import { resolveChildModel } from "./model-inherit.mjs";
 import { roleOf, workerRole } from "./agent-role.mjs";
 import { ownsTool } from "./role-tools.mjs";
 import { forkRequest } from "../../compose/program/role-brief.mjs";
@@ -47,6 +47,7 @@ import { openGaps } from "./gaps.mjs";
 import { openPairHint } from "./pair-hint-request.mjs";
 import { inheritedBinding } from "./session-state.mjs";
 import { handleTurnEnd } from "./turn-nudge.mjs";
+import { propagateCancellation } from "./cancel.mjs";
 
 // The event stream, as something `for await` really iterates.
 //
@@ -253,22 +254,39 @@ export const setup = async (ctx) => {
   };
   const rootOfSession = (sessionID) => roots.get(sessionID) ?? root;
 
-  // `fork(name, brief)` (§4.1). A live name steers; a new name starts a child
-  // session whose completion the host delivers to the parent.
+  // `fork(name, verboseIntent)` (§4.1). A live name steers; a new name starts a
+  // child session whose completion the host delivers to the parent; a finished
+  // worker can be reused in place (root §1.1 item 3).
   //
-  // The worker's identity comes from the brief's own declaration (§2.1): compose
-  // resolves it and hands it over as `role`, and a caller that arrives without
-  // one (the Plan's `devops` member) declares it here. Nothing defaults to
-  // coder, and nothing infers an identity from the worker's name.
-  const forkWorker = async ({ sessionID, name, brief, role = null, model, wait = false }) => {
+  // The worker's identity comes from the task text's own declaration (§2.1):
+  // compose resolves it and hands it over as `role`, and a caller that arrives
+  // without one (Plan's `devops` primitive) declares it here. Nothing defaults
+  // to coder, and nothing infers an identity from the worker's name.
+  //
+  // `model` is only for internal callers. The model-facing `fork` tool has no
+  // such input (root §1.1 item 6): the task model, or the parent's, is chosen
+  // here, never by the model.
+  const forkWorker = async ({
+    sessionID,
+    name,
+    verboseIntent,
+    role = null,
+    model,
+    wait = false,
+    reuse = false,
+    keepRoad = false,
+  }) => {
     if (sessions === null) return refusal(REFUSALS.GAP, { gap: "FORK_SESSIONS" });
+    // The operator stopped the work this session belongs to: no new worker and
+    // no steer may resurrect it (root §1.1 item 2).
+    if (activation.cancelled?.has(sessionID) === true) return refusal(REFUSALS.CANCELLED, { sessionID });
     // The identity is decided BEFORE the first await: a devops road has to be
     // reserved synchronously, or two concurrent forks both see an empty road
     // and two devops run at once (§2.3).
     let declared = role;
     if (declared === null || declared === undefined) {
       try {
-        declared = forkRequest(name, brief).role;
+        declared = forkRequest(name, verboseIntent).role;
       } catch (error) {
         return refusal(REFUSALS.ROLE_ARG, { reason: error.details?.reason ?? "UNDECLARED_ROLE", message: error.message });
       }
@@ -280,8 +298,13 @@ export const setup = async (ctx) => {
     // the bound devops is exactly what a steer is for, so it never meets the
     // road guard.
     const live = table.get(name);
+    if (live !== null && live.cancelled === true) return refusal(REFUSALS.CANCELLED, { name });
     const steering = live !== null && live.state === "running";
-    const reserve = picked === "devops" && !steering;
+    // A finished worker may be reused in place. It is not a steer (the session
+    // is idle) and it is not a new devops, so it must not meet the road guard:
+    // the name is already the one this road holds.
+    const reusing = reuse === true && live !== null && !steering;
+    const reserve = picked === "devops" && !steering && !reusing;
     const road = devopsRoadOf(activation, sessionID);
     if (reserve) {
       // A devops the journal restored may have finished while no plugin was
@@ -300,35 +323,47 @@ export const setup = async (ctx) => {
     const release = () => {
       if (reserve) road.delete(name);
     };
-    // The child runs the parent's model. The host does not inherit it for a
-    // created child (`model-inherit.mjs`), and the agent default is the free
-    // model that answers 429. A fork that names a model keeps it; otherwise the
-    // parent's own model is read from the host, and a parent without one is a
-    // refusal rather than a silent default.
+    // The child runs the TASK model when the operator configured one, otherwise
+    // the parent's model (`model-inherit.mjs`). The host does not inherit a
+    // model for a created child, and the agent default is the free model that
+    // answers 429. A caller that names a model keeps it; that path is internal,
+    // because the model-facing `fork` has no model input. A parent without a
+    // model is a refusal rather than a silent default.
     let inherited = model;
-    if (inherited === undefined || inherited === null) {
-      const found = await requireModelOf(sessions, sessionID);
+    let modelSource = inherited === undefined || inherited === null ? null : "caller";
+    // A steer or a reuse creates no session, so it needs no model and must not
+    // be refused for a parent that has none: the worker already exists and
+    // already runs. Only a new session has a model to choose.
+    if (!reusing && !steering && (inherited === undefined || inherited === null)) {
+      const found = await resolveChildModel({ sessions, parentID: sessionID });
       if (found.ok !== true) {
         release();
-        return found.refusal;
+        return found.refusal ?? refusal(REFUSALS.TASK_MODEL_INCOMPLETE, { detail: found.detail ?? null });
       }
       inherited = found.model;
+      modelSource = found.modelSource;
     }
-    const create = createInput({ parentID: sessionID, name, role: picked, model: inherited });
+    const create = reusing
+      ? { parentID: sessionID, title: name, agent: picked }
+      : createInput({ parentID: sessionID, name, role: picked, model: inherited });
     if (create.rejection !== undefined) {
       release();
       return create;
     }
     let receipt;
     try {
-      receipt = await table.fork({ ...create, brief, role: picked, title: name });
+      receipt = await table.fork({ ...create, verboseIntent, role: picked, title: name, reuse: reusing });
     } catch (error) {
       release();
       throw error;
     }
+    if (receipt.cancelled === true) return refusal(REFUSALS.CANCELLED, { name });
     // The reservation stands only while the worker this fork STARTED runs; a
     // steer leaves the road exactly as it was.
     if (receipt.started !== true) release();
+    // A dedicated worker keeps its road after the answer, so the next
+    // investigation reaches the same session (root §1.1 item 3).
+    if (keepRoad && picked === "devops") road.add(name);
     // The child is a fork-started worker: only such a program may fission
     // (§4.2), and only it keeps the worker identity for its lanes. The key is
     // the child's SESSION id, because that is what a later `fission` call
@@ -340,8 +375,8 @@ export const setup = async (ctx) => {
         activation.fissionOrigins.set(child, { role: picked, parent: sessionID });
       }
     }
-    if (!wait) return forkReceipt(receipt);
-    // The Plan's `devops` member waits for the one answer (§6): it is
+    if (!wait) return forkReceipt({ ...receipt, modelSource });
+    // Plan's `devops` primitive waits for the one answer (§6): it is
     // synchronous by contract, and the report is returned whole.
     const child = table.sessionIDOf(receipt.name);
     try {
@@ -355,12 +390,16 @@ export const setup = async (ctx) => {
       const session = current?.data ?? current ?? null;
       if (settledOutcomeOf(session).settled !== true) await sessions.wait({ sessionID: child });
       const report = await lastAnswer(sessions, child);
-      return { ok: true, name: receipt.name, report };
+      if (table.isCancelled(receipt.name)) {
+        return refusal(REFUSALS.CANCELLED, { name: receipt.name, report });
+      }
+      return { ok: true, name: receipt.name, report, modelSource };
     } finally {
       // Only a worker this fork STARTED holds the road this call reserved. A
       // steer (`started: false`) belongs to the live devops the reservation was
       // never taken for; releasing here would free a road that is still in use.
-      if (receipt.started === true) road.delete(receipt.name);
+      // A dedicated worker (`keepRoad`) keeps its name across investigations.
+      if (receipt.started === true && !keepRoad) road.delete(receipt.name);
     }
   };
 
@@ -552,10 +591,12 @@ export const setup = async (ctx) => {
     return forkWorker({
       sessionID: context.sessionID,
       name: input?.name ?? input?.workerName,
-      brief: input?.brief,
+      verboseIntent: input?.verboseIntent,
       // No `role` from the model: §4.1 gives `fork` two arguments, and the
-      // brief declares the identity. `input.role` is not read.
-      model: input?.model,
+      // verboseIntent declares the identity. `input.role` is not read.
+      //
+      // No `model` either (root §1.1 item 6): the task model or the parent's is
+      // chosen by the adapter, so a model cannot choose its own.
     });
   };
 
@@ -788,6 +829,18 @@ export const setup = async (ctx) => {
     for await (const event of events.iterable) {
       const data = event?.data;
       if (data?.sessionID === undefined) continue;
+      // Esc at a user-facing agent stops the work it started (root §1.1 item 2).
+      // The guards in `cancel.mjs` decide whether this interrupt is really the
+      // operator's: an `ask` park, a relay's silencing of the incumbent and a
+      // fission present replacement do not propagate. A failed propagation is
+      // reported by the sessions it could not stop, never by stopping the pump.
+      if (event.type === "session.execution.interrupted") {
+        try {
+          await propagateCancellation({ activation, sessionID: data.sessionID, agent: data.agent ?? null });
+        } catch {
+          // The next interrupt of the same session is judged on its own facts.
+        }
+      }
       if (event.type !== "session.created") {
         // A finished worker stops being steerable; its name may start a new
         // session later (§4.1).

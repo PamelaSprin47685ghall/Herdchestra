@@ -21,6 +21,13 @@
 // `persistGroup` writes the group's creation as ONE record (spec §4.2 step 4) to
 // `<root>/.Herdchestra/<session>.fission.jsonl`. `groupJournal` names that file;
 // the session owns the root, so the adapter never derives a second path.
+//
+// That journal has NO production reader today, and it stays anyway: root §4.2
+// step 4 makes the group's creation a DURABLE fact, committed before a lane
+// starts, so a crash leaves either no group or a whole one. A reader would
+// resume a half-built group, and no such resume exists; deleting the append
+// would delete the only evidence that step 4 happened. The write is one line per
+// group, not per turn.
 
 import { ROLES } from "../compose/program/surface.mjs";
 import { Fission } from "../compose/fission/fission.mjs";
@@ -170,7 +177,7 @@ export class SessionFission {
     this.#lanes.set(lane.laneId, { owner: lane.owner, index: lane.index });
     const built = await this.#workers.startLane({
       name: lane.laneId,
-      brief: lane.prompt,
+      verboseIntent: lane.prompt,
       role: owner?.role === ROLES.DEVOPS ? ROLES.DEVOPS : ROLES.CODER,
       // Built, not started: the group record is committed between the two.
       start: false,

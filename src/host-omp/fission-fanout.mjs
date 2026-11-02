@@ -24,7 +24,7 @@
 // error of the host's — compose answers it rather than throwing.
 
 // The group a lane id belongs to, read from the lane's own record:
-// `{ laneId, index, lane, brief }` (`ports.mjs` `buildLane`).
+// `{ laneId, index, lane, verboseIntent }` (`ports.mjs` `buildLane`).
 export const laneAddressOf = (record, groupId) => {
   if (record === null || record === undefined) return null;
   if (!Number.isInteger(record.index) || record.index < 0) return null;

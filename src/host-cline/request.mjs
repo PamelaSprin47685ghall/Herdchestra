@@ -44,6 +44,7 @@
 // result is rendered as CUE instead, and a text result keeps its bytes.
 
 import { toCue } from "../core/cue.mjs";
+import { messageDigest } from "../core/pair-hint/chain.mjs";
 import { DEFAULT_PINNED_MEMBERS } from "../core/scope/errors.mjs";
 import { SURFACE_MEMBERS } from "../compose/program/surface.mjs";
 
@@ -550,22 +551,27 @@ export const isCompactedCopy = (messages) => {
   return messages.some(isCompactionSummary);
 };
 
-// WHICH compaction a copy is built from, or null.
+// WHICH compaction a copy is built from, as the digest the Pair Hint chain
+// already uses for its first message, or null.
 //
 // A copy's compaction is not identified by the summary being present — every
-// request after a compaction carries one. It is identified by the summary's own
-// text: the host merges a later compaction into new text, so new text means a
-// new rewrite, while two requests built from the same compacted history carry
-// the same text and are the same rewrite.
+// request after a compaction carries one. It is identified by the summary
+// itself: the host merges a later compaction into new text, so a new summary
+// means a new rewrite, while two requests built from the same compacted history
+// carry the same summary and are the same rewrite.
+//
+// The digest, not the text, because the chain keeps digests and no longer keeps
+// the previous copy (`PairHint#chain`): after a cold start the only comparable
+// form of the presented copy is `chain.digests`, and `messageDigest` is exactly
+// what those entries are. Comparing texts would need bytes the journal no
+// longer stores.
 //
 // Without this, the adapter reported `history-compacted` on every request and
 // the boundary re-based each time, blessing an unauthorised rewrite inside the
 // compacted history (found by `compose/prefix-state-machine.test.mjs`).
-export const compactionIdentity = (messages) => {
+export const compactionDigest = (messages) => {
   if (!isCompactedCopy(messages)) return null;
-  const summary = messages[0];
-  const parts = Array.isArray(summary.content) ? summary.content : [];
-  return parts.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
+  return messageDigest(messages[0]);
 };
 
 // The notice a successor reads before its own operator turn, as a message.
@@ -666,14 +672,14 @@ export const lastOperatorText = (messages) => {
 // other would change bytes the host built for no gain.
 //
 // The chain compares exactly this copy: `session.mjs#projectMessages` hands the
-// projection's answer to `PairHint.project`, which journals it as the
-// `presented` record and measures the next request against it. The PROVIDER
-// reads the same copy after the host's own conversion, which re-wraps a
-// non-string tool output (`toPersistedToolResultContent` →
-// `{"type":"text","value":…}`), so the two differ in envelope only: the
-// `presented` record carries `{type:"text", value:"{ok: true, value: 2}"}`, the
-// capture the model read carries `"{ok: true, value: 2}"`. §6.3 is about the
-// latter, so a check of what the model read reads the capture, never the journal.
+// projection's answer to `PairHint.project`, which reduces it to one digest per
+// message (`chain.digests`) and measures the next request against that chain.
+// The `presented` record carries the chain and the fact it shows, never the
+// copy (root §1.1 item 1). The PROVIDER reads the same copy after the host's own
+// conversion, which re-wraps a non-string tool output
+// (`toPersistedToolResultContent` → `{"type":"text","value":…}`), so the bytes
+// the model read differ from this copy in envelope only. §6.3 is about what the
+// model read, so a check of that reads the provider capture, never the journal.
 export const toPairHintMessages = (messages) =>
   (Array.isArray(messages) ? messages : []).map((message) => {
     if (message?.role !== "assistant" || !Array.isArray(message.content)) return message;

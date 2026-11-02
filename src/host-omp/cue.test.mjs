@@ -275,7 +275,7 @@ test("a fork and a join present their receipts and keep them structured", async 
       return { ok: true, name: "w1", text: "first line\nsecond line" };
     },
   };
-  const fork = await forkTool({ port: worker }).execute("c1", { name: "w1", brief: "role: coder — go" });
+  const fork = await forkTool({ port: worker }).execute("c1", { name: "w1", verboseIntent: "role: coder — go" });
   assert.equal(fork.content[0].text, toCue({ name: "w1", steered: false, started: true }));
   assert.deepEqual(fork.details, { name: "w1", steered: false, started: true });
 

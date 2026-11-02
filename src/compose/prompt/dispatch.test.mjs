@@ -169,7 +169,7 @@ test("property: coder and devops are indistinguishable by prompt, for any sessio
         devops = await session.systemPrompt();
       }, sessionId);
       // §5: the two worker roles receive byte-identical prompts; identity is
-      // carried by the director message and the fork brief, not by this text.
+      // carried by the director message and the fork verboseIntent, not by this text.
       assert.equal(coder, devops);
       assert.equal(coder, COMMON + WORKER);
     }),

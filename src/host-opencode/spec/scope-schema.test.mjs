@@ -62,7 +62,7 @@ const CALL = {
   "js-worker": (scope) => ({ code: "return 1", [SCOPE_MEMBER]: scope }),
   "js-review": (scope) => ({ code: "return 1", [SCOPE_MEMBER]: scope }),
   plan: (scope) => ({ code: "return 1", [SCOPE_MEMBER]: scope }),
-  fork: (scope) => ({ name: "w", brief: "role: coder — b", [SCOPE_MEMBER]: scope }),
+  fork: (scope) => ({ name: "w", verboseIntent: "role: coder — b", [SCOPE_MEMBER]: scope }),
   join: (scope) => ({ [SCOPE_MEMBER]: scope }),
 };
 
@@ -185,18 +185,22 @@ test("the schema requires exactly the fields the parser requires", () => {
   assert.deepEqual(requiredByKind[SCOPE_KINDS.METOO], ["kind"]);
 });
 
-// The model reads the description before the schema. It must show the shape
-// that runs, not merely name the kinds.
-test("the model-facing description shows a complete resetScope", () => {
+// The model reads the description before the schema. The language is explained
+// once in the system prompt (root §1.1 item 5), so the tool description carries
+// the POINTER and the field shape, not the whole paragraph six times.
+test("the model-facing description points at the system prompt and shows the shape", () => {
+  assert.match(SCOPE_DESCRIPTION, /system prompt/);
   assert.match(SCOPE_DESCRIPTION, /newScopeGoal/);
   assert.match(SCOPE_DESCRIPTION, /newScopeRetentionBudget/);
   assert.match(SCOPE_DESCRIPTION, /resetScope/);
   for (const kind of SCOPE_KIND_VALUES) {
     assert.ok(SCOPE_DESCRIPTION.includes(kind), `the description names ${kind}`);
   }
+  // The tool descriptions no longer repeat the language. Repeating it in six
+  // tools is the cost root §1.1 item 5 names.
   for (const [name, description] of Object.entries(TOOL_DESCRIPTIONS)) {
-    assert.match(description, /newScopeGoal/, `${name}'s description must show a complete resetScope`);
-    assert.match(description, /newScopeRetentionBudget/);
+    assert.equal(/newScopeGoal/.test(description), false, `${name} must not repeat the Scope language`);
+    assert.equal(/newScopeRetentionBudget/.test(description), false);
   }
 });
 
@@ -212,28 +216,33 @@ test("every tool declares the same scope schema", () => {
 
 // Root §4.1 gives `fork` two arguments. The schema the model writes against must
 // not offer a third: a `role` property would be a channel the adapter does not
-// read (the identity comes from the brief), and a `required` entry for it would
-// make the compliant call impossible. The same rule holds for `join`, which
-// takes nothing but `scope`.
-test("fork's schema offers name and brief only; the identity lives in the brief", () => {
+// read (the identity comes from the verboseIntent), and a `required` entry for
+// it would make the compliant call impossible. The same rule holds for `join`,
+// which takes nothing but `scope`.
+test("fork's schema offers name and verboseIntent only; the identity lives in the text", () => {
   const fork = TOOL_INPUTS.fork;
-  assert.deepEqual(Object.keys(fork.properties).sort(), [SCOPE_MEMBER, "brief", "name"].sort());
+  assert.deepEqual(Object.keys(fork.properties).sort(), [SCOPE_MEMBER, "name", "verboseIntent"].sort());
   assert.equal(fork.properties.role, undefined, "no `role` property: §4.1 has two arguments");
-  assert.deepEqual([...fork.required].sort(), [SCOPE_MEMBER, "brief", "name"].filter((n) => n !== SCOPE_MEMBER).sort());
+  assert.equal(fork.properties.model, undefined, "no `model` property: the adapter chooses it");
+  assert.deepEqual(
+    [...fork.required].sort(),
+    [SCOPE_MEMBER, "name", "verboseIntent"].filter((n) => n !== SCOPE_MEMBER).sort(),
+  );
   assert.equal(fork.required.includes("role"), false);
-  // The brief is where the identity is declared, so the description must say so;
+  // The text is where the identity is declared, so the description must say so;
   // otherwise the model has no way to learn the rule that refuses its call.
-  assert.match(fork.properties.brief.description, /role: coder/);
-  assert.match(fork.properties.brief.description, /role: devops/);
+  assert.match(fork.properties.verboseIntent.description, /role: coder/);
+  assert.match(fork.properties.verboseIntent.description, /role: devops/);
   assert.match(TOOL_DESCRIPTIONS.fork, /role: coder/);
   assert.equal(/`role` is coder/.test(TOOL_DESCRIPTIONS.fork), false, "no separate `role` argument is described");
 });
 
-test("a fork call without a declared identity still compiles and is refused by the brief, not the schema", () => {
-  // The schema cannot decide an identity (it is text inside `brief`), so it must
-  // accept the call and let the adapter refuse it with the reason that names the
-  // rule. A schema that required `role` would answer "invalid arguments" instead.
-  const call = { name: "w1", brief: "do the thing" };
+test("a fork call without a declared identity still compiles and is refused by the text, not the schema", () => {
+  // The schema cannot decide an identity (it is text inside `verboseIntent`), so
+  // it must accept the call and let the adapter refuse it with the reason that
+  // names the rule. A schema that required `role` would answer "invalid
+  // arguments" instead.
+  const call = { name: "w1", verboseIntent: "do the thing" };
   for (const key of TOOL_INPUTS.fork.required) assert.ok(key in call || key === SCOPE_MEMBER, `required ${key} is writable`);
   assert.doesNotThrow(() => codecOf(TOOL_INPUTS.fork));
 });

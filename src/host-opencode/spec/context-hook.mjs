@@ -40,6 +40,7 @@
 
 import { DEFAULT_PINNED_MEMBERS } from "../../core/scope/errors.mjs";
 import { messageShapes } from "../../core/pair-hint/facts.mjs";
+import { digestSide } from "../../core/pair-hint/chain.mjs";
 import { REBASE_REASONS } from "../../core/pair-hint/pair-hint.mjs";
 import { SURFACE_MEMBERS } from "../../compose/program/surface.mjs";
 import { itemsFromMessages, messagesFromItems, toHintMessages, toHostMessages } from "./message-adapter.mjs";
@@ -67,6 +68,22 @@ export const opensPrefixChain = (record, sessionID) =>
   record !== undefined &&
   record.corrupt !== true &&
   record.successor === sessionID;
+
+// One side of a refusal, reduced to what a log may keep. A request side is a
+// message list (roles, part types, lengths, digests); a chain side is the
+// persisted state and carries digests only. Anything else is dropped rather
+// than copied: the host log must never receive the conversation.
+const shapedSide = (side) => {
+  if (side === null || side === undefined) return null;
+  if (Array.isArray(side)) return messageShapes(side);
+  if (Array.isArray(side.digests)) return digestSide(side.digests);
+  return null;
+};
+
+const shapedComparison = (compared) => {
+  if (compared === null || compared === undefined) return null;
+  return { previous: shapedSide(compared.previous), next: shapedSide(compared.next) };
+};
 
 // The Pair Hint's synthetic pair carries the empty tool name, which no pinned
 // member list names, and it is not a beat of any Scope: it is presentation.
@@ -294,7 +311,7 @@ export const applyContextHook = async (event, { state, hint }) => {
   // rewrite. It is asked of the copy BEFORE the barrier, because the barrier's
   // own cut is decided below and a barrier that kept the copy is not a break.
   const boundary = projectionBoundary({
-    presented: hint.presented,
+    presented: hint.chain,
     projected: toHintMessages(projectedMessages),
     incoming: host,
     givenItems: items,
@@ -372,9 +389,12 @@ export const applyContextHook = async (event, { state, hint }) => {
     // The sides are reduced to shapes before they leave the hook. The host logs
     // the thrown value as the drain's cause (`session/execution.ts`), so a
     // message list here would put the conversation, its tool I/O and any
-    // credential in the request into the log. `messageShapes` keeps role, part
-    // types, lengths and one digest per message — enough to find the differing
-    // index, not enough to read anything.
+    // credential in the request into the log. Core's `refusalRecord` shapes
+    // each side the way its journal does: a request side keeps role, part
+    // types, lengths and one digest per message; a chain side keeps only the
+    // digests, because the full copy is gone by design (root §1.1 item 1).
+    // Either way there is enough to find the differing index and nothing to
+    // read.
     const hintDetails = error?.details !== null && typeof error?.details === "object" ? error.details : {};
     const compared = hintDetails.compared ?? null;
     throw refuse(
@@ -385,13 +405,7 @@ export const applyContextHook = async (event, { state, hint }) => {
         hint: hint?.sessionId ?? null,
         epoch: hint?.epoch ?? null,
         index: Number.isInteger(hintDetails.index) ? hintDetails.index : null,
-        compared:
-          compared === null
-            ? null
-            : {
-                previous: compared.previous === null ? null : messageShapes(compared.previous),
-                next: compared.next === null ? null : messageShapes(compared.next),
-              },
+        compared: shapedComparison(compared),
       },
     );
   }

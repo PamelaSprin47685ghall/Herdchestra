@@ -36,6 +36,14 @@
 import { refuse, invalidArgument, PAIR_HINT_CODES } from "./errors.mjs";
 import { findAllInjections, syntheticMessages, digestOf, callIdParts } from "./presentation.mjs";
 import { canonicalKey } from "./canonical.mjs";
+import { Chain, firstDivergence, startsWith } from "./chain.mjs";
+
+// A message list as a chain, with the pair's own index when it carries one.
+// The pair-free view is only exact when that index is known.
+const chainOf = (messages) => {
+  const injection = findAllInjections(messages)[0];
+  return Chain.fromMessages(messages, { pairIndex: injection?.index ?? null });
+};
 
 export const INJECTION_MODES = Object.freeze({
   PLACED: "placed",
@@ -230,7 +238,25 @@ export class PairHintInjector {
   // change to anything else is not a change to the conversation.
   assertPrefix({ previous, next }) {
     if (!Array.isArray(previous) || !Array.isArray(next)) {
-      throw invalidArgument("both message lists must be arrays");
+      if (!(previous instanceof Chain) || !Array.isArray(next)) {
+        throw invalidArgument("both message lists must be arrays");
+      }
+      const anchor = previous.pairFreeDigests();
+      const request = chainOf(next).pairFreeDigests();
+      const divergence = firstDivergence(anchor, request);
+      if (divergence >= 0) {
+        throw refuse(
+          PAIR_HINT_CODES.PREFIX_DRIFT,
+          request.length < anchor.length ? "the new request is shorter than the old one" : "a message already shown would change",
+          {
+            index: divergence,
+            previousLength: anchor.length,
+            nextLength: request.length,
+            compared: { previous: { digests: anchor }, next: { digests: request } },
+          },
+        );
+      }
+      return true;
     }
     if (next.length < previous.length) {
       throw refuse(PAIR_HINT_CODES.PREFIX_DRIFT, "the new request is shorter than the old one", {
@@ -255,6 +281,10 @@ export class PairHintInjector {
   // form of `assertPrefix`, for a caller that wants to decide instead of
   // refusing. Same canonical comparison, so the two can never disagree.
   extendsPrefix({ previous, next }) {
+    if (previous instanceof Chain) {
+      if (!Array.isArray(next)) throw invalidArgument("both message lists must be arrays");
+      return startsWith(previous.pairFreeDigests(), chainOf(next).pairFreeDigests());
+    }
     if (!Array.isArray(previous) || !Array.isArray(next)) {
       throw invalidArgument("both message lists must be arrays");
     }
@@ -275,6 +305,10 @@ export class PairHintInjector {
   // The semantic identity of a message list, for a caller that wants to compare
   // two copies without refusing. `equalPrefix` is the value form of the rule.
   samePrefix({ previous, next }) {
+    if (previous instanceof Chain) {
+      if (!Array.isArray(next)) throw invalidArgument("both message lists must be arrays");
+      return previous.equals(chainOf(next));
+    }
     if (!Array.isArray(previous) || !Array.isArray(next)) {
       throw invalidArgument("both message lists must be arrays");
     }
@@ -299,6 +333,7 @@ export class PairHintInjector {
   // unchanged. `assertPrefix` on the pair-carrying forms would compare the pair
   // against whatever message the host rebuilt at its old index.
   withoutInjection(messages) {
+    if (messages instanceof Chain) return messages.withoutPair();
     if (!Array.isArray(messages)) throw invalidArgument("messages must be an array");
     const injections = findAllInjections(messages);
     if (injections.length === 0) return [...messages];

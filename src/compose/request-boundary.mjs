@@ -36,17 +36,29 @@
 // order made an untouched message look changed, the boundary said "replaced",
 // and a re-base was performed for a copy nobody had touched.
 
-import { canonicalKey } from "../core/pair-hint/canonical.mjs";
+import { Chain, messageDigest } from "../core/pair-hint/chain.mjs";
 
 // The first index at which `next` stops extending `previous`, or -1 when it
 // extends it. A longer `next` whose leading messages all match is an extension;
 // a shorter one, or one whose message at some index differs, is not.
+//
+// A side may be a `Chain` (the persisted chain state) or a message list. Both
+// become digest lists here, so a cold start compares exactly what the live
+// process compared: the chain's own per-message digests, never a stored copy.
+const digestsOf = (side) => {
+  if (side instanceof Chain) return side.digests;
+  if (Array.isArray(side)) return side.map(messageDigest);
+  throw new TypeError("a request-boundary side must be a Chain or a message list");
+};
+
 const divergenceAt = (previous, next) => {
-  const span = Math.min(previous.length, next.length);
+  const before = digestsOf(previous);
+  const after = digestsOf(next);
+  const span = Math.min(before.length, after.length);
   for (let index = 0; index < span; index += 1) {
-    if (canonicalKey(previous[index]) !== canonicalKey(next[index])) return index;
+    if (before[index] !== after[index]) return index;
   }
-  return next.length < previous.length ? next.length : -1;
+  return after.length < before.length ? after.length : -1;
 };
 
 // The first index at which two ITEM lists differ structurally, or -1 when they

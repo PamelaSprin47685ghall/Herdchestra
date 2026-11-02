@@ -98,3 +98,58 @@ export const modelRefusal = (reason, detail = null) => ({
   detail: typeof detail === "string" && detail.length > 0 ? detail : reason,
 });
 
+// The model a SUBAGENT runs (root §1.1 item 6): the operator's task model, not
+// the main model. Manager and Plan are the top-level agents and keep the parent
+// model; a worker, a fission lane and Plan's dedicated devops are subagents and
+// run the task model when one is configured.
+//
+// Both variables are required. A half-configured pair is a refusal, not a silent
+// fallback: the operator named one half of a model, and using the parent's model
+// while pretending the task model was configured is the kind of quiet
+// substitution that makes a measurement lie.
+export const TASK_MODEL_ENV = Object.freeze({
+  PROVIDER: "HERDCHESTRA_TASK_PROVIDER_ID",
+  MODEL: "HERDCHESTRA_TASK_MODEL_ID",
+});
+
+export const taskModelOf = (env = process.env) => {
+  const read = (name) => (typeof env?.[name] === "string" ? env[name].trim() : "");
+  const providerID = read(TASK_MODEL_ENV.PROVIDER);
+  const id = read(TASK_MODEL_ENV.MODEL);
+  if (providerID === "" && id === "") return { ok: false, reason: "UNSET" };
+  if (providerID === "" || id === "") {
+    return {
+      ok: false,
+      reason: "INCOMPLETE",
+      missing: [
+        ...(providerID === "" ? [TASK_MODEL_ENV.PROVIDER] : []),
+        ...(id === "" ? [TASK_MODEL_ENV.MODEL] : []),
+      ],
+    };
+  }
+  return { ok: true, model: { providerID, id } };
+};
+
+// The model a child session the adapter creates must run, and where that choice
+// came from. `modelSource` is reported in the receipt so a caller can tell the
+// task model from the parent fallback without guessing from the values.
+//
+//   task   the operator configured both variables
+//   parent the task model is unset; the parent's own model is used
+export const resolveChildModel = async ({ sessions, parentID, env = process.env }) => {
+  const task = taskModelOf(env);
+  if (task.ok === true) return { ok: true, model: task.model, modelSource: "task" };
+  if (task.reason === "INCOMPLETE") {
+    return {
+      ok: false,
+      reason: "TASK_MODEL_INCOMPLETE",
+      detail: `${task.missing.join(" and ")} must be set together with ${
+        task.missing[0] === TASK_MODEL_ENV.PROVIDER ? TASK_MODEL_ENV.MODEL : TASK_MODEL_ENV.PROVIDER
+      }`,
+    };
+  }
+  const found = await requireModelOf(sessions, parentID);
+  if (found.ok !== true) return found;
+  return { ...found, modelSource: "parent" };
+};
+

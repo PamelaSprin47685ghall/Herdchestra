@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ROLES, SURFACE_MEMBERS, surfaceNameFor, ProgramSurface } from "./surface.mjs";
+import {
+  ROLES,
+  SURFACE_MEMBERS,
+  SURFACE_PRIMITIVES,
+  surfaceNameFor,
+  ProgramSurface,
+} from "./surface.mjs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,7 +22,7 @@ const ports = () => ({
   control: { unpark: async () => null },
   relay: { review: async () => ({ ok: true }) },
   fork: {
-    fork: async (name, _brief, role) => ({ name, role, steered: false, started: true }),
+    fork: async (name, _verboseIntent, role) => ({ name, role, steered: false, started: true }),
     join: async () => null,
   },
   fission: { fission: async () => ({ ok: false, rejection: "InvalidOrigin" }) },
@@ -114,6 +120,21 @@ test("plan sees its own members, including the unpark its ask needs", () => {
   assert.deepEqual(Object.keys(members).sort(), ["ask", "cat", "devops", "review", "unpark", "write"]);
 });
 
+test("Plan's devops is a top-level primitive, never this.devops", () => {
+  // 根 §1.1 item 3: `devops(verboseIntent)` is synchronous in the join sense,
+  // so the host binds it as a bare function beside `review`. The member table
+  // must not offer `this.devops`, and the surface must still hand the handler
+  // out so a host can bind it.
+  assert.equal(SURFACE_MEMBERS.plan.includes("devops"), false);
+  assert.deepEqual([...SURFACE_PRIMITIVES.plan], ["devops"]);
+  assert.equal(typeof ProgramSurface.prototype.devops, "undefined");
+  const members = surfaceOf(ROLES.PLAN).surface();
+  assert.equal(typeof members.devops, "function");
+  // Only Plan has this primitive; every other role's surface is unchanged.
+  assert.equal(SURFACE_PRIMITIVES["js-manager"], undefined);
+  assert.equal(SURFACE_PRIMITIVES["js-worker"], undefined);
+});
+
 test("plan's draft is read-only until the tenure's first review (spec 5.5)", async (t) => {
   const dir = await tempRoot(t, "compose-plan-");
   const locked = surfaceOf(ROLES.PLAN, program("plan-1"), dir).surface();
@@ -189,7 +210,8 @@ test("a terminal program cannot park", () => {
 test("the member lists match the specification", () => {
   assert.deepEqual(SURFACE_MEMBERS["js-review"], ["cat", "stat", "ls", "where", "whereAll"]);
   assert.ok(!SURFACE_MEMBERS["js-review"].includes("write"));
-  assert.ok(SURFACE_MEMBERS.plan.includes("devops"));
+  assert.ok(!SURFACE_MEMBERS.plan.includes("devops"));
+  assert.ok(SURFACE_PRIMITIVES.plan.includes("devops"));
   assert.ok(!SURFACE_MEMBERS.plan.includes("call"));
 });
 

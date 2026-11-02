@@ -96,10 +96,11 @@ test("the extension registers the hook on the host's own channel", async () => {
   herdchestra(api);
   const hooks = handlers.get("before_subagent_spawn") ?? [];
   assert.equal(hooks.length, 1, "exactly one spawn hook is registered");
-  // A declared child is answered, not refused, and the answer carries no
-  // verdict fields the host would act on.
+  // A declared child is answered with the user's TASK model (root §1.1 item 6):
+  // the host expands the role alias with `modelRoles.task` before spawning.
   const declared = await hooks[0](spawnEvent("coder"), undefined);
-  assert.deepEqual(declared, {});
+  assert.deepEqual(declared, { model: "@task" });
+  assert.deepEqual(await hooks[0](spawnEvent("devops"), undefined), { model: "@task" });
   const refused = await hooks[0](spawnEvent("task"), undefined);
   assert.equal(refused.block, true);
   assert.match(refused.reason, /SPAWN_UNDECLARED_ROLE/);

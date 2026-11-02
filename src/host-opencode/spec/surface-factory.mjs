@@ -31,6 +31,7 @@ import { ProgramSurface, ROLES } from "../../compose/program/surface.mjs";
 import { requirePorts } from "../../compose/ports.mjs";
 import { CoreError, CODES } from "../../core/errors.mjs";
 import { memberAvailable, refusalText } from "./member-availability.mjs";
+import { primitivesForSurface } from "./primitives.mjs";
 import { refusal, REFUSALS } from "./refusals.mjs";
 import { clock, sessionRoot } from "./runtime-adapters.mjs";
 
@@ -82,6 +83,7 @@ export const makeSurface = ({ role, name, program, session, ports, source = null
       return {
         surface: null,
         members: Object.freeze({}),
+        primitives: Object.freeze([]),
         refusal: refusal(REFUSALS.DRAFT_DIR_UNWRITABLE, {
           directory: dirFailure.directory ?? null,
           detail: dirFailure.detail ?? null,
@@ -143,7 +145,16 @@ export const makeSurface = ({ role, name, program, session, ports, source = null
   // round's first accepted review just shut (§2.3). `openRound: false` says
   // exactly that — this call is not a new request.
   const members = review ? surface.reviewSurface({ openRound: false }) : surface.surface();
-  return Object.freeze({ surface, members: Object.freeze(members) });
+  // A primitive is a capability the body calls by its bare name (§3.1). Compose
+  // owns most of them; this host binds Plan's `devops` itself (根 §1.1 item 3).
+  // A compose surface that still lists a primitive among its members supplies
+  // the handler, and the compile step takes it out of `this`; a surface that no
+  // longer lists it gets the handler here, so both shapes compile the same way.
+  const primitives = primitivesForSurface(surface.surfaceName);
+  for (const name of primitives) {
+    if (members[name] === undefined) members[name] = surface.handler(name, surface.core());
+  }
+  return Object.freeze({ surface, members: Object.freeze(members), primitives: Object.freeze([...primitives]) });
 };
 
 // A member the role's surface does not carry is refused by name, not silently

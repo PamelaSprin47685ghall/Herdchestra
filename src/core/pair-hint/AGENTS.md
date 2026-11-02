@@ -38,7 +38,8 @@
 | `presentation.mjs` | 呈现事实、渲染、解析、合成消息对 | `PresentationFact`、`renderPresentation`、`renderHandles`、`parseHint`、`factFor`、`syntheticMessages`、`digestOf`、`findInjection`、`findAllInjections`、`callIdParts` |
 | `injection.mjs` | 请求副本上的放置、重放、前缀检查 | `PairHintInjector`、`INJECTION_MODES` |
 | `canonical.mjs` | 前缀规则比较用的**语义身份**：正向白名单 + `stableJson` | `canonicalMessage`、`canonicalMessages`、`canonicalKey`、`CANONICAL_PART` |
-| `facts.mjs` | 持久事实的折叠与日志 | `PairHintState`、`JournalStore`、`foldRecords`、`RECORD_KINDS`、`journalPath` |
+| `chain.mjs` | 前缀链的最小状态：每消息摘要、根、对的下标 | `Chain`（`digestAt`、`pairFreeDigests`、`withoutPair`、`equals`、`toRecord`）、`messageDigest`、`rootOf`、`firstDivergence`、`startsWith`、`digestSide` |
+| `facts.mjs` | 持久事实的折叠与日志（含旧形状迁移） | `PairHintState`、`JournalStore`、`foldRecords`、`RECORD_KINDS`、`journalPath` |
 | `pair-hint.mjs` | 把以上组合成一个宿主入口 | `PairHint`、`MemoryJournal` |
 | `resources/<id>/{en,zh-CN}.md` | 成对资源本体 | — |
 
@@ -77,13 +78,13 @@
 
 ### 5.1 冻结与事实
 
-**一次 epoch 一份冻结的呈现。** 一个 epoch 的第一次请求渲染一次文本，此后该 epoch 的每个请求都用这份文本；它随 `presented` 记录一起落盘。这样：
+**一次 epoch 一份冻结的呈现。** 一个 epoch 的第一次请求渲染一次文本，此后该 epoch 的每个请求都用这份文本；它作为一条 `presentation` 记录落盘，`presented` 记录只引用它的摘要。这样：
 
 - 资源文件在 epoch 中途被改写，不会让同一 epoch 的字节漂移；
 - 冷启只解析已存文本，不重读资源目录，重建结果与重启前逐字相同（§6.1 步骤 6）；
 - handles 变化只对**下一个** epoch 生效（§6.1：同一 epoch 内不得改已呈现的字节）。
 
-一次呈现的事实是 `PresentationFact = { epoch, digest, handles, after, inserted, text, entries }`：
+一次呈现的事实是 `PresentationFact = { epoch, digest, handles, after, inserted, text, entries }`。`text` 与 `entries` 在内存里随事实返回；落盘时它们只进 `presentation` 记录，`presented` 的事实只留 `{ epoch, digest, handles, after, inserted }`：
 
 | 字段 | 含义 |
 |---|---|
@@ -92,8 +93,8 @@
 | `handles` | 本 epoch 冻结的未结清 park handles，去重后按字典序排序。 |
 | `after` | **下一次请求**把对放在它自己的第几条消息之后。`null` 表示本 epoch 还没放置。 |
 | `inserted` | 对在**上一次送出的**请求里的下标，仅供阅读与诊断。 |
-| `text` | 冻结的提示全文。 |
-| `entries` | 冻结的资源 id 顺序。 |
+| `text` | 冻结的提示全文。落盘时只写一次，见 `presentation` 记录。 |
+| `entries` | 冻结的资源 id 顺序。随 `text` 一起只写一次。 |
 
 **为什么是计数而不是下标。** 宿主的每个请求都由它自己的历史重建，历史里没有我们的对。用「上一次请求里的下标」定位，下一次请求里对会被后移两条，前缀立刻漂移；用「前 N 条」定位，对永远落在同样的两条消息之间，后一次请求自然以前一次为前缀（§6.1）。
 
@@ -148,7 +149,7 @@
 
 **第 2 条不要求对停在 `after` 处。** 一个本来就带着对的副本（宿主把刚送出的请求原样交回、调用方把副本加长后再投影），对可以停在任意条消息之后：它前面的消息一字未改，对本身仍是冻结字节，这就已经满足 §6.1 的字节前缀，而不是违背它。此时**副本里对的实际位置就是新的 `after`**，下一份不带对的副本会落回同样两条消息之间。旧实现把「对不在 `after` 处」一律判成漂移，等于拒绝唯一已经构成前缀的副本；现已删除。
 
-**比较的是语义身份，不是宿主对象（`canonical.mjs`）。** `assertPrefix` / `extendsPrefix` / `samePrefix` 逐条比较 `canonicalKey(message)`，它是 `canonicalMessage` 的 `stableJson`：
+**比较的是语义身份，不是宿主对象（`canonical.mjs`）。** 链状态是 `chain.mjs` 的 `Chain`：每条消息一个 `canonicalKey(message)` 的 SHA-256，外加一个根与对的下标。`assertPrefix` / `extendsPrefix` / `samePrefix` 对消息数组逐条比较 `canonicalKey(message)`（即 `canonicalMessage` 的 `stableJson`），对 `Chain` 则直接比较它的摘要；两条路径得到同一答案，因为摘要就是那串文本的哈希：
 
 - **正向白名单**：只抽取模型真正读到的内容 —— `role`（`user`/`operator`/`human` → user，`assistant`/`model`/`ai` → assistant，`system`/`developer` → system，`tool`/`toolResult`/`function` → tool），以及按顺序的语义部件：
   - `text`：`{ type: "text", text }`；
@@ -177,8 +178,8 @@ OMP 的侧通道请求是这样拼出来的（`agent-session.ts:12929` `#buildEp
 
 **`project({ messages, kind })`** 的 `kind` 只能取 `REQUEST_KINDS` 之一：
 
-- **`main`**（默认）：主线。做前缀检查，写一条 `presented` 记录，更新 `#presented` / `#after`。
-- **`ephemeral`**：侧通道 / 分支。**照样在对的位置放对**（同一 epoch、同一冻结文本、同一 `after`、同一字节），宿主缓存前缀照样命中；然后**什么都不记、什么都不动** —— 不写 `presented`、不改 `#presented` / `#presentedEpoch` / `#after`、不消耗待写的 re-base。宿主会丢弃这次请求，把它记成链的一步就等于让下一次真正的请求去对照一段从未说过的话。
+- **`main`**（默认）：主线。做前缀检查，写一条 `presented` 记录（`length`、每消息摘要、根、对的下标、事实），更新 `#chain` / `#after`。
+- **`ephemeral`**：侧通道 / 分支。**照样在对的位置放对**（同一 epoch、同一冻结文本、同一 `after`、同一字节），宿主缓存前缀照样命中；然后**什么都不记、什么都不动** —— 不写 `presented`、不改 `#chain` / `#presentedEpoch` / `#after`、不消耗待写的 re-base。宿主会丢弃这次请求，把它记成链的一步就等于让下一次真正的请求去对照一段从未说过的话。
 - **`branch`**：宿主自己重建、从不保存的视图（摘要、压缩提示），目前与 `ephemeral` 同义。
 
 分支的容忍度是**精确**的：
@@ -189,14 +190,14 @@ OMP 的侧通道请求是这样拼出来的（`agent-session.ts:12929` `#buildEp
 
 **判定「这是不是侧通道请求」属于适配器**：OMP 的标记是 Symbol，而 `emitContext` 先 `structuredClone`，Symbol 会被丢掉，本包根本看不到；靠文本或角色去猜，正是「黑名单追着宿主字段跑」的老毛病。适配器说**这是什么请求**，本包说**这对链意味着什么**。
 
-**2026-11-01 真机（会话 `01a19547`）**：主线第一轮（1 条消息）呈现 3 条；4 ms 后标题分叉在主线四个工具调用结束前进来，副本是 `[user, assistant(76B 部分文本), developer(提醒), user(<title>)]`。它扩展了**去掉对之后**的前缀（下标 0 相同），链因此接受并把 `#presented` 覆盖成这次侧通道请求；4 ms 后主线真正的那轮是 `[user, assistant(text + 4 tool-calls, 3853B), 4×tool-result]`，在下标 1 与侧通道的 76B 部分文本不同 —— 此后该会话每次请求都以 `PREFIX_DRIFT` 拒绝。根因不是「比较太松」，而是「被丢弃的请求不该成为链的一步」。
+**2026-11-01 真机（会话 `01a19547`）**：主线第一轮（1 条消息）呈现 3 条；4 ms 后标题分叉在主线四个工具调用结束前进来，副本是 `[user, assistant(76B 部分文本), developer(提醒), user(<title>)]`。它扩展了**去掉对之后**的前缀（下标 0 相同），链因此接受并把链状态覆盖成这次侧通道请求；4 ms 后主线真正的那轮是 `[user, assistant(text + 4 tool-calls, 3853B), 4×tool-result]`，在下标 1 与侧通道的 76B 部分文本不同 —— 此后该会话每次请求都以 `PREFIX_DRIFT` 拒绝。根因不是「比较太松」，而是「被丢弃的请求不该成为链的一步」。
 
-`assertPrefix({ previous, next })` 检查「后一次请求以前一次请求为前缀」，返回 `true` 或抛 `PREFIX_DRIFT` 并给出第一个不同的消息下标。**没有豁免模式**：重放也是发出去的请求，宿主改写了已呈现消息同样要拒。`extendsPrefix({ previous, next })` 是同一判断的谓词形式，`shownPlacement(messages)` 给出副本里对之前有几条消息（无对时 `null`）。
+`assertPrefix({ previous, next })` 检查「后一次请求以前一次请求为前缀」，返回 `true` 或抛 `PREFIX_DRIFT` 并给出第一个不同的消息下标。`previous` 可以是消息数组，也可以是 `Chain`；后者直接比较持久化的摘要，不需要一份存下来的副本。**没有豁免模式**：重放也是发出去的请求，宿主改写了已呈现消息同样要拒。`extendsPrefix({ previous, next })` 是同一判断的谓词形式（同样接受 `Chain`），`shownPlacement(messages)` 给出副本里对之前有几条消息（无对时 `null`）。
 
 **接力屏障下的重新锚定（`PairHint#anchor`）。** 同一个 epoch 内唯一的合法链断点是宿主自己的事实替换了请求副本（根 §2.4 第 3 步的接力屏障）。`anchor(base)` 接收**放置之前**的新副本 `base`，把链的锚设成 `base` 本身，并把下一个放置计数 `after` 定成 `base.length`（即「对放在这份副本之后」）。
 - **锚必须是 `base`，不能是 `base` + 对。** 宿主保存的是 `base` 加上它自己后来的消息，从不保存我们的对。锚在「`base` + 对」上，等于要求之后每一份副本都在同一个下标处带着对：第二份请求是 `base` + 宿主的回答 + 对，对已经不在原下标，`assertPrefix` 立刻判漂移——2026-11-01 真机继任者第二次请求就是这样报 `PREFIX_DRIFT` 的。
 - **锚的形态必须与 `project` 比对时用的形态一致。** 调用方必须先做它自己的消息归一（OMP 适配器是 `toPairHintMessages`：字符串内容与单个 text part 同形，适配器标记与时间戳不算对话），再交给 `anchor` 和 `project`。两边形态不同时，同一句话也会在下标 0 处被判为漂移。
-- **`anchor` 开启一条新链。** 锚点之后的第一条请求是链首，不与断点之前那次请求比较（`#presentedEpoch` 置空）；第二条起照旧严格，与锚点字节逐条比对。只替换 `#presented` 而不置空时，这次调用对前缀检查不可见——下一次 `project` 走的是普通请求那条分支，锚点是否起作用取决于新旧副本恰好有没有共同前缀，而不是取决于调用方对宿主事实的声明。断点不是豁免：锚点里的字节就是调用方即将发出的字节，`anchor` 自己一个字节也不改写；调用方若把锚设成它刚刚呈现的那份副本，就让掉了唯一能抓到改写的那次比较，这个取舍属于调用方（三个宿主都只在屏障处锚）。
+- **`anchor` 开启一条新链。** 锚点之后的第一条请求是链首，不与断点之前那次请求比较（`#presentedEpoch` 置空）；第二条起照旧严格，与锚点摘要逐条比对。只替换 `#chain` 而不置空时，这次调用对前缀检查不可见——下一次 `project` 走的是普通请求那条分支，锚点是否起作用取决于新旧副本恰好有没有共同前缀，而不是取决于调用方对宿主事实的声明。断点不是豁免：锚点里的字节就是调用方即将发出的字节，`anchor` 自己一个字节也不改写；调用方若把锚设成它刚刚呈现的那份副本，就让掉了唯一能抓到改写的那次比较，这个取舍属于调用方（三个宿主都只在屏障处锚）。
 - `anchor` 只改链：冻结文本、epoch、handles 与放置都不变；锚点之后的请求仍必须扩展它，已经呈现的字节绝不改写。
 - 本 epoch 还没有冻结文本时 `anchor` 什么也不做（没有对可锚），下一次 `project` 自己决定放置并开链。
 - **`anchor(base, { reason })` 记下断链的原因**，`reason` 只能是 `REBASE_REASONS` 的三个值：`relay`（根 §2.4 第 3 步的屏障）、`scope-reset`（`resetScope` 边界裁掉了已读消息）、`scope-remove`（`removeLast` 就地改写了上一拍）。原因随**下一条** `presented` 记录写入 `rebased` 字段（可选、向后兼容：旧日志没有该字段照常折叠）。`PairHint#rebased` 读回它，冷启后仍可查。未知原因在写入任何东西之前抛 `INVALID_ARGUMENT`。
@@ -223,32 +224,37 @@ OMP 的侧通道请求是这样拼出来的（`agent-session.ts:12929` `#buildEp
 |---|---|---|
 | `bind` | `binding: { sessionId, language, source, ownerSessionId }` | 会话语言，创建时写一次 |
 | `epoch` | `epoch` | 新呈现代次 |
-| `presented` | `messages`、`length`、`fact: { epoch, digest, handles, after, inserted, text, entries }` | 上一次送出的整份请求副本，连同它呈现的事实与冻结文本 |
+| `presentation` | `epoch`、`digest`、`text`、`entries` | 一个 epoch/digest 的冻结提示文本，写一次；同一 epoch 的每个请求都引用它 |
+| `presented` | `length`、`digests`（每消息摘要）、`digest`（根）、`pair`（对的下标）、`fact: { epoch, digest, handles, after, inserted }`、可选 `rebased` | 上一次送出的**链状态**，不含请求副本；`length` 是消息条数（含合成对），`digests` 是每条消息 `canonicalKey` 的 SHA-256 |
 | `refused` | `code`、`message`、`epoch`、`index`、`previous`、`next` | 上一次请求为何被拒。**只是诊断**：拒绝不发请求，因此不折叠进状态，只随状态读回（`PairHintState#refusal`） |
 
-**`presented` 记录会被压缩。** 每条 `presented` 都存整份请求副本，而每次请求都重写整份副本：
-33 次请求的 67 条会话产生了 34 MB，仓库里的日志到过 133 MB。折叠时**只有最后一条** `presented`
-会被观察到（`apply` 每条都整体替换 `#presented`），所以 `JournalStore` 在文件超过 4 MB 时压缩：
-原子重写（写 `.compact` 再 `rename`），最新一条保留 `messages`，更早的只留 `fact` 与 `length`。
-折叠结果完全不变；冷启仍从最新副本续链。没有 `messages` 的记录在折叠时沿用上一条的副本（不发明、
-不丢弃），`length` 非整数、`messages` 非数组、或数组长度与 `length` 不符仍是 `FACT_CORRUPT`。
+**`presented` 记录是摘要，不是副本。** 每条 `presented` 只存 `length`、每消息摘要、根与对的下标；
+提示全文只在 `presentation` 记录里出现一次。折叠时**只有最后一条带链的** `presented` 会被观察到
+（`apply` 每条都整体替换 `#chain`），所以 `JournalStore` 在文件超过 4 MB 时压缩：原子重写
+（写 `.compact` 再 `rename`），把旧形状的 `messages` 迁移成摘要、把每条事实里的 `text`/`entries`
+提升为一条 `presentation` 记录。折叠结果完全不变；冷启从最新摘要续链。没有 `messages` 也没有
+`digests` 的记录是已被取代的旧记录，折叠时沿用上一条链（不发明、不丢弃）。
+`length` 非整数、`messages` 非数组、摘要数组与 `length` 不符、根与摘要不符，仍是 `FACT_CORRUPT`。
+旧日志的 `messages` 在折叠时按 `canonicalKey` 计算同一组摘要；`foldRecords` 只对最后一条带链的记录
+做这件事，因此旧日志的冷启不是 O(n²)。
 
 **`refused` 记什么、不记什么。** 拒绝过去只在宿主日志里留下一句话和一个下标——知道"漂了"，
 不知道"哪里、差多少"。2026-11-01 的真机漂移就是靠翻宿主自己的数据库才说清是哪把键不同。
 所以现在 `PairHint#project` 在抛出前写一条 `refused`：
 
-- `index` 是前缀规则第一条不一致的消息下标；`previous`/`next` 是它比较的两侧（锚与本次请求，
+- `index` 是前缀规则第一条不一致的消息下标；`previous`/`next` 是它比较的两侧（链与本次请求，
   各去掉本 epoch 的对），各带 `count`（真实条数）与 `shapes`（前 `REFUSAL_SHAPE_LIMIT` = 64 条的形状）。
-- 一条消息的形状是 `{ role, parts, length, digest }`：`role` 是规范化角色，`parts` 是语义部件类型名，
+- 链侧的每条形状只有 `{ digest }`：全文已不在日志里，摘要仍足以核对下标。请求侧的形状是
+  `{ role, parts, calls, results, length, digest }`：`role` 是规范化角色，`parts` 是语义部件类型名，
   `length` 是 `canonicalKey(message)` 的长度，`digest` 是对**同一串**的 SHA-256。前缀规则比的正是这串，
   所以摘要相等 ⇔ 语义内容相同；下标处摘要不同就是漂移，且可核对而不必拿到原文。
 - **不记**消息文本、工具入参、工具出参、系统提示、凭据。摘要不能反推原文，长度也不足以重建一条短消息。
   记录回答"哪里、差多少"，永不回答"用户说了什么"。
 - 写入失败被吞掉：诊断丢了可以接受，用诊断失败替换真正的拒绝不行。抛出的错误本身一个字节也不改。
-- 冷启照常折叠：`refused` 不改 epoch、不改 `presented`、不改放置；字段非法则 `FACT_CORRUPT`，
+- 冷启照常折叠：`refused` 不改 epoch、不改链、不改放置；字段非法则 `FACT_CORRUPT`，
   未知字段忽略（新版本写的日志旧版本要读得动）。
 
-**折叠：** `PairHintState#apply` 纯函数式地折叠一条记录，返回新状态；`foldRecords` 折叠整份日志。以下情形一律 `FACT_CORRUPT`：未知 `kind`、坏字段、日志里换语言、`epoch` 倒退、`presented` 的事实属于别的 epoch、事实文本与其摘要不符。
+**折叠：** `PairHintState#apply` 纯函数式地折叠一条记录，返回新状态；`foldRecords` 折叠整份日志，并只对最后一条带链的 `presented` 计算旧形状的摘要。以下情形一律 `FACT_CORRUPT`：未知 `kind`、坏字段、日志里换语言、`epoch` 倒退、`presented` 的事实属于别的 epoch、事实文本与其摘要不符、`presented` 的摘要数组与 `length` 不符、根与摘要不符、`fact` 指向一个没有 `presentation` 的摘要。
 
 **容错：** 只容忍「最后一行被截断」——那是 append 期间崩溃留下的半条记录，不承载事实。中间行坏 → `FACT_CORRUPT`。
 
@@ -262,14 +268,15 @@ await hint.bind({ ladder: { explicit, host, locale } }); // 或 bind({ sessionId
 hint.setHandles([...]);                                  // 表面提供的未结清 handles（下个 epoch 生效）
 await hint.currentFact();                                // 下一次请求的呈现事实
 const { messages, mode, fact } = await hint.project({ messages }); // 请求副本
+hint.chain;                                             // 链状态（冷启可用），不是副本
 await hint.newEpoch();                                   // 需要改呈现时
 ```
 
-- `project` 依次做：取本 epoch 的冻结文本（没有则渲染并冻结）→ 生成事实（带 `after`）→ 注入（`placed` 或 `replayed`）→ 同一 epoch 内与上一次呈现做前缀检查 → **一笔** append 写 `presented`（字节 + 事实 + 冻结文本）→ 返回新数组。输入数组从不被修改。
+- `project` 依次做：取本 epoch 的冻结文本（没有则渲染并冻结）→ 首次使用时 append 一条 `presentation`（`epoch` + `digest` + 文本 + 资源表）→ 生成事实（带 `after`）→ 注入（`placed` 或 `replayed`）→ 同一 epoch 内与上一次呈现做摘要前缀检查 → append 一条 `presented`（`length` + 摘要 + 根 + 对的下标 + 事实）→ 返回新数组。输入数组从不被修改。
 - **epoch 切换沿用旧对的尾部。** `newEpoch()` 把下一个 `after` 定在上一次呈现的请求里旧对之前的位置（见本节 §5.4），所以新 epoch 的第一次请求仍以旧 epoch 的最后一次请求为前缀；若本 epoch 还没有任何呈现，`after` 为 `null`（下一次投影放在末尾并自行决定）。
 - **放置跟随已呈现的副本。** 当本次投影的副本以上一次的呈现为前缀（宿主交回原请求、或把副本加长）时，`after` 改记副本里对的实际位置，并写进 `presented` 记录；于是下一次不带对的请求仍落在同样两条消息之间，而不是被判漂移。前缀本身不改，只改「下一次放哪」。
 - **会话内串行。** 同一 `PairHint` 的 `project`/`newEpoch` 串行执行，失败不打断队列。
-- **前缀链以日志里的 `presented` 为锚。** 冷启后锚来自 `presented` 记录，因此重启后的第一次请求也受同一 epoch 的前缀约束。新 epoch 的第一次请求另起一条链。
+- **前缀链以日志里的 `presented` 摘要为锚。** 冷启后锚来自 `presented` 记录的 `digests`/`digest`，因此重启后的第一次请求也受同一 epoch 的前缀约束，且不需要一份存下来的副本。新 epoch 的第一次请求另起一条链。
 - 未绑定的会话 `render`/`project` → `INVALID_LANGUAGE`（「语言缺失即失败」，§6.1 步骤 7）。
 - **`mode` 说的是「这一对发生了什么」，不是「哪个分支跑了」。** 宿主不存这一对，所以下一次请求
   到达时**不带**它，`inject` 只能走「副本里没有对」那条分支、只会答 `placed`——它知道放置已决定
@@ -290,11 +297,11 @@ await hint.newEpoch();                                   // 需要改呈现时
 | `RESOURCE_MISSING` | 资源存在但读失败或非 UTF-8 |
 | `PREFIX_DRIFT` | 同一 epoch 内字节要变；新请求不以旧请求为前缀；放置计数超出请求；同一请求两对 |
 | `EPOCH_CONFLICT` | 保留给宿主层报告代次冲突（本包在 epoch 不同时按新 epoch 放置，不抛此码） |
-| `FACT_CORRUPT` | 日志中间行损坏、记录字段非法、日志属于别的会话、文本与摘要不符 |
+| `FACT_CORRUPT` | 日志中间行损坏、记录字段非法、日志属于别的会话、文本与摘要不符、摘要数组与 `length` 不符、根与摘要不符、`fact` 指向没有 `presentation` 的摘要 |
 
 ## 9 与相邻层的关系
 
-- **compose / 宿主适配器：** 宿主在请求级钩子里取 `messages` 副本交给 `hint.project`，把返回值当作本次 provider 请求的 `messages`；**不落持久历史**。宿主提供 `root`、`sessionId`、阶梯输入、未结清 handles；`fork` 子会话以 `bind({ sessionId, forkOf: owner.binding })` 继承。
+- **compose / 宿主适配器：** 宿主在请求级钩子里取 `messages` 副本交给 `hint.project`，把返回值当作本次 provider 请求的 `messages`；**不落持久历史**。需要判断「投影是否改写了上一次呈现」时读 `hint.chain`（`Chain`），不要读一份副本；`compose/request-boundary.mjs` 的 `projectionBoundary` 两种形状都接受。宿主提供 `root`、`sessionId`、阶梯输入、未结清 handles；`fork` 子会话以 `bind({ sessionId, forkOf: owner.binding })` 继承。
 - **Scope（§6.2）：** 两包都只改请求副本；本包不读也不写 retention。
 - **compose/prompt（§5）：** 那三文件投影是系统提示（§5 消息投影上），本包注入的是消息层的一对合成调用与结果（§6 消息投影下），两者不互相改写。
 
@@ -306,17 +313,21 @@ await hint.newEpoch();                                   // 需要改呈现时
 - 注入：无对时按 `after` 放置（首次决定）；同一事实再次处理只重放；同 epoch 换字节报 `PREFIX_DRIFT`；开新 epoch 后旧对移除、新对按新位置放置；`after` 越界报错。
 - epoch 与前缀：同一 epoch 内每次请求仍以它之前那次为前缀（属性测试覆盖任意增长序列）；任意次 `newEpoch()`（含 handles 变化触发的那种）之后，新对仍在旧对的位置、之前消息逐字不变；`anchor(base)` 之后的第一次请求以 `base` 为前缀、对落在 `base` 之后，第二次请求（`base` + 宿主自己的消息）同样通过；锚点之后的第一次请求不与断点前的请求比较（`anchor` 开新链），而锚点之后的**第二条**请求再改写已呈现消息仍报 `PREFIX_DRIFT`。
 - 前缀：宿主每次重建自己的请求时，三次请求的对都在同一位置，逐次 `assertPrefix` 通过；重放但改写/删除已呈现消息被拒；逐字不变的重放通过；带对或加长后仍以旧呈现开头的副本一律通过（属性测试覆盖任意增长序列与任意消息数）。
-- 冷启：日志折叠两次得到同一事实、同一冻结文本与同一消息对；资源文件在 epoch 中途被改写，重启后仍还原旧字节，新 epoch 才读到新资源；`epoch` 记录重启后仍生效。
+- 链状态：新 `presented` 记录没有 `messages`，有 `length`、`digests`、根与对的下标；同一 epoch/digest 的 `presentation` 只有一条；任意请求序列的摘要链等于把同一序列消息逐个摘要的结果（`property: any request sequence...`）。
+- 漂移下标：任意一条已呈现消息被改写，`PREFIX_DRIFT` 的 `details.index` 就是那条消息的下标（`property: any request sequence...`）。
+- 旧形状：带 `messages` 与 `fact.text` 的旧记录折叠成同一 `Chain`；压缩把旧副本迁移成摘要并把文本提升为 `presentation`（`compaction migrates an old journal's copies...`）。
+- 冷启：`foldRecords` 与新建 `PairHint` 从摘要重建同一 `Chain` 与同一冻结文本，并能继续校验前缀（`property: a cold fold...`）。
+- 冷启：资源文件在 epoch 中途被改写，重启后仍还原旧字节，新 epoch 才读到新资源；`epoch` 记录重启后仍生效。
 - 并发：同一会话两个交叠的 `project` 不误判漂移；同一日志两个交叠的 append 都不丢。
 - 容错：末行截断被忽略；中间行坏、换语言、epoch 倒退、文本与摘要不符均报 `FACT_CORRUPT`。
 
 ## 11 已知缺口
 
 1. **`EPOCH_CONFLICT` 未使用。** 本包按「epoch 不同即新呈现」处理；若宿主需要在同一 epoch 内并发写入两份不同呈现，冲突由宿主层报此码。
-2. **`presented` 记录随请求线性增长。** 每次调用追加整份请求副本加冻结文本，日志体积随请求数增长；尚无 epoch 处截断。
+2. **旧日志的迁移发生在折叠与压缩时。** 新写入只产生摘要；一份旧日志在第一次折叠时计算最后一条链的摘要，在第一次超过 4 MB 的压缩时把旧副本与事实里的文本改写掉。迁移前它仍可读，只是文件更大。
 3. **资源文本是产品文本，不是逐字规范。** 根 §5.1 的 `common` 由 `compose/prompt/files.mjs` 逐字投影；本包的 `repo-aware-rules` 是同一主题的独立资源，按会话语言渲染，不随 `common` 自动同步。
 4. **locale 映射。** 只有 `zh`、`zh-Hans*` 与不标繁体习惯地区/脚本的 `zh-*` 映射到 SimplifiedChinese；`zh-TW` / `zh-HK` / `zh-MO` / `zh-Hant*` 不映射，阶梯继续。把繁体当简体是冒充，宁可落空也不换语种。
 5. **跨进程无锁。** 同一会话若被两个进程同时驱动，前缀链只能靠日志串行（`O_APPEND` 保证行完整），后写者可能在下一个请求被判 `PREFIX_DRIFT`。本包不跨进程加锁；宿主须保证一个会话同时只有一个驱动者。
-6. **前缀比较按消息粒度。** `assertPrefix` 比较整条消息的 JSON，不比较字节；消息内部若有键序差异会被判为漂移（宁可误报，不放过真漂移）。
+6. **前缀比较按消息粒度。** 对消息数组，`assertPrefix` 比较整条消息的规范化 JSON，不比较字节；对 `Chain`，它比较每条消息的摘要。消息内部若有语义差异（含键序被 `stableJson` 归一后仍不同的值）会被判为漂移（宁可误报，不放过真漂移）。
 7. **epoch 中途的 handles 变化要等新 epoch。** 冻结是 §6.1 的直接后果；宿主若要立刻反映新的未结清站点，必须调用 `newEpoch()`，本包不会替它开。三个宿主都已在请求钩子里按「冻结的 handles ≠ 当前未结清 handles」判定并开新 epoch（`host-opencode/spec/context-hook.mjs`、`host-cline/session.mjs`、`host-omp/session-state.mjs#pairHintProject`）：列表不变时不动前缀，列表变化时付一次全量重算，否则 §6.1 的空闲提示在本会话里永远失效。
 8. **`# language` 段恒在最前。** 这让语言约束成为最先读到的内容；代价是它占用了请求副本开头的位置，宿主的系统提示与对的关系由宿主自己决定。

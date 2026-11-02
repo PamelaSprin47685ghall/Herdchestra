@@ -1,4 +1,5 @@
-// The `scope` parameter every non-exempt Cline tool declares (spec §6.2).
+// The `scope` parameter every non-exempt Cline tool declares (spec §6.2, §1.1
+// item 5).
 //
 // Root §6.2 makes `scope` mandatory on each non-exempt tool call, and the
 // adapter's `beforeTool` refuses a call without it (`core/scope/admission.mjs`).
@@ -12,9 +13,12 @@
 // (`SCOPE_FIELD_UNEXPECTED`), and the schema says the same thing earlier, in the
 // model's own view: a field the chosen kind does not take is not writable.
 //
-// This is a description of the annotation, not a second admission rule. The
-// book in `core/scope` still decides: the schema cannot know whether a budget is
-// established, spent, or whether this call is the turn's true annotation.
+// The long explanation of WHY Scope exists belongs to the system prompt, which
+// is written once; every tool schema would copy it otherwise. So the schema
+// carries a short pointer and the field shape, and nothing else. This is a
+// description of the annotation, not a second admission rule: the book in
+// `core/scope` still decides whether a budget is established, spent, or whether
+// this call is the turn's true annotation.
 
 // The four kind values, read from the book rather than typed twice.
 import { SCOPE_KINDS, SCOPE_KIND_VALUES } from "../core/scope/errors.mjs";
@@ -37,12 +41,12 @@ const RESET_BRANCH = Object.freeze({
     kind: Object.freeze({ type: "string", enum: [SCOPE_KINDS.RESET] }),
     newScopeGoal: Object.freeze({
       ...NON_BLANK,
-      description: "What this new Scope aims at. Non-blank.",
+      description: "Goal of the new Scope.",
     }),
     newScopeRetentionBudget: Object.freeze({
       type: "integer",
       minimum: 1,
-      description: "How many substantive `keepLast` beats this goal still needs. Positive, no upper bound.",
+      description: "Substantive `keepLast` beats the goal still needs.",
     }),
   }),
   required: Object.freeze(["kind", "newScopeGoal", "newScopeRetentionBudget"]),
@@ -55,7 +59,7 @@ const REMOVE_BRANCH = Object.freeze({
     kind: Object.freeze({ type: "string", enum: [SCOPE_KINDS.REMOVE] }),
     replacement: Object.freeze({
       ...NON_BLANK,
-      description: "The lesson that replaces the previous beat. Non-blank.",
+      description: "Lesson that replaces the previous beat.",
     }),
   }),
   required: Object.freeze(["kind", "replacement"]),
@@ -73,12 +77,10 @@ const bareBranch = (kind) =>
 export const SCOPE_SCHEMA = Object.freeze({
   type: "object",
   description:
-    "Scope annotation for this call (spec §6.2), required on every non-exempt tool. " +
-    'First call of a session: {"kind":"resetScope","newScopeGoal":"...","newScopeRetentionBudget":N}. ' +
-    'Then one true annotation per model turn: {"kind":"keepLast"}, ' +
-    '{"kind":"removeLast","replacement":"..."}, or {"kind":"resetScope",...}; ' +
-    'every other call of the same turn: {"kind":"meToo"}. ' +
-    "A kind accepts only the fields listed here.",
+    "Required on every non-exempt tool. The system prompt's Scope section explains why and when. " +
+    'Shape: {"kind":"resetScope","newScopeGoal","newScopeRetentionBudget"} | ' +
+    '{"kind":"keepLast"} | {"kind":"removeLast","replacement"} | {"kind":"meToo"}. ' +
+    "Each kind accepts only the fields listed for it.",
   oneOf: Object.freeze([
     RESET_BRANCH,
     bareBranch(SCOPE_KINDS.KEEP),

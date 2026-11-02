@@ -554,7 +554,7 @@ test("theorem 3: the exits stop without a nudge, and a worker's turn end is its 
     // The session must judge with the walked ledger, not one it rebuilds.
     plant();
     const state = host.state(sessionID);
-    const draft = path.join(host.dir, ".Herdchestra", "drafts", `${sessionID}.md`);
+    const draft = path.join(host.dir, "plans", `${sessionID}.md`);
     await fs.mkdir(path.dirname(draft), { recursive: true });
     await fs.writeFile(draft, "the plan\n");
     // 待执行 is reached the way 根 §2.4 says BOTH sides reach it: an incumbent's

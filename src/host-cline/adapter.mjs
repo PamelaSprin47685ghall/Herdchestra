@@ -34,13 +34,13 @@ import { REQUEST_STAGE, canRewrite, rolePrompt, systemPromptRule } from "./rewri
 const CODE_SCHEMA = withScope({ code: { type: "string" } });
 
 const TOOL_FORK = [
-  "Start a worker with an independent, self-contained brief and return immediately.",
-  "Two arguments: `name` and `brief`. The brief must declare the worker's identity once,",
-  "as `role: coder` or `role: devops`; a brief that names neither, or both, is refused.",
+  "Start a worker with an independent, self-contained task description (`verboseIntent`) and return immediately.",
+  "Two arguments: `name` and `verboseIntent`. The text must declare the worker's identity once,",
+  "as `role: coder` or `role: devops`; text that names neither, or both, is refused.",
   "A coder does file work and must be told not to use bash; a devops owns real commands, one at a time.",
   "Reusing a live worker name steers that worker instead of starting a new session;",
   "the receipt says which happened (steered: true/false). Do not infer it from the name.",
-  "A steer is queued while the worker's turn is in flight (`queued: true`).",
+  "A steer enters the worker's running turn when the host has that channel, and starts its next turn otherwise.",
 ].join(" ");
 
 const TOOL_JOIN = [
@@ -172,7 +172,8 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
           failed === null
             ? "Write it with `this.write(path, content)`; the directory already exists."
             : `Its directory could NOT be prepared (${failed.reason}: ${failed.detail}); \`this.write\` will fail until an operator fixes ${failed.directory}.`,
-          "A member has one spelling: `this.write(...)`, `this.cat(...)`. The top-level primitives `fork(...)`, `join(...)`, `review(...)` are bare. There is no `tools.` or `plan.` namespace.",
+          "The draft is the task's only output and lives under `plans/<name>.md` — never under `.Herdchestra/`, which is the adapter's own state. Plan is read-only except this one file and the operator's attachments.",
+          "A member has one spelling: `this.write(...)`, `this.cat(...)`. The top-level primitives are bare: `review(...)` and `devops(verboseIntent)`. There is no `this.devops`, no `tools.` and no `plan.` namespace.",
         ].join("\n");
       },
     });
@@ -233,16 +234,21 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
     return {
       name: "fork",
       description: TOOL_FORK,
-      // Spec §4.1: `fork(name, brief)`. The identity has no argument of its own;
-      // the brief declares it, and `forkRequest` refuses a brief that does not
+      // Spec §4.1: `fork(name, verboseIntent)`. The identity has no argument of its own;
+      // the verboseIntent declares it, and `forkRequest` refuses text that does not
       // decide, so this tool cannot default anyone to coder.
-      inputSchema: withScope({ name: { type: "string" }, brief: { type: "string" } }, ["name", "brief"]),
+      inputSchema: withScope(
+        { name: { type: "string" }, verboseIntent: { type: "string" } },
+        ["name", "verboseIntent"],
+      ),
       execute: async (input) => {
         if (typeof input?.name !== "string" || input.name.length === 0) return invalid("name is required");
-        if (typeof input?.brief !== "string" || input.brief.trim().length === 0) return invalid("brief is required");
+        if (typeof input?.verboseIntent !== "string" || input.verboseIntent.trim().length === 0) {
+          return invalid("verboseIntent is required");
+        }
         let request;
         try {
-          request = forkRequest(input.name, input.brief);
+          request = forkRequest(input.name, input.verboseIntent);
         } catch (error) {
           return {
             ok: false,
@@ -250,7 +256,11 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
             message: error.message,
           };
         }
-        return session.workers.fork(request);
+        return session.workers.fork({
+          name: request.name,
+          verboseIntent: input.verboseIntent,
+          role: request.role,
+        });
       },
     };
   }
@@ -276,9 +286,9 @@ export function createAdapter({ ctx = {}, operator = null, role = ROLES.MANAGER,
   // pass THAT text here instead.
   //
   // One spelling per capability (§3.1): `compile` binds the members as the
-  // body's `this` and hands only `fork`, `join` and `review` over as bare
-  // parameters, so a member has no second spelling and a primitive has no
-  // `this.` form.
+  // body's `this` and hands the primitives (`fork`, `join`, `review`, and Plan's
+  // `devops`) over as bare parameters, so a member has no second spelling and a
+  // primitive has no `this.` form.
   async function runProgram({ role, name, code, agentId }) {
     if (typeof code !== "string" || code.trim().length === 0) return invalid("code must be a non-empty string");
     const deadline = Deadline.forIntent(systemClock, code);

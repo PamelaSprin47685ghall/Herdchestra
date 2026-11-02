@@ -82,6 +82,25 @@ const safeName = (value) =>
 export const relayFile = (root, sessionID) =>
   path.join(root, RELAY_STATE_DIR, `${safeName(sessionID)}.relay.json`);
 
+// The durable dedup record of one Plan hand-off, keyed by the PHYSICAL call id
+// that asked for it (根 §2.2, §2.4 第 6 步). A hand-off is not a relay: it
+// retires nobody, so its record is not read by the two gates. It exists so a
+// replay of the same call id finds the Manager it already started without
+// listing the whole state directory (root §1.1 item 1 forbids that scan).
+//
+// The id is hashed, not sanitised: two call ids that differ only in characters
+// a file name cannot hold would otherwise share one record, which is exactly
+// the "same call?" question this file exists to answer. The digest is
+// deterministic, so a process that crashed before `sent` derives the same path
+// and the same brief id.
+export const handoffFile = (root, handoffId) => {
+  if (typeof handoffId !== "string" || handoffId.length === 0) {
+    throw new TypeError("a hand-off record needs a non-empty call id");
+  }
+  const digest = createHash("sha256").update(handoffId, "utf8").digest("hex").slice(0, 32);
+  return path.join(root, RELAY_STATE_DIR, `handoff-${digest}.relay.json`);
+};
+
 // The deterministic message id of one successor brief.
 //
 // `msg_` plus 26 characters of base62, the shape the host's own

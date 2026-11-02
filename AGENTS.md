@@ -47,8 +47,19 @@ Orchestration for agents that don't like being orchestrated.
 
 1. 零侵入宿主源码：万象术不修改宿主的一行源代码，始终与宿主最新版兼容。所有能力都通过宿主插件、运行时调用劫持或装饰器模式实现；不因其中一两种手段受限而阻塞整体实现。
 2. 三层解耦架构：代码由若干彼此独立、互不依赖的核心支持库（`src/core/*`）、黏合支持库的组合层（`src/compose/*`），以及面向各宿主的适配器（`src/host-opencode`、`src/host-cline`、`src/host-omp`）组成。上游宿主接口变化时，只需更新对应适配器。
-3. 极简持久化：万象术不依赖宿主的内部历史格式。需要跨越进程生命周期保存我们自己的投递、语言、账本与上下文边界事实时，轻量地追加写入工作区下的 `.Herdchestra/{session标识符}.jsonl`。
+3. 极简持久化：宿主已经保存全部聊天与工作记录，万象术不复制它们。跨进程恢复只依赖工作区 `.Herdchestra/` 下的最小状态（如 `{session标识符}.jsonl`）：一个能与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量。不存完整请求或聊天副本，不引入 $O(n^2)$ 算法。Plan 的底稿是用户可见的交付物，放在工作区根目录 `plans/<name>.md`，绝不放 `.Herdchestra/`。
 4. 外部仓库参照约定：开发需要参考其他仓库代码时，先在 `../` 寻找；若不存在则 `clone` 至 `../`。
+
+### 1.1 容易犯的问题
+
+以下六条是硬约束。后文章节展开实现细节；两者冲突时，以本节为准。
+
+1. **`.Herdchestra/` 只存最小恢复状态。** 宿主已经保存全部聊天与工作记录；我们只存恢复工作所必需的最小状态：一个能与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量。不得在我们的日志里保存完整请求或完整聊天副本；严禁 $O(n^2)$ 算法。（见 §1、§7、§8.2）
+2. **Esc 必须递归取消。** 用户在 User-Facing LLM 处按 Esc 取消时，取消必须递归传播到每一名子孙 subagent、子会话与 fission lane；否则后台代理会继续烧用户 token。例外只有三类：程序化的 `this.ask` 挂起、fission 的 present 替换、接力退休；它们都不是用户取消。（见 §2.1、§2.3、§4、§7）
+3. **Plan 的 `devops` 是裸顶层同步原语。** Plan 不实现 `this.devops`，而是实现 `devops(verboseIntent)`，其本质是 join 语义。Plan 的 devops 是 dedicated：始终只使用同一名专用 `plan-devops` worker，复用或 steer，绝不开第二路。Plan 唯一的持久产物是工作区根目录下用户可见的 `plans/<name>.md`，绝不放 `.Herdchestra/`；放置与命名规则必须写进提示词。除产出物与操作员附件外，Plan 全程只读。（见 §2.2、§3.1、§4.1）
+4. **任务描述统一叫 `verboseIntent`。** `fork(name, verboseIntent)`、`devops(verboseIntent)` 以及 spawn/steer 的说明都用这个名字。请求期限的 `intent`（`Deadline.forIntent`）与接力的 `briefId` 是另外两个概念，不得跟着改名。（见 §3.1、§3.3、§4.1、§7.4）
+5. **Scope 机制只在系统提示词里讲一次。** LLM 不清楚 `resetScope` 的必要性，也不了解整个 Scope 机制。`COMMON`（Manager/Coder/DevOps 共用）要设专节完整介绍 Scope，`PLAN_PROMPT` 要设紧凑版；每个工具的 `scope` 参数描述只留一句指针与字段形状——System Prompt 只写一遍，每个工具各抄一遍是浪费。（见 §2.2、§5.1、§6.2）
+6. **子代理用 task 模型启动。** `fork` worker、fission lane、Plan 的 `plan-devops` 都以用户指定的 task 模型启动，而不是主模型；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。OMP 端尤甚，必须用宿主的 task 模型（`@task` / `modelRoles.task`）。（见 §2.1、§2.3、§4.1、§7、§8.2）
 
 ---
 
@@ -62,17 +73,21 @@ Orchestration for agents that don't like being orchestrated.
 
 | 身份 | 层级 / 模式 | 职责与边界 |
 |------|-------------|------------|
-| `Plan` | 顶层代理（不由 `fork` 创建） | 规划者。负责把用户需求打磨成一份结构严密的“底稿”（开发方案）。它只读写底稿这一个文件，不直接读仓库里的其他文件，也不改源码；需要了解仓库现状时，通过 `this.devops(intent)` 委托单路 `DevOps` 调查。 |
+| `Plan` | 顶层代理（不由 `fork` 创建） | 规划者。负责把用户需求打磨成一份结构严密、用户可见的底稿（开发方案），写在 `plans/<name>.md`。除底稿与操作员附件外全程只读：不读仓库其他文件，也不改源码；需要仓库事实时调用裸顶层同步原语 `devops(verboseIntent)`，由唯一的专用 `plan-devops` 调查。 |
 | `Manager` | 顶层代理（`mode: "primary"`） | 导演。接手底稿后，把工作拆成独立的工作流，调遣尽可能多的 worker 并行推进。`Manager` 自己绝不编辑文件、不跑命令、不搜代码、不构建；常规工具面里连文件读取都没有，也没有替子代理做代码审查的义务。 |
-| `Coder` | 子代理（`mode: "subagent"`） | 工程师（许多名）。负责本地事实调查与源码修改。它的工具面（`js-worker`）里虽然保有执行命令的 `this.call`，但启动它的任务描述（`brief`）中必须明确禁止使用 bash 工具——这是一条提示词约束。 |
-| `DevOps` | 子代理（`mode: "subagent"`） | 运维官（同一时刻恰好一名）。唯一持有真实命令执行权的 worker，负责 bash、构建、测试、进程管理与 git 操作。 |
+| `Coder` | 子代理（`mode: "subagent"`） | 工程师（许多名）。负责本地事实调查与源码修改。它的工具面（`js-worker`）里虽然保有执行命令的 `this.call`，但启动它的任务描述（`verboseIntent`）中必须明确禁止使用 bash 工具——这是一条提示词约束。 |
+| `DevOps` | 子代理（`mode: "subagent"`） | 运维官（`Manager` 的道路上同一时刻恰好一名）。在 `Manager` 的道路上唯一持有真实命令执行权的 worker，负责 bash、构建、测试、进程管理与 git 操作。Plan 另有一名专用的 `plan-devops`，同样按子代理调度，只服务 Plan 的 `devops(verboseIntent)`，不参与施工。 |
 
 为什么这样分工就能安全并发？
-启动任何子代理时，都必须明确它是 `Coder` 还是 `DevOps`。因为所有 `Coder` 只做文件读写与静态推理，不跑命令，多个 `Coder` 同时工作时的冲突面就收窄到了纯文件写入（只要任务切分得当，各改各的文件即可并行）；而真实命令执行权收归到唯一的 `DevOps` 手里，从根本上消除了多个进程并发修改运行时状态（端口、进程、构建产物、环境变量）的竞态。
+启动任何子代理时，都必须明确它是 `Coder` 还是 `DevOps`。因为所有 `Coder` 只做文件读写与静态推理，不跑命令，多个 `Coder` 同时工作时的冲突面就收窄到了纯文件写入（只要任务切分得当，各改各的文件即可并行）；而在 `Manager` 的道路上，真实命令执行权收归到唯一的 `DevOps` 手里，从根本上消除了多个进程并发修改运行时状态（端口、进程、构建产物、环境变量）的竞态。Plan 的 `plan-devops` 只做同步调查，不参与施工，因此不与这条竞态面重叠。
+
+模型归属：`Manager` 顶层沿用主模型，Plan 顶层沿用 Plan 角色的模型（没有独立 Plan 模型时即主模型）；`fork` 启动的 worker、fission lane 与 Plan 的 `plan-devops` 一律以用户指定的 task 模型启动，不继承主模型。OMP 端取宿主的 task 模型（`@task` / `modelRoles.task`）；解析不了时如实报告，不冒充 task 模型。
+
+取消传播：`fork`、fission lane、`devops` 建立的会话都是调用者的后代。用户在 User-Facing LLM 处按 Esc 取消时，取消递归传播到每一名子孙 subagent、子会话与 lane，绝不留后台继续烧 token 的孤儿。程序化的 `this.ask` 挂起、fission 的 present 替换、接力退休不是用户取消，不受这条规则影响。
 
 ### 2.2 规划阶段（Plan）：从需求到底稿
 
-当一项新规划任务启动时，顶层代理以 `Plan` 身份工作（`Plan` 不在 §5 的系统提示词投影之内）。
+当一项新规划任务启动时，顶层代理以 `Plan` 身份工作（`Plan` 不在 §5 的系统提示词投影之内，而由专用的 `PLAN_PROMPT` 描述）。
 
 #### 四个里程碑（S1 → S2 → S3 → 待执行）
 `Plan` 按顺序走过三个打磨里程碑，最后进入“待执行”：
@@ -84,20 +99,32 @@ Orchestration for agents that don't like being orchestrated.
 阶段判定的铁律：每个阶段只判定“离下一阶段能够开始的差距”——S1 判定离 S2 能开始的差距，S2 判定离 S3 能开始的差距，S3 判定离可交付执行者的差距。绝不能把下一阶段才该做的工作算作本阶段的缺口。
 
 #### 底稿与 Plan 的工具边界
-- 唯一持久产物：`Plan` 的唯一产物是底稿，其路径由任务固定派生，系统会告知确切路径。`Plan` 只读写这一个文件（这是职责边界，不是运行时路径门禁）。
+- 唯一持久产物：`Plan` 的唯一持久产物是工作区根目录 `plans/` 下的用户可见底稿，文件名由任务固定派生，形如 `plans/<name>.md`，系统在任务启动时告知确切路径。底稿绝不放 `.Herdchestra/`：它是交付物，不是内部恢复状态。`Plan` 只写这一个文件，读也只读它与操作员附件（这是职责边界，不是运行时路径门禁）。
+- 全程只读：除底稿与操作员附件外，`Plan` 不读、不写、不改仓库里的任何东西；需要了解仓库现状时，只能经 `devops(verboseIntent)`。
 - 首次评审前只读：每一任 `Plan` 在提交本任的第一次 `review` 之前，底稿对它是只读的（调用 `this.write` 会被拒绝）；第一次 `review` 之后才解锁写入。接力换人开启新任期后，底稿重新变为只读，迫使新任先读完评判，再动笔修改。
-- 极简编程面：`Plan` 只有这些能力：`this.cat`、`this.write`、`this.devops(intent)`、`this.ask(question)`（仅 S1）、`this.unpark(name, value?)`、`review(findings)`。它没有 `glob`、`grep`、`exec`，也不得访问仓库其他文件：
-  - 需要调查仓库事实时，一律调用 `this.devops(intent)` 同步取得；同一任务同时至多有一个未决的 `DevOps`，其完整调查记录原样返回，系统不做二次摘要。
+- 极简编程面：`Plan` 只有这些能力：`this.cat`、`this.write`、`devops(verboseIntent)`、`this.ask(question)`（仅 S1）、`this.unpark(name, value?)`、`review(findings)`。它没有 `glob`、`grep`、`exec`，也不得访问仓库其他文件：
+  - 需要调查仓库事实时，一律调用裸顶层原语 `devops(verboseIntent)`；它不是 `this.devops`，而是同步 join：调用即等待调查结束，并把完整调查记录原样返回。同一任务始终只使用同一名专用 `plan-devops` worker：worker 还在跑就 steer 新目标，已结束就复用它的会话，绝不开第二路。同一时刻至多一个未决调用（`DEVOPS_IN_FLIGHT`）；系统不做二次摘要。
   - 需要向用户提问时，调用 `this.ask(question)`。它的语义就是 `this.park({ question })` + `interrupt`：挂起当前程序，并中断本轮模型回合，把控制权交还人类用户。用户在常规对话中输入答复后，控制权回到 AI，AI 在新程序中调用 `await this.unpark(name, answer)` 将用户答复注入挂起点，原程序即从 `this.ask` 处继续执行，不重开任期、也不制造评审。
   - `this.ask(question)` **仅在 `S1`（需求分析）阶段可用**。`S2`、`S3`、`待执行` 阶段调用 `this.ask` 一律被拒绝（`ASK_FORBIDDEN_OUTSIDE_S1`）；此时程序并未挂起，系统不等待任何人。
+  - 模型：Plan 顶层使用 Plan 角色的模型（没有独立 Plan 模型时即主模型）；`plan-devops` 以用户指定的 task 模型启动（§2.1）。
 
-#### 无人值守：唯一的停止出口与防自然停止的 Nudge
+#### Scope 的紧凑版
+`Plan` 不在 `COMMON` 投影之内，但它的非豁免工具调用同样携带打平的 `scope` 注解；Plan 面上没有 `negotiate` 与 `askPreviousScope`，没有可豁免的查询通道。
+- 四种 kind：`resetScope` 必填 `newScopeGoal`（非空字符串）与 `newScopeRetentionBudget`（正整数，无上限），开启新闭环并整体替换目标与额度；`keepLast` 不接受其他字段，保留上一拍并扣 1 点额度；`removeLast` 必填 `replacement`（非空字符串），抹去上一拍并把教训写进出站副本，不扣额度；`meToo` 不接受其他字段，用于同一模型回合内的其余并发调用。
+- 一个模型回合只有一条真注解（`resetScope`、`keepLast`、`removeLast` 之一）；同回合其他调用一律 `meToo`。`retention` 是保留容量，不是回合数或调用次数，只有 `keepLast` 扣减。额度为 0 时只准入 `resetScope`。`meToo` 不记账、不回滚；先于真注解到达时暂存，整回合只有 `meToo` 会在回合关闭时被拒（`SCOPE_METOO_ONLY`）。
+- 出站副本以最新一次已结算的 `resetScope` 为边界：边界之后原样保留；边界之前只留操作员消息、历次 `resetScope` 调用及配对结果、`assume` 等钉住调用及配对结果、assistant 正文与 provider 原文，旧工具调用、工具结果与 thinking 全部裁掉。
+- 冷启后，持久记录里的 `resetScope` 只证明旧事件：本进程内还没有确证额度时，除 `resetScope` 外的非豁免调用一律拒收（`SCOPE_UNINITIALIZED`），直到一次 `resetScope` 在此结算。
+- 准入拒收意味着调用没有执行、状态未变（`SCOPE_ANNOTATION_MISSING`、`SCOPE_KIND_INVALID`、`SCOPE_FIELD_INVALID`、`SCOPE_FIELD_UNEXPECTED`、`SCOPE_UNINITIALIZED`、`SCOPE_BUDGET_SPENT`、`SCOPE_METOO_ONLY`）；结算拒收发生在工具已经生效之后（`SCOPE_RECORD_FAILED`、`SCOPE_TURN_MISSING`），效果保留，注解不记账。
+
+#### 无人值守：合法出口与防自然停止的 Nudge
 
 万象术的目标是**无人值守的长程稳定工作**。系统处于常授权模式：顶层代理自己决定、自己动手、自己验收，不等待用户决策，也不等待授权。
 
 面向用户的顶层代理（`Plan` 与 `Manager`）只有两个合法出口：
-1. **`S1` 的提问**：`Plan` 在 `S1` 阶段调用 `this.ask(question)`，程序挂起、回合中断，控制权交还用户。这是整场工作中唯一由人决定的时刻。
+1. **`S1` 的提问**：`Plan` 在 `S1` 阶段调用 `this.ask(question)`，程序挂起、回合中断，控制权交还用户。这是整场工作中唯一由人回答问题的时刻。
 2. **验收上一任合格后的终局停止**：`Plan` 由继任者在 `S3` 独立验收上一任合格、进入「待执行」并提交 `review([])` 完成向 `Manager` 的交接；`Manager` 在「收尾」阶段清空台账结案为「已完成」。
+
+用户按 Esc 取消不是代理自己的出口：它由操作员发起，并递归取消整棵会话树（§2.1）；代理不得把取消当作「已经停止」的理由，也不得在取消后继续派工。
 
 除此以外，顶层代理**永远不可能自然停止**。若它在未到达出口、也未处于 `S1` 提问挂起时结束回合，系统拦截这次停止，并自动注入一条 **Nudge** 督促消息触发下一轮继续：
 - 列出当前 `review` 义务台账中尚未完成的全部待办项（`{ key, value }`）；若台账为空，则明确指出当前里程碑尚未完成评审、继任验收或交接；
@@ -108,7 +135,7 @@ Orchestration for agents that don't like being orchestrated.
 #### Plan 向 Manager 的交接
 当 `Plan` 推进到「待执行」阶段后，不再接受非空台账（提交非空台账会被拒收）。此时：
 - 提交空账 `review([])` 是启动 `Manager` 的唯一方式。
-- 调用 `review([])` 时，系统从规范路径读取已保存的完整底稿；若底稿缺失或为空，系统在创建 `Manager` 会话之前直接拒绝。
+- 调用 `review([])` 时，系统从 `plans/<name>.md` 读取已保存的完整底稿；若底稿缺失或为空，系统在创建 `Manager` 会话之前直接拒绝。
 - 每次新的空账 `review([])` 都会创建一个独立的 `Manager` 会话，任期从 `Manager` 的「执行」里程碑开始；同一次工具调用重放（同一 `callId`）只启动一个，不会重复创建。
 - `Manager` 收到的是底稿字节原文，不是里程碑名字，也不是 `Plan` 的对话历史。
 - 启动 `Manager` 不会结束规划任务，也不会改动底稿。`Plan` 与 `Manager` 各自持有独立的 `review` 台账，接力规则各自适用。`Manager` 无权修改底稿，也不会退回 `Plan` 的里程碑；若需要重新规划，必须由人类操作员发送真实消息触发新的规划任务。
@@ -121,8 +148,10 @@ Orchestration for agents that don't like being orchestrated.
 
 #### 调度纪律
 - 任何时候保持恰好 1 名与道路绑定的 `DevOps` 和尽可能多的 `Coder`（对可拆解的大任务，通常同时调遣 10 名以上 worker；其余按实际需要派出）。
+- 所有 `fork` 出去的 worker 以用户指定的 task 模型启动；`Manager` 顶层保留主模型（§2.1）。
 - 缺位立刻补位。只要还有独立工作可以派出，就优先调用 `fork`；只有手头再无任务可 `fork`、必须等待前序结果时，才调用 `join`。
 - 当义务台账非空时，立即用 `fork` 派出 `Coder`，或用同名 `fork` 把新目标追加（steer）给已绑定的 `DevOps` 去解除台账上的义务。子代理返回只是汇报，不代表义务自动解除；只有当返回的事实真正解决了某项问题，`Manager` 才在下一次 `review` 中用 `null` 删掉该键。
+- 取消是递归的：用户在 User-Facing LLM 处按 Esc 取消时，取消传播到 `Manager` 派出的每一名 worker、每一条 fission lane 与所有后代会话，不得让任何后代在后台继续烧 token。程序化的 `this.ask` 挂起、fission 的 present 替换与接力退休不是用户取消（§2.1）。
 
 #### 评估窗口与读取例外：`js-review`
 `Manager` 默认连文件读取工具都没有，也不亲自调查或修改工作树。但在每一轮刚开始、首次独立评估前任工作并提交本轮第一次 `review` 之前，`Manager` 需要核对工作区事实：
@@ -155,7 +184,7 @@ Orchestration for agents that don't like being orchestrated.
    - 将现任标记为退休（退休者不能因旧请求重放而再次动手）；
    - 写入一道上下文屏障；
    - 以 `successor`（继任者）身份开启下一任，并将退休者的里程碑字段原样复制给继任者（接力只换人，不换里程碑）。
-4. 屏障隔离与遗产继承：上下文屏障把前任的对话（包括触发接力的那次 `review` 及其之前的所有对话）从继任者的视野里彻底切掉。继任者只看到：用户原始输入、底稿（`Plan` 侧）或工作区事实（`Manager` 侧），以及系统给出的继任提示。同时，前任已接收的工作、进程归属、未领取的结果，以及道路绑定的 `DevOps` 原封不动地保留给继任者（`DevOps` 跨接力不变，不得改绑）。
+4. 屏障隔离与遗产继承：上下文屏障把前任的对话（包括触发接力的那次 `review` 及其之前的所有对话）从继任者的视野里彻底切掉。继任者只看到：用户原始输入、底稿（`Plan` 侧）或工作区事实（`Manager` 侧），以及系统给出的继任提示。同时，前任已接收的工作、进程归属、未领取的结果，以及道路绑定的 `DevOps`（Plan 侧为专用的 `plan-devops`）原封不动地保留给继任者（跨接力不变，不得改绑）。
 5. 继任者首评决断（确认晋级或打回重修）：
    - 如果继任者的第一次 `review` 提交空台账（`[]`），说明它在没有前任心理包袱的情况下独立确认了前任成果——工作立即推进到下一里程碑，且不新建任期，由该继任者直接开启下一里程碑的工作。
    - 如果继任者的第一次 `review` 发现了问题、提交了非空台账，则不推进里程碑，直接进入本里程碑的正常工作期去修补问题；等它修完再次清空台账时，依然是触发下一次接力，而不是直接晋级。
@@ -173,11 +202,13 @@ Orchestration for agents that don't like being orchestrated.
 
 凡是通过 `this.` 调用的方法一律写作 `this.xxx`，顶层原语直接写函数名。除下表列出的能力外，不存在任何隐式成员，也不设跨调用事务或二次校验：
 
-同一个工具只有一种调用写法，绝不同时以 `xxx` 与 `this.xxx` 两种形式存在。顶层原语（`fork`、`join`、`review`）只以裸函数名存在：程序实例上没有 `this.fork`、`this.join`、`this.review`。其余成员（`this.cat`、`this.stat`、`this.ls`、`this.write`、`this.mkdir`、`this.rm`、`this.mv`、`this.where`、`this.whereAll`、`this.call`、`this.devops`、`this.fission`、`this.park`、`this.unpark`、`this.ask`）只以 `this.xxx` 存在：作用域里没有同名裸函数，写 `cat(...)` 只会得到 `ReferenceError`。
+同一个工具只有一种调用写法，绝不同时以 `xxx` 与 `this.xxx` 两种形式存在。顶层原语（`fork`、`join`、`review`、`devops`）只以裸函数名存在：程序实例上没有 `this.fork`、`this.join`、`this.review`、`this.devops`；其中 `devops` 只出现在 Plan 的面上。其余成员（`this.cat`、`this.stat`、`this.ls`、`this.write`、`this.mkdir`、`this.rm`、`this.mv`、`this.where`、`this.whereAll`、`this.call`、`this.fission`、`this.park`、`this.unpark`、`this.ask`）只以 `this.xxx` 存在：作用域里没有同名裸函数，写 `cat(...)` 只会得到 `ReferenceError`。
+
+每个非豁免工具还带一个打平的 `scope` 参数。完整的 Scope 机制只在系统提示词 `COMMON`（§5.1）里讲一次，`PLAN_PROMPT`（§2.2）另有紧凑版；工具自己的 `scope` 描述只留一句指针与字段形状，不复制机制（§6.2）。
 
 | 调用形式 | 语义说明 | `Plan` | `js-manager` (`Manager`) | `js-review` (`Manager` 评估期) | `js-worker` (`Coder` / `DevOps`) |
 |----------|----------|:------:|:------------------------:|:------------------------------:|:--------------------------------:|
-| `this.cat(path)` | 读取文件完整 UTF-8 文本 | 仅底稿 | - | 有 | 有 |
+| `this.cat(path)` | 读取文件完整 UTF-8 文本 | 仅底稿与操作员附件 | - | 有 | 有 |
 | `this.stat(path)` | 返回 `{ exists, size, mtime, isDir }`，文件缺失不报错（`exists: false`） | - | - | 有 | 有 |
 | `this.ls(path)` | 非递归列目录，目录条目末尾带 `"/"` | - | - | 有 | 有 |
 | `this.write(path, content)` | 原子覆盖写文件 | 仅底稿（首评后解锁） | - | - | 有 |
@@ -185,12 +216,12 @@ Orchestration for agents that don't like being orchestrated.
 | `this.where(content, needle)` | 精确 UTF-16 切片定位 `[begin, end]`；0 匹配或多匹配时自动挂起（`this.park`） | - | - | 有 | 有 |
 | `this.whereAll(content, needle)` | 返回所有匹配的 `[begin, end]` 数组（不挂起） | - | - | 有 | 有 |
 | `this.call(command)` | 执行 bash 命令（`Coder` 在任务提示词中被禁调，但工具面仍保留） | - | - | - | 有 |
-| `this.devops(intent)` | `Plan` 专用的同步仓库调查通道（同任务至多 1 个未决，原样返回全记录） | 有 | - | - | - |
+| `devops(verboseIntent)` | 顶层同步原语：等待唯一的专用 `plan-devops` 完成调查并原样返回全记录（join 语义；同任务至多 1 个未决，复用或 steer 同一 worker，绝不开第二路） | 有 | - | - | - |
 | `this.fission(prompts)` | 将当前 worker 身份同时展开为多条并行 lane | - | - | - | 有 |
 | `this.park(payload)` | 显式将当前程序挂起，立即返回挂起回执 | - | 有 | - | 有 |
 | `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value`（也用于恢复 `this.ask` 挂起的程序） | 有 | 有 | - | 有 |
 | `this.ask(question)` | 向人类用户提问（仅 `Plan` 的 `S1` 阶段可用）：语义即 `this.park({ question })` + `interrupt`（挂起当前程序并中断当前回合交还控制权给用户；用户输入后控制权回到 AI，由 AI 调用 `this.unpark(name, answer)` 恢复）（子代理无此通道） | 仅 S1 | - | - | - |
-| `fork(name, brief)` | 启动新 worker，或向同名在途 worker 投递新指令（steer） | - | 有 | - | 有（若允许再分派） |
+| `fork(name, verboseIntent)` | 启动新 worker（以 task 模型），或向同名在途 worker 投递新指令（steer） | - | 有 | - | 有（若允许再分派） |
 | `join()` | 等待第一个归来的子代理或结束的进程，返回其记录 | - | 有 | - | 有 |
 | `review(findings)` | 提交义务台账评审，台账清空时触发接力或推进阶段 | 有 | 有 | - | - |
 
@@ -278,7 +309,7 @@ Orchestration for agents that don't like being orchestrated.
 
 #### `this.call(command)` 的前置排空与请求期限
 - 自动排空（`draining`）：许多时候模型写代码会漏掉某个文件操作前的 `await`。为了防止在文件还没写完时就跑起测试命令，`this.call(command)` 启动 shell 命令前，会先把程序切入 `draining`，强制等本程序此前已经发起、尚未结清的所有 SDK 操作全部完成，然后才切入 `waiting` 启动命令。命令结束后程序回到 `running`，`this.call` 返回包含 `exitCode`、`stdout`、`stderr` 等字段的命令回执。
-- 按意图字节数核定期限：每次工具请求在准入时，按请求参数 `intent` 的 UTF-8 字节数 × 50ms 一次性核定整次请求的期限。程序内的所有操作与恢复共用这段剩余时间；一旦到期，控制者与仍在活动的目标程序一同转入 `parked`，随后只恢复控制者。
+- 按意图字节数核定期限：每次工具请求在准入时，按请求参数 `intent` 的 UTF-8 字节数 × 50ms 一次性核定整次请求的期限。程序内的所有操作与恢复共用这段剩余时间；一旦到期，控制者与仍在活动的目标程序一同转入 `parked`，随后只恢复控制者。这里的 `intent` 是请求期限的计量参数（`Deadline.forIntent`），与任务描述 `verboseIntent` 是两个概念，不得合并或改名。
 
 ### 3.4 八个标准用法样例
 
@@ -516,21 +547,24 @@ class Js extends JsProgram {
 
 万象术提供两种把工作并行展开的手段：`fork` 和 `this.fission`。
 区分这两者的唯一标准，是“要不要叫另一个人来”，而不是“手头的活多不多”：
-- 需要另一个独立身份的 worker 承担一项新职责时，用 `fork(name, brief)`。
+- 需要另一个独立身份的 worker 承担一项新职责时，用 `fork(name, verboseIntent)`。
 - 同一个 worker 身份在完成自己这项职责时，发现可以把手头的差事分成几条并行的路同时推进，最后由自己汇总交差时，用 `this.fission(prompts)`。
 
-### 4.1 派工、催办与汇合：`fork(name, brief)` 与 `join()`
+### 4.1 派工、催办与汇合：`fork(name, verboseIntent)` 与 `join()`
 
 `fork` 与 `join` 在同一工作目录下运行子代理，不做目录隔离：
 
-- `fork(name, brief)`（Fire-and-Forget 派工与同名 Steer）：
-  - 新建 worker：当 `name` 没有对应的在途 worker 时，系统以独立名字启动一名新 worker。因为 worker 看不到调用者的对话历史，`brief` 必须完全自足（写明目标、约束、接口、验收依据、如果是 `Coder` 必须写明禁止使用 bash，以及返回时该报什么）。调用立即返回，不等该 worker 跑完这一拍，回执形如 `{ name, steered: false, started: true }`。
-  - 追加指令（Steer）：当 `name` 与一名在途（live）worker 重名时，系统不新建会话，而是把 `brief` 送进该 worker 的下一次请求。调用同样立即返回，回执形如 `{ name, steered: true, started: false }`。
+- `fork(name, verboseIntent)`（Fire-and-Forget 派工与同名 Steer）：
+  - 新建 worker：当 `name` 没有对应的在途 worker 时，系统以独立名字启动一名新 worker，并以用户指定的 task 模型启动它（§2.1）。因为 worker 看不到调用者的对话历史，`verboseIntent` 必须完全自足（写明目标、约束、接口、验收依据、如果是 `Coder` 必须写明禁止使用 bash，以及返回时该报什么）。调用立即返回，不等该 worker 跑完这一拍，回执形如 `{ name, steered: false, started: true }`。
+  - 追加指令（Steer）：当 `name` 与一名在途（live）worker 重名时，系统不新建会话，而是把 `verboseIntent` 送进该 worker 的下一次请求。调用同样立即返回，回执形如 `{ name, steered: true, started: false }`。
   - 回执准则：两种回执都只表示“指令已投递”，不代表执行结果。调用方直接看回执里的 `steered` 布尔值即可确知是新建还是追加，无需靠“名字相同”这一约定去反推。
+  - 取消：`fork` 出的 worker 是调用者的后代。用户在 User-Facing LLM 处按 Esc 取消时，取消递归传播到它，以及它再派出的后代（§2.1）。
 - `join()`（Wait-One 等待最先归来者）：
   - 不带任何参数。
   - 等待第一个归来的子代理或结束的后台进程，立即返回它的记录，绝不冻结整条道路傻等所有子代理全部归来。
   - 如果当前没有任何在途子代理或待收进程，`join()` 如实报告无物可收。
+
+Plan 的 `devops(verboseIntent)` 也是 join 语义，但它不是 `fork`：它不新建 worker，只复用同一条专用 `plan-devops` lane（§2.2、§3.1）。
 
 ### 4.2 同身裂变：`this.fission(prompts)`
 
@@ -542,6 +576,7 @@ class Js extends JsProgram {
 - 根会话、非 worker 会话，或者本身已经是某条 lane 的会话调用 `this.fission`，一律被拒绝（返回 `InvalidOrigin`）。
 - 当前已经有一个活动 fission 组的 worker 再次调用 `this.fission`，一律被拒绝（返回 `AlreadyActive`），严禁递归裂变或创建替代组。
 - `this.fission` 只是展开同一身份的执行，不是 `fork`，也不是新的权限来源：它不授予命令执行权、不授予 `DevOps` 调度权、不产生新的代理归属、不改变 Scope 的 retention 额度、不重置 Scope，也不产生新的 `review` 评审义务。
+- 每条 lane 以用户指定的 task 模型启动（§2.1）；lane 是 owner 的后代，用户按 Esc 取消时一并递归取消。fission 的 present 替换不是用户取消。
 
 #### 一次 `this.fission` 的十步完整时序
 1. 准入校验（全过或全拒）：
@@ -560,7 +595,7 @@ class Js extends JsProgram {
    - 各 lane 完整保留原 worker 的身份、权限、责任、父级与共享工作树（目录不隔离，文件写入不加锁，靠 `prompts` 中的分工避免重叠写入）。
 4. 原子持久提交：将整组 lane 的创建事实作为一笔持久记录提交；若提交失败，立即中止已建 lane 并释放准入，绝不留下部分组或替代组。
 5. 全组启动：启动全部 $n$ 条 lane；若任一条启动失败，同样整组回滚中止。
-6. 静默替换物理 present：全组建立并启动成功后，系统静默中断原物理 present（旧会话不再产出新回合），但逻辑上的 owner 并未终止——此时该 owner 同时拥有 $n$ 个并列运行的 present。
+6. 静默替换物理 present：全组建立并启动成功后，系统静默中断原物理 present（旧会话不再产出新回合），但逻辑上的 owner 并未终止——此时该 owner 同时拥有 $n$ 个并列运行的 present。这是 present 替换，不是用户取消，不触发取消传播。
 7. 在途完成事实的单飞广播：在 `this.fission` 发生之前就已经在途的子代理完成、PTY 进程完成，会被系统捕获为“完成事实”，对每条 lane 各投递一次（单飞认领，重复到达不再投递）。注意：这些广播是已完成事实的同步，不是新委派的工作。
 8. 收敛判定（`ConvergenceReady`）：
    系统持续追踪两个独立条件：
@@ -585,7 +620,7 @@ class Js extends JsProgram {
 
 ## 5 消息投影（上）：系统提示词全文
 
-万象术不照搬任何宿主的默认系统提示词，而是用三个纯文本文件（`common`、`manager`、`worker`）直接首尾拼接，生成 `Manager`、`Coder` 与 `DevOps` 的系统提示词（注：`Plan` 不在此投影之内）。
+万象术不照搬任何宿主的默认系统提示词，而是用三个纯文本文件（`common`、`manager`、`worker`）直接首尾拼接，生成 `Manager`、`Coder` 与 `DevOps` 的系统提示词（注：`Plan` 不在此投影之内，由 §2.2 的 `PLAN_PROMPT` 描述）。
 
 三个文件内部均不含任何条件标记、过滤开关或模板分支，组合方式只有两种：
 - `Manager` 的系统提示词 = `common` + `manager`（另单独投影 §5.4 的 `<vibe-mode>` 导演消息）。
@@ -603,6 +638,9 @@ Turn useful understanding into concrete changes early. Working memory is transie
 Embrace uncertainty in causality, evidence, ownership, and authority, for the world itself is imprecise. Facts, inferences, plans, and observations are all conditional probabilities; draw no rigid distinctions among them. Hold important assumptions steady against mere hesitation, but let substantive new evidence overturn them, even when its consequences reach far beyond the original question. Let new evidence change your mind, even if it overturns everything. Speak freely and fully about everything you know or can infer, even without strong evidence. Reason in a Bayesian spirit rather than retreating into silence; withhold no insight merely to avoid responsibility. Let nothing worth saying go unsaid, and let candor carry no blame. Economy of attention is wisdom; poverty of context is not. Do not spend scarce attention on routine intentions, trivial facts, or obvious conventions. Seek knowledge that ordinary reasoning would miss. Common facts are easy to recover; a hard-won, counterintuitive insight may be irreplaceable. Derive decisive lemmas from analysis and experience, then preserve them. Memory should be a small museum of consequential discoveries, not a warehouse of familiar information. After each cutover, remove what has become obsolete. Treat every undertaking as a clean break, every creation as clean-room work, and every result as your signature masterpiece. Once you hand off your work, those who inherit it will define who you are.
 
 Make introspection a discipline of action, not a performance of self-awareness. Before every tool call or consequential decision, examine three gates in first-person working notes. First, inspect the present state: continuity of thought in Chinese, concrete progress, sufficient context, the current obligation ledger, the ready frontier, and assumptions worth preserving. Second, question the direction: is the apparent problem the real problem, and is the obvious solution merely the easiest to imagine? Seek the hidden hinge on which the whole task turns. Third, attempt falsification: suppose the intended action is redundant, inefficient, harmful, or already accomplished elsewhere. Seek the strongest case for that possibility before proceeding. If the objection survives, abandon the action and find a better one; if it fails, proceed without needless ceremony. OK, now treat these principles as Wittgenstein's Ladder.
+
+# Scope
+You own the context window through one `scope` annotation on every non-exempt tool call. Without pruning, old tool output crowds out the reasoning that produced the work; without a model-held budget, the host's own summarisation would erase it. `resetScope` opens a new loop with a fresh goal and a fresh budget, and it is the only way to start one. The four kinds are exact: `resetScope` requires `newScopeGoal` (non-empty string) and `newScopeRetentionBudget` (positive integer, no upper limit); `keepLast` accepts no other field; `removeLast` requires `replacement` (non-empty string) and erases the previous beat; `meToo` accepts no other field. A model turn carries exactly one true annotation (`resetScope`, `keepLast`, or `removeLast`); every other call in that same turn is `meToo`. `retention` is capacity, not a turn count or a call count: only `keepLast` spends one, `removeLast` spends none and records a spin, and `resetScope` replaces goal and capacity wholesale. When the budget is zero, only `resetScope` is admitted. `meToo` books nothing and never rolls back; if it arrives before the true annotation it is staged, and a turn that closes with only `meToo` is refused (`SCOPE_METOO_ONLY`). `negotiate` and `askPreviousScope` are exempt: they answer the newest committed snapshot synchronously, spend nothing, and are never refused for a spent budget. Before the newest settled `resetScope` boundary, the outbound copy keeps operator messages, every `resetScope` call and paired result, `assume`, `negotiate`, `askPreviousScope` and paired results, assistant prose, and observed provider originals; it drops older tool calls, tool results, and thinking. After the boundary everything stays. A persisted `resetScope` only proves an old event, not a budget in this process: after a restart every non-exempt call except `resetScope` is refused (`SCOPE_UNINITIALIZED`) until a `resetScope` settles here. Refusals are values, not executions. An admission refusal (`SCOPE_ANNOTATION_MISSING`, `SCOPE_KIND_INVALID`, `SCOPE_FIELD_INVALID`, `SCOPE_FIELD_UNEXPECTED`, `SCOPE_UNINITIALIZED`, `SCOPE_BUDGET_SPENT`, `SCOPE_METOO_ONLY`) means the call did not run and no state changed; a settle refusal (`SCOPE_RECORD_FAILED`, `SCOPE_TURN_MISSING`) comes after the tool already took effect, so the effect stands while the annotation is not booked.
 ```
 
 ### 5.2 `manager` 全文
@@ -630,10 +668,10 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 # Workers
 - `devops`：执行真实命令（bash、构建、测试、进程、git）。同一时刻恰好一名。
 - `coder`：本地事实调查与源码修改。任务描述里必须明确禁止使用 bash 工具；工具面照常含 `call`，禁令只是提示词约束。
-每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述必须自足：目标、约束、接口、验收依据、返回时该报什么。
+每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述（`verboseIntent`）必须自足：目标、约束、接口、验收依据、返回时该报什么。
 # Direction
 1. 把请求切成彼此独立的工作流。
-2. 每路 `fork` 一次，附一份完整自足的说明。
+2. 每路 `fork(name, verboseIntent)` 一次；`verboseIntent` 必须完整自足。
 3. fork 立即返回；结果在 worker 结束这一回合时自己送到。期间继续调遣别的 worker；`join` 只等到最先归来的一个，只在无法继续推进时用。
 4. On each result, decide corrections, next step, or review request; send them with `fork`. Reusing a live worker's name steers that worker instead of starting a new session; the receipt says which one happened——`steered: true` 是追加到既有 worker，`steered: false` 是新建。以回执为准，不靠名字相同去推断。
 5. 按难度分配：机械、规格明确的工作给 `coder`；需要真实执行、构建、测试、进程的给 `devops`。
@@ -681,6 +719,8 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 
 万象术把记忆修剪权交给智能体自己：每次调用非豁免工具时，模型必须在工具参数里附带一个打平的 `scope` 注解。
 
+Scope 的完整机制只在系统提示词 `COMMON`（§5.1）里讲一次；`PLAN_PROMPT`（§2.2）有紧凑版。每个非豁免工具的 `scope` 参数描述只保留一句指针与字段形状（§3.1），不重复机制：模型对 `resetScope` 必要性的理解来自系统提示词，而不是每个工具各抄一遍。下面给出实现者必须遵守的语义。
+
 #### 四种 `scope.kind` 语义
 
 | `scope.kind` | 必填附加字段 | 记账与投影语义 |
@@ -699,8 +739,8 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 3. 四类拒收情形：
    - 整个回合的所有工具调用全是 `meToo`（没有任何真注解）；
    - 本进程尚未初始化额度时就发来 `meToo`；
-   - 当前 `retention` 额度已经为 `0` 时，先到达的是 `meToo`；
-   - 当前 `retention` 额度已经为 `0` 时，调用非豁免工具却没有传 `resetScope`（额度到 0 后，下一次非豁免工具调用必须 `resetScope`）。
+   - 当前 `retention` 额度已经为 `0` 时，任何 `meToo` 也会被拒；只有 `resetScope` 能开启新额度。
+   - 当前 `retention` 额度已经为 `0` 时，调用任何非豁免工具（含 `meToo`）却没有传 `resetScope`；唯一准入项是 `resetScope` 本身。
 4. 豁免工具（Exempt Tools）：
    - `negotiate`、`askPreviousScope`（以及酌定纳入的其他查询类工具）属于豁免工具：它们不扣减 `retention` 额度，且在额度为 0 时也不强制要求 `resetScope`。
    - 关键约束：`negotiate` 与 `askPreviousScope` 都是向临时最新快照发起查询，直接复用 Prefix Cache，且必须同步返回结果，严禁做成“异步返回结果”。
@@ -736,13 +776,17 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 
 ### 7.1 OpenCode v2 适配方案（只注册插件，不改宿主源码）
 
-- 装载方式：发布一个标准的 OpenCode 插件包（使用 `@opencode/plugin` 的 Promise 版 `Plugin.define({ id, setup })`），由项目 `opencode.json` 的 `plugins` 数组声明（字符串或 `{ package, options }`），或放置在 `.opencode/plugins/` 目录下。`options` 仅承载万象术自己的配置。
-- 角色塑造：启动时通过 `agent.transform` 创建 `Manager`（`mode: "primary"`）、`Coder`（`mode: "subagent"`）、`DevOps`（`mode: "subagent"`）三个 agent；将宿主其余所有可选 agent 一律置为 `hidden` 或移除，使宿主只剩万象术这一种工作语义。
+- 装载方式：发布一个标准的 OpenCode 插件包（使用 `@opencode/plugin` 的 Promise 版 `Plugin.define({ id, setup })`），由项目 `opencode.json` 的 `plugins` 数组声明（字符串或 `{ package, options }`）。`options` 仅承载万象术自己的配置；实际装载入口的实测约束见下方绕行条目。
+- 角色塑造：启动时通过 `agent.transform` 创建 `Manager`（`mode: "primary"`）、`Plan`（顶层规划代理）、`Coder`（`mode: "subagent"`）、`DevOps`（`mode: "subagent"`）四个 agent；将宿主其余所有可选 agent 一律置为 `hidden` 或移除，使宿主只剩万象术这一种工作语义。
 - 工具面与两层授权分离：
-  - 用 `tool.transform` 注册 `js-manager`、`js-worker`、`fork`、`join`、`js-review`，并将宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`patch`、`bash`、`shell`、`subagent` 从 `Manager` 的可见集合里全部移除。（注意：`Coder` 的 `js-worker` 面照常保留 `this.call`。）
-  - 两层分离原则：宿主的 `tool.transform` 与 `session.hook("context")` 中的 `event.tools` 只改变目录可见性，不阻止已被捕获的执行器被调用。因此，凡是需要拒绝的越权调用（如 `Manager` 试图调 worker 工具、或在评估窗口外调 `js-review`），都必须在万象术自己的工具 `execute` 函数内部调用 `permission.assert`（`action` 传工具名，资源传被访问路径或会话 ID）做硬拦截。
-- 子代理调度（`fork` / `join`）：宿主内建的 `subagent` 工具是阻塞式的，且受 `experimental.subagent_depth`（默认 1）限制，不能用来实现 `fork`。万象术直接调用宿主底层 `Session.create({ parentID, agent: "Coder" | "DevOps", model })` 创建子会话，再调用 `Session.prompt({ sessionID, text, delivery })` 投递任务说明；`join` 等待第一个子会话完成。
+  - 用 `tool.transform` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`，并将宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`patch`、`bash`、`shell`、`subagent` 从 `Manager` 的可见集合里全部移除。（注意：`Coder` 的 `js-worker` 面照常保留 `this.call`。）
+  - 两层分离原则：宿主的 `tool.transform` 与 `session.hook("context")` 中的 `event.tools` 只改变目录可见性，不阻止已被捕获的执行器被调用。万象术不依赖 `permission.assert`（它不在 `Tool.Context` 上，宿主工具运行时也不会替插件工具断言）；拒绝分两层：`agent-definitions.mjs` 的权限规则集与 `narrowing.mjs` 决定目录里出现哪些工具，`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错。详见下方「越权拦截」绕行条目。
+- 子代理调度（`fork` / `join` / `devops`）：宿主内建的 `subagent` 工具是阻塞式的，且受 `experimental.subagent_depth`（默认 1）限制，不能用来实现 `fork`。万象术直接调用宿主底层 `Session.create({ parentID, agent: "Coder" | "DevOps", model })` 创建子会话，再调用 `Session.prompt({ sessionID, text, delivery })` 投递任务描述 `verboseIntent`；`join` 等待第一个子会话完成。
+  - 模型：新建 worker、fission lane 与 Plan 的专用 `plan-devops` 都用 task 模型（回执 `modelSource: "task"`），不继承主模型；两半都未设置时才退回父模型并如实标 `modelSource: "parent"`，只设置一半以 `TASK_MODEL_INCOMPLETE` 拒收，不静默退回。`Manager` 与 Plan 顶层保留主模型 / Plan 模型。
+  - Plan 的 `devops(verboseIntent)` 是裸顶层原语，固定复用 `plan-devops` 这一个 worker：还在跑就 steer，已结束就复用它的会话，绝不新建第二个；同一 Plan 同时至多一个未决调查。
   - 投递模式硬要求：宿主 `Session.prompt` 的 `delivery` 参数缺省为 `"steer"`。为了保证新建 `fork` 是真正的 fire-and-forget（不等当前拍），新建投递时必须显式传入 `delivery: "queue"`；同名追加时按 steer 投递。
+- 取消传播：用户在 User-Facing LLM 处按 Esc 时，宿主只在 `session.execution.interrupted` 上通知被中断的会话；适配器自己从 `activation.workers` 名册与 `activation.lanes` 广度优先遍历全部后代，逐个调用 `activation.sessions.interrupt({ sessionID })`，从不 dispose。程序化的 `this.ask` 挂起、接力退休的现任沉默、fission 的 present 替换不传播；真正的操作员中断才传播。被取消的会话会被标记，后续 `fork`/steer 拒绝，`join` 如实报告 cancelled worker。
+- 持久化：`.Herdchestra/` 只存恢复所需最小状态。宿主聊天记录仍是权威；会话日志只保留 review/scope/language/fission/worker 等最小行，调用日志 `.Herdchestra/<session>.calls.jsonl` 存工具输入的载荷摘要与重放所需回执，Pair Hint 只存逐消息摘要与链根（digest），不存完整请求、完整输入或完整聊天副本。Plan 交接触发时的去重记录 `.Herdchestra/handoff-<sha256(callId)[0:32]>.relay.json` 也按路径直接读取，不做 `readdirSync` 扫描；它与后继指针是两条独立的耐久事实。Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
 - 消息投影钩子：
   - 用 `session.hook("context")` 改写请求级的 `messages` 与 `system`（这是唯一能整段替换 system prompt 的请求级钩子；`compaction` 与 `generate` 挂载同一处理逻辑）；
   - 用 `session.hook("prompt")` 处理 `scope` 注解注入；
@@ -753,17 +797,28 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 下面几条都是在 OpenCode 2.1.4+ 上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
 
 - 插件入口必须是 Effect 形状，而不是本节首条所写的 Promise 版 `Plugin.define({ id, setup })`。宿主按 `{ id, effect }` 或 `{ id, setup }` 解码模块，但在 2.1.4+ 上只有 Effect 形状能拿到 `session`、`tool`、`event`、`agent` 四个域，`setup` 形状加载成功却没有这些能力。适配器让 `index.js` 转出 `spec/effect-entry.mjs`（默认导出 `{ id, effect }`），在 Effect 里建桥、跑同一个 `setup(ctx)`，并登记一个卸载时停事件泵、释放全部注册的 finalizer；包的 `main` 与 `exports` 都指向 `./index.js`，目录装载与包名装载因此走同一模块。顺带一条实测：宿主 2.1.4 不扫描 `.opencode/plugins/`，本地目标必须写进 `opencode.json` 的 `plugins`，且只能是目录或 `index.js`，不能是 `plugin.mjs`（见 `spec/gaps.mjs` 的 `LOCAL_PLUGIN_ENTRY`）。何时不再需要：宿主把完整的 Promise 上下文交给 `setup` 时，这层 Effect 桥就是死重量。
-- 越权拦截是适配器自己的两层检查，而不是本节所说的在工具 `execute` 里调 `permission.assert`。宿主确有 `Permission.assert`（`permission` 域在插件上下文里），但它不在工具执行器拿到的 `Tool.Context` 上（那里只有 `sessionID`、`agent`、`messageID`、`id`、`progress`），宿主的工具运行时也不会替插件工具断言（`Tool.execute` 只触发 `execute.before` 钩子）。适配器的第一层是可见性：`agent-definitions.mjs` 的 `permissions` 规则集决定目录里出现哪些工具，`narrowing.mjs` 再按请求从 `event.tools` 里删名；第二层是拒绝：`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错——因为 `permission.assert` 被拒时是以 `Tool.Error` 结束这一步，而适配器的规矩是拒绝必须是一张模型读得懂、改得动的回执，何况 §5.4 的常授权无人值守本就不该弹操作员审批。何时不再需要：宿主开始替插件工具做权限断言时，这一层对宿主级权限才变得多余；角色、重放与任期三道闸仍要自己判。
+- 越权拦截是适配器自己的两层检查，而不是早期设计所说的在工具 `execute` 里调 `permission.assert`。宿主确有 `Permission.assert`（`permission` 域在插件上下文里），但它不在工具执行器拿到的 `Tool.Context` 上（那里只有 `sessionID`、`agent`、`messageID`、`id`、`progress`），宿主的工具运行时也不会替插件工具断言（`Tool.execute` 只触发 `execute.before` 钩子）。适配器的第一层是可见性：`agent-definitions.mjs` 的 `permissions` 规则集决定目录里出现哪些工具，`narrowing.mjs` 再按请求从 `event.tools` 里删名；第二层是拒绝：`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错——因为 `permission.assert` 被拒时是以 `Tool.Error` 结束这一步，而适配器的规矩是拒绝必须是一张模型读得懂、改得动的回执，何况 §5.4 的常授权无人值守本就不该弹操作员审批。何时不再需要：宿主开始替插件工具做权限断言时，这一层对宿主级权限才变得多余；角色、重放与任期三道闸仍要自己判。
+
+#### 新契约依赖的宿主行为（尚未逐项复测）
+
+下面三条是当前契约依赖的宿主行为。它们已由适配器与单元测试固定；详细依赖点与复检步骤见 `HACK.md` 的《OpenCode: one path per fact, no directory scans》。live smoke 没有覆盖每一条新路径，因此仍按「尚未逐项复测」看待；与上面几条一样，都是可替换的绕行。
+
+- 取消不会沿 `parentID` 自动级联，适配器必须自己走名册。宿主的 `session.execution.interrupted` 只通知被中断的那个会话，没有后代信号；`activation.workers` 与 `activation.lanes` 是适配器自己的名册，只有它能枚举全部后代。适配器因此在收到操作员中断时广度优先遍历并逐个 `activation.sessions.interrupt({ sessionID })`，且从不 dispose（dispose 会抹掉证据，也会让 `join` 失去可报告的终局）。程序化挂起、present 替换与接力退休没有操作员中断事件，天然不触发这条路径。何时不再需要：宿主把取消沿 `parentID` 级联，或提供一个「中断整棵会话树」的调用；那时这圈遍历直接删掉。
+- task 模型在 OpenCode 上不是命名角色，而是一对显式环境变量。`model-inherit.mjs` 的 `taskModelOf` 同时要求 `HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID`（两半齐全才算数），返回 `Model.Ref`；`forkWorker`、fission 的 `buildLane` 与 Plan 的 devops 把它传给 `Session.create({ model })`，回执用 `modelSource: "task" | "parent"` 说明用了哪一级。两半都未设置时退回父模型并标 `modelSource: "parent"`；只设置一半以 `TASK_MODEL_INCOMPLETE` 拒收，不猜一个默认模型。何时不再需要：宿主公开 `modelRoles.task` 一类的命名角色时，这对环境变量与阶梯一起删掉。
+- 继任者靠指针找前任，不靠扫描状态目录。接力提交在 `.Herdchestra/<successor>.relay.json` 写一条耐久指针，继任者据此直接读到前任与屏障，不再 `readdirSync` 整个 `.Herdchestra/`；扫描回退已删除。这是 §1.1 第 1 条的直接要求：恢复路径不随状态文件数量增长。何时不再需要：宿主把父会话路径直接写进继任头时，这个指针文件也变成多余。
 
 ### 7.2 Cline Desktop 适配方案（只以 Cline 插件身份装载，不 fork 宿主）
 
 - 装载方式：打包为标准 Cline 插件（导出 `setup(api, ctx)` 与 `manifest.capabilities`），通过 `package.json` 的 `cline.plugins[].paths` 声明，或由宿主 `pluginPaths` 指向。Cline Desktop 的 sidecar 已随包分发 `plugin-runtime`，用户无需额外安装运行时。
-- 钩子与工具注册：仅使用宿主的 7 个生命周期钩子（`beforeRun`、`afterRun`、`beforeModel`、`afterModel`、`beforeTool`、`afterTool`、`onEvent`）以及 `registerTool`、`registerRule`、`registerMessageBuilder`。
-  - 通过 `registerTool` 注册 `js-manager`、`js-worker`、`fork`、`join`、`js-review`。
+- 钩子与工具注册：仅使用宿主的 7 个生命周期钩子（`beforeRun`、`afterRun`、`beforeModel`、`afterModel`、`beforeTool`、`afterTool`、`onEvent`）以及 `registerTool`、`registerRule`。请求改写走 `beforeModel`（见下），不注册 `messageBuilder`。
+  - 通过 `registerTool` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`。
   - `beforeTool` 在宿主工具策略与审批之前触发，对不合规调用（如缺失 `scope` 或越权访问）直接返回 `{ skip: true, reason }` 拒绝本次调用，同时保持整个 run 继续运行。
-  - 若子代理 frontmatter 显式列出了 `tools`，宿主会按该列表收窄工具面；万象术必须在 `createSubAgentTools` 层统一覆盖为 `js-worker` 投影，确保 `Coder` 照常保有 `this.call`（禁 bash 仅由任务提示词约束）。
-- 子代理调度（`fork` / `join`）：宿主的 `spawn_agent` 是阻塞的，而 `team_*` 系列（`team_run_task` / `team_await_runs`）带有宿主自己的一套团队账本，万象术均不复用。万象术的 `fork` 直接调用 `createDelegatedAgent({ kind: "subagent", prompt, tools, configProvider, extensions })` 自建非阻塞子 runtime——必须将 `extensions` 原样转发给子代理，否则子代理拿不到万象术的钩子；`delivery` 支持 `"steer"` 与 `"queue"`。
-- 消息投影入口：Cline 没有独立的主代理 system prompt 替换钩子，且 Desktop 强制开启了 `compaction.enabled = true` 与 `checkpoint.enabled = true`。万象术以 `prepareTurn`（配合按序链式执行的 `messageBuilder`）作为唯一的请求级改写入口：它返回的 `messages` 与 `systemPrompt` 只作用于当次 provider 请求，不写入宿主持久转录，且不依赖“宿主不做压缩”的假设。
+  - 若子代理 frontmatter 显式列出了 `tools`，宿主会在 `createSubAgentTools` 阶段按该列表收窄工具面，这发生在插件够不到的地方；万象术不能在那里覆盖，改为包住自己交给宿主的工厂：`guardedCreateDelegatedAgent` 对返回的每个 runtime 调用它自己的 `addTools` 补回 `js-worker` 面（`runtimeHandle` 自建的 runtime 同理），回执里的 `face` 说明补没补上，没有工具面就答 `NO_TOOL_SURFACE` 而不是声称防住了。`Coder` 因此照常保有 `this.call`（禁 bash 仅由 `verboseIntent` 约束）。
+- 子代理调度（`fork` / `join` / `devops`）：宿主的 `spawn_agent` 是阻塞的，而 `team_*` 系列（`team_run_task` / `team_await_runs`）带有宿主自己的一套团队账本，万象术均不复用。万象术的 `fork` 直接调用 `createDelegatedAgent({ kind: "subagent", prompt: verboseIntent, tools, configProvider, extensions })` 自建非阻塞子 runtime——必须将 `extensions` 原样转发给子代理，否则子代理拿不到万象术的钩子；`delivery` 支持 `"steer"` 与 `"queue"`。Plan 的 `devops(verboseIntent)` 同样只复用一条专用 `plan-devops` lane：第一次调用启动它，后续调用 `handle.run(verboseIntent)`，绝不开第二路；handle 被操作员中断后以 `PLAN_DEVOPS_DEAD` 拒绝，而不是另起一个。
+  - 模型：`fork` 的 worker、fission lane 与 Plan 的 `plan-devops` 都走 `resolveTaskModel` / `resolveTaskConnection`；`HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID` 两半齐全才走 task 阶梯，否则（含只设一半）走主阶梯，runtime handle 的 `modelSource` 是 `"task"` 或 `"main"`。`Manager` 与 Plan 顶层走 `resolveModel`，保留主模型 / Plan 模型。
+- 取消传播：`guard.mjs` 用 `operatorInterruptOf` 从 run status 或 `stopReason: "aborted"` 的 assistant 消息识别操作员中断；`cancelDescendants` 先排除 `this.ask` 的 park（`parkStopOwed` / `parkStopped`），再调 `session.cancelDescendants("OPERATOR_CANCELLED")` → worker table 的 `cancelAll`，对每一名 fork worker 与 fission lane 的 handle 调 `abort`。只 abort、不 dispose；被取消的 worker 会被标记，后续 `fork`/steer 拒绝（`WORKER_CANCELLED`），重载保留取消标记，未领取完成保留，欠的回合以 `finishReason: "cancelled"` 结算，`join` 如实报告取消结果。fission 的 present 替换与接力退休不经过这条路径，不传播。
+- 持久化：worker 名册只写 `.Herdchestra/<session>.workers.jsonl` 一份追加日志，建表时回放，不再另存 `.restored.json` 快照；Pair Hint 只存链摘要，不存完整消息副本；Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
+- 消息投影入口：Cline 没有独立的主代理 system prompt 替换钩子，且 Desktop 强制开启了 `compaction.enabled = true` 与 `checkpoint.enabled = true`。万象术以 `beforeModel` 作为唯一的请求级改写入口：它返回的 `messages` 只作用于当次 provider 请求，不写入宿主持久转录；角色提示词由一条 `registerRule` 提供（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不在 manifest 里申请这项能力，且不依赖“宿主不做压缩”的假设。
 
 #### 已实测的绕行方案（一种可行解，未必最优）
 
@@ -772,23 +827,34 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 - 装载单元是一个入口文件加根 `package.json`，不是 `localRuntime.pluginPaths`。宿主扫描 `<workspace>/.cline/plugins`、`<cline-home>/plugins` 与 `~/Documents/Cline/Plugins`；能交给装载器的是入口文件（`…/src/host-cline/index.js`），目录只有在自带 `package.json` 的 `cline.plugins[].paths` 时才解析得开，而目录里一旦出现 `plugin.json`，两条发现路径都会直接放弃。适配器因此在根 `package.json` 声明 `cline.plugins[].paths`，靠 `files: ["src"]` 把整棵树装进去（`src/host-cline` 有 17 个指向 `../core`、`../compose` 的相对导入，单独装它必死在第一次导入），并且绝不生成 `plugin.json`。何时不再需要：宿主开始接受目录或 `plugin.json` 作为装载单元，或者安装器会解析工作区成员的依赖闭包。
 - 插件拿不到 `@cline/core`，所以适配器按阶梯自己找。插件跑在 `worker_thread` 沙箱里，`argv[1]` 是沙箱引导脚本，`module.paths` 只覆盖插件自己的目录，`require.resolve("@cline/core")` 答 `MODULE_NOT_FOUND`。阶梯是：裸 `@cline/core` → `CLINE_CORE_MODULE` → 从 `argv[1]`、`argv[0]`、`execPath`、`cwd` 与插件自身目录向上走的宿主模块树（每个基点都同时探 `<base>/node_modules/@cline/core` 与 `<base>/plugin-runtime/node_modules/@cline/core`，后者才是本机答话的那一级）；结果按进程缓存，`hostModuleSource()` 说明是哪一级答的。何时不再需要：宿主把工厂注入插件，或公开一个稳定位置；那时阶梯的后两级直接删掉，而不是留三个答案。
 - `fork` 要的三样东西（SDK、连接、凭据）都在宿主自己的记录里，不在钩子里。`setup` 上下文与 `beforeModel` 的请求都不带 provider 与 model，宿主会话记录带；宿主还把每个 provider 的 key、base URL 与协议存在 `~/.cline/data/settings/providers.json`，而 `createDelegatedAgentConfigProvider(connection)` 原样返回它拿到的东西——只给 `{ providerId, modelId }` 就是一个没有凭据的连接。适配器用宿主自己的 `ProviderSettingsManager.read()` 与 `createProviderConfig(entry.settings)` 取凭据（只留凭据字段，不写日志、不进回执、不发模型），模型走「上一次请求 → setup 上下文 → 宿主会话记录 → 环境变量」的阶梯，两半都在才算一条连接；裂变组按组写一行到 `.Herdchestra/<session>.fission.jsonl`，写不进去就如实答 `ok: false` 而不是声称提交。何时不再需要：宿主把连接交给 `setup`，或公开 SDK 的稳定位置；那时模型阶梯的前几级与安装布局表都成为死重量。
-- 请求改写走 `beforeModel`，不走本节末条所说的 `prepareTurn` + `messageBuilder`。在 `@cline/core` 0.2.0 上，`beforeModel` 返回的 `messages` 就是这一次 provider 请求的副本（运行时不写回转录）；`prepareTurn` 根本不是插件 API——宿主永远用自己那份 `createCompactionStateAwarePrepareTurn` 填它；`registerMessageBuilder` 的 `build` 只在宿主 `prepareTurn` 里被调用，因此插件注册的 builder 一次都不会跑（实测 Pair Hint 只对到了 0/24 个 provider 请求）。适配器于是把整份请求副本（继任屏障、Scope、Pair Hint、CUE 渲染）放进 `beforeModel` 的 `messages`，角色提示词改成一条 `registerRule`（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不再在 manifest 里申请这项能力。何时不再需要：宿主把 `prepareTurn` 开放给插件，或开始采纳 `beforeModel` 返回的 `systemPrompt`；那时把投影搬过去，删掉对应的那一条。
+- 请求改写走 `beforeModel`，不走早期设计所说的 `prepareTurn` + `messageBuilder`。在 `@cline/core` 0.2.0 上，`beforeModel` 返回的 `messages` 就是这一次 provider 请求的副本（运行时不写回转录）；`prepareTurn` 根本不是插件 API——宿主永远用自己那份 `createCompactionStateAwarePrepareTurn` 填它；`registerMessageBuilder` 的 `build` 只在宿主 `prepareTurn` 里被调用，因此插件注册的 builder 一次都不会跑（实测 Pair Hint 只对到了 0/24 个 provider 请求）。适配器于是把整份请求副本（继任屏障、Scope、Pair Hint、CUE 渲染）放进 `beforeModel` 的 `messages`，角色提示词改成一条 `registerRule`（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不再在 manifest 里申请这项能力。何时不再需要：宿主把 `prepareTurn` 开放给插件，或开始采纳 `beforeModel` 返回的 `systemPrompt`；那时把投影搬过去，删掉对应的那一条。
 - 沙箱里那条「payload 不是 JSON 可序列化」的告警是宿主的载荷，不是我们的返回值。`@cline/core` 的 `callWithSerializableFallback` 包的是宿主自己送进沙箱的钩子载荷（`payload.tool` 是带 `execute` 函数的宿主对象），结构化克隆拒绝它、宿主告警、改用 `toJsonSafePayload` 重试。我们的 `beforeTool` 只回 `{ skip, reason }`，`afterTool` 只回 `{ appendContext }` 或 `undefined`。每条钩子名各告警一次只说明该钩子触发过至少一次；插件消不掉它，也不要为此给返回值加 JSON 清洗。何时不再需要：宿主不再把活对象放进钩子载荷。
 - 子代理的工具面由适配器在工厂上补，而不是信任 frontmatter。宿主用 `createSubAgentTools` 按 frontmatter 的 `tools:` 列表收窄子代理工具面，这发生在 `createDelegatedAgent` 之前，插件既看不到也包不住。适配器改为包住自己交出去的那个工厂：`guardedCreateDelegatedAgent` 对返回的每个 runtime 调用它自己的 `addTools` 补回 `js-worker` 面（`runtimeHandle` 自建的 runtime 同理），回执里的 `face` 说明补没补上，没有工具面就答 `NO_TOOL_SURFACE` 而不是声称防住了。何时不再需要：`@cline/core` 把子代理工具构建器开放给插件，那时把这个包装换成一个装饰器。
-- 同名 `fork` 的「转向」借用运行中那一回合的待处理输入通道。`SessionRuntime.run()` 在回合进行中会直接拒绝，hub 的 `send_input` 又够不到不在 `LocalRuntimeHost.sessions` 里的委派 runtime。适配器在宿主没装的时候给 runtime 装上 `consumePendingUserMessage` 这个成员：`steer(brief)` 把文本放进队列，正在跑的那一回合在自己的下一个请求边界取走它；`notifyPendingUserMessage()` 只打断模型请求，在飞的工具照常跑完。回执就是 `{ name, steered, started }`，一次结算同时交回载体与被它带上路的那份说明。何时不再需要：宿主给委派 runtime 一条真正的转向通道（宿主的 `steer_message` 能到达它）。
+- 同名 `fork` 的「转向」借用运行中那一回合的待处理输入通道。`SessionRuntime.run()` 在回合进行中会直接拒绝，hub 的 `send_input` 又够不到不在 `LocalRuntimeHost.sessions` 里的委派 runtime。适配器在宿主没装的时候给 runtime 装上 `consumePendingUserMessage` 这个成员：`steer(verboseIntent)` 把文本放进队列，正在跑的那一回合在自己的下一个请求边界取走它；`notifyPendingUserMessage()` 只打断模型请求，在飞的工具照常跑完。回执就是 `{ name, steered, started }`，一次结算同时交回载体与被它带上路的 `verboseIntent`。何时不再需要：宿主给委派 runtime 一条真正的转向通道（宿主的 `steer_message` 能到达它）。
 - 崩溃在「屏障」与「台账推进」之间时，以耐久屏障为准，不以台账字段为准。§2.4 第 3 步让退役、屏障与继任启动成为一条耐久记录，台账推进稍后才发生；中间崩溃会留下一个屏障已指向继任、台账字段还停在旧任期的文件，朴素回放会把已退役的前任复活，继任的第一次 review 被永久拒成 `TENURE_RETIRED`。适配器的 `restore` 先读屏障：屏障指名的继任经 `adoptSuccessor({ tenure, milestone })` 原样落到台账（正是 `openSuccessor` 产生的状态），再把文件里的义务叠加上去；屏障不可用就退回朴素回放，让拒绝在下一次 review 浮出来而不是被抹平。何时不再需要：屏障与台账推进合成同一次写入时，这条特殊回放路径就该删掉。
+
+#### 新契约依赖的宿主行为（尚未逐项复测）
+
+下面两条是当前契约依赖的宿主行为，已由适配器与单元测试固定；详细依赖点与复检步骤见 `HACK.md` 的《Cline: one Plan DevOps handle, and a cancellation that keeps the evidence》与《Cline worker sandbox: `fork` reached the host SDK without an env var》（task 模型阶梯）。live smoke 没有覆盖每一条新路径，因此仍按「尚未逐项复测」看待。
+
+- 取消不会沿委派关系自动级联，适配器必须自己走 worker 表。宿主的 run status 或 `stopReason: "aborted"` 的 assistant 消息只说明这一回合被操作员停掉，不会通知它派出的 runtime。`guard.mjs` 用 `operatorInterruptOf` 识别这个事实，先排除 `this.ask` 的 park（`parkStopOwed` / `parkStopped`），再调 `session.cancelDescendants("OPERATOR_CANCELLED")` → worker table 的 `cancelAll`，对每一名 fork worker 与 fission lane 的 handle 调 `abort`；只 abort、不 dispose，未领取结果仍可读。何时不再需要：宿主提供会话树级的取消调用时，这圈遍历直接删掉。
+- task 模型在 Cline 上不是命名角色，而是一对环境变量。`resolveTaskModel` / `resolveTaskConnection` 先读 `HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID`（两半齐全才算一条连接），命中时 `source: "task"`；未设置或只设置一半时退回会话自己的 `resolveModel` / `resolveConnection`，并如实标 `source: "main"`，不假装是 task 模型。`fork`、fission lane 与 Plan 的 `plan-devops` 都走这条阶梯；`Manager` 与 Plan 顶层不走。何时不再需要：宿主公开 `modelRoles.task` 一类的命名角色时，这对环境变量与阶梯一起删掉。
 
 ### 7.3 Oh My Pi 适配方案（只注册一个扩展，不碰宿主内建 Vibe 模式）
 
 - 装载与隔离：发布一个标准 OMP 扩展（默认导出工厂函数 `(pi: ExtensionAPI) => void`）。宿主当前处于什么模式与万象术无关；万象术绝不调用宿主的 `/vibe` 命令、`vibe_*` 工具或 `ctx.sessionModes`。
 - 工具面与单次收窄：
-  - 用 `pi.registerTool` 注册 `js-manager`、`js-worker`、`fork`、`join`、`js-review`。
-  - 在扩展加载阶段调用一次 `setActiveTools`，把宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`bash`、`eval`、`task` 从 `Manager` 的活动工具集里移除，并在万象术自己的 `execute` 中做越权拦截。
-  - 严禁在 `before_agent_start` 中重复调用 `setActiveTools`：因为在 `before_agent_start` 里调 `setActiveTools` 会触发宿主重跑 policy preparation（最多达三次）；同时，`before_agent_start` 每次返回的整段 `systemPrompt` 必须严格幂等。
+  - 用 `pi.registerTool` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`。
+  - `setActiveTools` 不在扩展加载阶段调用：工厂期没有会话、没有角色，调用会抛错。首次收窄发生在会话的第一个事件（`installHooks`）里；`js-review` 的阶段切换另付一笔，在 `turn_start` 打开评估、在本轮第一条 `review` 被接受时收面。把宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`bash`、`eval`、`task` 从 `Manager` 的活动工具集里移除，并在万象术自己的 `execute` 中做越权拦截。详见下方 `setActiveTools` 绕行条目。
+  - `before_agent_start` 一次也不调 `setActiveTools`：在那里调会触发宿主重跑 policy preparation（最多达三次）；它返回的整段 `systemPrompt` 必须是角色的纯函数，重跑得到同样的字节。
 - 身份核验与子代理调度：
-  - 通过 `ctx.agent.kind === "sub"` 与 `ctx.agent.name` 区分 `Manager` 与 worker。
-  - 利用只在父会话触发一次的 `before_subagent_spawn` 钩子，核验每个新建子代理是否明确声明了 `Coder` 或 `DevOps` 身份（未声明则返回 `{ block: true, reason }` 拒绝，合法则可按需返回 `{ model }`）。由于 OMP 子代理是 headless 的且审批默认为 yolo，拿到了 `js-worker` 的 `Coder` 在运行时没有宿主级 bash 拦截，其禁 bash 边界完全由任务描述（`brief`）约束。
-  - `fork` 通过宿主的异步 `task`（开启 `async.enabled = true`，每次 spawn 作为后台 job 运行，完成后结果自动投递回父会话）或 `ctx.invokeTool` 实现，并在扩展加载时抬高或绕过宿主默认的 `task.maxRecursionDepth`（默认值为 2）；`join` 等待第一个后台 job 完成。worker 之间不使用宿主的 peer messaging 作为控制面。
+  - 通过 `ctx.agent.kind === "sub"` 与 `ctx.agent.name` 区分 `Manager`、`Plan` 与 worker。
+  - 利用只在父会话触发一次的 `before_subagent_spawn` 钩子，核验每个新建子代理是否明确声明了 `Coder` 或 `DevOps` 身份（未声明则返回 `{ block: true, reason }` 拒绝，合法则返回 `{ model: "@task" }`，让子代理用宿主的 task 模型）。由于 OMP 子代理是 headless 的且审批默认为 yolo，拿到了 `js-worker` 的 `Coder` 在运行时没有宿主级 bash 拦截，其禁 bash 边界完全由任务描述（`verboseIntent`）约束。
+  - 模型：`fork` 的 coder/devops lane 与 Plan 的 `plan-devops` 都以 `modelPattern: "@task"` 启动；`sdk.ts:607` 的 `CreateAgentSessionOptions.modelPattern` 接受这个字段，`config/model-resolver.ts` 的 `settings.getModelRole("task")` 展开 `@task`（宿主自己的 task agent 也在 `task/agents.ts:56` 声明 `model: "@task"`）。`lane.mjs` 只对 coder/devops lane 传这个 pattern，Manager lane 不传；`spawn-gate.mjs` 的 `modelFor` 对同两种已声明角色答 `{ model: "@task" }`，`agents/coder.md` 与 `agents/devops.md` 的 frontmatter 也声明 `model: "@task"`。`Manager` 与 Plan 顶层不传 modelPattern，保留主模型 / Plan 模型。宿主解析不了别名时，lane 留在宿主默认模型上，回执如实报告 `modelPattern` 与 `modelSource`。
+  - `fork` 用宿主注入的 SDK 起真会话（`createAgentSession`），不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用（见下方实测）；`join` 等待第一个归来的会话。worker 之间不使用宿主的 peer messaging 作为控制面。
+  - Plan 的 `devops(verboseIntent)` 是裸顶层原语：compose 的 `SURFACE_PRIMITIVES.plan` 只列 `devops`，`ProgramSurface.surface()` 返回 members ∪ primitives，`program.mjs` 因此把它当 primitive 而不是 member（`this.devops` 是 `undefined`，声明它会 `TypeError`）。`ports.mjs` 的 `devopsPort` 拥有唯一一条专用 lane `plan-devops`（role devops），登记在会话的 `LaneTable`：第一次调用启动它，后续调用 steer 同一条 lane 并等待 `lane.ended`；同一时刻第二笔未决调查被拒为 `DEVOPS_IN_FLIGHT`。不存在按调用时间戳新建的 devops 会话，也没有 `HostBinding.runAgent/spawn/steer/progressOf` 的旧路径。
+- 取消传播：用户在 User-Facing LLM 处按 Esc 时，宿主的终态回合消息带 `stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"`；`RoleSession.operatorInterrupt` 用 `operatorInterruptOf` 识别真正的操作员中断，并排除非 user-facing 会话、S1 ask、`control.replaced` 与 `state.relayPending`。`src/host-omp/index.mjs` 的 `cancelSubtree` 从该会话广度优先遍历：经过它的 `LaneTable`、每条 lane 的 `AgentSession`、以及该会话自己的适配器/`LaneTable`；`LaneTable.cancelAll()` 标记名册，`Lane.abort(reason)` 直接调 `AgentSession.abort({ reason })`（会话由适配器创建，不需要 ctx）。会话只 abort、从不 dispose，转录与未领取结果保持可读；后续 `fork`/steer 以 `SESSION_CANCELLED` 拒绝，`join` 先交回已领取结果，再如实报告取消。fission 的 present 替换（`control.replaced`）与接力退休（`state.relayPending`）不是操作员中断，不传播。
+- 持久化：宿主转录是权威；需要与它比对时只存哈希，不存副本。接力事实直接从转录里的 `herdchestra.relay` 自定义条目读取（`getEntries` 按本适配器的 `customType` 过滤），绝不扫描目录；封存边界另存一份 `.Herdchestra/<lineage>.relay.jsonl`。`.Herdchestra/<session>.session.json` 只存台账（角色、kind、里程碑、任期、review 计数、义务、继任、屏障），另有 `<session>.scope.jsonl`、`<session>.workers.jsonl`、Pair Hint 日志与 `<session>.requests.jsonl`。请求日志只写失败与判定变化（每请求 `{length, root, firstDivergence, failure}` 加至多 64 条 dropped shape；2 MiB 分段轮转，一次 rename，不整文件重写）；`.request.json` 只在判定变化时写，回合/代理结束时刷 request-id；名册用 Map 队列，认领后剥掉答复正文并做摊销式原子压缩；Pair Hint 用 `hint.chain` 与 `messageDigest` 对比 `chain.digests[index]`。不存完整请求或完整聊天副本。Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
 - 消息投影钩子：`before_agent_start` 返回整段替换的最终 `systemPrompt`；`context` 钩子返回 `{ messages }` 改写当次出站请求副本；`tool_call` 用于 `block` 或改写 `input`；`tool_result` 用于改写返回内容；`tool_execution_*` 仅作观察；`assistant_message` 可替换最终文本。
 
 **提问与无人值守在三家宿主上的落地（根 §2.2）。** `this.ask(question)` 就是 `this.park({ question })` + `interrupt`，三家宿主都不得以「没有提问通道」为由拒绝：
@@ -809,9 +875,16 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 - 继任切换只能走 `ctx.sessionManager`，而它比自己的类型更宽。`ExtensionContext.sessionManager` 的类型是 `ReadonlySessionManager`（`Pick` 里没有 `newSession`），但运行器传的是真实例，`newSession`、`getSessionFile`、`appendEntriesAtomically`、`appendCustomEntry`、`getEntries` 运行时都在；`session_start` 的 `ctx` 自己没有 `newSession`，也没有 `sessionFile`。适配器的 `switchTarget()` 先读会话、再读 `session.sessionManager`，从不假设类型面；因为每次 emit 都重建上下文，它也从不缓存某个事件的 `ctx`（缓存 `session_start` 那份会让 `ctx.sessionManager`、`ctx.agent`、`ctx.abort` 全是 `undefined`，推迟的切换就永远够不到）。继任头里的 `parentSession` 写被替换转录的路径（宿主的列表与清理都按路径读），旧文件保留原记录，但按 `successorSessionId` 过滤后不再治理。何时不再需要：宿主真的执行只读类型时，接力会以 `NO_SESSION_CONTROL` 诚实地失败——那时不要绕过，要承认这条路没了。
 - 封存之后内存日志会空，磁盘文件还在。实测在 `seal()` 之后 `getEntries()` 里已没有任何接力记录，而同一次运行的转录文件里那条记录清清楚楚。适配器查「记录在不在」时，日志答否就回退到转录文件，按宿主自己的条目 id 与本适配器的 `customType` 比对；否则边界会把一条明明存在的记录判成没写，跳过唯一不需要写入的那一步。何时不再需要：宿主在封存后仍可写，或自己把记录抄进继任头。
 - 宿主的 `context` 钩子会把「正在回答的那条消息」就地重写。宿主在 provider 回答之前就构造一条占位的 assistant 消息，随流增量就地改写（文本、工具调用、用量、`stopReason`），而 `context` 钩子拿到的是同一个对象；于是同一个请求在流未收时看到占位副本，下一个请求从宿主日志重建时看到定稿副本，逐字节比对就把它判成 `PREFIX_DRIFT`，工具闸随即拒掉每个调用。适配器不再维护「哪些字段不算对话」的黑名单，改由 `core/pair-hint/canonical.mjs` 用正向语义白名单定义「同一条消息」（角色，以及每个部分的类型与该类型的语义字段），宿主重算的一切字段天然被忽略。何时不再需要：宿主把定稿副本交给钩子时，这条测量的理由消失，但白名单与宿主版本无关，不要退回黑名单。
-- 宿主的侧回合也走 `context` 钩子，必须按形状识别并放行。`transformContext` 是 `context` 钩子唯一的触发点，主代理与会话代理都装了它，`runEphemeralTurn` 把每个瞬时回合都送进来（标题、输入预测、`btw-turn`、空闲维护等）；这些副本是真实前缀的延长，若不识别，它会把 Pair Hint 的 `#presented` 抢走，几毫秒后真请求就被判成漂移。宿主给这些消息打的 symbol 标记在 `structuredClone` 时被丢掉，所以只能按两条宿主写出的形状同时识别：一条 `developer` 消息带 `attribution: "agent"`，加一条 `user` 消息带 `attribution: "agent"`。适配器把它们交给 core 当作 `REQUEST_KINDS.EPHEMERAL`：配对照常注入（侧回合本就是为了预热缓存），但不记账、不移动、不开不关闸门。何时不再需要：宿主用一个可读字段标出侧回合。
-- `setActiveTools` 在加载阶段调不了，只能让阶段切换来付这笔账。宿主交给扩展工厂的只有 `api`，加载时没有会话、没有角色、也没有可收窄的活动工具集，`setActiveTools` 在会话的扩展运行时初始化之前会抛错。适配器因此在会话的第一个事件（`installHooks`）里做首次收窄；`js-review` 的阶段切换另付一笔，且从不落在 `before_agent_start`：本轮评估在 `turn_start` 打开（`beginEvaluation()` 每轮只答一次真，`openEvaluation()` 据此收窄），在本轮第一条 review 被接受时由 `onReviewAccepted` 收面并再次收窄。`before_agent_start` 一次也不调 `setActiveTools`，它返回的整段 `systemPrompt` 是角色的纯函数，重跑得到同样的字节。这与本节所说的「在扩展加载阶段调用一次 `setActiveTools`」有意不同：那条要防的是宿主为每次请求重跑最多三次 policy preparation，阶段切换这一层同样防住了它。何时不再需要：宿主在工厂期就给出会话，那时把首次收窄搬过去，阶段切换规则只留给 review 面。
-- `fork` 不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用。扩展没有派发器（`ExtensionAPI` 没有 dispatch，`ctx.invokeTool` 只转给同名的内建工具），`fork` 根本调不到 `task`；而那个上限是在宿主为会话构造 task 工具时施加的，经 `createAgentSession` 建出来的会话根本没有 task 工具可限。适配器让 `fork` 用宿主注入的 SDK 起真会话，深度只作为事实随 lane 携带，不用来表达权限。这与本节所说的「抬高或绕过 `task.maxRecursionDepth`」有意不同：那条绕行要等宿主真把扩展工作塞进 `task` 才需要，届时用 `settings.overlay({ "task.maxRecursionDepth": -1 })` 传给 `createAgentSession`（`Settings.overlay` 对未知键抛错，不会静默忽略）。何时不再需要：宿主把扩展工作路由到 `task` 时，那条绕行才登场。
+- 宿主的侧回合也走 `context` 钩子，必须按形状识别并放行。`transformContext` 是 `context` 钩子唯一的触发点，主代理与会话代理都装了它，`runEphemeralTurn` 把每个瞬时回合都送进来（标题、输入预测、`btw-turn`、空闲维护等）；这些副本是真实前缀的延长，若不识别，它会抢走 Pair Hint 的链状态（`#chain` 的前缀链与呈现位点），几毫秒后真请求就被判成漂移。宿主给这些消息打的 symbol 标记在 `structuredClone` 时被丢掉，所以只能按两条宿主写出的形状同时识别：一条 `developer` 消息带 `attribution: "agent"`，加一条 `user` 消息带 `attribution: "agent"`。适配器把它们交给 core 当作 `REQUEST_KINDS.EPHEMERAL`：配对照常注入（侧回合本就是为了预热缓存），但不记账、不移动、不开不关闸门。何时不再需要：宿主用一个可读字段标出侧回合。
+- `setActiveTools` 在加载阶段调不了，只能让阶段切换来付这笔账。宿主交给扩展工厂的只有 `api`，加载时没有会话、没有角色、也没有可收窄的活动工具集，`setActiveTools` 在会话的扩展运行时初始化之前会抛错。适配器因此在会话的第一个事件（`installHooks`）里做首次收窄；`js-review` 的阶段切换另付一笔，且从不落在 `before_agent_start`：本轮评估在 `turn_start` 打开（`beginEvaluation()` 每轮只答一次真，`openEvaluation()` 据此收窄），在本轮第一条 review 被接受时由 `onReviewAccepted` 收面并再次收窄。`before_agent_start` 一次也不调 `setActiveTools`，它返回的整段 `systemPrompt` 是角色的纯函数，重跑得到同样的字节。这与早期设计所说的「在扩展加载阶段调用一次 `setActiveTools`」有意不同：那条要防的是宿主为每次请求重跑最多三次 policy preparation，阶段切换这一层同样防住了它。何时不再需要：宿主在工厂期就给出会话，那时把首次收窄搬过去，阶段切换规则只留给 review 面。
+- `fork` 不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用。扩展没有派发器（`ExtensionAPI` 没有 dispatch，`ctx.invokeTool` 只转给同名的内建工具），`fork` 根本调不到 `task`；而那个上限是在宿主为会话构造 task 工具时施加的，经 `createAgentSession` 建出来的会话根本没有 task 工具可限。适配器让 `fork` 用宿主注入的 SDK 起真会话，深度只作为事实随 lane 携带，不用来表达权限。这与早期设计里「抬高或绕过 `task.maxRecursionDepth`」的写法有意不同：那条绕行要等宿主真把扩展工作塞进 `task` 才需要，届时用 `settings.overlay({ "task.maxRecursionDepth": -1 })` 传给 `createAgentSession`（`Settings.overlay` 对未知键抛错，不会静默忽略）。何时不再需要：宿主把扩展工作路由到 `task` 时，那条绕行才登场。
+
+#### 新契约依赖的宿主行为（已离线复测，尚未逐项 live 复测）
+
+下面两条是当前契约依赖的宿主行为；两条都已在 omp 18.14.1 源码与 host-omp 275/275 测试中离线复测，live smoke 没有覆盖每一条新路径。详细依赖点与复检步骤见 `HACK.md` 的《OMP: `@task` as a model selector, one Plan lane, failure-only diagnostics》。
+
+- task 模型在 OMP 上是一个角色别名，而不是一次显式选择。`sdk.ts:607` 的 `CreateAgentSessionOptions.modelPattern` 接受这个字段；`config/model-resolver.ts` 的 `settings.getModelRole("task")` 展开 `@task`；宿主自己的 task agent 在 `task/agents.ts:56` 也声明 `model: "@task"`。`lane.mjs` 只对 coder/devops lane 传这个 pattern，Manager lane 不传；`spawn-gate.mjs` 的 `modelFor` 对同两种已声明角色答 `{ model: "@task" }`，`agents/coder.md` 与 `agents/devops.md` 的 frontmatter 也声明 `model: "@task"`。宿主解析不了别名时，lane 留在宿主默认模型上，lane 回执带 `modelPattern` 与 `modelSource`。何时不再需要：宿主把 task 角色直接作为子代理的默认模型时，这三处显式声明都可以删掉。
+- 取消不会沿会话树自动级联，适配器必须自己走注册表。宿主只把操作员中断写进终态回合消息（`stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"`），没有「整棵树被取消」的事件。`RoleSession.operatorInterrupt` 用 `operatorInterruptOf` 识别它，并排除非 user-facing 会话、S1 ask、`control.replaced` 与 `state.relayPending`；`src/host-omp/index.mjs` 的 `cancelSubtree` 从该会话广度优先遍历 `LaneTable`、每条 lane 的 `AgentSession` 与该会话自己的适配器/`LaneTable`，`LaneTable.cancelAll()` 标记名册，`Lane.abort(reason)` 直接调 `AgentSession.abort({ reason })`。只 abort、从不 dispose，转录与未领取结果保持可读；后续 `fork`/steer 以 `SESSION_CANCELLED` 拒绝，`join` 先交回已领取结果再报告取消。何时不再需要：宿主提供会话树级的取消调用时，这圈遍历直接删掉。
 
 ### 7.4 与 Oh My Pi 内建 Vibe Mode 的设计取舍对照
 
@@ -821,18 +894,20 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 |------|-------------------------|--------------------|
 | 模式定位 | 宿主的可选模式之一，需与 plan / goal / loop 等模式做互斥管理 | 宿主的唯一工作语义，彻底取消普通单兵模式，无需模式互斥门 |
 | 顶层代理读取权 | 导演保留只读文件工具，可亲自读文件核实 | `Manager` 默认连文件读取都没有，也没有审查子代理代码的义务；仅在每轮首次评估前临时开放独立只读工具 `js-review` |
-| 子代理角色与规模 | 按“便宜快 / 强而慢”固定分两档，通常要求 2 名子代理 | 按并发安全职责分为 1 名 `DevOps` + 尽可能多的 `Coder`（大任务常驻 10+ 名 worker） |
-| 控制原语 | `spawn`、`send`、`wait`、`list` 四件套 | 极简为 `fork(name, brief)`（新建与同名 steer 合一，由回执 `steered` 显式区分）与无参 `join()`（wait-one） |
+| 子代理角色与规模 | 按“便宜快 / 强而慢”固定分两档，通常要求 2 名子代理 | 按并发安全职责分为 1 名 `DevOps` + 尽可能多的 `Coder`（大任务常驻 10+ 名 worker）；Plan 另有一条专用 `plan-devops` lane |
+| 控制原语 | `spawn`、`send`、`wait`、`list` 四件套 | 极简为 `fork(name, verboseIntent)`（新建与同名 steer 合一，由回执 `steered` 显式区分）、无参 `join()`（wait-one）与 Plan 的同步 `devops(verboseIntent)`（join） |
 | 同身并行能力 | 无 | 提供 `this.fission(prompts)`，允许同一 worker 身份裂变为多条并行泳道并按拓扑顺序收束 |
-| 保留的优秀基因 | 结果自投递、只等第一个完成、worker 不继承导演对话（`brief` 必须自足）、进程重启后被打断的那一回合不自动续跑 | 全部采纳 |
+| 保留的优秀基因 | 结果自投递、只等第一个完成、worker 不继承导演对话（任务描述必须自足）、进程重启后被打断的那一回合不自动续跑 | 全部采纳；任务描述统一叫 `verboseIntent` |
 
 ### 7.5 跨宿主的绕行方案（一种可行解，未必最优）
 
-下面几条不是在某一家的版本上单独量出来的，而是三家一起量、一起守的做法（OpenCode 2.1.4+、Cline Desktop 0.0.49 / `@cline/core` 0.2.0、omp 18.14.2）：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
+下面几条是三家一起守的做法（OpenCode 2.1.4+、Cline Desktop 0.0.49 / `@cline/core` 0.2.0、omp 18.14.2）；其中标为「契约」的两条是当前契约依赖的宿主行为：OMP 部分已在 §7.3 离线复测，OpenCode/Cline 部分尚待逐项复测；smoke 通过但没有覆盖每条新路径；其余是实测做法。它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；实测做法的测量数据、宿主源码行号与复检步骤见 `HACK.md`，契约条目则在 §7.1-§7.3 各自标注了依赖点。
 
 - 工具文本一律是 CUE，而 CUE 的字面量规则是承重的。根 §6.3 与 §8.2 第 7 条禁止模型读到裸 JSON，各适配器都用 `src/core/cue.mjs` 的 `toCue` 渲染模型可见的结构化数据：OpenCode 只把 `content` 转 CUE（`output` 仍是普通值，宿主按声明 schema 编码它，从不给模型看），Cline 把每份结构化 `appendContext` 载荷转 CUE，而 `scope: CODE: message` 这类拒绝串是散文、不是结构化数据，保持原样。七条容易写错的文法（围栏内唯一的转义是「反斜杠 + 同长 `#` 串」、围栏本身要压过正文里的 `\#` 串、`\r` 永不字面输出、块正文按结束符缩进且空行保持裸行、以 `"` 开头的串必须走块且块不能带尾随换行、列表元素分行要逗号、字段标签走不围栏的字符串文法）都是对 `cue` v0.11.0 实测出来的。何时不再需要：渲染器是我们自己的，这套规则不会随宿主消失；只有宿主开始把 `content` 当 JSON 预解析时，OpenCode 这一侧才需要改，而 schema 检查一直在 `output` 上，不受影响。
 - `this.ask` 就是 `this.park({ question })` 加一次中断，没有任何宿主缺这个能力。`HOST_HAS_NO_OPERATOR_CHANNEL` 已从所有路径删除：真正该问的不是「插件能否证明人读过问题」，而是「程序挂起了吗、回合结束了吗、答复恢复它了吗」，三家都能做到。回执形状统一为 `{ ok: true, asked: true, question, program, interrupt: true }`，只有中断按宿主各走各的（OpenCode 调 `Session.interrupt`，OMP 调本事件自己的 `ctx.abort()`，Cline 的回合随工具结果收尾，不需要额外的 abort 调用）；恢复则统一是一次普通的 `unpark`，core 的 `resumeValue` 把注入值交给 `ask` 站点，与显式 `park` 和 `where` 歧义完全一样。宿主程序还必须带着角色的能力集注册（`[role]`），否则同会话的两个程序不共享能力集，Plan 就无法恢复自己做的 `ask` 挂起。何时不再需要：宿主若能一次调用里既挂起又交还控制权，这套按宿主分工的中断表就塌缩成那一次调用。
-- 插件重载不是进程重启，worker 名册必须落盘。三家都会在不重启进程的情况下重载插件（OpenCode 监视文件变化、OMP 每次 emit 重建上下文并重新绑定工厂、Cline 在宿主与已启动的委派 runtime 都还跑着时重载会话插件），而谁都不会提前通知插件「你的内存表马上要作废」。实测过的失败是：四名 worker 已 fork、两名已 join，插件重载后每次 `join` 都在一毫秒内答 `{ ok: false, record: null }`，而 worker 还在同一个服务里跑。适配器因此把名册当耐久事实写在 `.Herdchestra/` 下并在建表时回放：OpenCode 读会话日志里 `worker` 类型的记录，Cline 读 `<session>.workers.jsonl` 追加日志加 `<session>.workers.restored.json` 快照（释放记录说不清「下一次运行从零开始」，快照才是那条边界），OMP 把 lane 事实放在会话状态里、与台账和屏障并列。不变量是 `join` 绝不能在有名 worker 还在跑或还握着未领取结果时答「没东西可收」。何时不再需要：宿主跨重载保留插件的模块实例时，回放变成多余但无害；真正不能发生的是「只凭内存答话的表」。
+- 插件重载不是进程重启，worker 名册必须落盘。三家都会在不重启进程的情况下重载插件（OpenCode 监视文件变化、OMP 每次 emit 重建上下文并重新绑定工厂、Cline 在宿主与已启动的委派 runtime 都还跑着时重载会话插件），而谁都不会提前通知插件「你的内存表马上要作废」。实测过的失败是：四名 worker 已 fork、两名已 join，插件重载后每次 `join` 都在一毫秒内答 `{ ok: false, record: null }`，而 worker 还在同一个服务里跑。适配器因此把名册当耐久事实写在 `.Herdchestra/` 下并在建表时回放：OpenCode 读会话日志里 `worker` 类型的记录，Cline 读 `<session>.workers.jsonl` 这一份追加日志（不再有第二份快照可与它冲突），OMP 把 lane 事实放在会话状态里、与台账和屏障并列。不变量是 `join` 绝不能在有名 worker 还在跑或还握着未领取结果时答「没东西可收」。何时不再需要：宿主跨重载保留插件的模块实例时，回放变成多余但无害；真正不能发生的是「只凭内存答话的表」。
+- （契约）取消不是宿主的统一能力，三家各认各的操作员中断，再各自走一遍后代。OpenCode 在 `session.execution.interrupted` 上收到通知后按 `activation.workers` 与 `activation.lanes` 广度优先 `sessions.interrupt`；Cline 用 `operatorInterruptOf` 从 run status 或 `stopReason: "aborted"` 的 assistant 消息识别，再经 worker table 的 `cancelAll` 逐个 `abort`；OMP 从终态回合消息的 `stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"` 识别，由 `cancelSubtree` 沿 `LaneTable`、`AgentSession` 与适配器递归调 `AgentSession.abort`。三家都只中断/abort、不 dispose；程序化的 `this.ask` 挂起、fission 的 present 替换与接力退休不传播。何时不再需要：宿主统一提供会话树级取消时，这三圈遍历一起删掉。
+- （契约）task 模型也不是宿主的统一概念。OMP 用宿主的角色别名 `modelPattern: "@task"`（解析 `modelRoles.task`）；OpenCode 与 Cline 都用 `HERDCHESTRA_TASK_PROVIDER_ID` / `HERDCHESTRA_TASK_MODEL_ID` 这一对变量，但缺半的处理不同：OpenCode 把半配置当作拒收（`TASK_MODEL_INCOMPLETE`），只有两半都未设置才退回父模型并标 `modelSource: "parent"`；Cline 在两半齐全时走 task 阶梯，否则（含半配置）退回主阶梯并标 `source: "main"`。三家都只让 fork worker、fission lane 与 `plan-devops` 走这条阶梯；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。何时不再需要：三家都公开 task 角色时，环境变量阶梯与 OMP 的三处显式声明一起删掉。
 - 从自己的回合内部替换现任（裂变）只能推迟中断。§4.2 第 6 步要求旧物理现任在组建成后沉默，而正常情形就是 worker 在自己的工具调用里调 `this.fission(prompts)`：这一回合正等着这次调用，调用不能等它结束。宿主没有「打断正在执行本次调用的那一轮」的办法——`AgentSession.abort` 会 `waitForIdle()` 等回自己，`ExtensionContext.abort` 只停事件所属的那一回合，在 lane 上还是同一个等待。适配器的做法分三步：把「已替换」的标记写在 SESSION 对象上（`Symbol.for("herdchestra.presentReplaced")`，因为每次 `bind`/`refreshContext` 都会重建控制包装），`stop()` 只做回合内安全的部分（丢队列、回读 `isStreaming`），`atTurnEnd(fn)` 把宿主的 abort 挂到回合边界、由 `agent_end` 排空。回执如实区分 `settled`、`deferredAbort`、`stoppedNow`，两样都做不到时答 `PRESENT_NOT_REPLACED`（Cline 侧为 `ABORT_NOT_ARMED` / `NO_ABORT_SURFACE`），让组回滚而不是谎称替换成功。何时不再需要：宿主提供真正的中断而不等待空闲，那就把第三步换成它，删掉推迟。
 
 ---
@@ -859,6 +934,8 @@ Run independent workstreams concurrently. For substantial decomposable work, nor
 5. 组合优于继承，Mise en place 布局：遵循 Gall 定律与备料（Mise en place）原则，先准备好职责完整、彼此独立的最小部件，再显式把它们组合起来；用可拆卸的装饰器增强功能。
 6. 结构化程序设计：遵循 Dijkstra 结构化程序设计原则，用清晰的自然控制流表达生命周期，严禁在程序中显式存储程序计数器（Program Counter）或其变种。
 7. 面向 LLM 的 CUE 格式化呈现：任何面向 LLM 的结构化数据（含 prompt 与工具返回值等）严禁输出 raw JSON，必须转为 CUE Pretty Print 格式（单行优先行内字符串，多行用 CUE 变长多行字符串 `"""` / `#"""..."""#` 并按结束符缩进对齐，彻底杜绝 escape 污染；详见 §6.3）。
+8. 最小持久化与线性恢复：`.Herdchestra/` 只存恢复工作所需的最小状态——与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量；不存完整请求或完整聊天副本。所有持久化、回放与扫描路径必须是 $O(n)$（必要时 $O(n\log n)$），严禁 $O(n^2)$ 算法。
+9. 模型归属：子代理（`fork` worker、fission lane、Plan 的 `plan-devops`）以用户指定的 task 模型启动；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。OMP 端用 `@task` / `modelRoles.task`，不得退回主模型冒充 task 模型。
 
 ### 8.3 共享路径的删除纪律
 

@@ -18,6 +18,7 @@ import {
   RELAY_GATE,
   RELAY_PHASES,
   applyBarrier,
+  handoffFile,
   readRelay,
   relayFile,
   relayRecord,
@@ -799,6 +800,13 @@ test("only the same call id is deduplicated: a new empty review starts its own M
   assert.equal(first.ok, true, JSON.stringify(first));
   const createsAfterFirst = sessions.calls.filter((call) => call.method === "create").length;
   const promptsAfterFirst = sessions.calls.filter((call) => call.method === "prompt").length;
+  // The dedup fact is ONE deterministic path derived from the call id, not a
+  // directory scan (root §1.1 item 1).
+  const dedup = readRelay(handoffFile(root, "call_1"));
+  assert.equal(dedup?.kind, "plan-handoff");
+  assert.equal(dedup?.handoffId, "call_1");
+  assert.equal(dedup?.successor, first.session);
+  assert.equal(dedup?.phase, RELAY_PHASES.SENT);
 
   // The same call id again: the Manager it already started, no second session,
   // no second prompt.
@@ -830,6 +838,83 @@ test("only the same call id is deduplicated: a new empty review starts its own M
   assert.equal(anonymous.ok, true, JSON.stringify(anonymous));
   assert.notEqual(anonymous.session, first.session);
   assert.notEqual(anonymous.session, next.session);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("a crash between the dedup copy and the Manager copy is repaired, not duplicated", async () => {
+  // The dedup copy is written first so a replay can always find the Manager.
+  // A crash before the Manager's own copy lands leaves that copy missing; the
+  // replay must restore it (its RelayFacts reads it for the barrier) and must
+  // not create a second Manager or send a second prompt.
+  const root = tempRoot();
+  const sessions = fakeSessions();
+  const host = makeRelayHost({
+    sessions,
+    root,
+    stateOf: (sessionID) => new SessionState({ sessionID, root }),
+  });
+  const first = await host.startManager("# draft", {
+    operatorInput: "words",
+    planSession: "ses_plan",
+    handoffId: "call_partial",
+  });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  const managerFile = relayFile(root, first.session);
+  fs.rmSync(managerFile, { force: true });
+  const creates = sessions.calls.filter((call) => call.method === "create").length;
+  const prompts = sessions.calls.filter((call) => call.method === "prompt").length;
+
+  const repaired = await host.startManager("# draft", {
+    operatorInput: "words",
+    planSession: "ses_plan",
+    handoffId: "call_partial",
+  });
+  assert.equal(repaired.ok, true, JSON.stringify(repaired));
+  assert.equal(repaired.recovered, true);
+  assert.equal(repaired.session, first.session);
+  assert.equal(sessions.calls.filter((call) => call.method === "create").length, creates);
+  assert.equal(sessions.calls.filter((call) => call.method === "prompt").length, prompts);
+  assert.equal(readRelay(managerFile)?.successor, first.session, "the Manager's own copy is restored");
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("a hand-off record at another path does not deduplicate: the lookup is one path", async () => {
+  // The removed scan used to find any record naming the call id. The fact is now
+  // the deterministic path; a record elsewhere is not authority. This is the
+  // migration boundary: an old-format record is not read as this call's.
+  const root = tempRoot();
+  const sessions = fakeSessions();
+  const host = makeRelayHost({
+    sessions,
+    root,
+    stateOf: (sessionID) => new SessionState({ sessionID, root }),
+  });
+  const record = {
+    v: 1,
+    kind: "plan-handoff",
+    successor: "ses_old",
+    incumbent: "",
+    sessionID: "ses_old",
+    milestone: "execute",
+    tenure: 0,
+    phase: RELAY_PHASES.SENT,
+    briefId: "msg_old",
+    notice: "",
+    operatorInput: "words",
+    draft: "# draft",
+    handoffId: "call_old",
+    at: Date.now(),
+  };
+  fs.mkdirSync(path.join(root, ".Herdchestra"), { recursive: true });
+  assert.equal(writeRelay(relayFile(root, "ses_old"), record).ok, true);
+  const started = await host.startManager("# draft", {
+    operatorInput: "words",
+    planSession: "ses_plan",
+    handoffId: "call_old",
+  });
+  assert.equal(started.ok, true, JSON.stringify(started));
+  assert.notEqual(started.session, "ses_old", "the record elsewhere is not this call's fact");
+  assert.equal(sessions.calls.filter((call) => call.method === "create").length, 1);
   fs.rmSync(root, { recursive: true, force: true });
 });
 

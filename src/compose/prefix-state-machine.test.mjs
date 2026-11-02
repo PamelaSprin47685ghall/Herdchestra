@@ -163,6 +163,7 @@ class Session {
   #anchors;
   #store;
   #sent;
+  #lastSent = null;
   #issued = new Set();
   #answered = new Set();
   #multi = 0;
@@ -195,6 +196,12 @@ class Session {
 
   get hint() {
     return this.#hint;
+  }
+
+  // The copy the provider last received on a MAIN request. The hint itself no
+  // longer keeps one; a host/test that needs the bytes keeps its own view.
+  get lastSent() {
+    return this.#lastSent;
   }
 
   // What each request needs to be comparable: the copy the provider receives,
@@ -278,7 +285,7 @@ class Session {
     // a new summary text, so it is new; a request built from the same compacted
     // history is not.
     const ephemeral = kind === REQUEST_KINDS.EPHEMERAL;
-    const freshlyCompacted = host.compacted(copy) && summaryOf(copy) !== summaryOf(this.#hint.presented ?? []);
+    const freshlyCompacted = host.compacted(copy) && summaryOf(copy) !== summaryOf(this.#lastSent ?? []);
     const durableRewrite = ephemeral
       ? null
       : freshlyCompacted
@@ -286,7 +293,7 @@ class Session {
         : null;
     const boundary = ephemeral ? null : projectionBoundary({
       durableRewrite,
-      presented: this.#hint.presented,
+      presented: this.#hint.chain,
       projected: chain,
       incoming: copy,
       // The projection's INPUT is the item list it was handed for THIS copy.
@@ -306,6 +313,7 @@ class Session {
     // 3. The Pair Hint places or replays its pair. An ephemeral request gets the
     // pair at the chain's own placement and records nothing.
     const sent = await this.#hint.project({ messages: chain, kind });
+    if (kind !== REQUEST_KINDS.EPHEMERAL) this.#lastSent = sent.messages;
     this.#sent = projected.messages ?? [];
     return { copy, chain, sent: sent.messages, anchored: shouldAnchor(boundary), reason: boundary?.reason ?? null };
   }
@@ -329,7 +337,7 @@ class Session {
   // rewrote — a shape no host produces, because the host is the one that sent
   // the projected copy.
   sideTurnCopy({ prompt = "<title-request>", streamedText = null } = {}) {
-    const sent = this.#hint.presented;
+    const sent = this.#lastSent;
     const base = sent === null ? this.#history : this.#hint.injector.withoutInjection(sent);
     const copy = base.map((message) => message);
     if (streamedText !== null) {
@@ -356,7 +364,8 @@ class Session {
   // the side request, and any movement is a failure of the run that produced it.
   async sideRequest(copy) {
     const before = {
-      presented: JSON.stringify(this.#hint.presented),
+      presented: JSON.stringify(this.#lastSent),
+      chain: JSON.stringify(this.#hint.chain?.digests ?? null),
       after: this.#hint.fact?.after ?? null,
       epoch: this.#hint.epoch,
       anchors: this.#anchors.length,
@@ -370,7 +379,8 @@ class Session {
       "the side turn was sent WITHOUT the pair; its call would miss the cache",
     );
     const after = {
-      presented: JSON.stringify(this.#hint.presented),
+      presented: JSON.stringify(this.#lastSent),
+      chain: JSON.stringify(this.#hint.chain?.digests ?? null),
       after: this.#hint.fact?.after ?? null,
       epoch: this.#hint.epoch,
       anchors: this.#anchors.length,
@@ -1370,7 +1380,7 @@ test("a restarted session continues the chain the projection decided", async () 
       async (hostName, turns) => {
         const { session, refusals } = await drive({ host: HOSTS[hostName], sessionId: `sm-restart-${hostName}`, turns });
         const epochBefore = session.hint.epoch;
-        const presentedBefore = session.hint.presented;
+        const chainBefore = session.hint.chain;
         // A restart is a new process over the same journal: the hint object is
         // replaced, the facts are not.
         const restored = new PairHint({ store: new MemoryJournal(session.journal.records) });
@@ -1385,24 +1395,64 @@ test("a restarted session continues the chain the projection decided", async () 
         // which a cold start correctly does not carry over (§6.1: a new epoch
         // starts a new chain). So the copy is compared only when the live hint's
         // own epoch has presented something.
-        if (presentedBefore === null || restored.presented === null || restored.presented === undefined) {
-          assert.equal(
-            restored.presented ?? null,
-            null,
-            `${hostName}: a restart invented a presented copy`,
-          );
+        if (chainBefore === null || restored.chain === null) {
+          assert.equal(restored.chain, null, `${hostName}: a restart invented a chain`);
         } else {
-          assert.equal(
-            JSON.stringify(restored.presented),
-            JSON.stringify(presentedBefore),
-            `${hostName}: a restart changed the presented copy`,
-          );
+          assert.ok(restored.chain.equals(chainBefore), `${hostName}: a restart changed the chain`);
         }
         assert.equal(refusals.filter((entry) => entry.refused).length, 0, `${hostName}: the sequence was refused`);
       },
     ),
     { ...fcRuns(60) },
   );
+});
+
+test("a cold start hands the boundary a Chain, never a presented copy", async () => {
+  // The smoke path: a new process folds the journal, then the first request
+  // runs the projection boundary. `hint.presented` no longer exists, and no
+  // full request copy survives the journal. The boundary must compare the
+  // chain's digests for both an extension and a host-reported compaction.
+  const journal = new MemoryJournal();
+  const live = new PairHint({ store: journal });
+  await live.bind({ sessionId: "cold-boundary", ladder: { explicit: "English" } });
+  const request = [
+    { role: "user", content: "a" },
+    { role: "assistant", content: "b" },
+  ];
+  await live.project({ messages: request });
+
+  const cold = new PairHint({ store: new MemoryJournal(journal.records) });
+  await cold.load();
+  assert.equal(cold.presented, undefined, "a cold start has no presented copy");
+  assert.equal(cold.chain.length, request.length + 2, "the chain carries the request plus the pair");
+
+  const extended = [...request, { role: "user", content: "c" }];
+  const extendedBoundary = projectionBoundary({
+    presented: cold.chain,
+    projected: extended,
+    incoming: extended,
+    pairFree: (copy) => cold.injector.withoutInjection(copy),
+  });
+  assert.equal(extendedBoundary.replaced, false, "an extension is not a replacement");
+  assert.equal(
+    cold.injector.extendsPrefix({ previous: cold.chain, next: extended }),
+    true,
+    "the chain answers the extension without a stored copy",
+  );
+
+  const compacted = [
+    { role: "user", content: "summary" },
+    extended[extended.length - 1],
+  ];
+  const compactedBoundary = projectionBoundary({
+    durableRewrite: REBASE_REASONS.HISTORY_COMPACTED,
+    presented: cold.chain,
+    projected: compacted,
+    incoming: compacted,
+    pairFree: (copy) => cold.injector.withoutInjection(copy),
+  });
+  assert.equal(compactedBoundary.replaced, true, "a compacted copy is a new chain");
+  assert.equal(compactedBoundary.reason, REBASE_REASONS.HISTORY_COMPACTED);
 });
 
 // ---------------------------------------------------------------------------
@@ -1424,13 +1474,13 @@ test("live 01a19547: an ephemeral title turn mid-stream never becomes the chain"
     session.grow({ role: "user", content: [{ type: "text", text: "请你报告本项目的完成度" }] });
     const first = await session.request();
     assert.equal(first.anchored, false);
-    const presentedBefore = session.hint.presented.length;
+    const presentedBefore = session.lastSent.length;
 
     // The ephemeral turn, with the in-flight assistant message truncated.
     const side = session.sideTurnCopy({ prompt: "<title-request>", streamedText: "我将先调派多路 worker 并行调查 " });
     const sideResult = await session.request({ kind: REQUEST_KINDS.EPHEMERAL, copy: side });
     assert.ok(Array.isArray(sideResult.sent), "the side turn still gets a copy");
-    assert.equal(session.hint.presented.length, presentedBefore, `${hostName}: the side turn did not become the chain`);
+    assert.equal(session.lastSent.length, presentedBefore, `${hostName}: the side turn did not become the chain`);
     assert.equal(session.anchors.length, 0, `${hostName}: the side turn did not anchor`);
 
     // The main turn finishes: one assistant message with four calls, then four
@@ -1466,7 +1516,7 @@ test("live 7d4063b0: a resetScope prune re-bases instead of refusing", async () 
       session.grow({ role: "tool", content: [{ type: "tool-result", toolName: "js-worker", toolCallId: `c${n}`, output: { type: "text", value: "ok" } }] });
       await session.request();
     }
-    const before = session.hint.presented.length;
+    const before = session.lastSent.length;
     // The 15th call opens a new Scope.
     session.grow({ role: "assistant", content: [{ type: "tool-call", toolName: "js-worker", toolCallId: "c15", input: {} }] });
     session.grow({ role: "tool", content: [{ type: "tool-result", toolName: "js-worker", toolCallId: "c15", output: { type: "text", value: "budget" } }] });
@@ -1475,7 +1525,7 @@ test("live 7d4063b0: a resetScope prune re-bases instead of refusing", async () 
     const after = await session.request();
     assert.equal(after.anchored, true, `${hostName}: the prune was not recognised as the spec's own`);
     assert.equal(after.reason, REBASE_REASONS.SCOPE_RESET);
-    assert.ok(session.hint.presented.length < before, `${hostName}: the copy was expected to shrink`);
+    assert.ok(session.lastSent.length < before, `${hostName}: the copy was expected to shrink`);
   }
 });
 
@@ -1788,17 +1838,17 @@ test("seed 1221354670: a compaction that leaves a result without its call is sti
     // The summary stands where the conversation began, and the tail is the
     // host's own copy. A chain that recorded the adapter's filtered copy would
     // be one message short of the history the next request is built from.
-    assert.equal(session.hint.presented[0]?.metadata?.kind, COMPACTED_MARK, `${hostName}: the summary is not at the head`);
+    assert.equal(session.lastSent[0]?.metadata?.kind, COMPACTED_MARK, `${hostName}: the summary is not at the head`);
     assert.equal(session.history.length, 3, `${hostName}: the tail is not the one the hosts cut`);
     // Compared by what the model reads, not by object identity: Cline's chain
     // copy is the CUE-rendered form (§6.3), so it is a different object carrying
     // the same message.
     assert.equal(
-      canonicalKey(session.hint.presented[1]),
+      canonicalKey(session.lastSent[1]),
       canonicalKey(session.history[1]),
       `${hostName}: the chain skipped the message the host's tail begins with`,
     );
-    assert.equal(session.hint.presented.length - 2, session.history.length, `${hostName}: the chain is not the host's history plus the pair`);
+    assert.equal(session.lastSent.length - 2, session.history.length, `${hostName}: the chain is not the host's history plus the pair`);
 
     // 3. The next requests extend it. `c6` is issued again and `c0` is answered
     //    — the sequence the generator shrank to, and the one that used to drift.
@@ -1875,7 +1925,7 @@ test("an interleaved turn compacted at its second assistant keeps the host's cop
     // host's history": it is "the chain equals the copy the provider receives",
     // which is what §6.1 protects. The failure this pins is a chain that records
     // the PREVIOUS conversation while the request carries a different one.
-    const pairFree = session.hint.injector.withoutInjection(session.hint.presented);
+    const pairFree = session.hint.injector.withoutInjection(session.lastSent);
     assert.deepEqual(
       pairFree.map((message) => canonicalKey(message)),
       afterCompaction.sent

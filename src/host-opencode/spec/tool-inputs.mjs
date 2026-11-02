@@ -32,12 +32,15 @@ const CODE = {
   additionalProperties: true,
 };
 
-// §4.1: `fork(name, brief)` — two arguments, and no third. The worker's identity
-// is not an argument: it is declared once inside the brief (`role: coder` or
-// `role: devops`), because a brief is the only thing a worker receives whole and
-// §2.1 requires every subagent to state its identity. A `role` property here
-// would offer the model a second, contradictory channel the adapter does not
-// read; the refusal for a brief that names none or both comes from the brief.
+// §4.1: `fork(name, verboseIntent)` — two arguments, and no third. The worker's
+// identity is not an argument: it is declared once inside the verboseIntent
+// (`role: coder` or `role: devops`), because a verboseIntent is the only thing a
+// worker receives whole and §2.1 requires every subagent to state its identity.
+// A `role` property here would offer the model a second, contradictory channel
+// the adapter does not read; the refusal for a verboseIntent that names none or
+// both comes from the verboseIntent. There is no `model` property either: the
+// task model (or the parent's) is chosen by the adapter, never by the model
+// (根 §1.1 item 6).
 const FORK = {
   type: "object",
   properties: {
@@ -46,14 +49,14 @@ const FORK = {
       description:
         "Worker name. Reusing a live name steers that worker; the receipt says which happened.",
     },
-    brief: {
+    verboseIntent: {
       type: "string",
       description:
-        "Self-contained brief: goal, constraints, interfaces, acceptance, what to report, and the worker's identity declared once as `role: coder` or `role: devops`. The worker never sees this conversation. A coder brief must forbid bash; exactly one devops may be in flight.",
+        "Self-contained task description: goal, constraints, interfaces, acceptance, what to report, and the worker's identity declared once as `role: coder` or `role: devops`. The worker never sees this conversation. A coder task must forbid bash; exactly one devops may be in flight.",
     },
     scope: SCOPE_SCHEMA,
   },
-  required: ["name", "brief"],
+  required: ["name", "verboseIntent"],
   additionalProperties: true,
 };
 
@@ -71,7 +74,7 @@ const PLAN = {
     code: {
       type: "string",
       description:
-        "The program. Use `return` for the value you want back. Members: this.cat, this.write, this.ask, this.devops; primitive: review.",
+        "The program. Use `return` for the value you want back. Members: this.cat, this.write, this.ask; primitives: devops, review. Write only `plans/<name>.md`.",
     },
     scope: SCOPE_SCHEMA,
   },

@@ -15,6 +15,7 @@ import { CoreError, CODES } from "../../core/errors.mjs";
 import { ProgramState, STATES } from "../../core/program.mjs";
 import { programView } from "../../core/receipt.mjs";
 import { stableJson } from "../../core/util.mjs";
+import { payloadDigest } from "./call-record.mjs";
 import { ParkTable } from "./park-table.mjs";
 
 export class ProgramCalls {
@@ -23,6 +24,7 @@ export class ProgramCalls {
   #sources;
   #stops;
   #calls;
+  #digests;
   #receipts;
 
   // `calls` is this session's durable record of used call ids (`call-record.mjs`):
@@ -36,7 +38,11 @@ export class ProgramCalls {
     this.#sources = new Map();
     // Park stops of suspended programs: what the resumer waits on.
     this.#stops = new Map();
-    this.#calls = calls ?? { ok: true, ids: new Set() };
+    this.#calls = calls ?? { ok: true, ids: new Set(), digests: new Map() };
+    // The payload digest of a call restored from the durable record. The program
+    // itself has no payload to compare (the record keeps only the digest), so
+    // the mismatch check reads it here.
+    this.#digests = new Map();
     // Receipts restored from the durable record, by call id. They are kept
     // whole: a replay after a restart must answer the ORIGINAL receipt, and the
     // record holds more than the state and the value (`reason`, `payload`,
@@ -89,8 +95,12 @@ export class ProgramCalls {
       name: id,
       state: stored.state,
       result: { value: restoredValue, error: stored.error ?? null },
-      payload: this.#calls.payloads.get(id) ?? null,
+      // No payload: the record keeps a digest, not the bytes. `matchesPayload`
+      // compares against `#digests` for a restored call.
+      payload: null,
     });
+    const digest = this.#calls.digests?.get(id) ?? null;
+    if (typeof digest === "string" && digest.length > 0) this.#digests.set(id, digest);
     this.#registry.restore(program);
     // The source is part of the receipt a replay answers with, so it is kept
     // beside the program: a restored call that reported a different source
@@ -290,8 +300,15 @@ export class ProgramCalls {
     const program = this.#registry.get(name);
     if (program === null) return false;
     const recorded = program.payload;
-    if (typeof recorded !== "string") return false;
-    return recorded === stableJson(payload);
+    if (typeof recorded === "string") return recorded === stableJson(payload);
+    const digest = this.#digests.get(name);
+    if (typeof digest !== "string" || digest.length === 0) return false;
+    try {
+      return digest === payloadDigest(payload);
+    } catch {
+      // A payload that cannot be encoded cannot be shown equal.
+      return false;
+    }
   }
 
 }

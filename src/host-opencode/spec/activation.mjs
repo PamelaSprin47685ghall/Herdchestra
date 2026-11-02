@@ -165,6 +165,14 @@ export const makeActivation = ({ commandPort, sessions = null, root = null, hook
   // `devops`, and one Manager's fork must never release the other's.
   activation.devopsInFlight = new Map();
   activation.devopsRuns = new Map();
+  // Sessions the operator stopped (root §1.1 item 2): the top-level Plan or
+  // Manager and every descendant reached through workers, relay rosters and
+  // fission lanes. A cancelled session may not fork or steer again.
+  activation.cancelled = new Set();
+  // Sessions interrupted because a fission group replaced their present. That
+  // interrupt is deliberate and must not be read as the operator stopping the
+  // work (`cancel.mjs`).
+  activation.presentReplacements = new Set();
   // The parent of each session, as `session.created` reported it: `null` for a
   // top-level session, a session id for a child. The operator's original input
   // is captured only for a session this table proves is top-level
@@ -376,6 +384,8 @@ export const disposeActivation = (activation) => {
   activation.lanes.clear();
   activation.devopsInFlight.clear();
   activation.devopsRuns.clear();
+  activation.cancelled.clear();
+  activation.presentReplacements.clear();
   activation.fissionOrigins.clear();
   activation.identities.clear();
   activation.laneRoles.clear();

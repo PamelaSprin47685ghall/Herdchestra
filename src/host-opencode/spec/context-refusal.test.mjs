@@ -146,13 +146,16 @@ test("a drift refusal tells the host log where it drifted, and no message text",
   assert.ok(Number.isInteger(error.details.index), "the first differing index");
   const { previous, next } = error.details.compared;
   assert.ok(previous && next, "both compared sides are reported");
-  // The span is the common prefix: the first request presented one message, so
-  // the comparison stopped there and the drift is at index 0.
-  assert.equal(next.count, 1);
+  // The chain side carries only digests (root §1.1 item 1: the full copy is not
+  // persisted), while the request side still carries its shapes. Both name the
+  // same first difference.
+  assert.equal(previous.count, 1);
+  assert.equal(next.count, 2);
   assert.equal(error.details.index, 0);
   assert.notEqual(previous.shapes[0].digest, next.shapes[0].digest, "the two sides differ at the reported index");
   assert.match(next.shapes[0].digest, /^[0-9a-f]{64}$/);
   assert.deepEqual(next.shapes[0].parts, ["text"]);
+  assert.deepEqual(Object.keys(previous.shapes[0]), ["digest"], "the chain side keeps no text");
   // What the host logs must not be the conversation: shapes, lengths, digests.
   const logged = JSON.stringify(error.details);
   assert.equal(logged.includes(secret), false, "no message text reaches the host log");

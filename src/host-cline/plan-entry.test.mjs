@@ -124,7 +124,7 @@ test("startPlan opens a Plan session whose first prompt is the operator's text",
   // file atomically through a temp file in that directory and cannot create it,
   // so a fresh workspace would fail every write with ENOENT — and the hand-off,
   // which reads the saved draft, would then never start a Manager.
-  assert.equal(statSync(join(root, ".Herdchestra", "drafts")).isDirectory(), true);
+  assert.equal(statSync(join(root, "plans")).isDirectory(), true);
 });
 
 test("startPlan prepares the canonical draft directory before the session exists", async (t) => {
@@ -138,19 +138,18 @@ test("startPlan prepares the canonical draft directory before the session exists
   // The host was asked to start AFTER the directory existed, so the session's
   // first `write` has a parent to replace the file in.
   assert.equal(host.starts.length, 1);
-  assert.equal(existsSync(join(root, ".Herdchestra", "drafts")), true);
+  assert.equal(existsSync(join(root, "plans")), true);
 
   // A path where the directory must be is a refusal, not a start whose every
   // write would fail: the Plan exists to produce that one file.
   const blocked = tempRoot();
   t.after(() => rmSync(blocked, { recursive: true, force: true }));
-  mkdirSync(join(blocked, ".Herdchestra"), { recursive: true });
-  writeFileSync(join(blocked, ".Herdchestra", "drafts"), "not a directory");
+  writeFileSync(join(blocked, "plans"), "not a directory");
   const idle = fakeHost();
   const refused = await startPlan({ host: idle, text: "plan it", root: blocked, name: "n", modelId: "m" });
   assert.equal(refused.ok, false);
   assert.equal(refused.reason, "DRAFT_DIR_UNWRITABLE");
-  assert.equal(refused.message.includes("drafts"), true);
+  assert.equal(refused.message.includes("plans"), true);
   assert.equal(idle.starts.length, 0, "a session that could never save its draft is not started");
 });
 

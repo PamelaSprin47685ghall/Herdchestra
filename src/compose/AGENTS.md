@@ -26,28 +26,30 @@
 
 ## 2 提示词投影（根 §5）
 
-1. 根 §5 直接给出四份全文：§5.1 `common`、§5.2 `manager`、§5.3 `worker`、§5.4 导演消息。`prompt/files.mjs` 的 `COMMON`、`MANAGER`、`WORKER` 就是前三份全文，**逐字节相同**，不做句子取舍、不含标记、过滤或分支。
-2. 拼接只有两种：`COMMON + MANAGER`（Manager），`COMMON + WORKER`（coder 与 devops）。coder 与 devops 拿到逐字相同的一串；身份差别只由 `<vibe-mode>` 与 `fork` 的任务描述承担。
+1. 根 §5 直接给出四份全文：§5.1 `common`、§5.2 `manager`、§5.3 `worker`、§5.4 导演消息。`prompt/files.mjs` 的 `COMMON`、`MANAGER`、`WORKER` 就是前三份全文，**逐字节相同**，不做句子取舍、不含标记、过滤或分支。`COMMON` 现在有六段：第 6 段是完整的 Scope 机制（为什么 `resetScope` 存在、四种 kind 与字段、一回合一条真注解、`retention`、豁免查询、投影裁剪、冷启、准入与结算拒收码），只写这一次，各工具的参数描述只留简短指针。
+2. 拼接只有两种：`COMMON + MANAGER`（Manager），`COMMON + WORKER`（coder 与 devops）。coder 与 devops 拿到逐字相同的一串；身份差别只由 `<vibe-mode>` 与 `fork` 的 `verboseIntent` 承担。
 3. 导演消息 `<vibe-mode>…</vibe-mode>` 是独立的角色段，不进这两个文件，也不由它们拼出。根 §5.4 给出它的全文；`prompt/director.mjs` 的 `DIRECTOR_MESSAGE` 就是这份全文，**逐字节相同**，抄录方式与 `files.mjs` 抄录 §5.1–§5.3 一致。§5.4 是根里唯一属于导演消息的编号：**不要用 §5.4 指别的段落**，也不要再声称根里没有这份正文。
 4. 测试 `prompt/projection.test.mjs` **直接读根 `AGENTS.md`**，取出 §5.1–§5.3 的三个 ```text 块（扫描在 `### 5.4` 处停下），要求 `COMMON`/`MANAGER`/`WORKER` 与之一字不差。`prompt/dispatch.test.mjs` 同样直接读根 §5.4 的那个 ```text 块，要求 `DIRECTOR_MESSAGE` 与之一字不差。根改了而代码没跟，测试失败；不在测试里另抄一份句子清单，因为第二份抄本只会与代码一起漂移。
 5. **§5 的四份全部逐字节核对，分居两个测试。** §5.1–§5.3 由 `projection.test.mjs` 核对；§5.4 由 `dispatch.test.mjs` 核对，方式相同。`projection.test.mjs` 的扫描止于 `### 5.4`，因为导演消息不是第四份文件、不参与两种拼接；把它计进「三个文件」会让计数与代码不符。
 6. **审计者是测试，不是读者。** `files.mjs` 与根 §5 都只能经工具渲染来读，而渲染既截断、又会插入省略号，肉眼比对两边都不可靠。任何关于根 `AGENTS.md` 的字符级断言（逐字节、前缀稳定、行尾）一律由解析文件得出，绝不从渲染结果转写。同理，`prompt/dispatch.test.mjs` 经真实的 `SessionState.systemPrompt` 核对每个角色拿到的组合：角色决定提示词，不是「是否顶层」决定——顶层却被标成 `coder`/`devops` 的会话必须拿 `COMMON + WORKER`，只有 Manager 带导演消息。
 7. **分派只认角色。** 宿主侧唯一的角色→组合映射点是 `SessionState.systemPrompt(role)`：`plan` 给 `PLAN_PROMPT`，`manager` 给 `COMMON + MANAGER` 加导演消息，其余交给 `systemPromptFor(role)`。`systemPromptFor` 只接受 coder 与 devops，别的一律拒绝（`UNKNOWN_ROLE`；`plan` 报 `PLAN_OUTSIDE_PROJECTION`）。**绝不把未知角色默认成 `coder`**：默认会让写错的角色串看起来像一个健康的 worker 会话。组合层不提供「按顶层与否挑提示词」的开关，宿主要这个语义就自己按角色分派，组合层只回答角色对应哪份文本。
 8. **性质测试守住这几条不变量**（`prompt/dispatch.test.mjs`，用 fast-check）：角色唯一决定组合，与会话 id 无关；导演消息当且仅当角色是 Manager 时出现，且只出现一次；coder 与 devops 逐字节相同；未知角色被拒而不是降级成 worker。
+9. **Plan 的 `PLAN_PROMPT` 有自己的 `# Scope` 段**，位置在 `# 工具面` 与 `# 无人值守` 之间。Plan 不在 COMMON 投影内，但它的非豁免工具调用同样携带打平的 `scope` 注解；它的面上没有 `negotiate` 与 `askPreviousScope`，所以没有可豁免的查询通道。这一段只写 Plan 需要的差异（无查询通道、冷启、拒收码），不复制 COMMON 第 6 段的全文。
 
 ## 3 程序面（根 §3、§4、§5、§8）
 
-`program/surface.mjs` 的 `SURFACE_MEMBERS` 是唯一成员表：
+`program/surface.mjs` 的 `SURFACE_MEMBERS` 与 `SURFACE_PRIMITIVES` 一起是唯一成员表：
 
 - `js-manager`：`park`、`unpark`、`fork`、`join`、`review`、`ask`、`negotiate`、`askPreviousScope`。没有 `cat`/`stat`/`ls`/`write`/`mkdir`/`rm`/`mv`——Manager 连读都没有；读的唯一例外是独立的 `js-review`。也没有 `call`：Manager NEVER run（§2.1）。也没有 `fission`：裂变只属于 `fork` 启动的 worker（§4.2）。
-- `js-worker`：`cat`、`stat`、`ls`、`write`、`mkdir`、`rm`、`mv`、`where`、`whereAll`、`park`、`unpark`、`call`、`fission`、`fork`、`join`、`negotiate`、`askPreviousScope`。coder 的 bash 禁令只在提示词里，`call` 照样在面里。没有 `ask`：根 §3.1 在 `js-worker` 一列明写「子代理无此通道」，提问只属于顶层程序（§3.3 例 7）；也没有 `review`。根 §3.1 把 `fork`/`join` 同时给了 `js-worker` 与 `js-manager`：worker 的 `fork` 落在**它自己的 roster**（§4.1），与 `fission` 是两件事，能否派工由 brief 说明。
-- `negotiate`、`askPreviousScope`：§6.2 的两个豁免成员，放在**所有记账的面上**（`js-manager` 与 `js-worker`），因为报的就是这些面要花的额度。它们不进 `js-review`（只读评估不是任何 Scope 的一拍），也不进 `plan`（Plan 没有 Scope）。见 §3 的「同步快照查询」。
+- `js-worker`：`cat`、`stat`、`ls`、`write`、`mkdir`、`rm`、`mv`、`where`、`whereAll`、`park`、`unpark`、`call`、`fission`、`fork`、`join`、`negotiate`、`askPreviousScope`。coder 的 bash 禁令只在提示词里，`call` 照样在面里。没有 `ask`：根 §3.1 在 `js-worker` 一列明写「子代理无此通道」，提问只属于顶层程序（§3.3 例 7）；也没有 `review`。根 §3.1 把 `fork`/`join` 同时给了 `js-worker` 与 `js-manager`：worker 的 `fork` 落在**它自己的 roster**（§4.1），与 `fission` 是两件事，能否派工由 `verboseIntent` 说明。
+- `negotiate`、`askPreviousScope`：§6.2 的两个豁免成员，放在**所有记账的面上**（`js-manager` 与 `js-worker`），因为报的就是这些面要花的额度。它们不进 `js-review`（只读评估不是任何 Scope 的一拍），也不进 `plan`：Plan 的非豁免调用同样携带 `scope` 注解，但它的面上没有这两个豁免查询通道。见 §3 的「同步快照查询」。
 - `js-review`：`cat`、`stat`、`ls`、`where`、`whereAll`，只读；由 `ProgramSurface.reviewSurface()` 单独给出，不混进 `js-manager`。
   它只在评估窗口开着时存在（根 §2.3）：`reviewSurface()` 对关闭的窗口抛 `REVIEW_WINDOW_CLOSED`，对非 Manager 角色同样抛。
   窗口是会话的 `ReviewWindow`（core），经构造参数 `window` 传入；surface 只在**没有会话窗口**（自带窗口即本次程序自己的请求）或窗口的 `round === 0`（从未开过）时调 `beginRound()`。会话窗口的开轮属于宿主的请求边界：同一回合里受理过一次 review 之后，第二个 `js-manager` 程序不得把刚关上的评估窗口重新打开（§2.3）。
   受理一次 review 后 `noteReview(receipt)` 关闭窗口——被拒的 review 不关。适配器另有自己的闸门，但这一层独立成立：
   宿主漏掉闸门也读不到关着的窗口。
-- `plan`：`cat`、`write`、`unpark`、`ask`、`devops`、`review`。没有单独的 `park`（根 §3.1 在 Plan 一列标 `-`）：`ask` 自己经 `parkChannel` 挂起程序并加上 `interrupt`（根 §2.2、§3.3 例 7），所以 `plan` 必须同时拥有 `unpark`：用户答复后由 AI 在新程序里 `this.unpark(name, answer)` 恢复原挂起点。`ask` 只在 `S1` 阶段可用，其余阶段调用抛 `ASK_FORBIDDEN_OUTSIDE_S1`。
+- `plan`：`SURFACE_MEMBERS.plan` 是 `cat`、`write`、`unpark`、`ask`、`review`；`SURFACE_PRIMITIVES.plan` 是 `devops`。没有单独的 `park`（根 §3.1 在 Plan 一列标 `-`）：`ask` 自己经 `parkChannel` 挂起程序并加上 `interrupt`（根 §2.2、§3.3 例 7），所以 `plan` 必须同时拥有 `unpark`：用户答复后由 AI 在新程序里 `this.unpark(name, answer)` 恢复原挂起点。`ask` 只在 `S1` 阶段可用，其余阶段调用抛 `ASK_FORBIDDEN_OUTSIDE_S1`。
+- **顶层原语（`SURFACE_PRIMITIVES`）。** Plan 的 `devops(verboseIntent)` 是同步 join 语义的顶层原语，不是 `this.devops`：程序 `await` 那唯一一份专用 DevOps 报告，宿主把它绑成裸函数（与 `review` 并列）。`ProgramSurface.surface()` 返回 `SURFACE_MEMBERS[role]` 与 `SURFACE_PRIMITIVES[role]` 的并集，所以一个 surface 对象同时给出两种写法；成员表里没有 `devops`，程序实例上也没有 `this.devops`。
 - Plan 的 `write` 在本任第一次 review 之前被拒（`DRAFT_READ_ONLY`，根 §2.2）；判据是 core 的 `draftWritable(ledger)`，读的就是这个 surface 自己的台账。继任由 `openSuccessor()` 把 `reviewCount` 归零，于是新任期重新只读。`review` 必须先在本地台账记账再交端口执行副作用，否则 `write` 查的是另一份台账，解锁永远不会发生。
 
 成员实现：
@@ -61,7 +63,7 @@
 - `write` 只保证单次调用的原子替换；多次 `write` 之间没有事务、没有锁、没有校验，同一路径写两次就是后一次获胜（§3.2）。「每路径只写一次」是程序自己的纪律（§3.4 的例子），组合层不拦。
 - `park` 返回九字段回执；同一程序第二次 park 被拒。`ask` 用同一个通道 park，`reason` 为 `ask`、`payload` 为 `{ question }`，回执另带不可枚举的 `interrupt: true`：宿主必须结束本轮回合，把控制权交还用户。
 - **`ask` 的阶段门禁。** 成员只在 `js-manager` 与 `plan` 两面上存在（`js-worker` 没有此通道，根 §3.1）；且只有角色是 Plan 且 `this.ledger` 的里程碑为 `S1` 时才允许（core `askAllowed(ledger)`）。门禁先于参数校验：`this.ask("")` 在越界角色或阶段也一律抛 `ComposeError("ASK_FORBIDDEN_OUTSIDE_S1", ...)`，程序**不挂起**。万象术无人值守，只有 Plan 的第一阶段可以向人提问。成员保留而不删，是为了让越界调用读到具名拒绝，而不是一个 `TypeError`。
-- **`devops` 单飞。** 同一任务同时至多一个未决 DevOps（根 §2.2）。surface 自己持一个在途标记：第一个 `this.devops(intent)` 未结清时，第二个调用抛 `ComposeError("DEVOPS_IN_FLIGHT", ...)`；第一个调查记录原样返回，组合层不做二次摘要。
+- **`devops` 单飞。** 同一任务同时至多一个未决 DevOps（根 §2.2）。surface 自己持一个在途标记：第一个 `devops(verboseIntent)` 未结清时，第二个调用抛 `ComposeError("DEVOPS_IN_FLIGHT", ...)`；第一个调查记录原样返回，组合层不做二次摘要。
 - 已结束或已挂起的程序不再接受新表达式（core 的 `acceptsExpressions` getter）。
 - **回执的形状只有九个字段。** `receipt()` 与 `finalReceipt()` 用 core 的 `withExtra` 把 `value`、`result` 挂成不可枚举键，`Object.keys`、展开与深比较都只看到九个字段（§3.3）。可枚举的第十个键会让"形状"随便利字段漂移。
 - 期限：`ProgramSurface` 构造时按 `intent` 一次性固定 `Deadline`（`intent` 缺省为 null，即无期限），
@@ -117,12 +119,12 @@
 
 | 端口 | 方法 |
 |------|------|
-| `fork` | `fork(name, brief, role)`：`role` 是组合层从 brief 显式声明解析出的结果（`program/role-brief.mjs`），宿主不得再推导或补默认值 |
+| `fork` | `fork(name, verboseIntent, role)`：`role` 是组合层从 `verboseIntent` 显式声明解析出的结果（`program/role-brief.mjs` 的 `roleOfVerboseIntent` / `forkRequest`），宿主不得再推导或补默认值 |
 | `join` | `join()` |
 | `ask` | `ask(question, { program, toolCallId })`：记录问题并返回 `{ ok: true, asked: true, question, program, interrupt: true }`；宿主有同步对话框时另带 `answer`。**任何宿主都不得以「没有通道」拒绝**——挂起与中断本身就是通道 |
 | `fission` | `ownerView(owner)`、`buildLane(lane)` 或 `createLane(lane)`、`persistGroup(group)`、`startLane(laneId)`、`replacePresent(group)`、`abortLanes({groupId, laneIds})` |
 | `relay` | `handOver(decision)`、`startManager(draft)`、`askOperator(question)` |
-| `devops` | `investigate(intent)` |
+| `devops` | `investigate(verboseIntent)`：Plan 的顶层原语 `devops(verboseIntent)` 转到这个端口，返回那一份专用报告 |
 | `draft` | `read()`：Plan 已保存的底稿字节，缺失时返回空串 |
 | `command` | `run(command, {cwd, env, onData})` |
 | `scope` | `ask(member)`：同步快照（`negotiate` / `askPreviousScope`），返回核心快照或拒收值，**不是 Promise** |

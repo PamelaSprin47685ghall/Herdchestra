@@ -53,6 +53,29 @@ export const USER_FACING_ROLES = Object.freeze([ROLES.PLAN, ROLES.MANAGER]);
 
 const userFacing = (role) => USER_FACING_ROLES.includes(role);
 
+// Root §1.1 item 2: an operator interrupt at a user-facing session reaches every
+// descendant — forked workers and fission lanes — or the cancelled work keeps
+// burning the operator's tokens in the background.
+//
+// A park stop is NOT an operator interrupt of the work. `this.ask` parks a body
+// and ends its run ON PURPOSE (根 §2.2): the operator's answer resumes the same
+// program, so cancelling the workers underneath it would destroy work the
+// question was asked about. The session's own flags are the record of that
+// stop, and either one exempts this turn.
+//
+// The session may be a fake in a hook test, so the capability is read, not
+// assumed. A table that refuses (an abort that threw) still answers, and the
+// receipt names the orphan; nothing here turns that into a hook failure.
+const cancelDescendants = ({ session }) => {
+  if (session?.parkStopOwed === true || session?.parkStopped === true) return null;
+  if (typeof session?.cancelDescendants !== "function") return null;
+  try {
+    return session.cancelDescendants("OPERATOR_CANCELLED");
+  } catch {
+    return null;
+  }
+};
+
 // The decision for this session right now, from the facts the hooks recorded.
 //
 // `ledger` is read fresh every time: a review in this turn may have emptied it,
@@ -102,6 +125,7 @@ export const turnExit = ({ session, role = session.declaredRole, assistantMessag
   // the decision says the stop is the operator's own: no nudge, and any nudge
   // recorded for the previous turn is cleared.
   const interrupted = operatorInterruptOf(assistantMessage);
+  if (interrupted) cancelDescendants({ session });
   if (!interrupted && toolCallCount(assistantMessage) > 0) return { attempted: false, decision: null };
   const decision = decide({ session, role, askedInTurn: session.askedInTurn, interrupted });
   // A turn that reached an exit owes no nudge. The record from an earlier
@@ -164,7 +188,9 @@ export const runExit = ({ session, role = session.declaredRole, result = null })
     // An operator cancel is named for what it is, so a reader can tell it from a
     // host failure; both stop without a nudge. (`operatorInterruptOf` reads the
     // same spelling, so `decide` would answer identically.)
-    const reason = operatorInterruptOf({ status }) ? STOP_REASONS.OPERATOR_INTERRUPT : `run-${status}`;
+    const operatorStopped = operatorInterruptOf({ status });
+    if (operatorStopped) cancelDescendants({ session });
+    const reason = operatorStopped ? STOP_REASONS.OPERATOR_INTERRUPT : `run-${status}`;
     session.clearNudge();
     return { stopAllowed: true, reason, nudge: null };
   }

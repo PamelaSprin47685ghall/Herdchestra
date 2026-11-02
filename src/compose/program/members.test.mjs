@@ -28,7 +28,10 @@ const ports = (overrides = {}) => ({
     startManager: async (draft) => ({ ok: true, draft }),
     askOperator: async (question) => ({ ok: true, question }),
   },
-  fork: { fork: async (name, _brief, role) => ({ name, role, steered: false, started: true }), join: async () => null },
+  fork: {
+    fork: async (name, _verboseIntent, role) => ({ name, role, steered: false, started: true }),
+    join: async () => null,
+  },
   fission: { fission: async () => ({ ok: false, rejection: "InvalidOrigin" }) },
   devops: { investigate: async (intent) => `facts:${intent}` },
   draft: { read: async () => "draft bytes" },
@@ -169,8 +172,8 @@ test("call waits for earlier operations, reports waiting, and refuses once finis
 test("port members pass through without inventing an outcome", async (t) => {
   const dir = await root(t);
   const manager = surfaceOf(ROLES.MANAGER, new ProgramState("m1"), dir).surface();
-  // §4.1: two arguments. The worker's identity comes from the brief's explicit
-  // declaration, and the port receives it resolved.
+  // §4.1: two arguments. The worker's identity comes from the verboseIntent's
+  // explicit declaration, and the port receives it resolved.
   assert.deepEqual(await manager.fork("coder-1", "role: coder. Fix the parser."), {
     name: "coder-1",
     role: "coder",
@@ -183,8 +186,8 @@ test("port members pass through without inventing an outcome", async (t) => {
     steered: false,
     started: true,
   });
-  // A brief that names no identity, or both, is refused before the port runs:
-  // §2.1 forbids starting a subagent whose identity is not stated.
+  // A verboseIntent that names no identity, or both, is refused before the port
+  // runs: §2.1 forbids starting a subagent whose identity is not stated.
   await assert.rejects(async () => { await manager.fork("w1", "Fix the parser."); }, (error) => {
     assert.equal(error.code, "INVALID_ARGUMENT");
     assert.equal(error.details.reason, "UNDECLARED_ROLE");
@@ -203,6 +206,7 @@ test("port members pass through without inventing an outcome", async (t) => {
   assert.deepEqual(await manager.unpark("w2", [1, 2]), { resumed: "w2" });
 
   const plan = surfaceOf(ROLES.PLAN, new ProgramState("p1"), dir).surface();
+  // Plan's devops is a top-level primitive, not `this.devops` (根 §1.1 item 3).
   assert.equal(await plan.devops("check"), "facts:check");
 });
 

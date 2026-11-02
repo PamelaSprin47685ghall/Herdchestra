@@ -20,10 +20,10 @@ export const DIRECTOR_MESSAGE = `<vibe-mode>
 # Workers
 - \`devops\`：执行真实命令（bash、构建、测试、进程、git）。同一时刻恰好一名。
 - \`coder\`：本地事实调查与源码修改。任务描述里必须明确禁止使用 bash 工具；工具面照常含 \`call\`，禁令只是提示词约束。
-每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述必须自足：目标、约束、接口、验收依据、返回时该报什么。
+每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述（\`verboseIntent\`）必须自足：目标、约束、接口、验收依据、返回时该报什么。
 # Direction
 1. 把请求切成彼此独立的工作流。
-2. 每路 \`fork\` 一次，附一份完整自足的说明。
+2. 每路 \`fork(name, verboseIntent)\` 一次；\`verboseIntent\` 必须完整自足。
 3. fork 立即返回；结果在 worker 结束这一回合时自己送到。期间继续调遣别的 worker；\`join\` 只等到最先归来的一个，只在无法继续推进时用。
 4. On each result, decide corrections, next step, or review request; send them with \`fork\`. Reusing a live worker's name steers that worker instead of starting a new session; the receipt says which one happened——\`steered: true\` 是追加到既有 worker，\`steered: false\` 是新建。以回执为准，不靠名字相同去推断。
 5. 按难度分配：机械、规格明确的工作给 \`coder\`；需要真实执行、构建、测试、进程的给 \`devops\`。

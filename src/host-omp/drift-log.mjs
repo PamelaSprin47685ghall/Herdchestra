@@ -33,12 +33,23 @@
 // Pair Hint refusal record follows, so the two can be cross-checked by digest
 // without either of them carrying the conversation.
 //
+// ## What is written
+//
+// Only a request that FAILED, and only a change of the gate's verdict. A clean
+// request writes nothing: the file is a diagnostic, not a request transcript,
+// and the host's own log already names every request. Each failure line carries
+// the request's length, the root digest, the first divergence the prefix rule
+// reported, the failure, and (capped) the messages the copy dropped.
+//
 // ## Why the file is bounded
 //
-// A session makes one request per turn, and every request of a long session
-// would otherwise leave a line forever. The file is trimmed from the front when
-// it passes `DRIFT_LOG_LIMIT` bytes, keeping the newest lines, so a session's
-// diagnostic is its recent history and not a transcript of its life.
+// A session makes one request per turn, and every failure of a long session
+// would otherwise leave a line forever. The file is a SEGMENTED log: once it
+// passes `DRIFT_LOG_LIMIT` bytes it is renamed to `<file>.1` (replacing the
+// previous segment) and a fresh file starts. Rotation is one rename, so an
+// append never rewrites the whole file — the old trim read and rewrote every
+// line on every append once the limit was crossed. The newest segment plus the
+// one before it is the recent history; a gate refusal survives one rotation.
 //
 // Writing never throws and never changes a decision: a diagnostic that cannot
 // be stored is lost, and the request it describes is not. The same rule the Pair
@@ -49,25 +60,17 @@ import path from "node:path";
 import { messageShape } from "../core/pair-hint/facts.mjs";
 import { stateDir, safeSessionName } from "./host-facts.mjs";
 
-// How many shapes one request keeps. The Pair Hint refusal record keeps the
-// same count, so the two records describe one comparison in one vocabulary.
-export const REQUEST_SHAPE_LIMIT = 64;
+// How many dropped-message shapes one failure keeps. A drift is explained by
+// the first few messages that left, not by all of them; the cap keeps one line
+// bounded whatever the request length.
+export const DROPPED_SHAPE_LIMIT = 64;
 
-// The size past which the oldest lines are dropped. 2 MiB is roughly ten
-// thousand request lines of a normal session: enough to see a drift's history,
-// small enough that the file is never the reason a disk fills.
+// The size past which the current segment is rotated. 2 MiB is enough to see a
+// drift's history, small enough that the log is never the reason a disk fills.
 export const DRIFT_LOG_LIMIT = 2 * 1024 * 1024;
 
 export const requestLogFile = (root, sessionId) =>
   path.join(stateDir(root), `${safeSessionName(sessionId)}.requests.jsonl`);
-
-const shapesOf = (messages) => {
-  const list = Array.isArray(messages) ? messages : [];
-  return {
-    count: list.length,
-    shapes: list.slice(0, REQUEST_SHAPE_LIMIT).map(messageShape),
-  };
-};
 
 // The message roles OMP gives the two rewrites it performs on its own history.
 // `compactionSummary` is `createCompactionSummaryMessage` (agent/src/compaction/
@@ -120,6 +123,7 @@ const droppedOf = (incoming, presented) => {
   const after = new Set((Array.isArray(presented) ? presented : []).map((message) => messageShape(message).digest));
   const dropped = [];
   for (const message of before) {
+    if (dropped.length >= DROPPED_SHAPE_LIMIT) break;
     const shape = messageShape(message);
     if (after.has(shape.digest)) continue;
     dropped.push({ ...shape, at: dropped.length });
@@ -127,37 +131,56 @@ const droppedOf = (incoming, presented) => {
   return dropped;
 };
 
-// The one line one request leaves. `entry` is what the handler knows:
+// The first divergence the prefix rule reported, in the shape it reported it:
+// `{index, previousDigest, nextDigest}`. A failure without one (a barrier or
+// Scope refusal) answers null rather than inventing an index.
+const divergenceOf = (failure) => {
+  const raw = failure?.firstDivergence ?? failure?.details?.firstDivergence ?? failure?.details ?? null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const index = Number.isInteger(raw.index) ? raw.index : null;
+  const previousDigest = typeof raw.previousDigest === "string" ? raw.previousDigest : null;
+  const nextDigest = typeof raw.nextDigest === "string" ? raw.nextDigest : null;
+  if (index === null && previousDigest === null && nextDigest === null) return null;
+  return { index, previousDigest, nextDigest };
+};
+
+// The one line one FAILED request leaves. `entry` is what the handler knows:
 //
-//   phase       "open" (the request is starting) or "settled" (it was decided)
+//   phase       "settled" (the request was decided)
 //   host        the host's own version string, or null
 //   incoming    the copy the host handed over
 //   presented   the copy the adapter will send (settled only)
 //   mode        the injector's answer ("placed" | "replayed"), or null
-//   failure     `{stage, code, detail}` of the one projection that failed
+//   failure     `{stage, code, detail}` of the one projection that failed,
+//               optionally carrying `details.firstDivergence`
 //
-// A digest of `incoming` is not enough to tell two requests apart when the
-// difference is which message the host grew, so both sides are recorded as
-// shapes and the reader compares them position by position — exactly what the
-// prefix rule does.
+// The line is bounded on purpose: `length` + `root` identify the request
+// without carrying it, `firstDivergence` names where the prefix rule stopped,
+// and `dropped` (capped) answers "who shortened this copy". A successful
+// request writes nothing at all.
 //
 // `dropped` is the answer to "who shortened this copy". It is written only on a
 // settled line, because only then is there a copy to compare with; `null` means
 // the comparison did not happen, never "nothing was dropped".
 export const requestRecord = ({ phase, sessionId, host = null, incoming, presented = null, mode = null, failure = null }) => {
-  const before = shapesOf(incoming);
-  const after = presented === null ? null : shapesOf(presented);
+  const before = Array.isArray(incoming) ? incoming : [];
   return {
-    v: 1,
+    v: 2,
     kind: "request",
     phase,
     at: new Date().toISOString(),
     sessionId,
     host,
-    incoming: before,
-    presented: after,
-    dropped: droppedOf(incoming, presented),
-    pair: pairPlacementOf(presented),
+    length: before.length,
+    // The chain's root, as the prefix rule names it. One shape is computed even
+    // on a failure-only line: it is the only fact that ties this line to the
+    // Pair Hint journal's own record.
+    root: before.length === 0 ? null : messageShape(before[0]).digest,
+    firstDivergence: divergenceOf(failure),
+    // Shapes are computed ONLY on a failure. A success line is never written,
+    // and building the comparison here would pay for it on every request.
+    dropped: failure === null ? null : droppedOf(incoming, presented),
+    pair: failure === null ? null : pairPlacementOf(presented),
     mode,
     allowed: failure === null,
     failure: failure === null ? null : { stage: failure.stage ?? null, code: failure.code ?? null, detail: failure.detail ?? null },
@@ -176,12 +199,14 @@ export const requestRecord = ({ phase, sessionId, host = null, incoming, present
 // is recorded at the moment it changes, before the request that changed it can
 // be abandoned.
 //
-// `phase` is the gate's own moment: "open" (the request starts, verdict
-// `refused`/pending), "settle" (the request decided), "unwritable" (the gate
-// file itself could not be written, so the refusal is held in memory only),
-// "refusal" (a tool call was refused from this verdict — the one line that
-// proves the model was stopped). No message list is recorded: the gate's
-// record is about the VERDICT, and the shapes belong to the request record.
+// `phase` is the gate's own moment: "settle" (the request decided and the
+// verdict CHANGED), "unwritable" (the gate file itself could not be written, so
+// the refusal is held in memory only), "refusal" (a tool call was refused from
+// this verdict — the one line that proves the model was stopped), "nudge" (the
+// stop rule could not deliver). A clean request writes no gate line at all: the
+// file is a diagnostic, and an unchanged verdict is not news. No message list
+// is recorded: the gate's record is about the VERDICT, and the shapes belong to
+// the failure's request record.
 export const gateStateRecord = ({ phase, sessionId, host = null, verdict = null, trigger = null }) => ({
   v: 1,
   kind: "gate",
@@ -200,34 +225,37 @@ export const gateStateRecord = ({ phase, sessionId, host = null, verdict = null,
   detail: typeof verdict?.detail === "string" ? verdict.detail : null,
 });
 
-// Trim a log that grew past the limit, keeping whole lines from the end. A torn
-// first line is dropped with the rest of the excess, so the file always parses
-// line by line.
-const trim = (target) => {
-  const size = fs.statSync(target).size;
-  if (size <= DRIFT_LOG_LIMIT) return;
-  const raw = fs.readFileSync(target, "utf8");
-  const lines = raw.split("\n").filter((line) => line.trim() !== "");
-  // A gate record is never dropped. Every other line describes one request and
-  // the newest ones say all that is worth knowing; a `refused` verdict is the
-  // reason a session stopped working, and a log that trimmed it away would
-  // restore exactly the state this file exists to end — a refusal with no
-  // record. There are a few per request, so keeping them all cannot grow the
-  // file past the limit by much.
-  const isGate = (line) => line.includes('"kind":"gate"');
-  const kept = [];
-  let bytes = 0;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
-    const gate = isGate(line);
-    const length = Buffer.byteLength(line, "utf8") + 1;
-    if (!gate && bytes + length > DRIFT_LOG_LIMIT) break;
-    bytes += length;
-    kept.push(line);
+// The current size of each segment, so an append does not stat the file every
+// time. The first append of a process reads it once; a rotation resets it.
+const SEGMENT_BYTES = new Map();
+
+const segmentSize = (target) => {
+  if (SEGMENT_BYTES.has(target)) return SEGMENT_BYTES.get(target);
+  let size = 0;
+  try {
+    size = fs.statSync(target).size;
+  } catch {
+    // A file that is not there is a segment of zero bytes.
   }
-  const temp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, kept.length === 0 ? "" : `${kept.reverse().join("\n")}\n`, "utf8");
-  fs.renameSync(temp, target);
+  SEGMENT_BYTES.set(target, size);
+  return size;
+};
+
+// Rotate a segment that grew past the limit. ONE rename, so an append never
+// rewrites the whole file: the current segment becomes `<target>.1` (replacing
+// the previous segment) and the next append starts a fresh file. The newest
+// segment plus the one before it is the recent history, which is what a drift
+// investigation reads; a gate refusal therefore survives one rotation rather
+// than forever, and the bound is real.
+const rotate = (target) => {
+  try {
+    fs.renameSync(target, `${target}.1`);
+  } catch (error) {
+    // A rotation that cannot happen must not lose the line that just landed:
+    // the segment simply stays over the limit until the next append retries.
+    if (error?.code !== "ENOENT") throw error;
+  }
+  SEGMENT_BYTES.set(target, 0);
 };
 
 // Where the record goes when its own file cannot be written: the nearest
@@ -257,7 +285,12 @@ const fallbackTarget = (target) => {
 
 const appendLine = (target, record) => {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.appendFileSync(target, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o644 });
+  const line = `${JSON.stringify(record)}\n`;
+  const bytes = Buffer.byteLength(line, "utf8");
+  const before = segmentSize(target);
+  fs.appendFileSync(target, line, { encoding: "utf8", mode: 0o644 });
+  SEGMENT_BYTES.set(target, before + bytes);
+  return bytes;
 };
 
 // Append one record. Never throws: the caller is deciding a request, and a
@@ -278,7 +311,9 @@ const appendLine = (target, record) => {
 export const recordRequest = (target, record) => {
   try {
     appendLine(target, record);
-    trim(target);
+    // One rename when the segment is over the limit; an append below the limit
+    // only adds its own bytes to the counter. No whole-file rewrite, ever.
+    if (segmentSize(target) > DRIFT_LOG_LIMIT) rotate(target);
     return { ok: true, file: target, failure: null };
   } catch (error) {
     const failure = {

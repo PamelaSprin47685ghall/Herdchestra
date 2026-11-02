@@ -4,7 +4,7 @@
 // worker's `fork` fills the worker's own roster, so its children are its own and
 // the Manager's `join` never sees them. These tests exercise the members a
 // worker's program actually calls, not the member table: the identity travels
-// through the brief, the port receives the resolved role, and `join` answers
+// through the verboseIntent, the port receives the resolved role, and `join` answers
 // whatever the roster answers — never an invented record.
 //
 // The rosters here are fakes with the contract the real ones keep: `fork` adds a
@@ -36,8 +36,8 @@ const roster = (label) => {
     started,
     reports,
     port: {
-      fork: async (name, brief, role) => {
-        started.push({ name, brief, role });
+      fork: async (name, verboseIntent, role) => {
+        started.push({ name, verboseIntent, role });
         return { name, steered: false, started: true };
       },
       join: async () => (reports.length === 0 ? null : reports.shift()),
@@ -81,15 +81,17 @@ test("§3.1: both worker identities carry fork and join as program members", () 
   assert.equal(SURFACE_MEMBERS.plan.includes("fork"), false);
 });
 
-test("a worker's fork sends the brief's declared role to its own roster", async () => {
+test("a worker's fork sends the verboseIntent's declared role to its own roster", async () => {
   const mine = roster("worker");
   const { members } = workerSurface(ROLES.CODER, mine.port);
   const receipt = await members.fork("child", "role: devops — run the suite.");
   assert.deepEqual(receipt, { name: "child", steered: false, started: true });
-  assert.deepEqual(mine.started, [{ name: "child", brief: "role: devops — run the suite.", role: "devops" }]);
+  assert.deepEqual(mine.started, [
+    { name: "child", verboseIntent: "role: devops — run the suite.", role: "devops" },
+  ]);
 });
 
-test("a worker's fork refuses an undeclared brief before the port runs", async () => {
+test("a worker's fork refuses an undeclared verboseIntent before the port runs", async () => {
   const mine = roster("worker");
   const { members } = workerSurface(ROLES.DEVOPS, mine.port);
   await assert.rejects(async () => {
@@ -169,7 +171,7 @@ test("property: join returns exactly the reports the roster still holds, in orde
   );
 });
 
-test("property: a brief that names no single identity never reaches a worker's roster", async () => {
+test("property: a verboseIntent that names no single identity never reaches a worker's roster", async () => {
   const ambiguousOrMissing = fc.oneof(
     fc.string({ maxLength: 24 }).filter((text) => !/\b(coder|devops)\b/i.test(text)),
     fc.constant("role: coder, devops — do it."),
@@ -177,17 +179,17 @@ test("property: a brief that names no single identity never reaches a worker's r
     fc.constant("   "),
   );
   await fc.assert(
-    fc.asyncProperty(ambiguousOrMissing, fc.constantFrom(ROLES.CODER, ROLES.DEVOPS), async (brief, callerRole) => {
+    fc.asyncProperty(ambiguousOrMissing, fc.constantFrom(ROLES.CODER, ROLES.DEVOPS), async (verboseIntent, callerRole) => {
       const mine = roster("worker");
       const { members } = workerSurface(callerRole, mine.port);
       let refused = false;
       try {
-        await members.fork("child", brief);
+        await members.fork("child", verboseIntent);
       } catch (error) {
         refused = true;
         assert.equal(error.code, "INVALID_ARGUMENT");
       }
-      assert.equal(refused, true, JSON.stringify(brief));
+      assert.equal(refused, true, JSON.stringify(verboseIntent));
       assert.deepEqual(mine.started, []);
     }),
     { ...fcRuns(40) },

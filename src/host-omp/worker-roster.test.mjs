@@ -269,8 +269,8 @@ test("a steer keeps the old result and both turns are joined once each", async (
   const session = w.lanes.live("w1").session;
   session.endTurn("first answer");
   await new Promise((resolve) => setImmediate(resolve));
-  // The finished worker is steered: the brief joins the same session and a new
-  // turn starts. The first answer is still owed.
+  // The finished worker is steered: the verboseIntent joins the same session
+  // and a new turn starts. The first answer is still owed.
   const steered = await w.port.fork("w1", "role: coder — more");
   assert.deepEqual(steered, { name: "w1", steered: true, started: false });
   const first = await within(w.port.join());

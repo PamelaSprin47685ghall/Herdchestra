@@ -8,7 +8,8 @@
 // - the park channel: `park` suspends the program and returns a receipt; the
 //   parked expression resumes later through another program's `unpark`;
 // - the member list: core members (files, text, call) plus the port-backed
-//   members (ask, fork, join, fission, review, devops) that this role has.
+//   members (ask, fork, join, fission, review) that this role has, and the
+//   top-level primitives (devops) that the host binds as bare functions.
 //
 // Two lifecycle facts are owned here too, because they are about the run, not
 // about a member:
@@ -72,7 +73,8 @@ export const ASK_FORBIDDEN = COMPOSE_CODES.ASK_FORBIDDEN_OUTSIDE_S1;
 // refused for a spent budget. Both are on every surface that has work to book —
 // the Manager's and the worker's — because the budget they report is the one
 // those surfaces spend. They are not on `js-review` (a read-only evaluation is
-// not a beat of any Scope) and not on Plan (Plan has no Scope).
+// not a beat of any Scope) and not on Plan: Plan's non-exempt calls carry
+// `scope` too, but its face has no exempt query members.
 const SCOPE_QUERIES = Object.freeze(["negotiate", "askPreviousScope"]);
 
 // A member call the model wrote without `await` must never leave a rejection
@@ -125,9 +127,10 @@ export const SURFACE_MEMBERS = Object.freeze({
   // its report, never a question.
   //
   // `fork`/`join` are here because §3.1 marks them for `js-worker` as well as
-  // `js-manager`: a worker that the brief allows to dispatch starts children in
+  // `js-manager`: a worker that the verboseIntent allows to dispatch starts children in
   // its OWN roster (§4.1), which is a different thing from `fission` (§4.2).
-  // The surface exposes them; whether a given worker may use them is the brief's
+  // The surface exposes them; whether a given worker may use them is the
+  // verboseIntent's
   // business, not the member table's.
   "js-worker": [
     "cat",
@@ -157,7 +160,18 @@ export const SURFACE_MEMBERS = Object.freeze({
   //
   // `ask` is listed because the member must exist to be refused by name after
   // `S1`; the handler decides from the ledger's milestone.
-  plan: ["cat", "write", "unpark", "ask", "devops", "review"],
+  plan: ["cat", "write", "unpark", "ask", "review"],
+});
+
+// Members a role receives as BARE top-level functions instead of `this.xxx`
+// methods (根 §1.1 item 3, §3.1). Plan's `devops` is synchronous in the join
+// sense: the program awaits the one dedicated DevOps report, so the host binds
+// it beside `fork`/`join`/`review` rather than onto the program instance.
+//
+// `surface()` returns the union of `SURFACE_MEMBERS[role]` and this list, so a
+// host that renders one surface object gets both spellings from one place.
+export const SURFACE_PRIMITIVES = Object.freeze({
+  plan: Object.freeze(["devops"]),
 });
 
 export const surfaceNameFor = (role) => {
@@ -523,7 +537,7 @@ export class ProgramSurface {
 
   // The members object the model receives. Only allowed names are present.
   surface() {
-    const allowed = SURFACE_MEMBERS[this.surfaceName];
+    const allowed = [...SURFACE_MEMBERS[this.surfaceName], ...(SURFACE_PRIMITIVES[this.surfaceName] ?? [])];
     const core = this.core();
     const built = {};
     for (const member of allowed) {
@@ -726,19 +740,19 @@ export class ProgramSurface {
       return (findings) => this.#reviewMember(findings);
     }
     if (member === "fork") {
-      // `fork(name, brief)` takes two arguments (§4.1). The worker's identity
-      // travels in the brief, and only an explicit declaration in it names one
-      // (§2.1); `forkRequest` refuses a brief that names none or both, so no
-      // host can fall back to a default role. The port receives the resolved
-      // role and never re-derives it.
+      // `fork(name, verboseIntent)` takes two arguments (§4.1). The worker's
+      // identity travels in the verboseIntent, and only an explicit declaration
+      // in it names one (§2.1); `forkRequest` refuses one that names none or
+      // both, so no host can fall back to a default role. The port receives the
+      // resolved role and never re-derives it.
       //
       // The same member exists on `js-manager` and `js-worker` (§3.1). The port
       // is the CALLING session's own roster, so a worker's children are the
       // worker's and the Manager's `join` never sees them (§4.1). A port that is
       // absent says so at the call instead of at build time.
-      return (workerName, brief) => {
-        const request = forkRequest(workerName, brief);
-        return observed(this.port("fork").fork(request.name, request.brief, request.role));
+      return (workerName, verboseIntent) => {
+        const request = forkRequest(workerName, verboseIntent);
+        return observed(this.port("fork").fork(request.name, request.verboseIntent, request.role));
       };
     }
     if (member === "join") return () => observed(this.port("fork").join());
@@ -760,8 +774,8 @@ export class ProgramSurface {
       };
     }
     if (member === "devops") {
-      return (intent) => {
-        const asked = text("devops(intent)", intent);
+      return (verboseIntent) => {
+        const asked = text("devops(verboseIntent)", verboseIntent);
         // 根 §2.2: at most one pending DevOps per task. The guard lives in
         // compose because the contract does: a host port that starts a fresh
         // session per call would otherwise let a Plan run two at once. A second
@@ -771,7 +785,7 @@ export class ProgramSurface {
           throw new ComposeError(
             COMPOSE_CODES.DEVOPS_IN_FLIGHT,
             "a devops investigation is already in flight",
-            { intent: asked },
+            { verboseIntent: asked },
           );
         }
         DEVOPS_IN_FLIGHT.set(this.ledger, true);

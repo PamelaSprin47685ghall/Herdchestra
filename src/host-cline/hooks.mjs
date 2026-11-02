@@ -93,7 +93,7 @@ export const SCOPE_TOOLS = Object.freeze(new Set([...FACE_TOOLS, "fork", "join"]
 // `extensions.hooks` to the child), so every hook also runs for a child's run
 // and request. The session's bookkeeping is the PARENT's fact — its Scope turn,
 // its review window, its parked `ask`, its park stop, its nudge — and a child's
-// run must not move any of it. Measured consequence: a worker's brief is a user
+// run must not move any of it. Measured consequence: a worker's verboseIntent is a user
 // message, so `resumeAsked` answered a question the operator never saw, and the
 // child's `beforeRun` cleared the parent's park stop.
 const delegatedRuntime = ({ session, context }) => {

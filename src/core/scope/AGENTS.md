@@ -8,6 +8,8 @@
 
 Scope 不碰宿主的持久历史。它只产出请求副本（§6.2）。
 
+Plan 也不在豁免之列：它不在 COMMON 投影内，但它的非豁免工具调用同样携带打平的 `scope` 注解；它的面上没有 `negotiate` 与 `askPreviousScope`，所以没有这两个同步查询成员。角色与成员表由 compose 决定，本包只按成员名判断豁免。
+
 ## 1 依赖边界
 
 - 包内模块**不 import 本目录之外的任何文件**：拒收类型 `ScopeRefusal`、参数错误 `ScopeArgumentError`、注解解析、UTF-8 规则全在包内。核心其他包的 `errors.mjs` / `util.mjs` 变化不影响本包，本包也不出现在 `src/core/index.mjs` 里；组合层显式 import `src/core/scope/index.mjs`。

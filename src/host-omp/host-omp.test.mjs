@@ -30,6 +30,7 @@ import herdchestra, {
   workerSessionTools,
   resetAdapters,
   adapterForCall,
+  cancelSubtree,
 } from "./index.mjs";
 import {
   compileProgram,
@@ -44,7 +45,7 @@ import { ProgramState } from "../core/program.mjs";
 import { LaneTable, workerActions, workerExtensionApi } from "./lane.mjs";
 import { TaskPort } from "./worker-port.mjs";
 import { laneStart } from "./lane.mjs";
-import { HostBinding, agentIdOf, steerDelivered, CAPABILITY } from "./host-binding.mjs";
+import { HostBinding, CAPABILITY } from "./host-binding.mjs";
 import { createToolCallHandler, createBeforeAgentStartHandler, createContextHandler, createTurnEndHandler } from "./hooks.mjs";
 import { toItems, selectKept, barrierFor, toPairHintMessages, isSideChannelRequest } from "./request.mjs";
 import { canonicalKey } from "../core/pair-hint/canonical.mjs";
@@ -65,6 +66,15 @@ const tmpRoot = () => {
   // below removes them.
   SESSION_ROOTS.push(root);
   return root;
+};
+
+// The Pair Hint chain: a frozen `{length, digests, root, pairIndex, …}`.
+// `PairHint#presented` is gone with no alias, so there is nothing else to read.
+const chainOf = (hint) => hint.chain ?? null;
+const sameChain = (left, right) => {
+  if (left === right) return true;
+  if (left === null || right === null) return false;
+  return left.length === right.length && JSON.stringify(left.digests) === JSON.stringify(right.digests);
 };
 
 // Every RoleSession a test builds directly owns a temp root. A construction with
@@ -330,9 +340,9 @@ test("fork picks the devops definition only for the devops name", () => {
   assert.equal(agentForRole(ROLE.DEVOPS), "devops");
   assert.equal(agentForRole(ROLE.CODER), "coder");
   // A lane is created through the SDK, so the start carries no `task` payload.
-  assert.deepEqual(laneStart({ name: "d", brief: "b", agent: "devops" }), {
+  assert.deepEqual(laneStart({ name: "d", verboseIntent: "b", agent: "devops" }), {
     name: "d",
-    brief: "b",
+    verboseIntent: "b",
     agent: "devops",
   });
 });
@@ -401,7 +411,7 @@ test("a worker loses the replaced tools and keeps its own face", () => {
 test("the planner sees only its own face and no dispatch", () => {
   // §2.2 gives the Plan exactly five capabilities, all members of `plan`. It has
   // no fork/join, no call, no glob/grep/exec and no fission; its only agent
-  // channel is the synchronous `this.devops`.
+  // channel is the bare primitive `devops(verboseIntent)`.
   const all = [...REPLACED_TOOLS, "ask", ...TOOL_NAMES];
   const visible = visibleToolsFor(ROLE.PLAN, all);
   assert.equal(visible.includes("plan"), true);
@@ -830,51 +840,18 @@ test("bindMembers copies only the members the surface has", async () => {
 // Host binding
 // ---------------------------------------------------------------------------
 
-test("runAgent spawns through task and returns the one answer", async () => {
-  const dispatch = fakeDispatch({
-    task: { ...textResult("the report"), details: { progress: [{ id: "plan-devops-1" }] } },
-  });
-  const binding = new HostBinding({ dispatch });
-  const run = await binding.runAgent({ agent: "devops", name: "plan-devops-1", brief: "check" });
-  assert.equal(run.ok, true);
-  assert.equal(run.text, "the report");
-  assert.equal(run.agentId, "plan-devops-1");
-  assert.deepEqual(dispatch.calls[0], {
-    name: "task",
-    params: { agent: "devops", name: "plan-devops-1", task: "check" },
-  });
-});
-
-test("runAgent reports a failed task instead of a fake report", async () => {
-  const binding = new HostBinding({ dispatch: fakeDispatch({ task: errorResult("spawn refused") }) });
-  const run = await binding.runAgent({ agent: "coder", name: "w", brief: "x" });
-  assert.equal(run.ok, false);
-  assert.equal(run.reason, CAPABILITY.AGENT_FAILED);
-});
-
-test("without a dispatcher every host call names the missing capability", async () => {
-  const binding = new HostBinding({});
-  const run = await binding.runAgent({ agent: "coder", name: "w", brief: "x" });
-  assert.equal(run.ok, false);
-  assert.equal(run.reason, CAPABILITY.NO_HOST_DISPATCH);
-  const steer = await binding.steer("coder-1", "more");
-  assert.equal(steer.reason, CAPABILITY.NO_HOST_DISPATCH);
-});
-
-test("steer is delivered only when the agent:// write says so", async () => {
-  const dispatch = fakeDispatch({
-    write: (params) =>
-      params.path === "agent://coder-1" ? textResult("Delivered to coder-1.") : errorResult("Failed: not running"),
-  });
-  const binding = new HostBinding({ dispatch });
-  assert.deepEqual(await binding.steer("coder-1", "next"), { ok: true });
-  assert.equal((await binding.steer("gone", "next")).ok, false);
-  assert.deepEqual(dispatch.calls[0], {
-    name: "write",
-    params: { path: "agent://coder-1", content: "next" },
-  });
-  assert.equal(steerDelivered(textResult("Queued for coder-1 (was parked; revived).")), true);
-  assert.equal(steerDelivered(errorResult("Failed: coder-1 is not running")), false);
+test("the binding keeps host state only: no dispatcher, no second agent route", () => {
+  const binding = new HostBinding({ pi: { VERSION: "18.14.1" }, ctx: { ui: null } });
+  assert.equal(binding.pi.VERSION, "18.14.1");
+  assert.equal(binding.ctx.ui, null);
+  // Root §1.1 item 3: Plan's devops is a dedicated lane, and fork/join are
+  // lanes too. A `task`-based route would be the second, non-dedicated one.
+  assert.equal(binding.runAgent, undefined);
+  assert.equal(binding.spawn, undefined);
+  assert.equal(binding.steer, undefined);
+  assert.equal(binding.progressOf, undefined);
+  assert.equal(binding.invoke, undefined);
+  assert.equal(CAPABILITY.STEER_UNDELIVERED, "STEER_UNDELIVERED");
 });
 
 // ---------------------------------------------------------------------------
@@ -913,8 +890,9 @@ test("a program's bare fork()/join() reach the worker port, which compose reads 
     });
     const members = built.surface.surface();
     // A program member call is not a tool call, so it carries no scope.
-    // §2.1: the worker's identity travels in its brief, so the brief declares
-    // it. A brief that names none is refused by compose, not defaulted here.
+    // §2.1: the worker's identity travels in its verboseIntent, so the
+    // verboseIntent declares it. An intent that names none is refused by
+    // compose, not defaulted here.
     const forked = await members.fork("w1", "role: coder — do the work");
     assert.deepEqual(forked, { name: "w1", steered: false, started: true });
     assert.equal(api.created.length, 1);
@@ -1054,7 +1032,7 @@ test("an SDK-created worker asks for no replaced host tool, and its own face rep
       },
     };
     const lanes = trackedLaneTable(new LaneTable({ api, workerToolNames: [...WORKER_LANE_TOOLS] }));
-    const started = await lanes.start({ name: "w-face-list", role: "coder", brief: "role: coder — go" });
+    const started = await lanes.start({ name: "w-face-list", role: "coder", verboseIntent: "role: coder — go" });
     assert.equal(started.ok, true, JSON.stringify(started));
     assert.equal(created.length, 1);
     const requested = created[0].toolNames ?? [];
@@ -1097,7 +1075,7 @@ test("a worker session is never handed a face its role does not own", async () =
   });
 });
 
-test("a worker session names the role the brief declared, not the worker's name", async () => {
+test("a worker session names the role the verboseIntent declared, not the worker's name", async () => {
   const api = fakeApi();
   const lanes = trackedLaneTable(new LaneTable({ api }));
   const port = new TaskPort({ lanes, sleep: async () => {}, agentFor: agentForRole });
@@ -1106,8 +1084,9 @@ test("a worker session names the role the brief declared, not the worker's name"
   assert.equal(api.created[0].agentName, "devops");
   assert.equal(api.created[0].agentId, "devops");
   assert.equal(api.created[1].agentName, "coder");
-  // §2.1, §4.1: the name is not an identity. A worker NAMED devops whose brief
-  // declares coder is a coder, and a brief that declares nothing starts nothing.
+  // §2.1, §4.1: the name is not an identity. A worker NAMED devops whose
+  // verboseIntent declares coder is a coder, and an intent that declares
+  // nothing starts nothing.
   await port.fork("devops-2", "role: coder — edit the file");
   assert.equal(api.created[2].agentName, "coder");
   const refused = await port.fork("w-undeclared", "check the build");
@@ -1443,13 +1422,179 @@ test("a Plan's this.ask parks with interrupt:true, aborts once, and unpark resum
   });
 });
 
-test("the devops port returns the whole investigation report", async () => {
-  const dispatch = fakeDispatch({ task: { ...textResult("facts A\nfacts B"), details: { progress: [{ id: "d1" }] } } });
-  const port = devopsPort({ binding: new HostBinding({ dispatch }) });
+test("the devops port returns the whole investigation report from one dedicated lane", async () => {
+  const worker = fakeSession({ agentId: "plan-devops" });
+  const api = fakeApi([worker]);
+  const lanes = trackedLaneTable(new LaneTable({ api }));
+  const port = devopsPort({ lanes });
+  setTimeout(() => {
+    worker.emit({ type: "message_end", message: { role: "assistant", content: "facts A\nfacts B" } });
+    worker.emit({ type: "agent_end", isTerminal: true });
+  }, 0);
   const receipt = await port.investigate("find the retry policy");
   assert.equal(receipt.ok, true);
   assert.equal(receipt.report, "facts A\nfacts B");
-  assert.equal(dispatch.calls[0].params.agent, "devops");
+  assert.equal(receipt.lane, "plan-devops");
+  // Root §1.1 item 6: the dedicated DevOps lane runs on the task model.
+  assert.equal(api.created[0].agentName, "devops");
+  assert.equal(api.created[0].modelPattern, "@task");
+});
+
+test("the devops port reuses the same lane instead of starting a new one", async () => {
+  const worker = fakeSession({ agentId: "plan-devops" });
+  const api = fakeApi([worker]);
+  const lanes = trackedLaneTable(new LaneTable({ api }));
+  const port = devopsPort({ lanes });
+  setTimeout(() => {
+    worker.emit({ type: "message_end", message: { role: "assistant", content: "first report" } });
+    worker.emit({ type: "agent_end", isTerminal: true });
+  }, 0);
+  assert.equal((await port.investigate("first question")).report, "first report");
+  // The lane is settled now; a second investigation starts its NEXT turn on the
+  // same session, never a new `plan-devops-<timestamp>` lane.
+  const second = port.investigate("second question");
+  setTimeout(() => {
+    worker.emit({ type: "message_end", message: { role: "assistant", content: "second report" } });
+    worker.emit({ type: "agent_end", isTerminal: true });
+  }, 0);
+  const receipt = await second;
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.report, "second report");
+  assert.equal(api.created.length, 1, "one lane for every investigation");
+  assert.deepEqual(lanes.names(), ["plan-devops"]);
+  const prompts = worker.calls.filter((call) => call[0] === "prompt").map((call) => call[1]);
+  assert.deepEqual(prompts, ["first question", "second question"]);
+});
+
+test("the devops port refuses a second investigation while one is in flight", async () => {
+  const worker = fakeSession({ agentId: "plan-devops" });
+  const lanes = trackedLaneTable(new LaneTable({ api: fakeApi([worker]) }));
+  const port = devopsPort({ lanes });
+  const first = port.investigate("first");
+  const refused = await port.investigate("second");
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, "DEVOPS_IN_FLIGHT");
+  setTimeout(() => worker.emit({ type: "agent_end", isTerminal: true }), 0);
+  assert.equal((await first).ok, true);
+});
+
+test("Plan's devops is a bare primitive; this.devops does not exist", async () => {
+  await withRoot(async () => {
+    const ctx = {
+      agent: { kind: "main", id: "plan-agent", name: "plan", depth: 0 },
+      sessionManager: { getSessionId: () => "sess-plan-primitive", getEntries: () => [] },
+    };
+    const session = new testSession({ pi: { registerTool: () => {} }, api: null, ctx, role: ROLE.PLAN });
+    const original = session.ports.bind(session);
+    session.ports = () => ({
+      ...original(),
+      devops: { investigate: async (verboseIntent) => ({ ok: true, report: `report:${verboseIntent}` }) },
+    });
+    const built = session.buildSurface({
+      toolCallId: "call-devops",
+      surfaceName: "plan",
+      source:
+        "class Js extends JsProgram { async run() { const r = await devops('check the tree'); return { report: r.report, own: typeof this.devops }; } }",
+      intent: "investigate",
+    });
+    const run = startProgram({ source: built.surface.source, surface: built.surface, program: built.program, parks: built.parks });
+    const outcome = await run.outcome;
+    assert.equal(outcome.status, "completed", JSON.stringify(outcome));
+    assert.deepEqual(outcome.value, { report: "report:check the tree", own: "undefined" });
+    // The primitive is Plan's alone: another role's scope has no `devops`.
+    const members = built.surface.surface();
+    const guarded = guardedMembers(members, built.program, built.parks);
+    // Compose publishes `devops` as a primitive (not a member); a pre-cutover
+    // core still lists it among the members. Both routes are the SAME handler,
+    // which is why `startProgram` can resolve either.
+    const devopsHandler = guarded.devops ?? built.surface.handler("devops", built.surface.core());
+    assert.equal(typeof devopsHandler, "function");
+    assert.equal(typeof primitiveScope({ devops: devopsHandler }, { role: "plan" }).devops, "function");
+    assert.equal(primitiveScope({ devops: devopsHandler }, { role: "manager" }).devops, undefined);
+    assert.equal(bindMembers({}, guarded).devops, undefined, "never bound as a member");
+  });
+});
+
+test("worker lanes run on the task model; a Manager lane keeps the main model", async () => {
+  const api = fakeApi([fakeSession({ agentId: "c" }), fakeSession({ agentId: "d" }), fakeSession({ agentId: "m" })]);
+  const lanes = trackedLaneTable(new LaneTable({ api }));
+  const coder = await lanes.start({ name: "c", role: "coder", verboseIntent: "role: coder — go" });
+  const devops = await lanes.start({ name: "d", role: "devops", verboseIntent: "role: devops — go" });
+  const manager = await lanes.start({ name: "m", role: ROLE.MANAGER, verboseIntent: "run" });
+  assert.equal(coder.ok, true);
+  assert.equal(devops.ok, true);
+  assert.equal(manager.ok, true);
+  assert.equal(api.created[0].modelPattern, "@task");
+  assert.equal(api.created[1].modelPattern, "@task");
+  assert.equal(api.created[2].modelPattern, undefined, "the Manager keeps the session's main model");
+  assert.equal(coder.modelPattern, "@task");
+  assert.equal(coder.modelSource, "task-role");
+});
+
+test("cancelAll aborts the lane's own session, refuses new work, and reports the cancellation honestly", async () => {
+  const worker = fakeSession({ agentId: "w1" });
+  const api = fakeApi([worker]);
+  const lanes = trackedLaneTable(new LaneTable({ api }));
+  const port = new TaskPort({ lanes, sleep: async () => {}, agentFor: (role) => role });
+  assert.equal((await port.fork("w1", "role: coder — go")).started, true);
+  const receipt = await lanes.cancelAll("the operator interrupted this session");
+  assert.equal(receipt.ok, true);
+  assert.deepEqual(receipt.lanes, ["w1"]);
+  assert.deepEqual(worker.calls.filter((call) => call[0] === "abort"), [["abort"]], "the child session is aborted directly");
+  assert.notEqual(lanes.cancelled, null);
+  // A later fork/steer refuses by name.
+  assert.equal((await port.fork("w2", "role: coder — more")).reason, "SESSION_CANCELLED");
+  assert.equal(await lanes.steer("w1", "more"), false);
+  // The aborted turn is a claimable result, and `join` names the cancellation
+  // only after handing over everything the worker really produced.
+  const ended = await port.join();
+  assert.equal(ended.name, "w1");
+  assert.equal(ended.error.name, "CANCELLED");
+  const after = await port.join();
+  assert.equal(after.ok, false);
+  assert.equal(after.reason, "SESSION_CANCELLED");
+  // Idempotent: a second cancellation does not abort the session again.
+  await lanes.cancelAll("again");
+  assert.equal(worker.calls.filter((call) => call[0] === "abort").length, 1);
+});
+
+test("an unclaimed result survives a cancellation", async () => {
+  const worker = fakeSession({ agentId: "w1" });
+  const lanes = trackedLaneTable(new LaneTable({ api: fakeApi([worker]) }));
+  const port = new TaskPort({ lanes, sleep: async () => {}, agentFor: (role) => role });
+  await port.fork("w1", "role: coder — go");
+  worker.emit({ type: "message_end", message: { role: "assistant", content: "first answer" } });
+  worker.emit({ type: "agent_end", isTerminal: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  await lanes.cancelAll("stop");
+  const first = await port.join();
+  assert.equal(first.text, "first answer", "the turn that already ended is still readable");
+  assert.equal((await port.join()).reason, "SESSION_CANCELLED");
+});
+
+test("an S1 ask, a replaced present and a worker are not operator interrupts", async () => {
+  await withRoot(async () => {
+    const plan = new testSession({
+      pi: null,
+      ctx: { agent: { kind: "main", name: "plan", depth: 0 }, sessionManager: { getSessionId: () => "sess-int-plan" } },
+      role: ROLE.PLAN,
+    });
+    const message = { stopReason: "aborted", errorMessage: "Interrupted by user" };
+    assert.deepEqual(plan.operatorInterrupt(message), { operator: true });
+    plan.state.markAskedInS1("what now?");
+    assert.deepEqual(plan.operatorInterrupt(message), { operator: false, reason: "asked-in-s1" });
+    plan.state.clearAskedInS1();
+    plan.control.replace({ groupId: "g" });
+    assert.deepEqual(plan.operatorInterrupt(message), { operator: false, reason: "present-replaced" });
+    const worker = new testSession({
+      pi: null,
+      ctx: { agent: { kind: "sub", name: "coder", depth: 1 }, sessionManager: { getSessionId: () => "sess-int-worker" } },
+      role: ROLE.CODER,
+    });
+    assert.deepEqual(worker.operatorInterrupt(message), { operator: false, reason: "not-user-facing" });
+    // A natural stop is not an interrupt either.
+    assert.deepEqual(plan.operatorInterrupt({ stopReason: "endTurn" }), { operator: false, reason: "not-operator" });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1545,7 +1690,7 @@ test("a Plan handoff starts an independent Manager session through the host's ow
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(api.created.length, 1, "one Manager session, created by the host factory");
     const created = api.created[0];
-    // The draft is the Manager's only starting material: its first brief.
+    // The draft is the Manager's only starting material: its first verboseIntent.
     const prompts = managerSession.calls.filter(([kind]) => kind === "prompt");
     assert.equal(prompts.length, 1);
     assert.equal(prompts[0][1], "the draft");
@@ -1705,8 +1850,11 @@ test("a draft directory that cannot be prepared is stated, and never read as an 
   // hand-off for the wrong reason.
   const root = tmpRoot();
   TEMP_ROOTS.push(root);
-  fs.mkdirSync(path.join(root, ".Herdchestra"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".Herdchestra", "drafts"), "not a directory");
+  fs.mkdirSync(root, { recursive: true });
+  // A file where the workspace-root `plans/` directory belongs (root §1.1
+  // item 3: the draft is visible at the workspace root, never under
+  // `.Herdchestra`).
+  fs.writeFileSync(path.join(root, "plans"), "not a directory");
   const state = new SessionState({ sessionId: "sess-blocked", role: ROLE.PLAN, root });
   assert.notEqual(state.draftDirFailure, null);
   const session = new testSession({ pi: null, ctx: { agent: { kind: "main", name: "plan", depth: 0 } }, role: ROLE.PLAN, state });
@@ -5134,7 +5282,7 @@ test("a side-channel turn never becomes the chain's anchor", async () => {
     const operator = { role: "user", content: [{ type: "text", text: "report progress" }] };
     const first = await state.pairHintProject([operator], { barriered: false });
     const hint = await state.pairHint();
-    const anchored = hint.presented;
+    const anchored = chainOf(hint);
 
     // The title turn: the conversation plus the host's marked side messages.
     const streaming = { role: "assistant", content: [{ type: "text", text: "I will dispatch workers " }] };
@@ -5148,7 +5296,7 @@ test("a side-channel turn never becomes the chain's anchor", async () => {
     // cached prefix identical.
     assert.equal(projected[1].role, "assistant", "at the chain's own placement");
     assert.deepEqual(projected[0], side[0], "the operator's message is untouched");
-    assert.equal(hint.presented, anchored, "the side turn is not the chain");
+    assert.equal(sameChain(chainOf(hint), anchored), true, "the side turn is not the chain");
 
     // 4 ms later: the real request with the turn's calls and their results.
     const real = [
@@ -5184,12 +5332,12 @@ test("any side-channel copy the host can build leaves the chain untouched", asyn
           const operator = { role: "user", content: [{ type: "text", text: "start" }] };
           const first = await state.pairHintProject([operator], { barriered: false });
           const hint = await state.pairHint();
-          const anchored = hint.presented;
+          const anchored = chainOf(hint);
           const conversation = [operator, ...grown.map((message) => ({ role: message.role, content: [{ type: "text", text: message.text }] }))];
           const side = sideTurnCopy(conversation, title);
           const projectedSide = await state.pairHintProject(side, { barriered: false });
           assert.equal(projectedSide.length, side.length + 2, "the pair went in");
-          assert.equal(hint.presented, anchored, "an ephemeral request never becomes the chain");
+          assert.equal(sameChain(chainOf(hint), anchored), true, "an ephemeral request never becomes the chain");
           const next = await state.pairHintProject(conversation, { barriered: false });
           assert.doesNotThrow(() => hint.injector.assertPrefix({ previous: first, next }));
           assert.equal(hint.refusal, null);
@@ -5230,19 +5378,23 @@ test("a failed side-channel turn neither cuts its copy nor closes the request ga
   assert.equal(handler.requestRefusal(), null);
 });
 
-test("the request gate is durable, closed before a request and opened by a clean one", async () => {
+test("the request gate is durable, refuses until a request settles, and opens when one does", async () => {
   await withRoot(async (root) => {
     const state = new SessionState({ sessionId: "gate-1", role: ROLE.MANAGER, root });
     // Nothing has projected, so no call can be attributed to a request: fail
     // closed, and say why.
     assert.match(state.requestRefusal().message, /CONTEXT_PROJECTION_UNKEYED/);
-    // A request in flight is not a verdict: the call came from a response the
-    // request has not produced yet.
+    // A request in flight writes NOTHING and is not a verdict: the call could
+    // only have come from a response the request has not produced yet.
     state.openContextRequest();
     const pending = state.requestRefusal();
     assert.equal(pending.code, "CONTEXT_PROJECTION_FAILED");
-    assert.match(pending.message, /CONTEXT_PROJECTION_PENDING/);
-    state.settleContextRequest({ stage: "scope", code: "SCOPE_FIELD_INVALID", detail: "call and result disagree" });
+    assert.match(pending.message, /CONTEXT_PROJECTION_UNKEYED/);
+    // The settle is where the verdict lands, and only because it changed.
+    assert.equal(
+      state.settleContextRequest({ stage: "scope", code: "SCOPE_FIELD_INVALID", detail: "call and result disagree" }).changed,
+      true,
+    );
     const refused = state.requestRefusal();
     assert.match(refused.message, /scope projection/);
     assert.match(refused.message, /SCOPE_FIELD_INVALID/);
@@ -5253,7 +5405,7 @@ test("the request gate is durable, closed before a request and opened by a clean
     // verdict of the one before it: its response's calls are still refused.
     restarted.openContextRequest();
     assert.match(restarted.requestRefusal().message, /SCOPE_FIELD_INVALID/, "the last settled verdict answers while a new request projects");
-    restarted.settleContextRequest(null);
+    assert.equal(restarted.settleContextRequest(null).changed, true);
     assert.equal(restarted.requestRefusal(), null);
     // A file that exists but cannot be believed is a refusal, not "no verdict":
     // a torn write, a hand-edited file, and a directory where the file belongs
@@ -5293,12 +5445,17 @@ test("the request gate is writable in a root that has no state directory yet", a
     // A fresh root: no `.Herdchestra` exists, exactly as on the first request.
     assert.equal(fs.existsSync(stateDir(root)), false);
     const state = new SessionState({ sessionId: "gate-fresh", role: ROLE.MANAGER, root });
-    // The open lands, so the request is not held for a write that failed.
-    assert.equal(state.openContextRequest(), true, "the first gate write of a fresh root lands");
+    // The open writes nothing: no verdict has been decided yet, and an absent
+    // file already refuses.
+    assert.equal(state.openContextRequest(), true);
     const gateFile = `${stateDir(root)}/gate-fresh.request.json`;
-    assert.equal(JSON.parse(fs.readFileSync(gateFile, "utf8")).code, "CONTEXT_PROJECTION_PENDING");
-    // And the settle that follows a clean projection lands too.
-    assert.equal(state.settleContextRequest(null), true);
+    assert.equal(fs.existsSync(gateFile), false, "an open request writes no verdict");
+    // The settle that follows a clean projection is the first write, and it
+    // lands in a root whose state directory did not exist.
+    assert.equal(state.settleContextRequest(null).written, true);
+    const written = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+    assert.equal(written.allowed, true);
+    assert.equal(written.settled, true);
     assert.equal(state.requestRefusal(), null);
 
     // The same write where the directory CANNOT be created answers, never
@@ -5321,14 +5478,14 @@ test("the request gate is writable in a root that has no state directory yet", a
 
 test("a lane can be built without its first turn, and is then not in the roster", async () => {
   // A relay needs a successor that exists and has an identity BEFORE the record
-  // that names it is committed. `brief: null` is that shape: the session is
+  // that names it is committed. `verboseIntent: null` is that shape: the session is
   // created, wired, authorized and narrowed, but produces no turn — so it is not
   // a live tenure and `join`/`steer` must not see it.
   await withRoot(async () => {
     const session = fakeSession({ agentId: "inert-1" });
     const api = fakeApi([session]);
     const lanes = trackedLaneTable(new LaneTable({ api }));
-    const started = await lanes.start({ name: "relay-1", role: ROLE.MANAGER, brief: null });
+    const started = await lanes.start({ name: "relay-1", role: ROLE.MANAGER, verboseIntent: null });
     assert.equal(started.ok, true, JSON.stringify(started));
     assert.equal(started.inert, true);
     // No turn was requested.
@@ -5732,7 +5889,7 @@ test("the factory works when called as factory(api): no dispatch, honest refusal
     // host passes `ctx` as the fifth argument (`sdk.ts` execute), and the roster
     // a fork writes into is that session's own — a call without a context has
     // no roster to ask, which is the `NO_SESSION` answer below.
-    const fork = receiptOf(await tools.get("fork").execute("c1", { name: "w1", brief: "role: coder — x" }, undefined, undefined, ctx));
+    const fork = receiptOf(await tools.get("fork").execute("c1", { name: "w1", verboseIntent: "role: coder — x" }, undefined, undefined, ctx));
     assert.equal(fork.started, false);
     assert.equal(fork.reason, "NO_SESSION_FACTORY");
     const join = receiptOf(await tools.get("join").execute("c2", {}, undefined, undefined, ctx));
@@ -5920,7 +6077,7 @@ test("join with an empty roster says so, and names what the roster holds when it
     assert.match(empty.detail, /holds no worker/);
 
     // After a fork the roster is not empty, so the refusal names the lane.
-    await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx);
+    await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx);
     sessions.get("w1").endTurn("done");
     assert.equal(receiptOf(await managerTools.get("join").execute("j1", {}, undefined, undefined, managerCtx)).text, "done");
     const consumed = receiptOf(await managerTools.get("join").execute("j2", {}, undefined, undefined, managerCtx));
@@ -5942,7 +6099,7 @@ test("the Manager's join finds the lane its own fork started, before that lane e
     await handlers.get("session_start")[0]({ type: "session_start" }, managerCtx);
 
     const forked = receiptOf(
-      await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx),
+      await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx),
     );
     assert.deepEqual(forked, { name: "w1", steered: false, started: true });
 
@@ -5975,7 +6132,7 @@ test("a join pending when its session is disposed settles with SESSION_DISPOSED,
     assert.notEqual(adapterForCall(managerCtx), null, "the manager session bound an adapter");
 
     const forked = receiptOf(
-      await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx),
+      await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx),
     );
     assert.equal(forked.started, true, JSON.stringify(forked));
 
@@ -6019,7 +6176,7 @@ test("a worker's js-worker runs against the worker's own session, not the Manage
     await handlers.get("session_start")[0]({ type: "session_start" }, managerCtx);
 
     const forked = receiptOf(
-      await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx),
+      await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx),
     );
     assert.deepEqual(forked, { name: "w1", steered: false, started: true });
     assert.equal(created.length, 1);
@@ -6061,7 +6218,7 @@ test("a worker's programs are booked on the worker's own program registry", asyn
     herdchestra(api);
     const managerCtx = managerCtxFor("manager-session-registry");
     await handlers.get("session_start")[0]({ type: "session_start" }, managerCtx);
-    await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx);
+    await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx);
     const workerTools = new Map(
       [...sessions.get("w1").registered].filter(([name]) => ["js-worker", "fork", "join"].includes(name)),
     );
@@ -6329,14 +6486,14 @@ test("a worker's fork and join share the worker's own roster, apart from the Man
     herdchestra(api);
     const managerCtx = managerCtxFor("manager-roster-shared");
     await handlers.get("session_start")[0]({ type: "session_start" }, managerCtx);
-    await managerTools.get("fork").execute("f1", { name: "w1", brief: "role: coder — go" }, undefined, undefined, managerCtx);
+    await managerTools.get("fork").execute("f1", { name: "w1", verboseIntent: "role: coder — go" }, undefined, undefined, managerCtx);
     const workerTools = new Map(
       [...sessions.get("w1").registered].filter(([name]) => ["js-worker", "fork", "join"].includes(name)),
     );
 
     // The worker forks a child of its own.
     const nested = receiptOf(
-      await workerTools.get("fork").execute("f2", { name: "w1-child", brief: "role: coder — help" }, undefined, undefined, workerCtxFor(sessions, "w1")),
+      await workerTools.get("fork").execute("f2", { name: "w1-child", verboseIntent: "role: coder — help" }, undefined, undefined, workerCtxFor(sessions, "w1")),
     );
     assert.equal(nested.started, true, JSON.stringify(nested));
     assert.equal(created.length, 2);
@@ -6373,7 +6530,7 @@ test("a nested fork three levels deep is not capped by task.maxRecursionDepth", 
     await handlers.get("session_start")[0]({ type: "session_start" }, managerCtx);
 
     // Depth 1: the Manager's worker.
-    await managerTools.get("fork").execute("d1", { name: "lvl1", brief: "role: coder — level one" }, undefined, undefined, managerCtx);
+    await managerTools.get("fork").execute("d1", { name: "lvl1", verboseIntent: "role: coder — level one" }, undefined, undefined, managerCtx);
     assert.equal(created.length, 1);
 
     // Depth 2 and 3: each level forks the next through ITS OWN tools.
@@ -6385,7 +6542,7 @@ test("a nested fork three levels deep is not capped by task.maxRecursionDepth", 
       );
       assert.equal(tools.has("fork"), true, `${parent} holds fork`);
       const receipt = receiptOf(
-        await tools.get("fork").execute(`d${level}`, { name: child, brief: `role: coder — level ${level}` }, undefined, undefined, workerCtxFor(sessions, parent)),
+        await tools.get("fork").execute(`d${level}`, { name: child, verboseIntent: `role: coder — level ${level}` }, undefined, undefined, workerCtxFor(sessions, parent)),
       );
       assert.equal(receipt.started, true, `${child}: ${JSON.stringify(receipt)}`);
       assert.equal(created.length, level, `one session per level, ${level}`);
@@ -6903,12 +7060,12 @@ test("a review replays even after the ledger moved on, and the payload must matc
 // every failure path here decides a copy and settles a verdict. What it also
 // must do — and what a live session proved it once did not — is leave a record:
 // a refusal nobody can read afterwards is a refusal nobody can diagnose.
-test("every settled request writes one record, and a refused one says what it dropped", async () => {
+test("a clean request writes no line, and a refused one writes a bounded record", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "herd-record-"));
   const sessionId = "ses_record";
   const target = requestLogFile(root, sessionId);
   const written = [];
-  const handler = createContextHandler({
+  const clean = createContextHandler({
     // Scope keeps only the operator's first message: a prune the chain may
     // re-base on. The record must still show the copy the host handed over.
     scopeProject: async ({ items }) => ({ ok: true, messages: [items[0]] }),
@@ -6924,18 +7081,39 @@ test("every settled request writes one record, and a refused one says what it dr
     { role: "user", content: "go" },
     { role: "assistant", content: [{ type: "tool-call", toolName: "js-worker", toolCallId: "c1", input: {} }] },
   ];
-  const out = await handler({ messages });
+  const out = await clean({ messages });
   assert.deepEqual(out.messages, [messages[0]], "Scope pruned the second message");
+  assert.equal(written.length, 0, "a clean request is not a diagnostic");
+  assert.equal(fs.existsSync(target), false, "and it leaves no file");
 
-  assert.equal(written.length, 1, "one record per settled request");
+  // A failure is the one request that must leave a line.
+  const failing = createContextHandler({
+    scopeProject: async ({ items }) => ({ ok: true, messages: [items[0]] }),
+    pairHintProject: async () => {
+      throw Object.assign(new Error("PREFIX_DRIFT: a message already shown would change"), {
+        code: "PREFIX_DRIFT",
+        details: { firstDivergence: { index: 1, previousDigest: "aaa", nextDigest: "bbb" } },
+      });
+    },
+    requestGate: { open: () => true, settle: () => true, read: () => null },
+    requestLog: ({ phase, incoming, presented, failure }) => {
+      const record = requestRecord({ phase, sessionId, host: "18.14.2", incoming, presented, failure });
+      written.push(record);
+      return recordRequest(target, record);
+    },
+  });
+  await failing({ messages });
+  assert.equal(written.length, 1, "a failed request leaves one record");
   const record = written[0];
   assert.equal(record.phase, "settled");
   assert.equal(record.sessionId, sessionId);
-  assert.equal(record.incoming.count, 2);
-  assert.equal(record.presented.count, 1);
+  assert.equal(record.length, 2);
+  assert.equal(typeof record.root, "string");
+  assert.deepEqual(record.firstDivergence, { index: 1, previousDigest: "aaa", nextDigest: "bbb" });
+  assert.equal(record.failure.code, "PREFIX_DRIFT");
   assert.equal(record.dropped.length, 1, "the record names the message that left the copy");
   assert.deepEqual(record.dropped[0].calls, ["c1"], "and the call it carried");
-  assert.equal(record.pair.summary, null, "no host rewrite produced this copy");
+  assert.ok(record.pair !== null, "the failure also records where the pair stood");
   // It is on disk, one line, and it carries no message text.
   const lines = fs.readFileSync(target, "utf8").split("\n").filter((line) => line.trim() !== "");
   assert.equal(lines.length, 1);
@@ -6972,12 +7150,12 @@ test("a projection failure is recorded with the stage and code that caused it", 
   assert.equal(record.failure.code, "SCOPE_BUDGET_UNKNOWN");
   // The copy really was reduced to the operator's latest message plus the
   // notice, so the record's `dropped` names what the failure removed.
-  assert.ok(record.presented.count <= out.messages.length);
+  assert.ok(record.length <= out.messages.length + 1, "the record names the request length, not the reduced copy");
   assert.ok(record.dropped.length >= 1, "the failed request says what it did not send");
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test("a side turn writes its record and settles no gate", async () => {
+test("a clean side turn writes no line and settles no gate", async () => {
   // A title/card request is the host's own UI turn. It is a request, so it is
   // recorded; it is not the conversation, so it must not open or settle the
   // gate the tools read.
@@ -7011,7 +7189,7 @@ test("a side turn writes its record and settles no gate", async () => {
     { role: "user", content: [{ type: "text", text: "<title-request>" }], attribution: "agent" },
   ];
   await handler({ messages });
-  assert.equal(written.length, 1, "the side turn is still a request and is still recorded");
+  assert.equal(written.length, 0, "a clean side turn is not a diagnostic");
   assert.equal(opened, 0, "a side turn does not open the gate");
   assert.equal(settled, 0, "a side turn does not settle the gate");
   fs.rmSync(root, { recursive: true, force: true });
@@ -7144,7 +7322,7 @@ test("a side-channel projection held open never refuses a main-turn tool call", 
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line))
     .filter((line) => line.kind === "gate");
-  assert.equal(gates.length, 2, "only the main request's open and settle were recorded; the side turn wrote none");
+  assert.equal(gates.length, 1, "only the main request's changed verdict was recorded; the side turn wrote none");
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -7526,7 +7704,7 @@ test("a refusal in one session never blocks another session in the same process"
     const bRecords = readLines(cleanId);
     assert.deepEqual(
       bRecords.map((record) => `${record.kind}/${record.phase}`),
-      ["gate/open", "gate/settle", "request/settled"],
+      ["gate/settle"],
       "B wrote exactly its own request's records",
     );
     assert.ok(
@@ -7591,7 +7769,7 @@ test("a call whose session never bound is refused by name, never judged by anoth
     assert.equal(text.includes("PREFIX_DRIFT"), false, "never another session's verdict");
 
     // The worker port: no roster is borrowed either.
-    const fork = await toolCallHookOf(pi, "fork")("call-2", { i: "x", name: "w", brief: "b" }, undefined, undefined, stranger);
+    const fork = await toolCallHookOf(pi, "fork")("call-2", { i: "x", name: "w", verboseIntent: "b" }, undefined, undefined, stranger);
     const forkText = fork?.content?.[0]?.text ?? "";
     assert.match(forkText, /SESSION_UNBOUND/, "the fork face refuses the same way");
     assert.equal(forkText.includes("PREFIX_DRIFT"), false);

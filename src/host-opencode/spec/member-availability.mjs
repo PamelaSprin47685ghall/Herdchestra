@@ -9,9 +9,13 @@
 // There is no per-role exception list: the Manager surface simply has no `call`
 // and no file members, so nothing extra needs refusing.
 
-import { SURFACE_MEMBERS, surfaceNameFor } from "../../compose/program/surface.mjs";
+import { surfaceNameFor } from "../../compose/program/surface.mjs";
+import { namesForSurface } from "./primitives.mjs";
 
-export const membersOf = (role) => SURFACE_MEMBERS[surfaceNameFor(role)];
+// A primitive is a capability of the role too: `devops` must answer as
+// available on Plan's surface even though compose no longer lists it among the
+// members (§3.1 gives one spelling per capability).
+export const membersOf = (role) => namesForSurface(surfaceNameFor(role));
 
 export const memberAvailable = (role, member) => membersOf(role).includes(member);
 

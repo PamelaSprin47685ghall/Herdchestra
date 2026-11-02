@@ -105,7 +105,7 @@ const INPUTS = {
   [TOOL_NAMES.worker]: { code: "return 1;" },
   [TOOL_NAMES.review]: { code: "return 1;" },
   [TOOL_NAMES.plan]: { code: "return 1;" },
-  [TOOL_NAMES.fork]: { name: "w1", brief: "role: coder — b" },
+  [TOOL_NAMES.fork]: { name: "w1", verboseIntent: "role: coder — b" },
   [TOOL_NAMES.join]: {},
 }
 

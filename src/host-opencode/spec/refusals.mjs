@@ -12,6 +12,8 @@ export const REFUSALS = Object.freeze({
   CODE: "CODE_INVALID",
   ROLE_ARG: "WORKER_ROLE_INVALID",
   DEVOPS_BUSY: "DEVOPS_BUSY",
+  CANCELLED: "CANCELLED",
+  TASK_MODEL_INCOMPLETE: "TASK_MODEL_INCOMPLETE",
   GAP: "HOST_GAP",
   NAME: "NAME_INVALID",
   BUSY: "PROGRAM_BUSY",
@@ -30,6 +32,15 @@ const text = {
   [REFUSALS.CODE]: "`code` must be a non-empty program string.",
   [REFUSALS.ROLE_ARG]: "`role` must be `coder` or `devops`.",
   [REFUSALS.DEVOPS_BUSY]: "A devops worker is already in flight; exactly one may run.",
+  // The operator stopped the work (root §1.1 item 2). A cancelled session may
+  // not start or steer workers: that would spend tokens the operator just
+  // stopped paying for.
+  [REFUSALS.CANCELLED]: "This work was cancelled by the operator; no worker may be started or steered.",
+  // Root §1.1 item 6: the operator named one half of the task model. Using the
+  // parent's model while pretending the task model was configured would hide
+  // the misconfiguration, so the fork is refused by name.
+  [REFUSALS.TASK_MODEL_INCOMPLETE]:
+    "The task model is half configured: set HERDCHESTRA_TASK_PROVIDER_ID and HERDCHESTRA_TASK_MODEL_ID together.",
   [REFUSALS.GAP]: "This behaviour depends on a host fact that is not established.",
   [REFUSALS.NAME]: "A worker name must be a non-empty string.",
   [REFUSALS.BUSY]: "The named program is still running; its receipt is in the result.",

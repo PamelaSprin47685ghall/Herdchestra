@@ -4,7 +4,7 @@
 // extensions })` is the host factory. Its `prompt` argument is the subagent's
 // system prompt — the host wraps it (`buildSubAgentSystemPrompt`) and does not
 // add its own role text on top — so the worker's prompt is exactly the
-// `COMMON + WORKER` composition, and the first user turn is the brief.
+// `COMMON + WORKER` composition, and the first user turn is `verboseIntent`.
 //
 // ## Three things this handle has to get right, each measured in `../cline`
 //
@@ -73,7 +73,7 @@ export const enforceFace = (agent, tools) => {
 // The adapter's queue is ALWAYS drained first, and the host's own consumer is
 // chained behind it. Returning the host's config untouched when it already had a
 // `consumePendingUserMessage` left this adapter's queue with no reader at all:
-// `steer()` still pushed the brief and answered `true`, so the table counted a
+// `steer()` still pushed the text and answered `true`, so the table counted a
 // carried turn while the text was silently lost. The host's member is not
 // dropped — a runtime the host wired with its own queue still reads it.
 const decorateConfigProvider = (configProvider, queue, counter) => {
@@ -95,7 +95,7 @@ const decorateConfigProvider = (configProvider, queue, counter) => {
         consumePendingUserMessage: async () => {
           const next = queue.shift();
           if (next !== undefined) {
-            // How many steered briefs this turn read at its boundary: the report
+            // How many steered verboseIntents this turn read at its boundary: the report
             // that ends the turn answers each of them.
             counter.read += 1;
             return next;
@@ -118,7 +118,7 @@ const steerText = (value) => {
 
 export const runtimeHandle = ({
   name,
-  brief,
+  verboseIntent,
   role,
   create,
   configProvider,
@@ -129,7 +129,7 @@ export const runtimeHandle = ({
   modelSource = null,
   credentialSource = null,
   // `false` builds the runtime WITHOUT its first turn (spec §4.2 step 4). The
-  // handle then reports `pending: true`, and `run(brief)` sends that turn.
+  // handle then reports `pending: true`, and `run(verboseIntent)` sends that turn.
   start = true,
 }) => {
   if (create === null || typeof create !== "function") {
@@ -141,7 +141,7 @@ export const runtimeHandle = ({
   }
   // One entry per steer: the host consumes one message per request boundary.
   const queue = [];
-  // Steered briefs the turn in flight read at its request boundaries. Reset
+  // Steered verboseIntents the turn in flight read at its request boundaries. Reset
   // when a turn settles.
   const readSteers = { read: 0 };
   let agent;
@@ -185,7 +185,7 @@ export const runtimeHandle = ({
       finishReason: result?.finishReason ?? "unknown",
       text: typeof result?.text === "string" ? result.text : "",
       iterations: typeof result?.iterations === "number" ? result.iterations : 0,
-      // How many steered briefs the turn took into itself. The table settles
+      // How many steered verboseIntents the turn took into itself. The table settles
       // that many turns from this one report.
       steered: readSteers.read,
     };
@@ -224,7 +224,11 @@ export const runtimeHandle = ({
         return settle(result);
       });
   };
-  const started = start ? turn(brief) : null;
+  // A handle that was aborted is dead: the runtime behind it produced its last
+  // turn. A caller that needs another investigation must refuse by name instead
+  // of starting a second runtime (`devops.mjs`).
+  let dead = false;
+  const started = start ? turn(verboseIntent) : null;
 
   // The first turn is already in flight when `start`; `run` is the next turn,
   // which the table calls only after the previous one settled.
@@ -268,9 +272,18 @@ export const runtimeHandle = ({
     },
     // The next turn of the same runtime. A runtime built inert sends its FIRST
     // turn here (the lane's `beginLane`), and a worker idle between turns sends
-    // the brief a steer left for it.
-    run: (nextBrief) => turn(nextBrief),
-    abort: (reason) => agent.abort?.(reason),
+    // the verboseIntent a steer left for it.
+    run: (nextIntent) => turn(nextIntent),
+    abort: (reason) => {
+      dead = true;
+      return agent.abort?.(reason);
+    },
+    // Whether the runtime behind this handle can still take a turn. `abort` is
+    // the one event this adapter can observe directly; a caller that needs a
+    // turn after a death refuses by name instead of starting a second runtime.
+    get dead() {
+      return dead;
+    },
     // The runtime's own hook bag, for the hooks that are about THIS runtime's
     // turns. `SessionRuntime` merges the extension hooks into the bag it builds
     // (`createRuntimeHooks`), so the session's `beforeModel` already runs on the

@@ -93,6 +93,11 @@
 // handoff is refused with `DRAFT_MISSING` before any Manager session exists.
 // Nothing is substituted for a missing draft.
 //
+// The canonical path is the workspace-root `plans/<name>.md`, never under
+// `.Herdchestra/` (根 §1.1 item 3, §2.2). This package does not choose or read
+// that path: the host's `draft` port hands the bytes in, and the ledger judges
+// only whether they are a non-empty string.
+//
 // `relay` carries `retire: true`, `openSuccessor: true`, `barrier: true`; the
 // host writes all three together. `openSuccessor()` copies the milestone, clears
 // the ledger and marks the tenure as a successor; a finished work has no

@@ -53,10 +53,10 @@ test("two sessions that share a file-safe spelling keep separate journals", asyn
   await first.newEpoch();
 
   const second = await openPairHint({ root, sessionId: "a?b" });
-  // A fresh journal: no binding, no epoch, no presented copy.
+  // A fresh journal: no binding, no epoch, no chain.
   assert.equal(second.bound, false);
   assert.equal(second.epoch, 0);
-  assert.equal(second.presented, null);
+  assert.equal(second.chain, null);
   await second.bind({ sessionId: bindId("a?b"), ladder: { explicit: "SimplifiedChinese" } });
   await second.project({ messages: [{ role: "user", content: "two" }] });
 
@@ -96,8 +96,12 @@ test("a cold start rebuilds the same epoch, language and presented copy", async 
   assert.equal(restarted.sessionId, journalKeyOf("ses/cold"));
   assert.equal(restarted.language, "English");
   assert.equal(restarted.epoch, 1);
-  // Same bytes for the request the previous process last sent.
-  assert.deepEqual(restarted.presented, next.messages);
+  // Same chain for the request the previous process last sent: the journal
+  // keeps digests, not a copy of the conversation (root §1.1 item 1).
+  assert.deepEqual(restarted.chain.digests, first.chain.digests);
+  assert.equal(restarted.chain.length, first.chain.length);
+  assert.equal(restarted.chain.root, first.chain.root);
+  assert.equal(restarted.chain.pairIndex, first.chain.pairIndex);
   assert.equal(placed.mode, "placed");
   // The new epoch places the pair again, at the new fact's position.
   assert.equal(next.mode, "placed");

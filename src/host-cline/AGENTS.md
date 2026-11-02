@@ -24,7 +24,7 @@
    没有角色。本适配器启动的会话把角色写进 session metadata（`herdchestra.role`），插件用自己的
    `getSession` 读回（`identity.mjs`）；读不到时按 Manager（操作员自己的会话）。
 2. 单次调用里，顶层调用者是 Manager，除非本会话的角色是 Plan（`roles.mjs` 的 `callRole`）；
-   子代理调用查 `fork` 记下的身份表（角色来自 brief 的显式声明，绝不按名字推断）。
+   子代理调用查 `fork` 记下的身份表（角色来自 `verboseIntent` 的显式声明，绝不按名字推断）。
 
 顶层会话即便调用 `js-worker` 也拿到 worker 面：拒绝只能由 `hooks.beforeTool` 做，
 因为宿主没有按角色收窄工具面的接口（根 §7.2「两层分离」）。
@@ -46,22 +46,22 @@
 | `plan.mjs` | 底稿读取与 Plan 的两个端口（`draft`、`devops` 由 `devops.mjs` 给） |
 | `plugin-session.mjs` | 会话请求的 `pluginPaths` / `toolPolicies` / `plugins`（§2.1） |
 | `rewrite.mjs` | 唯一的请求改写入口（根 §7.2）：`requestRewrite` 就是 `beforeModel` 钩子答案里的 `messages`（`hooks.mjs`），`systemPromptRule`/`rolePrompt` 把角色提示词做成规则；文件头逐行记录了宿主为何如此（`HACK.md` 有实测） |
-| `drafts.mjs` | 底稿路径的唯一定义 |
-| `devops.mjs` | Plan 的单次 devops 运行时（`createDevopsRunner`） |
+| `drafts.mjs` | 底稿路径的唯一定义：工作区根 `plans/<name>.md`（用户可见，绝不在 `.Herdchestra/` 下） |
+| `devops.mjs` | Plan 的**专属** devops 运行时（`createDevopsRunner`）：一个会话一个 `plan-devops` 句柄，懒建、复用、死亡即具名拒绝 |
 | `handoff.mjs` | §2.2 交接步骤 `planHandoff`（半开 Manager 的回收） |
 | `sessions.mjs` | 本适配器启动会话的工厂：`ManagerSessions`（`openPlan`、`startManager`、`stopManager`） |
 | `entry-path.mjs` | 新会话要加载的插件入口路径（`index.js`） |
 | `ports.mjs` | `command`、`relay`、`fission`（含组操作）三个端口 |
 | `execution.mjs` | 真实 JS 执行（`AsyncFunction`）、park 表、一次调用的结局 |
-| `workers.mjs` | `fork` / `join` / steer / fission lane 的 worker 表；按回合记账的 `join`；持久花名册（`.workers.jsonl` + `.workers.restored.json`，`restoreRoster` / `restoredRoster`）；`abortAll()` 是会话结束时的收尾 |
-| `runtime.mjs` | 一个 `createDelegatedAgent` 运行时的句柄（首个 brief、steer、abort） |
+| `workers.mjs` | `fork` / `join` / steer / fission lane 的 worker 表；按回合记账的 `join`；持久花名册（唯一来源 `.workers.jsonl`，建表时回放，`restoreRoster` / `restoredRoster`）；`abortAll()` 是会话结束时的收尾，`cancelAll()` 是操作员中断的传播 |
+| `runtime.mjs` | 一个 `createDelegatedAgent` 运行时的句柄（首个 `verboseIntent`、steer、abort、`dead`） |
 | `tenure.mjs` | Manager / Plan 任期：台账、接力栅栏、Scope 与 Pair Hint 书 |
 | `request.mjs` | Cline 消息 → Scope item 与 Pair Hint 消息的映射 |
 | `facts.mjs` / `files.mjs` | 会话 id、工作区、语言阶梯；`.Herdchestra/` 的读写 |
 | `host-modules.mjs` | 运行时解析 `@cline/core`：`CLINE_CORE_MODULE` → 裸模块名 → `argv`/`execPath`/`cwd`/插件目录向上 → 已知安装布局 → `../cline` 源码树；异步、带证据来源（`hostModuleSource()`），拿不到就如实报告 |
 | `operator.mjs` | `ask` 的提问半边：park + `interrupt: true` 的回执，以及**能力可注入**的 seam（直答通道 / 审批往返 / 只给嵌入方的 `request`）。**没有「无通道」拒绝** |
 | `execution.mjs` | 程序执行：`ParkTable` 持有挂起点的 promise、**续体**（`bodyPromise`）与下一次挂起信号；`ProgramCall#run` 记住 body 的 promise，`ParkTable.resume` 唤醒后与下一次挂起赛跑，所以 `this.unpark` 回答的是续体的真实结局 |
-| `guard.mjs` | 无人值守出口判定在本宿主的落地（根 §2.2）：`turnExit`（`afterModel` 记录自然停止尝试）、`requestNotice`（`beforeModel` 的 `appendContext` 把 Nudge 送进下一次请求）、`runExit`（`afterRun` 用 `steer_message` 真续跑）。操作员按停（`status` 为 cancelled/aborted/interrupted，或 aborted 的 assistant 消息）判 `operator-interrupt`，绝不 nudge |
+| `guard.mjs` | 无人值守出口判定在本宿主的落地（根 §2.2）：`turnExit`（`afterModel` 记录自然停止尝试）、`requestNotice`（`beforeModel` 的 `appendContext` 把 Nudge 送进下一次请求）、`runExit`（`afterRun` 用 `steer_message` 真续跑）。操作员按停（`status` 为 cancelled/aborted/interrupted，或 aborted 的 assistant 消息）判 `operator-interrupt`，绝不 nudge；同一判定把取消传播到全部子孙（根 §1.1 item 2），`parkStopOwed`/`parkStopped` 的 ask 停机除外 |
 
 ## 2.1 会话请求：加载与可见性（`plugin-session.mjs`）
 
@@ -192,13 +192,14 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 底稿的只读锁也只在那一次程序里解开。`js-plan` 之外的受理路径（`reviewFor`）本来就调 `tenure.save()`。
 
 **草稿目录在会话构造时就建好**（`ensureDraftDir`）：`write` 是目标同目录内的原子替换，
-建不了目录；目录缺失时第一次写是 `ENOENT`，模型随后会把 `drafts.md` 写成普通文件，
+建不了目录；目录缺失时第一次写是 `ENOENT`，模型随后会把 `plans.md` 写成普通文件，
 之后每次写都是 `ENOTDIR`。目录建不成时 `planDraftDirFailure` 记下原因，`js-plan` 的规则
 **原样告诉模型**（`could NOT be prepared` + 具名原因 + 目录），而不是让写入在看不出原因的地方失败。
 `startPlan` 在建会话之前也做同一件事，失败即回 `DRAFT_DIR_UNWRITABLE`，不启动会话。
 
-文件名的前缀有两套，这是有意的，不是缺陷：**角色事实、Pair Hint 日志、草稿**按会话 id
-（`<sessionId>.role.json` / `<sessionId>.jsonl` / `drafts/<name>.md`），**台账与 Scope 日志**按
+文件名的前缀有两套，这是有意的，不是缺陷：**角色事实、Pair Hint 日志**按会话 id
+（`<sessionId>.role.json` / `<sessionId>.jsonl`），**草稿**是用户可见产物，放工作区根
+`plans/<name>.md`（绝不在 `.Herdchestra/` 下），**台账与 Scope 日志**按
 `#stateName`（`<stateName>.plan.json`、`<stateName>.scope.jsonl`）。`#stateName` 在会话有 id 时就是
 `safeName(sessionId)`，只有宿主连 id 都没给时才会多一个序号——那种会话不存在第二个。
 按会话 id 找不到台账时，先看 `#stateName` 是否退回了序号。
@@ -293,7 +294,11 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 - `newScopeGoal`、`replacement` 同时带 `minLength: 1` 与 `pattern: "\\S"`：
   后者对应 `annotation.mjs` 的「非空白」，否则模式会放过一个 `"   "` 而让书去拒；
 - `withScope(properties, required)` 追加 `scope` 并把它写进 `required`；
-  `required` 只列工具真正必需的字段，`fork` 只有 `name` 与 `brief`（根 §4.1 的两参数原语）。
+  `required` 只列工具真正必需的字段，`fork` 只有 `name` 与 `verboseIntent`（根 §4.1 的两参数原语）。
+
+`SCOPE_SCHEMA.description` 只留一句指针（「见系统提示词的 Scope 一节」）加四种 kind 的字段形状；
+字段描述同样只说明字段本身。根 §1.1 item 5 的理由：机制在系统提示词里写一遍就够，每个工具都复制
+一份长说明只是浪费上下文。模式的语言仍与 `annotation.mjs` 逐条一致，由属性测试固定。
 
 模式只是注解的**描述**，不是第二条准入规则：预算是否已建立、是否已耗尽、本拍谁是真注解，
 仍只由 `core/scope` 的书决定。`scope-schema.test.mjs` 用 fast-check 固定两者的语言一致：
@@ -305,7 +310,7 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
 |---|---|
 | Manager | `fork`、`join`、`relay`、`command`、`control` |
 | coder / devops | `fork`、`join`、`fission`、`command`、`control`（§3.1、§4.1：凡可派工的身份都有 `fork`/`join`；Plan 没有） |
-| Plan | `devops`、`draft`、`relay`、`command`、`control` |
+| Plan | `devops`、`draft`、`relay`、`command`、`control`（`devops` 以**裸原语** `devops(verboseIntent)` 到达模型，不是 `this.devops`） |
 
 所有角色另有 `scope` 端口（`ask(member)`：豁免快照查询，同步返回，根 §6.2）。
 
@@ -327,15 +332,15 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
   `{ ok: true, asked: true, question, interrupt: true }`（`askedReceipt`），不再有「没有通道」这种拒绝。
   `this.ask` 就是 `this.park({ question })` + `interrupt`：挂起与中断本身就是通道。初任空账 review
   的**提问**仅在 Plan 的 S1 出现；Manager 侧的初任空账是 `confirm`（独立验收，里程碑留在「执行」），不提问。
-- `fork` 对在途 worker 是**真中途 steer**：brief 进运行时自己的待输入通道
+- `fork` 对在途 worker 是**真中途 steer**：`verboseIntent` 进运行时自己的待输入通道
   （`consumePendingUserMessage`，`agent-runtime.ts:1689` 每个请求边界读一次），由**正在运行的那个回合**
-  在下一个请求边界取走，见 §7 第 3 条与 HACK.md「a steered brief rides the turn that is running」。
-  回执恒为 `{ name, steered, started }`，成功里没有 rejection。一个 brief 被 admitted 时同时记成
-  「被某回合承载」（`steered`）：承载它的那一个上报同时结算承载回合与被承载的 brief，两者各是一条
-  `join` 记录（`#settle`）。宿主 handle 没有这条通道时，brief 排到该 worker 的下一回合（`pending`）。
+  在下一个请求边界取走，见 §7 第 3 条与 HACK.md「a steered verboseIntent rides the turn that is running」。
+  回执恒为 `{ name, steered, started }`，成功里没有 rejection。一个 `verboseIntent` 被 admitted 时同时记成
+  「被某回合承载」（`steered`）：承载它的那一个上报同时结算承载回合与被承载的回合，两者各是一条
+  `join` 记录（`#settle`）。宿主 handle 没有这条通道时，它排到该 worker 的下一回合（`pending`）。
   **结算只看运行时实际读到的条数**：`#settle` 用 `record.steered`（`runtime.mjs` 在每个请求边界
   计数）作为权威读数，`carried = min(表记 steered, record.steered, admitted − settled − 1)`。
-  回合结束时若一条也没读（模型直接给了最终答复），那条 brief 不被结算成「已完成的工作」，
+  回合结束时若一条也没读（模型直接给了最终答复），那条 `verboseIntent` 不被结算成「已完成的工作」，
   它仍在运行时队列里，由下一回合取走。表只在结算后扣掉真正跑过的那几条。
   **同名 fork 不能复活被 fission 替换的 present**：`state === REPLACED` 的条目回
   `WORKER_REPLACED`，`#runTurn` 也不启动它（§4.2 第 6 步）。
@@ -349,41 +354,67 @@ Cline Desktop 里操作员自己新建的会话既没有角色事实，`setup` �
   `NO_ABORT_SURFACE` / `ABORT_FAILED`）：组合层的 `portRefused` 只认这个字段，只写
   `replaced: false` 会被读成「替换成功」，整组不回滚而旧 present 继续出回合。
 - **`join` 的会计按「回合」记账，不按「名字」**（`workers.mjs`）。一个 worker 可以有好几个回合：
-  排在运行中回合后面的 steer，或者在它已经结算过一次之后又收到的 brief。每个回合在被接受时
+  排在运行中回合后面的 steer，或者在它已经结算过一次之后又收到的 `verboseIntent`。每个回合在被接受时
   `admitted += 1`，被结算时 `settled += 1`，只有「已结算且无人认领」的回合才是可交付的完成记录：
 
   ```
   owed = (admitted − settled − steered) + 未认领的完成记录
   ```
 
-  `steered` 是「已被某个运行中回合承载的 brief」：它被 admitted，但它的上报就是承载回合的那一次，
+  `steered` 是「已被某个运行中回合承载的 `verboseIntent`」：它被 admitted，但它的上报就是承载回合的那一次，
   所以既不算第二个在途回合，也不能在承载回合结算后继续让 `join` 等一个不会来的上报。
-  **被承载的 brief 各交一条结果，文本取自结算它的那次上报**（`#settle`）：一次上报先交承载回合，
-  再按回合号升序交它承载的每一条 brief。承载回合的记录用这个回合被交给的文本（`carrierText`，
-  没有 steer 时就是 `brief`）；被承载回合的记录用**上报的文本**——它们都是被这一份上报结束的，
+  **被承载的回合各交一条结果，文本取自结算它的那次上报**（`#settle`）：一次上报先交承载回合，
+  再按回合号升序交它承载的每一条。承载回合的记录用这个回合被交给的文本（`carrierText`，
+  没有 steer 时就是 `verboseIntent`）；被承载回合的记录用**上报的文本**——它们都是被这一份上报结束的，
   这份上报就是它们各自的答复。结果是按回合算的，每个回合恰好一条；两次 steer 落在同一回合时，
-  队列里是「承载回合 1 条 + 被承载 2 条」，后两条同名同文，各自独立认领。重载后承载回合的 brief
-  不在快照里，这条记录退回用上报的文本（`carrierText || brief || record.text`）。
+  队列里是「承载回合 1 条 + 被承载 2 条」，后两条同名同文，各自独立认领。重载后承载回合的文本
+  不在日志里，这条记录退回用上报的文本（`carrierText || verboseIntent || record.text`）；`settle`
+  记录带 `carrierText`，所以下一次加载能还原同一条记录。
   因此「第一个回合刚结束、紧接着启动队列中的 steered 回合」这一刻，新回合在排队时就已 admitted，
   `owed` 不为零，`join` 绝不回 `null`。运行时对同一个回合重复上报（宿主重试、重复事件）不会被记成
   第二个完成记录；认领按回合 id（`<name>#<turn>`）记账，同一条结果不会被交付两次。
   并发 `join` 各自登记一个可唤醒的等待者，每次唤醒后重查表；没有可认领的记录就重新挂起，
   不会空转。`owed()` 是这条不变量的公开读数，`worker-roster.test.mjs` 用 fast-check 状态机
   （任意交错的 `fork` / steer / 乱序完成 / `join` / 并发 `join` / 重载）固定它。
-- **花名册是持久的。** 每次变化写一条记录到 `.Herdchestra/<session>.workers.jsonl`
-  （`fork` / `steer` / `settle` / `claim` / `release`），会话结束时把整份快照写到
-  `.Herdchestra/<session>.workers.restored.json`；`WorkerTable({ root, sessionId, restored })`
-  从这份快照重建（`restoredRoster`），`restoreRoster(records)` 能把日志本身重放成同一份花名册。
-  重载后的表对「本进程没有句柄、但仍被快照记为在途」的 worker 保留其回合，`join` 照旧等它；
-  同名 `fork` 对这种名字回 `WORKER_RUNTIME_GONE`，而不是把 brief 收进一个没人会排空的队列。
-  快照的每个条目带 `steered`（正在运行的回合承载了几条 brief）：少了它，重载后的表会把每条被承载的
-  brief 都当成第二个在途回合，于是一个上报只结算承载回合，`join` 永远等一份不会来的结果。
-  `settle` 记录同样带 `steered`，重放时按 `turn − steered … turn` 逐回合补完成记录。
+- **花名册是持久的，日志是唯一来源。** 每次变化写一条记录到
+  `.Herdchestra/<session>.workers.jsonl`（`fork` / `steer` / `settle` / `claim` / `release` /
+  `cancel`）。`WorkerTable({ root, sessionId })` **建表时回放这份日志**（`readJsonLines` 容忍
+  崩溃留下的半行），不再有第二份快照：两个文件能互相矛盾，而中途重载只读了其中一份。
+  `restoreRoster(records)` 是纯重放，`restoredRoster(root, sessionId)` 读同一份日志。
+  重载后的表对「本进程没有句柄、但日志记为在途」的 worker 保留其回合，`join` 照旧等它；
+  同名 `fork` 对这种名字回 `WORKER_RUNTIME_GONE`，而不是把 `verboseIntent` 收进一个没人会排空的队列。
+  每个 `steer` 记录带 `delivery`：只有 `delivery: "steer"` 是「被运行中回合承载」，
+  `delivery: "turn"` 是另起一回合；重放按这个字段恢复 `steered`，否则会把一个独立回合
+  当成承载回合，`owed` 少算一整个回合。
+  `settle` 记录带 `steered` 与 `carrierText`，重放时按 `turn − steered … turn` 逐回合补完成记录，
+  承载回合用 `carrierText`，被承载回合用上报文本——与活表交给 `join` 的完全一致。
   回合号是**名字的**，不是运行时的：同名 `fork` 重建运行时后，计数器从该名字已结算的回合数续上，
   否则新的 `name#1` 会撞上已认领的同名回合，`#complete` 会把这条结果当成「已交付」丢掉。
+- **认领即丢弃答案文本。** `settle` 是唯一写完整回答的地方（未被认领的完成记录需要它跨重载）；
+  `claim` 记录带 `textDropped: true`，重放时删除该完成记录，所以下一次加载的 `snapshot()`
+  里没有已认领回合的文本。日志是 append-only，已认领答案的字节仍留在历史里，但没有任何读者加载它。
+  根 §1.1 item 1：宿主保存全部聊天与工作记录，这里只留能恢复工作的最小状态。
 - 会话结束时 `SessionState.release()` 调 `WorkerTable.abortAll()`（§7 第 12 条），随后 `save()`
-  把花名册落盘；回执因此是 `{ ok, released, orphaned, roster }`。被中止的回合永远不会上报，
-  所以 `release` 把它们记为已结算：否则下一次加载会一直等一个不会再来的结果。
+  回答日志路径（`{ ok, path }`；日志本来就是随写随落盘）；回执因此是
+  `{ ok, released, orphaned, roster }`。被中止的回合永远不会上报，所以 `release` 把它们记为已结算，
+  并为每条未认领的完成记录补写 `claim`：否则下一次加载会一直等一个不会再来的结果，或复活一条已交付的记录。
+- **操作员中断传播到全部子孙**（根 §1.1 item 2）。`guard.turnExit` / `runExit` 在面向用户的角色
+  （Plan、Manager）上判到 `operatorInterruptOf` 时调 `SessionState.cancelDescendants()` →
+  `WorkerTable.cancelAll()`：对每个仍在运行或空闲的句柄调 `abort("OPERATOR_CANCELLED")`（不 dispose），
+  把子树标记为 `cancelled`（之后同名 `fork`/steer 回 `WORKER_CANCELLED`，重载后仍拒绝），
+  并给每个欠着的回合补一条 `finishReason: "cancelled"` 的完成记录，使 `join` 如实报告而不是永远等待。
+  已经到达的未认领结果原样保留；lane 同样被中止，但 lane 的结算不是 `join` 记录，所以不补完成记录。
+  Plan 的专属 `plan-devops` 不在 worker 表里，`cancelDescendants()` 直接调 runner 的 `cancel()`
+  （abort 那个句柄，不 dispose）；`release()` 收尾时也中止它。被中止的句柄是 `dead`，之后
+  `devops(...)` 回 `PLAN_DEVOPS_DEAD`，不会悄悄起第二个。
+  `abortAll()` 仍是会话结束的收尾，语义不变（它会清空队列）。`this.ask` 的 park 停机
+  （`parkStopOwed` / `parkStopped`）不是操作员对工作的中断，因此**不**传播。
+- **子代理走 task 模型**（根 §1.1 item 6）。`SessionState.resolveTaskModel()` /
+  `resolveTaskConnection()` 先读 `HERDCHESTRA_TASK_PROVIDER_ID` + `HERDCHESTRA_TASK_MODEL_ID`
+  （两半齐全才算读数），命中即 `source: "task"`；未设时回落到主梯子并报 `source: "main"`。
+  `startWorker`（fork、lane）与 `createDevopsRunner` 用它；`startManager` 与 `openPlan` 仍走
+  `resolveModel` / `resolveConnection`（主梯子）。`MODEL_UNKNOWN` 的 `detail.tried` 首项是
+  `taskEnvironment`，所以模型能从回执里看出 task 梯子也试过。
 - `fission` 的端口是 `compose/fission` 的 `Fission`：成员 `fission(owner, prompts)` 是组操作，
   另外五个是建组步骤（`fissionSteps`）。`origins(owner)` 只认 `fork` 启动、且不是 lane 的 worker；
   会话本身不在 worker 表里，所以顶层调用者得到 `InvalidOrigin`。`ownerName()` 是会话 id。
@@ -555,8 +586,10 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
   顺序是：`beforeModel` 记下的最近一次请求（`SessionState.noteModel`）→ setup 上下文里嵌入方给的
   `ctx.model`/`ctx.config`/`ctx.session` → `CLINE_PROVIDER_ID`/`CLINE_MODEL_ID` → 宿主会话记录
   （`getSession` 的行与 metadata 都带 `provider`/`model`，Cline 0.2.0 实测）。
-  两半必须齐全，`SessionState.resolveModel()` 是带 await 的形式，`fork`/`startManager`/`openPlan`/
-  `this.devops` 共用，回执的 `modelSource` 说明命中哪一级。全空时回 `MODEL_UNKNOWN`，**不猜 `cline`**。
+  两半必须齐全，`SessionState.resolveModel()` 是带 await 的形式，`startManager`/`openPlan`
+  共用（顶层会话走主梯子），回执的 `modelSource` 说明命中哪一级。全空时回 `MODEL_UNKNOWN`，**不猜 `cline`**。
+  **子代理不走这条梯子**：`startWorker`（fork、lane）与 `createDevopsRunner` 走
+  `resolveTaskModel()`/`resolveTaskConnection()`（见 §5 的 task 模型条目），命中 `source: "task"`。
 - `modelId` 为空时在调用宿主之前就回 `MODEL_MISSING`：宿主的 `CoreModelConfig` 要求非空模型，
   否则失败会埋在宿主 schema 的 zod 消息里。
 
@@ -580,11 +613,17 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
   自己唯一产物的 Plan 没有意义。会话侧 `resolveRole` 在 `js-plan` 规则报出路径之前再备一次
   （`startPlan` 之外的会话也走这条路）；失败原因由 `planDraftDirFailure` 交给规则，规则如实说明
   目录没备好，而不是只给路径、让模型在 `write` 上撞 ENOENT。
-- 工具是 `js-plan`，成员只有 `cat`、`write`（读写的唯一对象是底稿）；`ask`、`devops`、
-  `review` 由端口提供，`park`/`unpark` 由 `ProgramSurface` 的处理器补齐。
+- 工具是 `js-plan`：成员只有 `cat`、`write`（读写的唯一对象是底稿）与 `ask`/`unpark`；
+  `review` 与 `devops` 是**裸顶层原语**，不是成员（根 §1.1 item 3、§3.1）。`devops` 由 compose
+  的 `SURFACE_PRIMITIVES` 放进同一张面表，宿主把它列进 `execution.mjs` 的 `PRIMITIVES`，
+  所以程序里只有 `devops(verboseIntent)`，`this.devops` 是 `undefined`。
 - `registerRule` 用 `whenToolAvailable: "js-plan"` 把底稿路径告诉 Plan，模型不能自选路径。
-- `devops(intent)` 用与 `fork` 同一个 `createDelegatedAgent` 起一个 devops 运行时并等它的
-  单次结果（`devops.mjs`）；同一时刻至多一个在飞，第二次回 `DEVOPS_ALREADY_IN_FLIGHT`。
+- `devops(verboseIntent)` 是**专属** worker（`devops.mjs`）：一个会话只建一个运行时句柄，
+  固定名 `plan-devops`，第一次调查时才懒建（`start: false`），之后每次都是
+  `handle.run(verboseIntent)`——同一个运行时的对话就是 DevOps 的记忆，不再每次新起一个，
+  也不累积 `onSettled` 监听（本次回合的 promise 就是报告）。句柄被操作员中断 abort 后是
+  `dead`，下一次调查回 `PLAN_DEVOPS_DEAD`，**绝不**悄悄起第二个 devops。
+  同一时刻至多一个在飞，第二次回 `DEVOPS_ALREADY_IN_FLIGHT`。
   **准入是同步的单飞 promise**：`inFlight` 在第一个 `await` 之前就赋值（以前要等 SDK 与连接
   解析完才赋值，两个同拍调用会都读到 `null` 并各起一个运行时），结束时按 promise 身份清空。
   `fork` 侧另有一条：一个会话同时只允许一个非 DEAD、正在运行或欠回合的 devops
@@ -598,7 +637,7 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
 
 - Plan 在「待执行」提交空账 `review([])`，`ReviewMember` 调 `relay.startManager(draft)`。
 - review 不带任何文本：`reviewFor(findings, role?)` 的第二参数是角色，不是 note；底稿只从 `draft`
-  端口读（`.Herdchestra/drafts/<session>.md`），读不到就是 `DRAFT_MISSING`，绝不拿别的文字顶替。
+  端口读（工作区根 `plans/<session>.md`），读不到就是 `DRAFT_MISSING`，绝不拿别的文字顶替。
 - 底稿为空时在开会话之前拒绝（`DRAFT_MISSING`），Plan 留在「待执行」，下一次空账 review 重试。
 - 会话起好但没投递时，`planHandoff` 调 `stopManager`，回执带 `discarded`；台账不动。
 - 新 Manager 会话与 Plan 会话互不共享台账：`sessionId` 不同，文件名不同。
@@ -608,11 +647,18 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
 | 钩子 | 行为 |
 |---|---|
 | `beforeRun` | 只开 run（`#run += 1`），**不**开模型回合；把 Scope 冷启通知作为钩子上下文交给宿主。**子运行时的 run 直接返回**（`delegatedRuntime`）：它不推进父会话的 run 计数，也不清父会话的 park stop |
-| `beforeModel` | **先关上一回合**（`session.closeTurn()`，全 `meToo` 的拒收写进钩子上下文），再开新回合（`session.openTurn()`），再 `resolveRole()`；随后做请求副本：接力栅栏 → Scope 投影 → Pair Hint；第一次请求整段替换本角色的提示。Scope 投影传 `pinned: PINNED_MEMBERS`（`request.mjs`：core 默认值 + 空字符串 + **`"js-review"`（工具名）** + `SURFACE_MEMBERS["js-review"]`），与 opencode 同集；不传时 Pair Hint 的合成对与评测通道会在 `resetScope` 之后被裁掉，下一次呈现随之漂移。Pair Hint 三件事都在 `session.mjs#projectMessages`：栅栏切过副本时由 `tenure.anchorOfFence()` 对**本条栅栏**锚一次（冻结文本、epoch、handles 不动），冻结的 handles 与当前未结清 park 名不等时开新 epoch，相等时不动前缀。**子运行时的请求只做副本**：`parkStop` / `beginRound` / `closeTurn` / `openTurn` / `resumeAsked` / `noteModel` / `requestNotice` 一概不跑，否则 worker 的首条 brief（一条 user 消息）会被 `resumeAsked` 当成操作员对父会话 `ask` 的答复 |
+| `beforeModel` | **先关上一回合**（`session.closeTurn()`，全 `meToo` 的拒收写进钩子上下文），再开新回合（`session.openTurn()`），再 `resolveRole()`；随后做请求副本：接力栅栏 → Scope 投影 → Pair Hint；第一次请求整段替换本角色的提示。Scope 投影传 `pinned: PINNED_MEMBERS`（`request.mjs`：core 默认值 + 空字符串 + **`"js-review"`（工具名）** + `SURFACE_MEMBERS["js-review"]`），与 opencode 同集；不传时 Pair Hint 的合成对与评测通道会在 `resetScope` 之后被裁掉，下一次呈现随之漂移。Pair Hint 三件事都在 `session.mjs#projectMessages`：栅栏切过副本时由 `tenure.anchorOfFence()` 对**本条栅栏**锚一次（冻结文本、epoch、handles 不动），冻结的 handles 与当前未结清 park 名不等时开新 epoch，相等时不动前缀。**子运行时的请求只做副本**：`parkStop` / `beginRound` / `closeTurn` / `openTurn` / `resumeAsked` / `noteModel` / `requestNotice` 一概不跑，否则 worker 的首条 verboseIntent（一条 user 消息）会被 `resumeAsked` 当成操作员对父会话 `ask` 的答复 |
 | `beforeTool` | 角色面门禁（`callRole`）、Scope 准入。准入集合是 `SCOPE_TOOLS = FACE_TOOLS ∪ {fork, join}`：两者模式都要求 `scope`，属非豁免工具（§6.2），漏掉它们会让只有 `fork`/`join` 的回合以 `SCOPE_METOO_ONLY` 收尾，注解也从不入账 |
 | `afterTool` | Scope 结算（同一 `SCOPE_TOOLS` 集合）；拒收写进钩子上下文，不抛异常 |
-| `afterModel` | **不关回合**：宿主在这一刻还没跑本回合的工具。子运行时的 assistant 消息不参与父会话的自然停止判定 |
-| `afterRun` / `onEvent` | 收尾与观察；都不改 turn id。子运行时的 run 结束不触发父会话的 Nudge/续跑 |
+| `afterModel` | **不关回合**：宿主在这一刻还没跑本回合的工具。子运行时的 assistant 消息不参与父会话的自然停止判定。操作员中断（aborted 的 assistant 消息）在这一刻把取消传播到全部子孙（根 §1.1 item 2），`parkStopOwed`/`parkStopped` 的 ask 停机除外 |
+| `afterRun` / `onEvent` | 收尾与观察；都不改 turn id。子运行时的 run 结束不触发父会话的 Nudge/续跑。`runExit` 判到操作员按停（cancelled/aborted/interrupted）时同样传播取消；`onEvent` 不动状态 |
+
+**Pair Hint 的前缀链只存摘要（根 §1.1 item 1）。** `PairHint#chain` 是
+`{ length, digests, root, pairIndex }` 的不可变 `Chain`，冷启动后照样可比较；整份请求副本不再落盘。
+`session.mjs#projectMessages` 用 `hint.chain` 判「这条请求是否延续本会话」、
+把它交给 `projectionBoundary` 的 `presented`、并让 `extendsPrefix` 比较 pair-free 摘要。
+压缩副本的「是不是新的一次重写」用 `compactionDigest(current)` 对 `chain.pairFreeDigests()[0]`
+（两者都是 `chain.mjs` 的 `messageDigest`）：只比摘要，不需要旧副本的字节。
 
 **回合边界是模型请求，不是整个 run，也不是 `afterModel`。** 宿主一次迭代的顺序是
 `beforeModel` → `afterModel`（`agent-runtime.ts:2079`）→ `beforeTool`/`afterTool`（`executeToolCalls`，:974）。
@@ -695,8 +741,9 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
    而这两个工厂是纯函数式的连接封装，不需要跨线程共享状态。
    连接（provider/model）走同一条「有证据才用」的梯子：最近请求 → `setup` 上下文 → 宿主会话记录
    （`getSession`，行与 metadata 都带 `provider`/`model`）→ `CLINE_PROVIDER_ID`/`CLINE_MODEL_ID`；
-   两半齐全才算读数，`SessionState.resolveModel()` 是带 await 的形式，`fork`/`startManager`/
-   `openPlan`/`this.devops` 共用，回执的 `modelSource` 说明用了哪一级。
+   两半齐全才算读数，`SessionState.resolveModel()` 是带 await 的形式，`startManager`/`openPlan`
+   共用（顶层会话）；`fork`、lane 与 `devops` 走 `resolveTaskModel()`（task 环境变量优先，
+   否则回落主梯子并报 `source: "main"`），回执的 `modelSource` 说明用了哪一级。
    全都拿不到时 `fork` 仍回 `{ started: false, rejection: "HostCapabilityMissing" }`，
    连接全空时回 `MODEL_UNKNOWN` 并列出试过的来源——不假装启动，也不用缺省值顶替。
 3. `SessionRuntime.run()` 在运行中直接拒绝（`session-runtime-orchestrator.ts` 的
@@ -706,7 +753,7 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
    不在那张表里，`enqueue` 静默返回。
    **可达的中途输入通道是运行时自己的**：agent loop 在每个请求边界读
    `consumePendingUserMessage()`（`agent-runtime.ts:1689`，由 `agent-runtime-config-builder.ts:117`
-   从 config 转发）。`runtime.mjs` 在宿主没装时装上它，`handle.steer(brief)` 把文本入队，
+   从 config 转发）。`runtime.mjs` 在宿主没装时装上它，`handle.steer(verboseIntent)` 把文本入队，
    运行中的回合在下一次请求取走；`notifyPendingUserMessage()` 只打断模型请求
    （`agent-runtime.ts:633`），在跑的工具会跑完。
 4. 子代理的工具表由调用方给定，而**配置型子代理的 `tools:` 会先被宿主的 `createSubAgentTools`
@@ -746,7 +793,8 @@ const started = await startPlan({ host: cline, text: "把重试改成指数退�
     （`contribution-registry.ts:219`）。`index.mjs` 的 `setup` 已注册它，`SessionState.release()`
     调 `WorkerTable.abortAll()` 并随后 `save()`，回执是 `{ ok, released, orphaned, roster }`
     （中止那一半与 `abortLanes` 同形）：中止抛错的 runtime 仍在表里、被如实列为 `orphaned`；
-    `roster` 是落盘结果，写不进去时如实报 `{ ok: false, reason: "NO_ROSTER_FILE" }`。宿主若不给 `onDispose`（旧版本），
+    `roster` 是日志路径（`{ ok: true, path }`；日志本来随写随落盘），没有日志时如实报
+    `{ ok: false, reason: "NO_ROSTER_FILE" }`。宿主若不给 `onDispose`（旧版本），
     本适配器**没有别的收尾手段**，worker 会随宿主进程存活到宿主自己结束它。
 
 ## 请求副本里待结果的工具调用（根 §6.1）
@@ -768,7 +816,12 @@ Scope 的投影按条目取舍，宿主必须把它还原成自己的消息。�
 
 | 文件 | 修正 |
 |---|---|
-| `execution.mjs` | `compile` 只把**成员**交给 `__surface`（`{ ...instance }`），三个顶层原语只作参数；`JsProgram` 的 `this` 上不再有 `this.fork`/`this.join`/`this.review`。`ProgramCall` 删掉了与 park 表重复的 `resume`/`settle` 捷径 |
+| `execution.mjs` | `compile` 只把**成员**交给 `__surface`（`{ ...instance }`），顶层原语只作参数；`JsProgram` 的 `this` 上不再有 `this.fork`/`this.join`/`this.review`，Plan 也没有 `this.devops`。`PRIMITIVES` 含 `devops`（根 §1.1 item 3），`ProgramCall` 删掉了与 park 表重复的 `resume`/`settle` 捷径 |
+| `devops.mjs` | 一个会话一个 `plan-devops` 句柄（懒建、`start: false`、复用），每次调查走 `handle.run(verboseIntent)`；不累积 `onSettled`；`dead` 后回 `PLAN_DEVOPS_DEAD`；单飞与 task 梯子不变 |
+| `workers.mjs` | `brief` → `verboseIntent`；建表时回放 `.workers.jsonl`（无快照、容忍半行），完成记录改用 Map；`settle` 记 `carrierText`、`steer` 记 `delivery`；`claim` 丢弃答案文本；`cancelAll()` 传播操作员中断，`abortAll()` 补写 `claim` |
+| `guard.mjs` | `operatorInterruptOf` 为真时把取消传播到全部子孙；`parkStopOwed`/`parkStopped` 的 ask 停机豁免；只对面向用户的角色生效 |
+| `session.mjs`（本项） | `resolveTaskModel`/`resolveTaskConnection`（`HERDCHESTRA_TASK_*` 优先，否则主梯子，报 `task`/`main`）；`fork`/lane/`devops` 用 task 梯子；Pair Hint 改读 `hint.chain`，压缩身份改比摘要；`cancelDescendants()` |
+| `adapter.mjs` / `scope-schema.mjs` / `drafts.mjs` | `fork` 的第二参数是 `verboseIntent`；`scope` 描述缩成指针 + 字段形状；底稿移到工作区根 `plans/<name>.md`，规则声明 Plan 除产出物与附件外只读 |
 | `hooks.mjs` | `delegatedRuntime()` 守卫子运行时的四个钩子（run/turn/ask/park stop/nudge 都不动父会话）；`SCOPE_TOOLS = FACE_TOOLS ∪ {fork, join}` 用于准入与结算；`traceGate` 的 `describeContext` 与序列化移进 `try` |
 | `request.mjs` | 只解包 `json`/`text` 两种宿主信封；混合 user 消息的文本与结果分别成条目并各自 CUE；`lastOperatorText` 跳过结果与空文本；`selectKept` 双向保证调用/结果成对；`PINNED_MEMBERS` 加 `"js-review"`（工具名） |
 | `session.mjs` | 接力切点 `cut >= 0`；投影答案无条件落到副本（等长替换也算改写）；Scope 拒绝写 `.requests.jsonl`；`#recordAsk` 统一三处 `ask` 记账；`noteHandoff` 认 `started.sessionId`；`#relayPort` 在端口处记交接；`resume` 走 `takeSite` 并完成 `settleContinuation`/`noteFinished`/`close` |

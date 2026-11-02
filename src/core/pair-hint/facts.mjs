@@ -8,9 +8,10 @@
 // Record kinds:
 //   bind      the session language, written once at creation
 //   epoch     a new presentation epoch
-//   presented the request copy the last call sent, together with the fact it
-//             shows (epoch, digest, handles, position). Bytes and position live
-//             in one record so a crash cannot separate them.
+//   presentation the frozen hint text of one epoch, written once per digest
+//   presented the chain state of the last call, together with the fact it shows
+//             (epoch, digest, handles, position). Length and position live in
+//             one record so a crash cannot separate them.
 //   refused   why the last request was refused, as shapes and digests only.
 //             A refusal sends nothing, so it changes no fact: this record is
 //             written beside the chain, never folded into it.
@@ -26,8 +27,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { refuse, invalidArgument, PAIR_HINT_CODES } from "./errors.mjs";
 import { LanguageBinding } from "./language.mjs";
-import { digestOf, PresentationFact } from "./presentation.mjs";
+import { digestOf, findInjection, PresentationFact } from "./presentation.mjs";
 import { CANONICAL_PART, canonicalKey, canonicalMessage } from "./canonical.mjs";
+import { Chain, digestSide } from "./chain.mjs";
 import { isNonEmptyString } from "../util.mjs";
 
 export const JOURNAL_DIR = ".Herdchestra";
@@ -35,6 +37,7 @@ export const JOURNAL_DIR = ".Herdchestra";
 export const RECORD_KINDS = Object.freeze({
   BIND: "bind",
   EPOCH: "epoch",
+  PRESENTATION: "presentation",
   PRESENTED: "presented",
   REFUSED: "refused",
 });
@@ -127,17 +130,24 @@ const isIdList = (value) =>
     value.every((id) => typeof id === "string") &&
     value.every((id, index) => index === 0 || value[index - 1] <= id));
 
-const isShape = (shape) =>
-  shape !== null &&
-  typeof shape === "object" &&
+// A full shape names the message's role, parts and length. A DIGEST-ONLY shape
+// is what a chain state can still say after the copy is gone: the digest is
+// enough to compare two sides and find the first difference, and it carries no
+// text. Both are valid; anything else is corruption.
+const isFullShape = (shape) =>
   (shape.role === null || typeof shape.role === "string") &&
   Array.isArray(shape.parts) &&
   shape.parts.every((part) => typeof part === "string") &&
   isIdList(shape.calls) &&
   isIdList(shape.results) &&
-  isCount(shape.length) &&
+  isCount(shape.length);
+
+const isShape = (shape) =>
+  shape !== null &&
+  typeof shape === "object" &&
   typeof shape.digest === "string" &&
-  DIGEST.test(shape.digest);
+  DIGEST.test(shape.digest) &&
+  (shape.role === undefined ? Object.keys(shape).every((key) => key === "digest") : isFullShape(shape));
 
 const isSide = (side) =>
   side === null ||
@@ -189,9 +199,20 @@ export const refusalRecord = ({
   message: typeof message === "string" ? message : null,
   epoch,
   index,
-  previous: previous === null ? null : messageShapes(previous, limit),
-  next: next === null ? null : messageShapes(next, limit),
+  previous: sideOf(previous, limit),
+  next: sideOf(next, limit),
 });
+
+// A refusal side is either a message list (the request that was compared) or a
+// digest list (the chain state the request was compared against). The chain
+// side carries no role, part or text: after the full copy is gone, the digest
+// is the one fact that can still answer "where did it differ?".
+const sideOf = (side, limit) => {
+  if (side === null || side === undefined) return null;
+  if (Array.isArray(side)) return messageShapes(side, limit);
+  if (Array.isArray(side.digests)) return digestSide(side.digests, limit);
+  return side;
+};
 
 // The refusal a record carries, or null when the record is not one this module
 // would have written. Unknown fields are ignored: a reader must survive a
@@ -229,17 +250,30 @@ export const journalPath = (root, sessionId) =>
 // Everything a session needs to rebuild its presentation.
 export class PairHintState {
   #binding;
+  #chain;
+  #chainEpoch;
   #epoch;
   #fact;
-  #presented;
+  #presentations;
   #rebased;
   #refusal;
 
-  constructor({ binding = null, epoch = 0, fact = null, presented = null, refusal = null, rebased = null } = {}) {
+  constructor({
+    binding = null,
+    epoch = 0,
+    fact = null,
+    chain = null,
+    chainEpoch = null,
+    presentations = null,
+    refusal = null,
+    rebased = null,
+  } = {}) {
     this.#binding = binding;
     this.#epoch = epoch;
     this.#fact = fact;
-    this.#presented = presented;
+    this.#chain = chain;
+    this.#chainEpoch = chainEpoch;
+    this.#presentations = presentations ?? new Map();
     this.#refusal = refusal;
     this.#rebased = rebased;
   }
@@ -264,8 +298,21 @@ export class PairHintState {
     return this.#fact;
   }
 
-  get presented() {
-    return this.#presented;
+  // The chain the last presented request left, or null. It is a `Chain`, not
+  // the request copy: length, per-message digests and the pair's index.
+  get chain() {
+    return this.#chain;
+  }
+
+  // The epoch the chain belongs to, or null.
+  get chainEpoch() {
+    return this.#chainEpoch;
+  }
+
+  // The frozen presentation of one epoch, or null. The text is stored once per
+  // epoch/digest, not in every `presented` record.
+  presentation(epoch, digest) {
+    return this.#presentations.get(`${epoch}:${digest}`) ?? null;
   }
 
   // The last refusal, or null. Diagnostic only: no request path reads it, and
@@ -279,7 +326,12 @@ export class PairHintState {
   }
 
   // Fold one record. Returns a new state; the old one is untouched.
-  apply(record) {
+  //
+  // `computeChain` is false only for a superseded old-shape `presented` record
+  // during a full fold: its full copy is never observed (a later record
+  // replaces it), so canonicalising it would turn an old journal into O(n²)
+  // work for a state nobody reads. A direct `apply` computes it.
+  apply(record, { computeChain = true } = {}) {
     if (record === null || typeof record !== "object") {
       throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "journal record must be an object");
     }
@@ -297,8 +349,11 @@ export class PairHintState {
           binding: this.#binding ?? binding,
           epoch: this.#epoch,
           fact: this.#fact,
-          presented: this.#presented,
+          chain: this.#chain,
+          chainEpoch: this.#chainEpoch,
+          presentations: this.#presentations,
           refusal: this.#refusal,
+          rebased: this.#rebased,
         });
       }
       case RECORD_KINDS.EPOCH: {
@@ -317,29 +372,77 @@ export class PairHintState {
           binding: this.#binding,
           epoch: record.epoch,
           fact: null,
-          presented: null,
+          chain: null,
+          chainEpoch: null,
+          presentations: new Map(),
           refusal: this.#refusal,
+          rebased: this.#rebased,
         });
       }
-      case RECORD_KINDS.PRESENTED:
-        if (!Number.isInteger(record.length)) {
+      case RECORD_KINDS.PRESENTATION: {
+        if (!Number.isInteger(record.epoch) || record.epoch < 0) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presentation record needs a non-negative epoch");
+        }
+        if (!isNonEmptyString(record.text) || typeof record.digest !== "string" || !DIGEST.test(record.digest)) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presentation record is malformed", {
+            epoch: record.epoch,
+          });
+        }
+        if (digestOf(record.text) !== record.digest) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "frozen text does not match its digest", {
+            epoch: record.epoch,
+          });
+        }
+        if (!Array.isArray(record.entries) || !record.entries.every((entry) => isNonEmptyString(entry))) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presentation record needs its resource list", {
+            epoch: record.epoch,
+          });
+        }
+        const key = `${record.epoch}:${record.digest}`;
+        const known = this.#presentations.get(key);
+        if (known !== undefined && known.text !== record.text) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "one epoch froze two presentations for one digest", {
+            epoch: record.epoch,
+          });
+        }
+        const presentations = new Map(this.#presentations);
+        presentations.set(key, Object.freeze({
+          epoch: record.epoch,
+          digest: record.digest,
+          text: record.text,
+          entries: Object.freeze([...record.entries]),
+        }));
+        return new PairHintState({
+          binding: this.#binding,
+          epoch: this.#epoch,
+          fact: this.#fact,
+          chain: this.#chain,
+          chainEpoch: this.#chainEpoch,
+          presentations,
+          refusal: this.#refusal,
+          rebased: this.#rebased,
+        });
+      }
+      case RECORD_KINDS.PRESENTED: {
+        if (!Number.isInteger(record.length) || record.length < 0) {
           throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented record needs length");
         }
-        // A record with no `messages` is a superseded copy: compaction removed
-        // them because a later `presented` record replaced this one in the
-        // fold. It still contributes its fact and length; its copy is never
-        // observable, since `apply` overwrites `#presented` on every
-        // `presented` record and only the last one survives.
+        // A record with no copy and no chain is a superseded copy: compaction
+        // removed the copy because a later `presented` record replaced this
+        // one in the fold. It still contributes its fact and length; its copy
+        // is never observable.
         if (record.messages !== undefined && !Array.isArray(record.messages)) {
           throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented record messages must be an array");
         }
         if (Array.isArray(record.messages) && record.messages.length !== record.length) {
           throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented record length does not match");
         }
-        // A presented record may carry the fact it shows. That keeps the bytes,
-        // their placement and the frozen hint text in one record: a crash
-        // cannot separate them, and a cold start rebuilds the same bytes even
-        // after the resource files changed (§6.1 step 6).
+        if (record.digests !== undefined && !Array.isArray(record.digests)) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented record digests must be an array");
+        }
+        if (Array.isArray(record.digests) && record.digests.length !== record.length) {
+          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented record digests do not match its length");
+        }
         // A record comes from disk, so a malformed fact is corruption, not a
         // caller mistake; `fromRecord` raises argument errors and they are
         // restated here with the code a journal failure carries.
@@ -360,26 +463,107 @@ export class PairHintState {
             record: fact.epoch,
           });
         }
-        if (fact !== null && fact.text !== null && digestOf(fact.text) !== fact.digest) {
-          throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "frozen text does not match its digest", {
+        // The fact references the frozen presentation. An old journal carries
+        // the text in the fact itself; a new one stores it once, in a
+        // `presentation` record, and the fact only names its digest.
+        let presentations = this.#presentations;
+        if (fact !== null && fact.text !== null) {
+          if (digestOf(fact.text) !== fact.digest) {
+            throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "frozen text does not match its digest", {
+              epoch: fact.epoch,
+            });
+          }
+          const key = `${fact.epoch}:${fact.digest}`;
+          const known = presentations.get(key);
+          if (known !== undefined && known.text !== fact.text) {
+            throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "one epoch froze two presentations for one digest", {
+              epoch: fact.epoch,
+            });
+          }
+          if (known === undefined) {
+            presentations = new Map(presentations);
+            presentations.set(key, Object.freeze({
+              epoch: fact.epoch,
+              digest: fact.digest,
+              text: fact.text,
+              entries: fact.entries === null ? Object.freeze([]) : Object.freeze([...fact.entries]),
+            }));
+          }
+        } else if (fact !== null) {
+          const known = presentations.get(`${fact.epoch}:${fact.digest}`);
+          if (known === undefined) {
+            throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented fact names no frozen presentation", {
+              epoch: fact.epoch,
+              digest: fact.digest,
+            });
+          }
+          fact = new PresentationFact({
             epoch: fact.epoch,
+            digest: fact.digest,
+            handles: fact.handles,
+            after: fact.after,
+            inserted: fact.inserted,
+            text: known.text,
+            entries: known.entries,
           });
+        }
+        // The chain. A new record carries digests; an old one carries the full
+        // copy and is migrated here by computing the same digests. A superseded
+        // old record's copy is skipped unless it is the one the fold keeps.
+        let chain = this.#chain;
+        let chainEpoch = this.#chainEpoch;
+        // A copy's pair is found in the copy itself; a chain record carries
+        // its own index. `fact.inserted` is a placement, not proof that the
+        // message at that index is our pair.
+        const pairIndex = Array.isArray(record.messages)
+          ? (findInjection(record.messages)?.index ?? null)
+          : record.pair !== undefined
+            ? record.pair
+            : fact !== null && fact.inserted !== null
+              ? fact.inserted
+              : null;
+        if (record.messages !== undefined) {
+          if (computeChain) {
+            try {
+              chain = Chain.fromMessages(record.messages, { pairIndex });
+            } catch (error) {
+              throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented messages do not form a chain", {
+                epoch: this.#epoch,
+                reason: error?.message,
+              });
+            }
+            chainEpoch = fact === null ? this.#epoch : fact.epoch;
+          }
+        } else if (record.digests !== undefined) {
+          try {
+            chain = Chain.fromRecord({
+              length: record.length,
+              digests: record.digests,
+              digest: record.digest,
+              pair: pairIndex,
+            });
+          } catch (error) {
+            throw refuse(PAIR_HINT_CODES.FACT_CORRUPT, "presented chain is malformed", {
+              epoch: this.#epoch,
+              reason: error?.message,
+            });
+          }
+          chainEpoch = fact === null ? this.#epoch : fact.epoch;
         }
         return new PairHintState({
           binding: this.#binding,
           epoch: this.#epoch,
           fact,
-          // A superseded record leaves the copy it replaced in place: the next
-          // `presented` record replaces it anyway, and dropping it here would
-          // make a compacted journal fold differently from the journal before
-          // compaction if a later record were torn away.
-          presented: Array.isArray(record.messages) ? record.messages : this.#presented,
+          chain,
+          chainEpoch,
+          presentations,
           refusal: this.#refusal,
           // Provenance of the chain this request continued, or null. Optional
           // and additive: an older journal has no such field, and a value from
           // a newer one is kept as a string rather than refused.
           rebased: typeof record.rebased === "string" ? record.rebased : null,
         });
+      }
       case RECORD_KINDS.REFUSED: {
         // A refusal is a fact about a request that was never sent. It must not
         // move the chain, the epoch or the presentation — but a malformed one
@@ -394,8 +578,11 @@ export class PairHintState {
           binding: this.#binding,
           epoch: this.#epoch,
           fact: this.#fact,
-          presented: this.#presented,
+          chain: this.#chain,
+          chainEpoch: this.#chainEpoch,
+          presentations: this.#presentations,
           refusal: diagnostic,
+          rebased: this.#rebased,
         });
       }
       default:
@@ -407,8 +594,20 @@ export class PairHintState {
 }
 
 export const foldRecords = (records) => {
+  // Only the last chain-bearing `presented` record can be observed. Computing
+  // the chain of every superseded old-shape copy would make an old journal's
+  // cold start O(n²) for a state nobody reads.
+  let lastChainBearing = -1;
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (record?.kind === RECORD_KINDS.PRESENTED && (record.messages !== undefined || record.digests !== undefined)) {
+      lastChainBearing = index;
+    }
+  }
   let state = new PairHintState();
-  for (const record of records) state = state.apply(record);
+  for (let index = 0; index < records.length; index += 1) {
+    state = state.apply(records[index], { computeChain: index === lastChainBearing });
+  }
   return state;
 };
 
@@ -476,16 +675,16 @@ export class JournalStore {
   // How large a journal may grow before `append` compacts it. One request copy
   // of a long conversation is megabytes, and every request used to re-write the
   // whole copy: 33 requests of a 67-message session produced 34 MB, and the
-  // repository's journals reached 133 MB. The fold keeps only the LAST
-  // `presented` record (each one replaces `#presented` wholesale), so every
-  // earlier copy is dead weight that a reader never reaches.
+  // repository's journals reached 133 MB. New records carry digests instead of
+  // copies, so compaction now also migrates an old journal's copies and hoists
+  // each epoch's hint text out of every fact into one `presentation` record.
   static COMPACT_BYTES = 4 * 1024 * 1024;
 
-  // Drop the superseded request copies. The newest `presented` record keeps its
-  // messages, because a cold start resumes the prefix chain from it; every older
-  // one keeps its fact and length and loses `messages`. Folding the result gives
-  // exactly the same state: `apply` overwrites `#presented` on every `presented`
-  // record, so only the last one can be observed.
+  // Drop the request copies. Every `presented` record is rewritten as chain
+  // state: the last chain-bearing record gets its digests computed once, a
+  // superseded copy is simply removed (a later record replaces it in the fold),
+  // and each fact's frozen text moves to one `presentation` record per
+  // epoch/digest. Folding the result gives exactly the same state.
   //
   // The rewrite is atomic (write beside, then rename) and happens inside the
   // append chain, so no append of this store can interleave with it. It is NOT
@@ -509,16 +708,101 @@ export class JournalStore {
         // A torn last line carries no fact and is dropped with the rewrite.
       }
     }
-    let lastPresented = -1;
+    let lastChainBearing = -1;
     for (let index = 0; index < parsed.length; index += 1) {
-      if (parsed[index]?.kind === RECORD_KINDS.PRESENTED) lastPresented = index;
+      const record = parsed[index];
+      if (
+        record?.kind === RECORD_KINDS.PRESENTED &&
+        (record.messages !== undefined || record.digests !== undefined)
+      ) {
+        lastChainBearing = index;
+      }
     }
-    const kept = parsed.map((record, index) => {
-      if (record?.kind !== RECORD_KINDS.PRESENTED || index === lastPresented) return record;
-      if (!Array.isArray(record.messages)) return record;
-      const { messages, ...rest } = record;
-      return rest;
-    });
+    // Every presentation this journal already holds, keyed by epoch/digest.
+    // Old facts carry their text; new `presentation` records carry it once.
+    const presentations = new Map();
+    for (const record of parsed) {
+      if (record?.kind === RECORD_KINDS.PRESENTATION) {
+        const key = `${record.epoch}:${record.digest}`;
+        if (!presentations.has(key)) presentations.set(key, record);
+        continue;
+      }
+      if (record?.kind !== RECORD_KINDS.PRESENTED) continue;
+      const fact = record.fact;
+      if (
+        fact !== null &&
+        typeof fact === "object" &&
+        typeof fact.text === "string" &&
+        typeof fact.digest === "string" &&
+        Number.isInteger(fact.epoch)
+      ) {
+        const key = `${fact.epoch}:${fact.digest}`;
+        if (!presentations.has(key)) {
+          presentations.set(key, {
+            kind: RECORD_KINDS.PRESENTATION,
+            epoch: fact.epoch,
+            digest: fact.digest,
+            text: fact.text,
+            entries: Array.isArray(fact.entries) ? fact.entries : [],
+          });
+        }
+      }
+    }
+    const kept = [];
+    const emitted = new Set();
+    const emitPresentation = (key) => {
+      if (emitted.has(key)) return;
+      const presentation = presentations.get(key);
+      if (presentation === undefined) return;
+      kept.push(presentation);
+      emitted.add(key);
+    };
+    for (let index = 0; index < parsed.length; index += 1) {
+      const record = parsed[index];
+      if (record?.kind === RECORD_KINDS.PRESENTATION) {
+        emitPresentation(`${record.epoch}:${record.digest}`);
+        continue;
+      }
+      if (record?.kind !== RECORD_KINDS.PRESENTED) {
+        kept.push(record);
+        continue;
+      }
+      const fact = record.fact === undefined ? undefined : record.fact === null ? null : { ...record.fact };
+      if (fact !== undefined && fact !== null) {
+        // The text now lives once, in a presentation record. The fact keeps the
+        // placement and the digest that names it.
+        delete fact.text;
+        delete fact.entries;
+      }
+      let chain = {};
+      if (record.digests !== undefined) {
+        chain = {
+          length: record.length,
+          digests: record.digests,
+          digest: record.digest,
+          pair: record.pair ?? null,
+        };
+      } else if (record.messages !== undefined && index === lastChainBearing) {
+        const pair =
+          record.pair !== undefined
+            ? record.pair
+            : fact?.inserted !== undefined
+              ? fact.inserted
+              : (findInjection(record.messages)?.index ?? null);
+        const computed = Chain.fromMessages(record.messages, { pairIndex: pair });
+        chain = computed.toRecord();
+      }
+      if (fact !== undefined && fact !== null && typeof fact.digest === "string" && Number.isInteger(fact.epoch)) {
+        emitPresentation(`${fact.epoch}:${fact.digest}`);
+      }
+      kept.push({
+        kind: RECORD_KINDS.PRESENTED,
+        length: record.length,
+        ...chain,
+        ...(record.rebased === undefined ? {} : { rebased: record.rebased }),
+        ...(fact === undefined ? {} : { fact }),
+      });
+    }
     const body = kept.map((record) => `${JSON.stringify(record)}\n`).join("");
     if (body === raw) return;
     const temporary = `${this.#file}.compact`;

@@ -26,6 +26,16 @@
 // `src/core/scope/` and `src/core/pair-hint/` belong to separate owners and are
 // deliberately not re-exported here.
 //
+// `pair-hint/` keeps a session's language, its frozen presentation and its
+// prefix chain under `.Herdchestra/{sessionId}.jsonl`. One `presentation`
+// record per epoch/digest holds the hint text; one `presented` record per
+// request holds `length`, one SHA-256 per message's canonical identity, a root
+// over them and the synthetic pair's index — never the request copy. A cold
+// start verifies the prefix from those digests, and an old journal whose
+// `presented` records carry `messages` folds into the same chain and is
+// migrated by compaction. `scope/` owns the retention book and the outbound
+// projection; neither subpackage changes the host's stored history.
+//
 // ## Contracts the composition layer relies on
 //
 // 1. **Spans are UTF-16 offsets** `[begin, end)` into the JS string. Matching is

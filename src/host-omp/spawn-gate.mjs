@@ -18,9 +18,9 @@
 //   patterns        the model patterns core would spawn with
 //   spawnKey?       a stable per-spawn key when the caller supplied one
 //
-// The child's BRIEF is not in the event: the task text is dispatched after the
+// The child's verbose intent is not in the event: the task text is dispatched after the
 // hook resolves the model. So the identity this gate can read is the agent
-// definition the spawn names — `coder` or `devops` — and nothing else. A brief
+// definition the spawn names — `coder` or `devops` — and nothing else. An intent
 // that says "you are a Coder" while the definition says otherwise is not a
 // declaration this hook can see, and inventing a second reading of the task
 // text here would be a rule the host never promised to honour.
@@ -58,15 +58,19 @@ export const spawnRefusal = (agent) => ({
   reason:
     `SPAWN_UNDECLARED_ROLE: the subagent was spawned as \`${typeof agent === "string" && agent.length > 0 ? agent : "(unnamed)"}\`, ` +
     `but every child must declare Coder or DevOps (root §2.1). Spawn it with \`agent: "coder"\` ` +
-    `or \`agent: "devops"\`, or use \`fork(name, brief)\`, which declares the role in the brief.`,
+    `or \`agent: "devops"\`, or use \`fork(name, verboseIntent)\`, which declares the role in the verboseIntent.`,
 });
 
 // The hook's answer for one spawn event.
 //
 // `modelFor(role)` is the model this adapter assigns to a declared role, or
-// null when it assigns none. Null is the common case: the host already resolved
-// a model from the spawn policy, and §7.3 says `{ model }` is OPTIONAL. The
-// adapter never invents a model to look authoritative.
+// null when it assigns none. `index.mjs` answers `@task` for both worker roles
+// (root §1.1 item 6): the host expands the role alias with the user's
+// `modelRoles.task` before it spawns (`task/structured-subagent.ts`
+// `resolveConfiguredModelPatterns`), and the host's own task agent declares the
+// same selector (`task/agents.ts:56`). A host that cannot resolve it keeps its
+// own spawn policy; `{ model }` is OPTIONAL, and the adapter never invents a
+// concrete model to look authoritative.
 export const spawnDecision = (event, { modelFor = null } = {}) => {
   const role = declaredRoleOf(event?.agent);
   if (role === null) return spawnRefusal(event?.agent);

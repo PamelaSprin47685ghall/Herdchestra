@@ -7,13 +7,13 @@
 // session, and the receipt says which happened.
 //
 // A same-name `fork` onto a LIVE worker steers that worker's RUNNING turn
-// (root §4.1): the handle's `steer` puts the brief into the runtime's own
+// (root §4.1): the handle's `steer` puts the verboseIntent into the runtime's own
 // pending-input channel, which the agent loop reads at every request boundary
 // (`runtime.mjs`). A delegated runtime refuses a second `run` while one is in
 // flight (its run admission is `running -> reject`), and the plugin cannot
 // reach the hub's `send_input` queue, so this channel is the one that exists —
 // and it is a real mid-turn delivery, not a queue behind the turn. A handle
-// that has no such channel keeps the brief for the next turn instead; the
+// that has no such channel keeps the verboseIntent for the next turn instead; the
 // receipt is `{ name, steered, started }` either way.
 //
 // The host factory is injected. This module never imports `@cline/core`, so its
@@ -30,7 +30,7 @@
 // `restored` starts from what that journal held:
 //
 //   fork     the name was registered for this session
-//   steer    a brief entered a live worker's turn, or started its next turn
+//   steer    a verboseIntent entered a live worker's turn, or started its next turn
 //   settle   a turn finished; the record waits for a `join`
 //   claim    a `join` handed the record over
 //   release  the runtime behind the name stopped (an aborted lane, a session end)
@@ -38,7 +38,7 @@
 // ## The ledger
 //
 // `join` is stated over TURNS, not over names. One worker can have several
-// turns: a steered brief queued behind the running one, or a brief accepted
+// turns: a steered verboseIntent queued behind the running one, or one accepted
 // after the worker already settled once. Each turn is admitted when it is
 // accepted and settled exactly once, and only a settled turn that nobody
 // claimed is a completion. So:
@@ -53,7 +53,7 @@
 
 import path from "node:path";
 
-import { appendJsonLine, readJson, writeJson } from "./files.mjs";
+import { appendJsonLine, readJsonLines } from "./files.mjs";
 
 const LIVE = "running";
 const IDLE = "idle";
@@ -71,6 +71,10 @@ export const WORKER_RECORD_TYPES = Object.freeze({
   SETTLE: "settle",
   CLAIM: "claim",
   RELEASE: "release",
+  // Root §1.1 item 2: an operator interrupt reached this subtree. It is not a
+  // release (the session lives on): unclaimed completions stay collectable, and
+  // the record says why the turns that never report were settled.
+  CANCEL: "cancel",
 });
 
 const isName = (value) => typeof value === "string" && value.length > 0;
@@ -101,6 +105,7 @@ const entryView = (entry) => ({
   pending: entry.pending.length,
   view: entry.view,
   restored: entry.restored,
+  cancelled: entry.cancelled === true,
 });
 
 /**
@@ -119,22 +124,23 @@ const entryView = (entry) => ({
  */
 export const restoreRoster = (records) => {
   const byName = new Map();
-  const completions = [];
+  // Completions are keyed by turn id. A Map keeps both the lookup and the
+  // insertion order: the old array + `findIndex` made every replayed settle a
+  // linear scan, which is quadratic over one journal.
+  const completions = new Map();
   const claims = new Set();
+  const completionOf = (entry, outcome, settledTurn) => ({
+    id: `${entry.name}#${settledTurn}`,
+    name: entry.name,
+    role: entry.role,
+    turn: settledTurn,
+    outcome,
+    lane: entry.lane,
+  });
   const pushCompletion = (entry, outcome, settledTurn = entry.settled) => {
     const id = `${entry.name}#${settledTurn}`;
     if (claims.has(id)) return;
-    const existing = completions.findIndex((item) => item.id === id);
-    const completion = Object.freeze({
-      id,
-      name: entry.name,
-      role: entry.role,
-      turn: settledTurn,
-      outcome,
-      lane: entry.lane,
-    });
-    if (existing === -1) completions.push(completion);
-    else completions[existing] = completion;
+    completions.set(id, Object.freeze(completionOf(entry, outcome, settledTurn)));
   };
   for (const record of Array.isArray(records) ? records : []) {
     if (record === null || typeof record !== "object") continue;
@@ -149,17 +155,23 @@ export const restoreRoster = (records) => {
         state: record.state === DEAD ? DEAD : record.state === IDLE ? IDLE : LIVE,
         admitted: countOf(record.admitted),
         settled: countOf(record.settled),
+        steered: countOf(record.steered),
         view: typeof record.view === "string" ? record.view : null,
+        cancelled: record.cancelled === true,
       });
       continue;
     }
     const entry = byName.get(name);
     if (entry === undefined) continue;
     if (type === WORKER_RECORD_TYPES.STEER) {
-      // A steered brief is a turn of this worker, carried by the turn that is
+      // A steered verboseIntent is a turn of this worker, carried by the turn that is
       // running: it is admitted, and the report that takes it settles both.
       entry.admitted = Math.max(entry.admitted + 1, countOf(record.admitted));
-      entry.steered = (entry.steered ?? 0) + 1;
+      // Only a `delivery: "steer"` rode the running turn. A `delivery: "turn"`
+      // starts its own turn (an idle worker, or a restored one a verboseIntent starts),
+      // so it is admitted but not carried: counting it as carried would subtract
+      // it from `owed` a second time and answer `join` with nothing owed.
+      if (record.delivery === "steer") entry.steered = (entry.steered ?? 0) + 1;
       entry.state = LIVE;
       continue;
     }
@@ -173,10 +185,15 @@ export const restoreRoster = (records) => {
       const outcome = recordOf(record.outcome);
       if (outcome.text.length > 0) entry.view = outcome.text;
       // One report settles the turn that was running AND every steer it carried
-      // (`#settle`): each of them is a completion, and the record's one outcome
-      // is the only text the journal has for them.
+      // (`#settle`): each of them is a completion. The carrier's own text is
+      // recorded beside the report because a carried turn's answer is the
+      // report, while the carrier's record is the text that turn was given.
+      const carrierText = typeof record.carrierText === "string" ? record.carrierText : null;
       for (let settledTurn = Math.max(1, turn - carried); settledTurn <= turn; settledTurn += 1) {
-        if (settledTurn <= entry.admitted) pushCompletion(entry, outcome, settledTurn);
+        if (settledTurn > entry.admitted) continue;
+        const text =
+          carried > 0 && settledTurn === turn - carried && carrierText !== null ? carrierText : outcome.text;
+        pushCompletion(entry, { ...outcome, text }, settledTurn);
       }
       if (entry.settled >= entry.admitted) entry.state = IDLE;
       continue;
@@ -187,8 +204,7 @@ export const restoreRoster = (records) => {
       // after its turn's settle (`join` claims the moment a turn ends).
       const id = typeof record.id === "string" ? record.id : `${name}#${countOf(record.turn)}`;
       claims.add(id);
-      const taken = completions.findIndex((item) => item.id === id);
-      if (taken !== -1) completions.splice(taken, 1);
+      completions.delete(id);
       continue;
     }
     if (type === WORKER_RECORD_TYPES.RELEASE) {
@@ -196,50 +212,69 @@ export const restoreRoster = (records) => {
       entry.settled = Math.max(entry.settled, entry.admitted);
       continue;
     }
+    if (type === WORKER_RECORD_TYPES.CANCEL) {
+      // The subtree was cancelled: every owed turn ends here, and each one is a
+      // completion whose outcome names the cancellation. The turns nobody
+      // claimed before this record stay in `completions` — they are results
+      // that really arrived, and a cancel does not erase them.
+      const last = Math.max(entry.settled, countOf(record.turn) || entry.admitted);
+      const turn = Math.max(last, entry.admitted);
+      // A lane's cancelled turn is not a `join` completion, exactly as in
+      // `cancelAll`: its settlement belongs to a fission group, and a group has
+      // no continuation after an operator interrupt.
+      if (entry.lane !== true) {
+        for (let settledTurn = entry.settled + 1; settledTurn <= turn; settledTurn += 1) {
+          if (settledTurn <= entry.admitted) {
+            pushCompletion(entry, recordOf({ finishReason: "cancelled", text: "" }), settledTurn);
+          }
+        }
+      }
+      entry.settled = Math.max(entry.settled, turn);
+      entry.steered = 0;
+      entry.state = DEAD;
+      entry.cancelled = true;
+      continue;
+    }
   }
   // `claims` is an ARRAY in both directions: a reader (`WorkerTable#restore`)
   // iterates it, and a `Set` would answer no items to that loop.
-  return { entries: [...byName.values()], completions, claims: [...claims] };
+  return { entries: [...byName.values()], completions: [...completions.values()], claims: [...claims] };
 };
 
-// The files one session's roster journal is written to.
+// The journal one session's roster is written to.
 //
-// `.Herdchestra/<session>.workers.jsonl` holds one record per change. Beside
-// it, `.workers.restored.json` holds the snapshot the last run ended with: the
-// journal is append-only, and a session that starts again cannot tell from the
-// journal alone which records belong to the run that is over (a release says a
-// runtime stopped, not that the next run starts from nothing). So the table
-// writes that snapshot when it is built, and `restoredRoster` reads it back.
+// `.Herdchestra/<session>.workers.jsonl` holds one record per change and is the
+// ONE source a table is built from (root §1.1 item 1). The journal used to have
+// a snapshot beside it; two files that can disagree are two answers to the same
+// question, and a mid-session reload read the stale one. Every fact a reload
+// needs is in the journal: a `release` says the runtime stopped, the `claim`s
+// it writes say which completions were already handed over, and a `cancel`
+// says which subtree the operator stopped.
 export const workerRosterFile = (root, sessionId) => ({
   file: path.join(root, ".Herdchestra", `${sessionId}.workers.jsonl`),
-  snapshot: path.join(root, ".Herdchestra", `${sessionId}.workers.restored.json`),
 });
 
-// What a table built for this session starts from: the snapshot the previous
-// run left, or — when there is none — nothing. A snapshot that cannot be read
-// is not a roster; the table then starts empty instead of inventing entries.
+// What a table built for this session starts from: the journal replayed, or
+// null when it holds no record. A torn last line is a crash during append and
+// carries no record (`readJsonLines` tolerates exactly that one line).
 export const restoredRoster = (root, sessionId) => {
   if (typeof root !== "string" || typeof sessionId !== "string") return null;
-  const { snapshot } = workerRosterFile(root, sessionId);
-  const saved = readJson(snapshot, null);
-  if (saved === null || typeof saved !== "object") return null;
-  const entries = Array.isArray(saved.entries) ? saved.entries : [];
-  const completions = Array.isArray(saved.completions) ? saved.completions : [];
-  const claims = Array.isArray(saved.claims) ? saved.claims : [];
-  if (entries.length === 0 && completions.length === 0) return null;
-  return { entries, completions, claims };
+  const { file } = workerRosterFile(root, sessionId);
+  const records = readJsonLines(file);
+  if (records.length === 0) return null;
+  return restoreRoster(records);
 };
 
 export class WorkerTable {
   #create;
   #onRecord;
   #file;
-  #snapshot;
-  #sessionId;
   #workers = new Map();
   // Settled turns nobody claimed, in settlement order. This is the only queue
-  // `join` answers from; the live workers are what it waits on.
-  #completions = [];
+  // `join` answers from; the live workers are what it waits on. A Map keyed by
+  // turn id, so a claim is O(1) and a journal replay does not scan the queue for
+  // every settle (`#complete`, `#claim`, `unclaimed`).
+  #completions = new Map();
   // Turn ids already handed over. A claim is checked against this set before a
   // record leaves the table, so no turn is ever answered twice.
   #claims = new Set();
@@ -259,17 +294,18 @@ export class WorkerTable {
   rosterWriteFailure = null;
 
   /**
-   * `create({name, brief, role})` returns one of
-   *   { started: true, run(brief) -> Promise<record>, abort(), onSettled(cb) }
+   * `create({name, verboseIntent, role})` returns one of
+   *   { started: true, run(verboseIntent) -> Promise<record>, abort(), onSettled(cb) }
    *   { started: false, rejection, message }
    * and may also be async. The runtime handle starts the first turn itself and
    * reports through `onSettled`; `run` is the steer path.
    *
    * `onRecord(record)` receives one roster record per change; it is optional,
    * and a table built without it is the in-memory roster of one process.
-   * `restored` is what the journal held when this table was built: either the
-   * `{ entries, completions, claims }` shape `restoreRoster` answers, or the raw
-   * records, which are replayed here.
+   * `restored` is an explicit override (a test, or a caller that already read
+   * the journal): either the `{ entries, completions, claims }` shape
+   * `restoreRoster` answers, or the raw records. Without it the table REPLAYS
+   * its journal as it is built — one source, and the same source a reload reads.
    *
    * `root` and `sessionId` name the journal this table owns: without `file`,
    * the table writes `workerRosterFile(root, sessionId)`. A table given neither
@@ -281,13 +317,20 @@ export class WorkerTable {
     this.#onRecord = typeof onRecord === "function" ? onRecord : null;
     const named = file !== null ? null : typeof root === "string" && typeof sessionId === "string" ? workerRosterFile(root, sessionId) : null;
     this.#file = typeof file === "string" && file.length > 0 ? file : named?.file ?? null;
-    this.#snapshot = named?.snapshot ?? null;
-    this.#sessionId = typeof sessionId === "string" ? sessionId : null;
-    if (restored !== null && restored !== undefined) this.#restore(restored);
+    if (restored !== null && restored !== undefined) {
+      this.#restore(restored);
+    } else if (this.#file !== null) {
+      // The journal is append-only and complete: a `fork`/`steer`/`settle`/
+      // `claim`/`release`/`cancel` record is written before the fact it
+      // describes can be read back. A torn last line is a crash during append
+      // and carries no record.
+      const records = readJsonLines(this.#file);
+      if (records.length > 0) this.#restore(records);
+    }
   }
 
-  // Rebuild the roster from the journal. The snapshot form is already replayed;
-  // the record form is replayed here, so a caller may hand over either one.
+  // Rebuild the roster from the journal. The record form is replayed here, so a
+  // caller may hand over raw records or the shape `restoreRoster` answers.
   #restore(restored) {
     const roster =
       Array.isArray(restored)
@@ -318,17 +361,19 @@ export class WorkerTable {
         lane: entry.lane === true,
         admitted,
         settled,
-        // How many steered briefs the running turn carries. The snapshot has to
-        // keep it: a restored table that forgot it would owe a turn per steer
-        // and wait for a report the host will never send (§5, the roster is
-        // durable; root §4.1, `join` answers honestly).
+        // How many steered verboseIntents the running turn carries. The journal
+        // has to keep it: a restored table that forgot it would owe a turn per
+        // steer and wait for a report the host will never send (§5, the roster
+        // is durable; root §4.1, `join` answers honestly).
         steered: countOf(entry.steered),
-        brief: "",
+        verboseIntent: "",
         carrierText: null,
+        // A cancelled subtree stays cancelled across a reload: a same-name fork
+        // must refuse instead of starting a runtime the operator stopped.
+        cancelled: entry.cancelled === true,
         restored: true,
       });
     }
-    const known = new Set();
     for (const completion of roster.completions) {
       if (!isName(completion?.name)) continue;
       // A lane's settled turn is its DELIVERY to its group (§4.2 step 8), never
@@ -336,9 +381,9 @@ export class WorkerTable {
       // lane's record to `join` as if a fork worker had finished.
       if (completion.lane === true) continue;
       const id = typeof completion.id === "string" ? completion.id : `${completion.name}#${countOf(completion.turn)}`;
-      if (this.#claims.has(id) || known.has(id)) continue;
-      known.add(id);
-      this.#completions.push(
+      if (this.#claims.has(id) || this.#completions.has(id)) continue;
+      this.#completions.set(
+        id,
         Object.freeze({
           id,
           name: completion.name,
@@ -416,21 +461,23 @@ export class WorkerTable {
     // A settled turn nobody claimed is owed ONCE: it is a completion, and it is
     // already settled, so the per-worker arithmetic below must not count it
     // again (`join` answers it, then it leaves both).
-    let owed = this.unclaimed().length;
+    let owed = this.#completions.size;
     for (const worker of this.#workers.values()) {
       if (worker.lane === true || worker.state === DEAD) continue;
       // A turn this worker owes. A settled turn nobody claimed is counted once,
       // as a completion above; what is left here is what is still IN FLIGHT —
-      // the turn that is running, plus every steered brief the runtime's queue
+      // the turn that is running, plus every steered verboseIntent the runtime's queue
       // still holds (each is admitted and reports as its own turn).
       owed += Math.max(0, worker.admitted - worker.settled - (worker.steered ?? 0));
     }
     return owed;
   }
 
-  // The roster as a journal writes it: every name with its turn counters, every
-  // settled turn nobody claimed, every turn id already handed over. This is
-  // what `restored` reads back, so a reload and a cold start rebuild one roster.
+  // The roster as a reader sees it: every name with its turn counters, every
+  // settled turn nobody claimed, every turn id already handed over. It is the
+  // same shape the journal replays to, so a test can compare the two without a
+  // second definition of "the roster". It is NOT a file: the journal is the one
+  // durable source, and a snapshot beside it would be a second answer.
   snapshot() {
     return {
       entries: [...this.#workers.values()].map((worker) => ({
@@ -442,8 +489,9 @@ export class WorkerTable {
         settled: worker.settled,
         steered: worker.steered ?? 0,
         view: worker.view,
+        cancelled: worker.cancelled === true,
       })),
-      completions: this.#completions.map((completion) => ({
+      completions: [...this.#completions.values()].map((completion) => ({
         id: completion.id,
         name: completion.name,
         role: completion.role,
@@ -455,21 +503,16 @@ export class WorkerTable {
     };
   }
 
-  // Write the roster where the next load of this session will look for it
-  // (`restoredRoster`). A table with no file has nowhere to write and answers
-  // `{ ok: false, reason: "NO_ROSTER_FILE" }` instead of pretending it did.
+  // Where the next load of this session reads the roster from. Every change was
+  // appended as it happened, so there is nothing left to write: this answers the
+  // journal's path, or `NO_ROSTER_FILE` for a table that owns none.
   save() {
-    if (this.#snapshot === null) return { ok: false, reason: "NO_ROSTER_FILE" };
-    const written = writeJson(this.#snapshot, { v: 1, session: this.#sessionId, ...this.snapshot() });
-    if (written.ok !== true) {
-      this.rosterWriteFailure = { reason: "ROSTER_SNAPSHOT_FAILED", detail: written.message ?? written.code ?? null };
-      return written;
-    }
-    return { ok: true, path: written.path };
+    if (this.#file === null) return { ok: false, reason: "NO_ROSTER_FILE" };
+    return { ok: true, path: this.#file };
   }
 
-  async fork({ name, brief, role }) {
-    // The role is compose's answer, read from the brief's own declaration
+  async fork({ name, verboseIntent, role }) {
+    // The role is compose's answer, read from the verboseIntent's own declaration
     // (§2.1, §4.1). A port that arrives without one is a wiring defect, and
     // starting a worker on a guessed identity would hand command execution to
     // the wrong participant; refuse instead of defaulting.
@@ -500,6 +543,18 @@ export class WorkerTable {
       }
     }
     const existing = this.#workers.get(name);
+    // Root §1.1 item 2: the operator stopped this subtree. Starting it again
+    // (or feeding it a turn) would spend the tokens the interrupt was meant to
+    // save, so every path refuses by name.
+    if (existing !== undefined && existing.cancelled === true) {
+      return {
+        name,
+        steered: false,
+        started: false,
+        rejection: "WORKER_CANCELLED",
+        message: `worker ${name} was cancelled by an operator interrupt and produces no further turn`,
+      };
+    }
     // A present fission replaced produces no further turn (§4.2 step 6). A
     // same-name fork must not resurrect it: the present the group silenced would
     // start running again on an ordinary steer.
@@ -513,14 +568,14 @@ export class WorkerTable {
       };
     }
     if (existing !== undefined && existing.state !== DEAD && (existing.handle !== null || existing.admitted > existing.settled)) {
-      // In flight: the brief goes into the turn that is running. Idle: it
+      // In flight: the verboseIntent goes into the turn that is running. Idle: it
       // starts the next turn now. A restored worker with no handle in this
       // process has no runtime to steer: its result arrives through `settled`,
-      // and a brief for it is refused instead of being accepted into a queue
+      // and a verboseIntent for it is refused instead of being accepted into a queue
       // nobody will ever drain.
       if (existing.handle === null) {
         // An IDLE restored worker (its owed turn already settled) can take a
-        // brief: there is no turn to steer, so the brief STARTS the next turn,
+        // verboseIntent: there is no turn to steer, so it STARTS the next turn,
         // and the runtime this session holds runs it. A restored worker still
         // owing a turn has no runtime here to steer, so it is refused.
         if (existing.state === IDLE) {
@@ -532,7 +587,7 @@ export class WorkerTable {
             delivery: "turn",
             admitted: existing.admitted,
           });
-          void this.#runTurn(existing, brief);
+          void this.#runTurn(existing, verboseIntent);
           return { name, steered: true, started: true };
         }
         return {
@@ -544,37 +599,38 @@ export class WorkerTable {
         };
       }
       if (existing.state === LIVE) {
-        // A live worker's brief goes INTO the turn that is running (§4.1: a
+        // A live worker's verboseIntent goes INTO the turn that is running (§4.1: a
         // same-name fork is a steer, not a new session). The handle's
         // `steer` is the runtime's own pending-input channel: the agent loop
-        // reads it at every request boundary (`runtime.mjs`), so the brief is
+        // reads it at every request boundary (`runtime.mjs`), so the text is
         // taken by the turn already in flight and no second turn is created.
         //
         // A handle that cannot take a steer is NOT reported as steered: the
-        // brief waits for the worker's next turn instead. The receipt is always
+        // verboseIntent waits for the worker's next turn instead. The receipt is always
         // exactly `{ name, steered, started }` — the fields that describe the
         // delivery — and never carries a rejection inside a success.
-        const steered = typeof existing.handle.steer === "function" && existing.handle.steer(brief) === true;
-        // A steered brief is a turn of this worker: the runtime's queue takes it
+        const steered =
+          typeof existing.handle.steer === "function" && existing.handle.steer(verboseIntent) === true;
+        // A steered verboseIntent is a turn of this worker: the runtime's queue takes it
         // at its next request boundary, and the runtime reports it then — one
         // report per turn. It is admitted here so `owed` covers it.
         existing.admitted += 1;
         if (steered) {
           existing.steered = (existing.steered ?? 0) + 1;
-          existing.carrierText ??= existing.brief || "";
+          existing.carrierText ??= existing.verboseIntent || "";
         }
         if (!steered) {
-          // The handle took no brief, so nothing carries it: the turn starts
-          // when the running one ends, the same path a brief for an idle worker
-          // takes. The receipt still says `steered` — the brief did enter this
+          // The handle took no verboseIntent, so nothing carries it: the turn
+          // starts when the running one ends, the same path a verboseIntent for
+          // an idle worker takes. The receipt still says `steered` — the text did enter this
           // worker — and the turn it became is owed like any other.
-          existing.pending.push(brief);
+          existing.pending.push(verboseIntent);
         }
         this.#record({
           type: WORKER_RECORD_TYPES.STEER,
           name,
           role: existing.role,
-          // How the brief arrived: inside the running turn, or as its own turn.
+          // How the verboseIntent arrived: inside the running turn, or as its own turn.
           delivery: steered ? "steer" : "next",
           admitted: existing.admitted,
         });
@@ -583,16 +639,16 @@ export class WorkerTable {
       // The turn is admitted here, before it runs, so `owed` never dips to zero
       // between the settle that left the worker idle and the run that starts it.
       existing.admitted += 1;
-      // The turn this brief starts is the carrier of the brief itself: its
+      // The turn this verboseIntent starts is the carrier of the text itself: its
       // record names the text it was given.
-      existing.brief = brief;
+      existing.verboseIntent = verboseIntent;
       existing.carrierText = null;
       // A worker this table holds no runtime for (a restored one) is STARTED by
-      // this brief: the host runs it, and the table owes that turn. It is not
-      // started twice — the brief was admitted just above.
+      // this verboseIntent: the host runs it, and the table owes that turn. It is not
+      // started twice — the turn was admitted just above.
       if (existing.handle === null && existing.settled >= existing.admitted) {
         existing.state = LIVE;
-        void this.#runTurn(existing, brief);
+        void this.#runTurn(existing, verboseIntent);
       }
       this.#record({
         type: WORKER_RECORD_TYPES.STEER,
@@ -601,10 +657,10 @@ export class WorkerTable {
         delivery: "turn",
         admitted: existing.admitted,
       });
-      void this.#runTurn(existing, brief);
+      void this.#runTurn(existing, verboseIntent);
       return { name, steered: true, started: false };
     }
-    const handle = await this.#create({ name, brief, role });
+    const handle = await this.#create({ name, verboseIntent, role });
     if (handle?.started === false) {
       return {
         name,
@@ -623,7 +679,7 @@ export class WorkerTable {
     // a turn id is `<name>#<turn>`, and a name whose ids restarted would collide
     // with the turns already claimed, so `#complete` would drop its result.
     const base = existing?.settled ?? 0;
-    const entry = this.#entryFor({ name, role, handle, lane: false, brief, base });
+    const entry = this.#entryFor({ name, role, handle, lane: false, verboseIntent, base });
     // The roster reaches the disk before the runtime can report: a reload
     // between the two steps must still know this worker exists.
     this.#record({ type: WORKER_RECORD_TYPES.FORK, name, role, state: LIVE, lane: false, admitted: entry.admitted, settled: entry.settled });
@@ -642,15 +698,20 @@ export class WorkerTable {
   // lane runs). `beginLane` sends that turn later. A host whose runtime cannot
   // be built without starting it ignores the flag; the receipt then says the
   // lane already ran, which is what the caller reads.
-  async startLane({ name, brief, role, start = true }) {
+  async startLane({ name, verboseIntent, role, start = true }) {
     // A lane keeps the owner's identity (§4.2), which the fission port reads
     // from this table; a lane of unknown identity would run with neither face.
     if (role !== "coder" && role !== "devops") {
       return { started: false, name, rejection: "UNDECLARED_ROLE" };
     }
-    const built = await this.#create({ name, brief, role, start });
+    // A cancelled subtree is not rebuilt by a fission step: the operator
+    // stopped it, and a lane id that names a cancelled entry is refused.
+    if (this.#workers.get(name)?.cancelled === true) {
+      return { started: false, name, rejection: "WORKER_CANCELLED" };
+    }
+    const built = await this.#create({ name, verboseIntent, role, start });
     if (built?.started === false) return built;
-    const entry = this.#entryFor({ name, role, handle: built.handle ?? built, lane: true, brief });
+    const entry = this.#entryFor({ name, role, handle: built.handle ?? built, lane: true, verboseIntent });
     this.#record({ type: WORKER_RECORD_TYPES.FORK, name, role, state: LIVE, lane: true, admitted: entry.admitted, settled: 0 });
     this.#observe(entry);
     return { started: true, name, entry, pending: built.pending === true };
@@ -659,21 +720,22 @@ export class WorkerTable {
   // Send the first turn of a lane built inert. `admitted` is 1 exactly when the
   // runtime has a turn to run; a lane that started at build time has nothing to
   // send here, and answering that fact is not a failure.
-  beginLane(name, brief) {
+  beginLane(name, verboseIntent) {
     const entry = this.#workers.get(name);
     if (entry === undefined) return { ok: false, name, rejection: "LANE_UNKNOWN" };
+    if (entry.cancelled === true) return { ok: false, name, rejection: "WORKER_CANCELLED" };
     if (entry.admitted > 0 && entry.settled >= entry.admitted) {
       return { ok: false, name, rejection: "LANE_NOT_PENDING" };
     }
     if (entry.admitted === 0) entry.admitted = 1;
-    void this.#runTurn(entry, brief);
+    void this.#runTurn(entry, verboseIntent);
     return { ok: true, name };
   }
 
   // The entry a handle gets. The runtime handle reports the turn it already
   // started; a handle built inert (`pending: true`) owes one turn, admitted
   // here and sent by `beginLane`.
-  #entryFor({ name, role, handle, lane, brief, base = 0 }) {
+  #entryFor({ name, role, handle, lane, verboseIntent, base = 0 }) {
     const pending = handle?.pending === true;
     // `base` is how many turns this name already settled: the counters are the
     // name's, not the runtime's, so a re-`fork`ed name keeps counting instead of
@@ -689,13 +751,24 @@ export class WorkerTable {
       lane,
       admitted: base + (pending ? 0 : 1),
       settled: base,
-      // The text of the turn this entry's runtime is running. A steered brief
+      // The text of the turn this entry's runtime is running. A steered verboseIntent
       // rides that turn, and the carrier's own record keeps this text.
-      brief: typeof brief === "string" && brief.length > 0 ? brief : (typeof handle?.brief === "string" ? handle.brief : ""),
+      verboseIntent:
+        typeof verboseIntent === "string" && verboseIntent.length > 0
+          ? verboseIntent
+          : typeof handle?.verboseIntent === "string"
+            ? handle.verboseIntent
+            : "",
       // The text of the turn this entry's runtime is running, kept for the
       // carrier's own record once a steer rides it.
-      carrierText: typeof brief === "string" && brief.length > 0 ? brief : (typeof handle?.brief === "string" ? handle.brief : null),
+      carrierText:
+        typeof verboseIntent === "string" && verboseIntent.length > 0
+          ? verboseIntent
+          : typeof handle?.verboseIntent === "string"
+            ? handle.verboseIntent
+            : null,
       restored: false,
+      cancelled: false,
     };
     this.#workers.set(name, entry);
     return entry;
@@ -743,7 +816,7 @@ export class WorkerTable {
   //
   // The order matters: the turn is counted as settled BEFORE the next turn is
   // started, and the next turn is already admitted (it was counted when its
-  // brief was accepted). So there is no moment at which a queued brief is
+  // verboseIntent was accepted). So there is no moment at which a queued turn is
   // neither in flight nor waiting to be claimed.
   #settle(entry, record) {
     // A runtime that reports twice for one turn (or reports a turn this table
@@ -752,20 +825,20 @@ export class WorkerTable {
     // not a completion.
     if (entry.settled >= entry.admitted) return false;
     entry.last = record;
-    // One report answers the turn that was running AND every steered brief that
+    // One report answers the turn that was running AND every steered turn that
     // turn took: the runtime reads its pending-input queue at a request boundary
     // (`runtime.mjs`) and the loop answers once, with the last steer's text. So
     // one settlement clears the carrier and the steers it carried, and each of
     // them is a record `join` may hand over.
-    // How many steered briefs this turn actually READ. The runtime reports it
+    // How many steered verboseIntents this turn actually READ. The runtime reports it
     // (`runtime.mjs` counts the queue reads); the table's own count is what it
     // HANDED over, and a turn can end without another request boundary, so the
-    // two differ exactly when a brief was not delivered. Settling every queued
+    // two differ exactly when a verboseIntent was not delivered. Settling every queued
     // steer on the carrier's report handed `join` work nobody did.
     const queued = entry.steered ?? 0;
     const read = Number.isInteger(record?.steered) && record.steered >= 0 ? record.steered : queued;
     const carried = Math.min(queued, read, Math.max(0, entry.admitted - entry.settled - 1));
-    // Only the ones that ran leave the queue: a brief the turn did not read is
+    // Only the ones that ran leave the queue: a verboseIntent the turn did not read is
     // still the runtime's pending input, and it is delivered by the next turn.
     if (carried > 0) entry.steered = queued - carried;
     const carrier = Math.min(entry.admitted, entry.settled + 1);
@@ -778,9 +851,23 @@ export class WorkerTable {
       type: WORKER_RECORD_TYPES.SETTLE,
       name: entry.name,
       turn,
+      // The answer text is written HERE and nowhere else: a completion nobody
+      // claimed needs its text after a reload, and the claim that follows
+      // deletes the completion (and its text) from every later replay. A lane's
+      // delivery is not collectable and its text is not replayed, so it is
+      // omitted. This is the "keep only the unclaimed text" half of root §1.1
+      // item 1; the journal is append-only, so a claimed answer's bytes remain
+      // as immutable history but no reader loads them.
       outcome: recordOf(record),
       lane: entry.lane,
-      // How many steered briefs this report carried: the replay settles the same
+      // The carrier turn's own text, for the same reason a steer's answer is
+      // written: the replay must hand `join` the same records the live table
+      // would have, and the carrier is the turn the report did NOT answer with
+      // its own text.
+      ...(carried > 0
+        ? { carrierText: entry.carrierText || entry.verboseIntent || null }
+        : {}),
+      // How many steered turns this report carried: the replay settles the same
       // turns the live table settled.
       steered: carried,
     });
@@ -810,9 +897,9 @@ export class WorkerTable {
     this.#complete(entry, carrier, {
       finishReason: record?.finishReason ?? "unknown",
       // The carrier's own text. A turn this load started knows it; a turn
-      // restored from the snapshot does not (the snapshot carries counters, not
-      // briefs), and the report's text is the only text there is.
-      text: entry.carrierText || entry.brief || record?.text || "",
+      // restored from the journal does not (the journal carries counters, not
+      // the carrier's text), and the report's text is the only text there is.
+      text: entry.carrierText || entry.verboseIntent || record?.text || "",
       iterations: 0,
     });
     for (let index = 1; index <= carried; index += 1) this.#complete(entry, carrier + index, record);
@@ -842,24 +929,24 @@ export class WorkerTable {
     this.#wake();
   }
 
-  async #runTurn(entry, brief) {
+  async #runTurn(entry, verboseIntent) {
     // A replaced present produces no further turn (§4.2 step 6), whatever path
     // reached here.
     if (entry.state === REPLACED) return;
-    // The turn is already admitted: it was counted when the brief was accepted,
+    // The turn is already admitted: it was counted when the verboseIntent was accepted,
     // by `fork` (live), by `beginLane` (a lane's first turn), or by `#settle`
     // (a queued steer).
     entry.state = LIVE;
     // This turn's own text; a carrier record from a previous turn is not this
     // one's.
-    entry.brief = brief;
+    entry.verboseIntent = verboseIntent;
     entry.carrierText = null;
     try {
       // A runtime with no `run` cannot start a turn. The turn stays admitted and
       // unsettled, which is the honest state of work nobody started: `join`
       // waits for it instead of being handed a record invented here.
       if (typeof entry.handle?.run !== "function") return;
-      const record = await entry.handle.run(brief);
+      const record = await entry.handle.run(verboseIntent);
       // A host that reports each turn through `onSettled` has already moved the
       // worker on; only a run whose answer nobody reported is settled here, so
       // the view and the completion never arrive twice. A lane settles through
@@ -887,7 +974,7 @@ export class WorkerTable {
     for (;;) {
       // Both questions are asked AFTER the last wake. The check for `null` comes
       // first because it is the final answer: a turn that started after this
-      // call armed its waiter (a queued brief handed over by a settle, which
+      // call armed its waiter (a queued turn handed over by a settle, which
       // wakes every waiter) must be seen by the check that follows the wait,
       // not by one taken before it.
       if (this.owed() === 0) return null;
@@ -931,14 +1018,25 @@ export class WorkerTable {
   // is never offered again, and a record for a turn nobody owed is dropped
   // instead of being answered as a completion.
   #claim() {
-    while (this.#completions.length > 0) {
-      const first = this.#completions.shift();
-      if (this.#claims.has(first.id)) continue;
-      this.#claims.add(first.id);
-      this.#record({ type: WORKER_RECORD_TYPES.CLAIM, name: first.name, id: first.id, turn: first.turn });
-      return { name: first.name, role: first.role, ...first.outcome };
-    }
-    return null;
+    // A Map keeps insertion order, so "the first settled turn" is the first
+    // key. Deleting it is O(1), which the old `shift()` on an array was not.
+    const first = this.#completions.values().next();
+    if (first.done === true) return null;
+    const completion = first.value;
+    this.#completions.delete(completion.id);
+    this.#claims.add(completion.id);
+    // The claim is the record that the answer was handed over. A later replay
+    // deletes the completion here, so its text is not part of the restored
+    // state (root §1.1 item 1: the host keeps the conversation; this table keeps
+    // the minimum needed to hand work over exactly once).
+    this.#record({
+      type: WORKER_RECORD_TYPES.CLAIM,
+      name: completion.name,
+      id: completion.id,
+      turn: completion.turn,
+      textDropped: true,
+    });
+    return { name: completion.name, role: completion.role, ...completion.outcome };
   }
 
   #complete(entry, turn, record) {
@@ -950,8 +1048,8 @@ export class WorkerTable {
       outcome: recordOf(record),
       lane: false,
     });
-    if (this.#claims.has(completion.id)) return;
-    this.#completions.push(completion);
+    if (this.#claims.has(completion.id) || this.#completions.has(completion.id)) return;
+    this.#completions.set(completion.id, completion);
     this.#wake();
   }
 
@@ -976,13 +1074,16 @@ export class WorkerTable {
       worker.steered = 0;
       if (!worker.lane) {
         // Every turn it still owed is settled here, and every one of them is a
-        // result: a carried brief left without a record would be work `join`
+        // result: a carried turn left without a record would be work `join`
         // could never hand over.
         this.#record({
           type: WORKER_RECORD_TYPES.SETTLE,
           name,
           turn: worker.settled,
           outcome: recordOf(worker.last),
+          ...(worker.settled > owed + 1
+            ? { carrierText: worker.carrierText || worker.verboseIntent || null }
+            : {}),
           steered: worker.settled - owed - 1,
         });
         for (let turn = owed + 1; turn <= worker.settled; turn += 1) this.#complete(worker, turn, worker.last ?? null);
@@ -1010,7 +1111,7 @@ export class WorkerTable {
 
   // Results that settled and were never handed over, in settlement order.
   unclaimed() {
-    return this.#completions.filter((completion) => !this.#claims.has(completion.id)).map((completion) => ({
+    return [...this.#completions.values()].map((completion) => ({
       name: completion.name,
       role: completion.role,
       turn: completion.turn,
@@ -1044,7 +1145,7 @@ export class WorkerTable {
     if (worker.state !== LIVE) {
       return { ok: true, replaced: true, owner: name, stoppedNow: true, deferredAbort: false, reason: "NO_LIVE_PRESENT" };
     }
-    // Every brief that has not started is dropped: the owner is not producing
+    // Every verboseIntent that has not started is dropped: the owner is not producing
     // turns any more, and a queued turn would produce one.
     worker.pending.length = 0;
     const handle = worker.handle;
@@ -1145,10 +1246,82 @@ export class WorkerTable {
       released.push(name);
     }
     // The queue belongs to a session that is over: nothing it holds is owed to
-    // anyone now, and a reloaded table must not offer it.
-    for (const completion of this.#completions) this.#claims.add(completion.id);
-    this.#completions = [];
+    // anyone now, and a reloaded table must not offer it. The claims are
+    // RECORDED, not only remembered: the journal is the one source a reload
+    // replays, and an in-memory claim that never reached it would resurrect the
+    // completion on the next load.
+    for (const completion of this.#completions.values()) {
+      this.#claims.add(completion.id);
+      this.#record({
+        type: WORKER_RECORD_TYPES.CLAIM,
+        name: completion.name,
+        id: completion.id,
+        turn: completion.turn,
+        textDropped: true,
+        reason: "SESSION_ENDED",
+      });
+    }
+    this.#completions = new Map();
     if (released.length > 0 || this.#claims.size > 0) this.#wake();
     return { ok: orphaned.length === 0, released, orphaned };
+  }
+
+  // Root §1.1 item 2: an operator interrupt at a user-facing session reaches
+  // every descendant. This is NOT `abortAll`: that one is teardown and drops the
+  // queue. Here the session lives on, so
+  //
+  //   - a live runtime is aborted with the reason, but not disposed;
+  //   - unclaimed completions STAY collectable (`join` may still hand over work
+  //     that really finished before the interrupt);
+  //   - every turn still owed is settled as a `cancelled` completion, so `join`
+  //     reports the cancellation instead of waiting for a report that will never
+  //     come;
+  //   - the subtree is marked cancelled, so a later fork or steer refuses
+  //     (`WORKER_CANCELLED`) instead of restarting what the operator stopped.
+  //
+  // Idempotent: a second interrupt finds the marks and adds nothing. A lane is
+  // cancelled like a worker, but its settled turn is a group delivery, never a
+  // `join` completion, so no completion is queued for it.
+  cancelAll(reason = "OPERATOR_CANCELLED") {
+    const cancelled = [];
+    const alreadyCancelled = [];
+    const orphaned = [];
+    let completions = 0;
+    for (const [name, worker] of [...this.#workers]) {
+      if (worker.cancelled === true) {
+        alreadyCancelled.push(name);
+        continue;
+      }
+      try {
+        if (worker.state === LIVE || worker.state === IDLE) worker.handle?.abort?.(reason);
+      } catch (error) {
+        // The mark and the settled turns still stop this table from waiting on
+        // it; the receipt names the runtime that may keep running.
+        orphaned.push({ name, message: String(error?.message ?? error) });
+      }
+      worker.pending.length = 0;
+      worker.cancelled = true;
+      const owed = Math.max(0, worker.admitted - worker.settled);
+      const turn = worker.settled + owed;
+      worker.settled = turn;
+      worker.steered = 0;
+      worker.state = DEAD;
+      this.#record({
+        type: WORKER_RECORD_TYPES.CANCEL,
+        name,
+        reason,
+        turn,
+        lane: worker.lane,
+      });
+      if (!worker.lane) {
+        for (let settledTurn = turn - owed + 1; settledTurn <= turn; settledTurn += 1) {
+          this.#complete(worker, settledTurn, { finishReason: "cancelled", text: "" });
+          completions += 1;
+        }
+      }
+      cancelled.push(name);
+    }
+    if (cancelled.length > 0) this.#wake();
+    return { ok: orphaned.length === 0, cancelled, alreadyCancelled, orphaned, completions };
   }
 }

@@ -81,18 +81,26 @@ export const askPort = ({ ui, questions }) => ({
   },
 });
 
-// `devops` (spec §6): one synchronous investigation for Plan. It starts one
-// devops session through the host's `task` tool and waits for that session's one
-// answer, then returns the report whole; the system adds no summary.
-export const devopsPort = ({ binding }) => ({
+// The ONE lane Plan's `devops(verboseIntent)` primitive talks to (root §1.1
+// item 3). The investigation is a join, and a Plan's task has exactly one
+// DevOps: the lane is created on the first call, registered in the session's own
+// `LaneTable`, and reused for every later call — the live turn is steered, an
+// idle lane starts its next turn, and the primitive waits for that turn's end.
+// No timestamped session per call, and no second route to a DevOps session.
+export const PLAN_DEVOPS_LANE = "plan-devops";
+
+// `devops` (root §1.1 item 3, §2.2): one synchronous investigation for Plan.
+// The report is the lane's own last assistant text, returned whole; the system
+// adds no summary.
+export const devopsPort = ({ lanes }) => ({
   // §2.2: a Plan's task has AT MOST one pending DevOps investigation. Two
-  // concurrent `this.devops(...)` calls in one program used to start two
-  // sessions and report two reports; the second is refused by name instead.
-  // The latch is per port (one per session), and it is released when the
-  // investigation settles, whatever it settled with.
+  // concurrent calls in one program used to start two sessions and report two
+  // reports; the second is refused by name instead. The latch is per port (one
+  // per session), and it is released when the investigation settles, whatever
+  // it settled with.
   investigate: (() => {
     let inFlight = false;
-    return async (intent) => {
+    return async (verboseIntent) => {
       if (inFlight) {
         return {
           ok: false,
@@ -100,12 +108,66 @@ export const devopsPort = ({ binding }) => ({
           detail: "this task already has a DevOps investigation in flight; wait for its report",
         };
       }
+      if (typeof verboseIntent !== "string" || verboseIntent.trim().length === 0) {
+        return {
+          ok: false,
+          reason: "INVALID_VERBOSE_INTENT",
+          detail: "devops(verboseIntent) needs a non-empty investigation intent",
+        };
+      }
+      if (lanes === null || lanes === undefined) {
+        return {
+          ok: false,
+          reason: "NO_SESSION",
+          detail: "this session has no worker roster, so no DevOps lane can be started",
+        };
+      }
       inFlight = true;
       try {
-        const name = `plan-devops-${Date.now().toString(36)}`;
-        const run = await binding.runAgent({ agent: "devops", name, brief: intent });
-        if (run.ok !== true) return run;
-        return { ok: true, report: run.text, agentId: run.agentId ?? null };
+        // The lane is the SAME one every time. A lane that exists is steered:
+        // a live turn takes the intent, an idle lane starts its next turn.
+        // `LaneTable.steer` refuses a cancelled roster and an unknown name.
+        const existing = lanes.live(PLAN_DEVOPS_LANE);
+        if (existing === null) {
+          const started = await lanes.start({
+            name: PLAN_DEVOPS_LANE,
+            role: "devops",
+            verboseIntent,
+          });
+          if (started.ok !== true) {
+            return {
+              ok: false,
+              reason: started.reason,
+              ...(started.detail === undefined ? {} : { detail: started.detail }),
+              lane: PLAN_DEVOPS_LANE,
+            };
+          }
+        } else {
+          const steered = await lanes.steer(PLAN_DEVOPS_LANE, verboseIntent);
+          if (steered !== true) {
+            return {
+              ok: false,
+              reason: lanes.cancelled === null || lanes.cancelled === undefined ? "STEER_UNDELIVERED" : "SESSION_CANCELLED",
+              lane: PLAN_DEVOPS_LANE,
+            };
+          }
+        }
+        const lane = lanes.live(PLAN_DEVOPS_LANE);
+        if (lane === null) {
+          return { ok: false, reason: "LANE_MISSING", lane: PLAN_DEVOPS_LANE };
+        }
+        // The turn's end is the answer. `join` reads the same event, so the
+        // report is exactly what the roster would have handed over.
+        const ended = await lane.ended;
+        if (ended?.error !== null && ended?.error !== undefined) {
+          return { ok: false, reason: "AGENT_FAILED", lane: PLAN_DEVOPS_LANE, error: ended.error };
+        }
+        return {
+          ok: true,
+          report: typeof ended?.text === "string" ? ended.text : lane.text,
+          agentId: ended?.agentId ?? lane.agentId ?? null,
+          lane: PLAN_DEVOPS_LANE,
+        };
       } finally {
         inFlight = false;
       }
@@ -115,7 +177,7 @@ export const devopsPort = ({ binding }) => ({
 
 // `worker` (spec §4.1): the Manager's own fork and join.
 export const workerPort = (worker) => ({
-  fork: (name, brief) => worker.fork(name, brief),
+  fork: (name, verboseIntent) => worker.fork(name, verboseIntent),
   join: () => worker.join(),
 });
 
@@ -211,7 +273,7 @@ export const fissionPort = ({
         name: lane.laneId,
         role: agentFor(),
         // `null` builds without a first turn (`lane.mjs` `start`).
-        brief: null,
+        verboseIntent: null,
         // The group owns its lanes; the owner's roster keeps only its `fork`
         // workers, so `join` never collects an unconverged lane.
         register: false,
@@ -226,7 +288,7 @@ export const fissionPort = ({
       // The prompt the lane will run is kept beside its session: `startLane`
       // sends it after the commit, and this port is the only place that holds
       // both.
-      const record = { laneId: lane.laneId, index: lane.index, lane: built.lane, brief: context.join("\n\n") };
+      const record = { laneId: lane.laneId, index: lane.index, lane: built.lane, verboseIntent: context.join("\n\n") };
       lanes.set(lane.laneId, record);
       // §4.2 step 8: this lane's turn end is a delivery to its group. Armed
       // HERE, where the lane is built, so no later call can forget it; the
@@ -250,10 +312,10 @@ export const fissionPort = ({
       }
       // A lane built without a turn has its first turn here; a lane whose host
       // already ran it has nothing to send and this step confirms it.
-      if (record.brief === null) return { ok: true, laneId, lane: record.lane };
-      const brief = record.brief;
-      record.brief = null;
-      record.lane.start(brief);
+      if (record.verboseIntent === null) return { ok: true, laneId, lane: record.lane };
+      const verboseIntent = record.verboseIntent;
+      record.verboseIntent = null;
+      record.lane.start(verboseIntent);
       // §4.2 step 5: the lane counts as started only when the host ACCEPTED its
       // first turn. `Lane.start` turns a rejected prompt into an error
       // `agent_end`, so waiting on the promise here is what lets compose roll

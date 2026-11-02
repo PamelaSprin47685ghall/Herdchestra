@@ -418,9 +418,17 @@ export class ProgramCall {
   }
 }
 
-// Top-level primitives (root AGENTS.md §3.1): one spelling each, and it is the
-// bare name. They are not members, so a program has no `this.fork`.
-const PRIMITIVES = Object.freeze(["fork", "join", "review"]);
+// Top-level primitives (root AGENTS.md §3.1, §1.1 item 3): one spelling each,
+// and it is the bare name. They are not members, so a program has no
+// `this.fork` — and Plan has no `this.devops`.
+//
+// `devops` is here because Plan's investigation is a JOIN, not a member call
+// (root §1.1 item 3): the program waits for the dedicated worker's complete
+// record and continues with it. Compose keeps it out of Plan's member table
+// (`SURFACE_PRIMITIVES`), and `SessionState.surface` binds the one handler the
+// session's dedicated runner answers. A role whose members do not carry the
+// name gets no binding at all.
+const PRIMITIVES = Object.freeze(["fork", "join", "review", "devops"]);
 
 /**
  * Compile a program (§3.4 writes it as `class Js extends JsProgram { async

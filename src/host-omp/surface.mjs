@@ -30,7 +30,7 @@ import { TaskPort } from "./worker-port.mjs";
 import { LaneTable, sessionFactoryOf } from "./lane.mjs";
 import { WorkerRoster, workerRosterFile } from "./worker-roster.mjs";
 import { SessionControl } from "./session-control.mjs";
-import { NudgeBook, deliverNudge, operatorInterruptOf, turnExit } from "./nudge.mjs";
+import { NudgeBook, deliverNudge, facesOperator, operatorInterruptOf, turnExit } from "./nudge.mjs";
 import { HostBinding } from "./host-binding.mjs";
 import { ReviewMember } from "../compose/relay/review.mjs";
 import { Fission } from "../compose/fission/fission.mjs";
@@ -193,11 +193,6 @@ export class RoleSession {
   // session built without one simply has no face to close.
   #onReviewAccepted;
 
-  // `dispatch(toolName, params)` runs a host tool from inside ours. The host
-  // wiring supplies it; tests pass a fake. Without it every host-tool call
-  // reports `NO_HOST_DISPATCH` instead of pretending (the real host passes no
-  // dispatcher; see index.mjs).
-  //
   // `forked` says whether this session was started by a Herdchestra `fork`
   // (spec §4.2 `InvalidOrigin`). The Manager session never is; a worker session
   // is, when the spawn that started it came from this adapter's `fork`.
@@ -207,7 +202,6 @@ export class RoleSession {
     ctx = null,
     role = roleOfAgent(ctx?.agent),
     state = null,
-    dispatch = null,
     forked = false,
     fissionLane = false,
     // The worker face the adapter builds: `{ workerToolsFor, workerToolNames }`.
@@ -242,9 +236,9 @@ export class RoleSession {
     // leaves the body suspended on one of these promises; `unpark` settles it
     // so the original async stack continues (spec §3.3 "恢复不重跑").
     this.#parks = new ParkTable();
-    this.#binding = new HostBinding({ pi, api, ctx, dispatch });
-    // Workers are the host's own `task` subagents. The roster is per session, so
-    // two sessions never address each other's workers by name.
+    this.#binding = new HostBinding({ pi, api, ctx });
+    // Workers are sessions this adapter creates through the SDK. The roster is
+    // per session, so two sessions never address each other's workers by name.
     this.#lanes = lanes ?? null;
     this.#worker = null;
     this.#review = null;
@@ -406,7 +400,7 @@ export class RoleSession {
         // A lane runs a WORKER definition. The owner may be a Manager (§4.2
         // gives fission to a forked worker, but the port is built for every
         // session), and `agentForRole` now refuses a non-worker role so that a
-        // `role: plan` brief cannot be forked. Map the owner to a worker here
+        // `role: plan` intent cannot be forked. Map the owner to a worker here
         // rather than weakening that refusal.
         agentFor: () => agentForRole(isWorkerRole(this.#role) ? this.#role : ROLE.CODER),
         owner: () => this.name(),
@@ -685,7 +679,8 @@ export class RoleSession {
       // reference, so a session recorded after the roster was built is still
       // found.
       sessions: this.#laneSessions,
-      // The ROLE compose resolved from the brief, mapped to a host definition.
+      // The ROLE compose resolved from the verbose intent, mapped to a host
+      // definition.
       // Never the worker's name: §2.1 makes identity an explicit fact, and a
       // name is not one.
       agentFor: (role) => agentForRole(role),
@@ -795,11 +790,23 @@ export class RoleSession {
     // Read ONCE, here, where the host's record lives: the host's own interrupt
     // spelling is a host fact, and the shared rule is asked with the answer.
     const interrupted = operatorInterruptOf(endedWith);
+    const askedInS1 = this.#state?.askedInS1 !== null && this.#state?.askedInS1 !== undefined;
+    // Root §1.1 item 2: the interrupt that must reach every descendant. Three
+    // facts guard it, and each names a different reason the stop is NOT the
+    // operator taking control of this session's subtree:
+    //   - an S1 `ask` handed the turn back on purpose;
+    //   - a fission present replacement marks the owner and silences it;
+    //   - a relay intent is the incumbent giving way to its successor.
+    const operatorInterrupt =
+      interrupted === true &&
+      askedInS1 !== true &&
+      this.#control?.replaced === null &&
+      (this.#state?.relayPending === null || this.#state?.relayPending === undefined);
     const decision = turnExit({
       role: this.#role,
       ledger,
       handedOff: this.#handedOff,
-      askedInS1: this.#state?.askedInS1 !== null && this.#state?.askedInS1 !== undefined,
+      askedInS1,
       interrupted,
       turnId,
       nudged: this.#nudged,
@@ -814,7 +821,28 @@ export class RoleSession {
     // same turn cannot nudge after a legal stop consumed the marker.
     this.#nudged.book(decision.turnId);
     this.#state?.clearAskedInS1?.();
-    return decision;
+    // The two facts travel beside compose's verdict, because the adapter's
+    // cancellation walk needs them and the nudge rule does not.
+    return { ...decision, interrupted, askedInS1, operatorInterrupt };
+  }
+
+  // Whether one host message is a REAL operator interrupt that must cancel this
+  // session's descendants (root §1.1 item 2). The turn_end path asks this before
+  // turnExit runs; the guards are the same three facts, read from the same
+  // places.
+  operatorInterrupt(message = null) {
+    if (facesOperator(this.#role) !== true) return { operator: false, reason: "not-user-facing" };
+    if (operatorInterruptOf(message) !== true) return { operator: false, reason: "not-operator" };
+    if (this.#state?.askedInS1 !== null && this.#state?.askedInS1 !== undefined) {
+      return { operator: false, reason: "asked-in-s1" };
+    }
+    if (this.#control?.replaced !== null && this.#control?.replaced !== undefined) {
+      return { operator: false, reason: "present-replaced" };
+    }
+    if (this.#state?.relayPending !== null && this.#state?.relayPending !== undefined) {
+      return { operator: false, reason: "relay" };
+    }
+    return { operator: true };
   }
 
   // Deliver a nudge through the host's own queue (`pi.sendUserMessage` with
@@ -957,7 +985,11 @@ export class RoleSession {
               askOperator: (question) => this.askOperator(question),
             },
           }),
-      ...(worker ? {} : { devops: devopsPort({ binding: this.#binding }) }),
+      // Plan's `devops(verboseIntent)` primitive (root §1.1 item 3). The port
+      // owns ONE dedicated lane in THIS session's roster (`plan-devops`), so
+      // every investigation is the same DevOps and the single-flight latch is
+      // the port's own.
+      ...(worker ? {} : { devops: devopsPort({ lanes: this.#lanes }) }),
       fission: this.#fission,
       ledger: this.#state.ledger,
       // `this.ask(question)`: park (already done by the surface) + interrupt.
@@ -1710,9 +1742,8 @@ export class RoleSession {
   //
   // The session is started the same way `fork` starts a worker — through the
   // SDK factory the host injects — because the host gives an extension no tool
-  // dispatcher (`loader.ts:454` passes only `api`), so the `task` route this
-  // used before could never run on a real host. `runAgent` stays available for
-  // a harness that injects a dispatcher; it is the fallback, not the path.
+  // dispatcher (`loader.ts:454` passes only `api`), so the `task` route could
+  // never run on a real host. There is no fallback route.
   //
   // The Manager's identity is `main`, not `sub`: spec §6 makes Plan the top
   // level and §7 puts the Manager beside it, and `roleOfAgent` reads the role
@@ -1721,11 +1752,11 @@ export class RoleSession {
   async startManager(draft) {
     const name = `manager-${Date.now().toString(36)}`;
     // The draft is the Manager's ONLY starting material (spec §6.1): it is the
-    // first turn's brief, not a note attached to one.
+    // first turn's verbose intent, not a note attached to one.
     const started = await this.#lanes.start({
       name,
       role: ROLE.MANAGER,
-      brief: draft,
+      verboseIntent: draft,
       depth: this.#laneDepth(),
       // The Manager judges from the work tree, not from this Plan's transcript
       // (§5.3 barrier): it is a separate session that never sees this one.

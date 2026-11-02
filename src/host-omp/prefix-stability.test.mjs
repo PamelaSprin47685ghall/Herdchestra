@@ -505,11 +505,12 @@ test("a request record names the messages the adapter dropped and the compaction
   const history = [operator("go"), { role: "assistant", content: [call] }, { role: "tool", content: [answered] }];
   const sent = await project(history);
 
-  // The same request, settled: nothing left, nothing dropped.
+  // A clean request carries no shapes at all: the record is a failure
+  // diagnostic, and a success writes nothing (root §1.1 item 1).
   const clean = requestRecord({ phase: "settled", sessionId: "ses_record", host: "18.14.2", incoming: history, presented: sent });
-  assert.deepEqual(clean.dropped, [], "an unchanged copy drops nothing");
-  assert.equal(clean.pair.summary, null, "the copy was not built from a host rewrite");
-  assert.equal(typeof clean.pair.index, "number", "the pair's own placement is still recorded");
+  assert.equal(clean.dropped, null, "a clean record computes no shapes");
+  assert.equal(clean.pair, null, "a clean record computes no pair placement");
+  assert.equal(clean.firstDivergence, null, "a clean record has no divergence");
 
   // The adapter's half-pair rule: a compaction folded the assistant message
   // that issued `c1` into a summary, so the copy still holds the result and no
@@ -524,6 +525,7 @@ test("a request record names the messages the adapter dropped and the compaction
     sessionId: "ses_record",
     incoming: summaryFirst,
     presented: kept,
+    failure: { stage: "pair hint", code: "PREFIX_DRIFT", detail: "the result lost its call" },
   });
   assert.equal(halfPair.dropped.length, 1, "exactly the message that left");
   assert.deepEqual(halfPair.dropped[0].results, ["c1"], "the dropped message is named by the call it answered");
@@ -538,9 +540,10 @@ test("a request record names the messages the adapter dropped and the compaction
     sessionId: "ses_record",
     incoming: [summary, ...history],
     presented: [summary, ...sent],
+    failure: { stage: "pair hint", code: "PREFIX_DRIFT", detail: "a message already shown would change" },
   });
   assert.equal(compacted.pair.summary, 0, "the host's rewrite marker is named by index");
   assert.deepEqual(compacted.dropped, [], "a compaction that keeps the tail drops nothing here");
-  assert.equal(compacted.allowed, true);
+  assert.equal(compacted.allowed, false);
   await fs.rmSync(root, { recursive: true, force: true });
 });

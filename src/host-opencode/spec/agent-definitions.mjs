@@ -7,8 +7,9 @@
 // default and are narrowed here, because the permission list also decides which
 // tools the catalog offers (`Tool.snapshot(permissions)`).
 //
-// Plan (§6) is a top-level planning agent: it writes one draft, asks the
-// operator, gets repository facts through `this.devops`, and reviews. It has no
+// Plan (§6) is a top-level planning agent: it writes one draft under `plans/`,
+// asks the operator, gets repository facts through the bare `devops(verboseIntent)`
+// primitive, and reviews. It has no
 // shell, no edit, no grep and no glob: `cat` and `write` live inside its
 // program, and its file reach is the draft path the task fixes.
 
@@ -37,7 +38,7 @@ const WORKER_PERMISSIONS = Object.freeze([
 
 // Plan: its own face only. It asks with `this.ask` in `S1` (park + interrupt),
 // never with the host's blocking `question` tool. It never runs a command: the
-// repository facts it needs arrive through `this.devops(intent)` (§6).
+// repository facts it needs arrive through `devops(verboseIntent)` (§6).
 const PLAN_PERMISSIONS = Object.freeze([
   DENY("*"),
   { action: "plan", resource: "*", effect: "allow" },

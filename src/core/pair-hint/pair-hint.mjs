@@ -28,13 +28,13 @@ import {
   assertIndex,
   digestOf,
   factFor,
-  findInjection,
   parseHint,
   renderPresentation,
   syntheticMessages,
 } from "./presentation.mjs";
 import { INJECTION_MODES, PairHintInjector } from "./injection.mjs";
 import { foldRecords, JournalStore, PairHintState, RECORD_KINDS, refusalRecord } from "./facts.mjs";
+import { Chain, firstDivergence, startsWith } from "./chain.mjs";
 import { isNonEmptyString } from "../util.mjs";
 
 // Why a chain was re-based. A re-base is always a projection the SPEC owns
@@ -75,7 +75,7 @@ export const REBASE_REASONS = Object.freeze({
 //
 // Live (2026-11-01, session `01a19547`): a title fork ran 4 ms before the main
 // turn's four tool calls finished. It extended the pair-free prefix, so the
-// chain accepted it and OVERWROTE `#presented` with the fork's copy (partial
+// chain accepted it and OVERWROTE the chain state with the fork's copy (partial
 // assistant text + the side-channel reminder + the title prompt). The main
 // turn's next request then differed at index 1 — the real assistant message
 // with its four calls, against the fork's 76-byte partial — and every request
@@ -96,10 +96,15 @@ const isEphemeral = (kind) => kind === REQUEST_KINDS.EPHEMERAL;
 
 const isRebaseReason = (value) => value === null || Object.values(REBASE_REASONS).includes(value);
 
-// How many messages of a presented request come before its pair, or null when
-// it carries none. This is where the NEXT epoch puts its pair: the old request
-// is the new one minus the old pair, so the new pair belongs exactly there.
-const shownPlacementOf = (messages) => findInjection(messages)?.index ?? null;
+// The fact fields a `presented` record keeps. The frozen text lives once in a
+// `presentation` record; a fact only names its digest and placement.
+const factRecord = (fact) => ({
+  epoch: fact.epoch,
+  digest: fact.digest,
+  handles: [...fact.handles],
+  after: fact.after,
+  inserted: fact.inserted,
+});
 
 export class PairHint {
   #after;
@@ -113,10 +118,11 @@ export class PairHint {
   #language;
   #library;
   #loaded;
-  #presented;
+  #presentationPersisted;
   #presentedEpoch;
   #rebased;
   #sessionId;
+  #serial;
   #state;
   #store;
   #text;
@@ -140,13 +146,14 @@ export class PairHint {
     this.#language = null;
     this.#handles = [];
     this.#epoch = 0;
-    this.#presented = null;
+    this.#chain = null;
+    this.#presentationPersisted = false;
     this.#presentedEpoch = null;
     // The reason the NEXT presented record carries, or null. Set by `anchor`
     // and cleared by the append that records it, so one re-base is named once.
     this.#rebased = null;
     this.#loaded = false;
-    this.#chain = Promise.resolve();
+    this.#serial = Promise.resolve();
     // The presentation that is frozen for this epoch, once one exists. Both
     // fields are set together and cleared together.
     this.#text = null;
@@ -187,8 +194,10 @@ export class PairHint {
     this.#sessionId = state.binding === null ? this.#sessionId : state.binding.sessionId;
     this.#language = state.binding === null ? null : state.binding.language;
     this.#epoch = state.epoch;
-    this.#presented = state.presented;
-    this.#presentedEpoch = state.presented === null ? null : state.epoch;
+    this.#chain = state.chain;
+    this.#presentedEpoch = state.chainEpoch;
+    this.#presentationPersisted =
+      state.fact === null ? false : state.presentation(state.fact.epoch, state.fact.digest) !== null;
     this.#adopt(state);
     this.#loaded = true;
     return state;
@@ -252,10 +261,11 @@ export class PairHint {
     return this.#state.fact;
   }
 
-  // The request copy the last call sent, or null. This is the anchor of the
-  // prefix chain.
-  get presented() {
-    return this.#presented;
+  // The chain the last call left, or null. It is the anchor of the prefix
+  // rule: length, per-message digests and the pair's index. No request copy is
+  // kept, so a cold start can verify a prefix without one.
+  get chain() {
+    return this.#chain;
   }
 
   // The last refusal this session recorded, or null. Diagnostic only: no
@@ -334,12 +344,11 @@ export class PairHint {
     if (!this.bound || this.#text === null) {
       // Nothing is shown in this epoch yet, so there is no pair to anchor: the
       // next `project` decides the placement and starts the chain itself.
-      this.#presented = null;
+      this.#chain = null;
       this.#presentedEpoch = null;
       this.#after = null;
       return this;
     }
-    const copy = (message) => (message !== null && typeof message === "object" ? { ...message } : message);
     const cut = base.length;
     const fact = factFor({
       epoch: this.#epoch,
@@ -348,7 +357,12 @@ export class PairHint {
       after: cut,
       inserted: cut,
     });
-    this.#presented = [...base.map(copy), ...syntheticMessages({ fact, text: this.#text })];
+    // The anchor is the copy the caller is about to send, with this epoch's
+    // pair after it. Only the chain state is kept: no message is stored.
+    this.#chain = Chain.fromMessages(
+      [...base, ...syntheticMessages({ fact, text: this.#text })],
+      { pairIndex: cut },
+    );
     // The new chain has no predecessor: the next `project` skips the prefix
     // check against what stood before the break, and records its own request as
     // the chain's first member.
@@ -457,8 +471,8 @@ export class PairHint {
   // does not break the chain for later callers.
   #serialize(step) {
     const run = () => step();
-    const next = this.#chain.then(run, run);
-    this.#chain = next.then(
+    const next = this.#serial.then(run, run);
+    this.#serial = next.then(
       () => undefined,
       () => undefined,
     );
@@ -536,6 +550,9 @@ export class PairHint {
       // branch is allowed to clamp (see `cutFor`).
       branch: isEphemeral(kind),
     });
+    // The chain this request will leave. `decided.inserted` is the pair's own
+    // index, so the pair-free view is exact without looking at a stored copy.
+    const projectedChain = Chain.fromMessages(projected, { pairIndex: decided.inserted });
     // A pair-free copy can still be a replay.
     //
     // The host never stores our pair, so the next request arrives WITHOUT it and
@@ -557,9 +574,9 @@ export class PairHint {
     const replayed =
       mode === INJECTION_MODES.PLACED &&
       this.#presentedEpoch === this.#epoch &&
-      this.#presented !== null &&
+      this.#chain !== null &&
       this.#injector.shownPlacement(messages) === null &&
-      this.#injector.samePrefix({ previous: this.#presented, next: projected });
+      this.#chain.equals(projectedChain);
     // Only requests of one epoch form one prefix chain: a later request must
     // extend the earlier one (§6.1). The first request of a new epoch starts
     // a fresh chain, and nothing already shown is rewritten there.
@@ -604,11 +621,11 @@ export class PairHint {
     // only as far as it shares it, and the provider's cached prefix is that
     // shared part either way. A MAIN request never clamps (see `cutFor`).
     let placement = this.#after ?? decided.after;
-    if (isEphemeral(kind) && this.#presentedEpoch === this.#epoch && this.#presented !== null) {
-      const anchor = this.#injector.withoutInjection(this.#presented);
-      const request = this.#injector.withoutInjection(projected);
+    if (isEphemeral(kind) && this.#presentedEpoch === this.#epoch && this.#chain !== null) {
+      const anchor = this.#chain.pairFreeDigests();
+      const request = projectedChain.pairFreeDigests();
       let shared = 0;
-      while (shared < anchor.length && shared < request.length && this.#injector.sameMessage(anchor[shared], request[shared])) {
+      while (shared < anchor.length && shared < request.length && anchor[shared] === request[shared]) {
         shared += 1;
       }
       // The three shapes a host's own side copy takes, and nothing else:
@@ -627,17 +644,24 @@ export class PairHint {
         throw refuse(PAIR_HINT_CODES.PREFIX_DRIFT, "the ephemeral copy rewrote a message the model read as final", {
           epoch: this.#epoch,
           index: shared,
-          compared: { previous: anchor, next: request },
+          compared: {
+            previous: { digests: anchor },
+            next: this.#injector.withoutInjection(projected),
+          },
         });
       }
       // The pair goes where the branch can carry it: the chain's placement when
       // the copy reaches it, its own end when the branch is shorter.
       if (placement !== null) placement = Math.min(placement, request.length);
     }
-    if (!isEphemeral(kind) && this.#presentedEpoch === this.#epoch && this.#presented !== null) {
-      if (this.#injector.extendsPrefix({ previous: this.#presented, next: projected })) {
-        const shown = this.#injector.shownPlacement(projected);
-        if (shown !== null) placement = shown;
+    if (!isEphemeral(kind) && this.#presentedEpoch === this.#epoch && this.#chain !== null) {
+      // A copy that already starts with the presented chain extends it by
+      // construction, so its pair may stand at another index: the host handed
+      // back the request it sent, or a caller grew the copy. That place becomes
+      // the placement, so the next copy without the pair lands between the same
+      // two messages instead of being refused.
+      if (startsWith(this.#chain.digests, projectedChain.digests)) {
+        if (projectedChain.pairIndex !== null) placement = projectedChain.pairIndex;
       }
       // The request that goes out carries this epoch's pair, at an index the
       // host rebuilt from a history that never stored it. Comparing it with
@@ -649,26 +673,34 @@ export class PairHint {
       // A request that does not carry the pair is not a request of this
       // epoch at all — `inject` places or replaces the pair before this check
       // runs — so only the pair-free comparison is reachable here.
-      const anchor = this.#injector.withoutInjection(this.#presented);
-      const request = this.#injector.withoutInjection(projected);
-      const span = Math.min(anchor.length, request.length);
-      // The two sides are handed to the refusal as well as to the check: a
-      // refusal records what was actually compared, so its `index` and its
-      // shapes share one coordinate system and a reader never reconstructs it.
-      const compared = { previous: anchor.slice(0, span), next: request.slice(0, span) };
-      try {
-        this.#injector.assertPrefix(compared);
-      } catch (error) {
-        if (error instanceof PairHintError && error.details !== null && typeof error.details === "object") {
-          error.details = { ...error.details, compared };
-        }
-        throw error;
+      const anchor = this.#chain.pairFreeDigests();
+      const request = projectedChain.pairFreeDigests();
+      const divergence = firstDivergence(anchor, request);
+      if (divergence >= 0) {
+        const shorter = request.length < anchor.length;
+        throw refuse(
+          PAIR_HINT_CODES.PREFIX_DRIFT,
+          shorter ? "the new request is shorter than the old one" : "a message already shown would change",
+          {
+            index: divergence,
+            previousLength: anchor.length,
+            nextLength: request.length,
+            // The two sides are handed to the refusal as well as to the check:
+            // a refusal records what was actually compared, so its `index` and
+            // its digests share one coordinate system. The chain side has only
+            // digests; the request side still carries its shapes and ids.
+            compared: {
+              previous: { digests: anchor },
+              next: this.#injector.withoutInjection(projected),
+            },
+          },
+        );
       }
     }
     // An EPHEMERAL request is a branch: it leaves the chain exactly as it
     // found it. The pair is already placed in `projected` (same epoch, same
     // `after`, same bytes, so the provider's cached prefix is hit), but nothing
-    // is recorded and nothing in memory moves — not `#presented`, not
+    // is recorded and nothing in memory moves — not `#chain`, not
     // `#presentedEpoch`, not `#after`, not the pending re-base. The host
     // discards this request, so making the main chain remember it would measure
     // the next real request against words that were never spoken.
@@ -679,31 +711,41 @@ export class PairHint {
     if (isEphemeral(kind)) {
       return { messages: projected, mode, fact: decided.at({ after: placement, inserted: decided.inserted }), text: shown, kind };
     }
-    // One append carries the bytes, the placement and the frozen presentation.
-    // Split across records, a crash would leave one without the others.
+    // The frozen text is written once per epoch/digest, before the first
+    // `presented` record that names it. A cold start then rebuilds the same
+    // bytes without a copy in every request record.
+    if (!this.#presentationPersisted) {
+      this.#state = await this.#store.append({
+        kind: RECORD_KINDS.PRESENTATION,
+        epoch: this.#epoch,
+        digest: this.#digest,
+        text: this.#text,
+        entries: [...this.#entries],
+      });
+      this.#presentationPersisted = true;
+    }
+    // One append carries the chain state, the placement and the fact. Split
+    // across records, a crash would leave one without the others.
     // A re-base is named on the request it produced: `rebased` says which
     // projection replaced the chain, so a reader of the journal can tell a
     // legitimate break (the spec trimmed the copy) from a panic that anchored.
     // It is optional and additive: an older journal folds unchanged.
+    const shownFact = decided.at({ after: placement, inserted: decided.inserted });
     this.#state = await this.#store.append({
       kind: RECORD_KINDS.PRESENTED,
-      messages: projected,
       length: projected.length,
+      ...projectedChain.toRecord(),
       ...(this.#rebased === null ? {} : { rebased: this.#rebased }),
-      fact: {
-        ...decided.at({ after: placement, inserted: decided.inserted }).toRecord(),
-        text: this.#text,
-        entries: [...this.#entries],
-      },
+      fact: factRecord(shownFact),
     });
     this.#rebased = null;
-    this.#presented = projected;
+    this.#chain = projectedChain;
     this.#presentedEpoch = this.#epoch;
     this.#after = placement;
     // The fact this request shows carries the placement it used, not the
     // undecided one: the caller (and a cold start reading the record) must
     // see where the pair stands, and where the next copy puts it.
-    this.#fixed = decided.at({ after: placement, inserted: decided.inserted });
+    this.#fixed = shownFact;
     // `mode` says what happened to the pair, so a byte-identical retry of a
     // pair-free copy reports `replayed`, not `placed`.
     return { messages: projected, mode: replayed ? INJECTION_MODES.REPLAYED : mode, fact: this.#fixed, text: shown };
@@ -726,13 +768,20 @@ export class PairHint {
   async newEpoch() {
     return await this.#serialize(async () => {
       const next = this.#epoch + 1;
-      const openedAt = this.#presented === null ? null : shownPlacementOf(this.#presented);
+      const openedAt = this.#chain === null ? null : (this.#chain.pairIndex ?? this.#fixed?.inserted ?? null);
       this.#state = await this.#store.append({ kind: RECORD_KINDS.EPOCH, epoch: next });
       this.#epoch = next;
       this.#text = null;
       this.#digest = null;
       this.#entries = null;
       this.#fixed = null;
+      this.#presentationPersisted = false;
+      // The chain of the old epoch stays in memory until the first request of
+      // the new one. It is not compared (`#presentedEpoch !== #epoch`), but the
+      // request boundary needs it: a compaction or a Scope prune on that first
+      // request is a legitimate re-base, and without the old chain the boundary
+      // would call the request "first" and leave the placement beyond a shorter
+      // copy. A cold start after an `epoch` record has no chain, by design.
       // The count, not `null`: `null` means "wherever the next copy ends", and a
       // copy that grew past the old pair would then push the new pair behind
       // messages the old pair preceded — the old request would stop being a
@@ -749,9 +798,11 @@ export class PairHint {
 export class MemoryJournal {
   #chain;
   #records;
+  #state;
 
   constructor(records = []) {
     this.#records = records.map((record) => JSON.parse(JSON.stringify(record)));
+    this.#state = foldRecords(this.#records);
     this.#chain = Promise.resolve();
   }
 
@@ -760,7 +811,7 @@ export class MemoryJournal {
   }
 
   async read() {
-    return foldRecords(this.#records);
+    return this.#state;
   }
 
   append(record) {
@@ -768,8 +819,9 @@ export class MemoryJournal {
       return Promise.reject(invalidArgument("a journal record must be an object"));
     }
     const run = async () => {
-      const state = foldRecords(this.#records).apply(record);
+      const state = this.#state.apply(record);
       this.#records.push(JSON.parse(JSON.stringify(record)));
+      this.#state = state;
       return state;
     };
     const next = this.#chain.then(run, run);

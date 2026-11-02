@@ -7,9 +7,9 @@
 // ## One spelling per capability (root AGENTS.md §3.1)
 //
 // A member is reached through `this` only: `this.cat(...)`, `this.park(...)`.
-// The three top-level primitives — `fork`, `join`, `review` — are the reverse:
-// they are plain functions in the body's scope and are NEVER put on the
-// instance, so `this.fork` is a TypeError and there is no bare `cat`.
+// The top-level primitives — `fork`, `join`, `review` and Plan's `devops` — are
+// the reverse: they are plain functions in the body's scope and are NEVER put
+// on the instance, so `this.fork` is a TypeError and there is no bare `cat`.
 //
 // ## How a park suspends the call
 //
@@ -43,7 +43,24 @@ import { STATES } from "../core/program.mjs";
 import { extraFactsOf } from "./tool-schema.mjs";
 
 // The top-level primitives (§3.1): bare function names only, never members.
-const PRIMITIVES = Object.freeze(["fork", "join", "review"]);
+//
+// `devops` is Plan's alone (root §1.1 item 3): the investigation is a
+// synchronous join, so it is a primitive rather than a member, and the Plan
+// face is the only one that offers it. `this.devops` therefore does not exist on
+// any face — the spelling check below refuses a program that declares one.
+const PRIMITIVES = Object.freeze(["fork", "join", "review", "devops"]);
+const PRIMITIVE_ROLES = Object.freeze({ devops: "plan" });
+
+// The primitives one role's program may call as bare names. A primitive with no
+// declared role is offered wherever its surface supplies it; a role-scoped one
+// (Plan's `devops`) is offered only to that role, so a Manager or worker program
+// that writes `devops(...)` gets the same ReferenceError as any other absent
+// capability.
+export const primitivesFor = (role = null) =>
+  PRIMITIVES.filter((name) => {
+    const scope = PRIMITIVE_ROLES[name];
+    return scope === undefined || scope === role;
+  });
 
 // The members a program instance receives, in the order they are bound.
 const MEMBERS = Object.freeze([
@@ -61,7 +78,6 @@ const MEMBERS = Object.freeze([
   "call",
   "ask",
   "fission",
-  "devops",
 ]);
 
 export const isPrimitive = (name) => PRIMITIVES.includes(name);
@@ -81,6 +97,18 @@ export class JsProgram {
       if (Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), name) !== undefined) {
         throw new TypeError(
           `a program may not declare \`${name}\`: members are reached as this.${name}, so a method of that name would be a second spelling`,
+        );
+      }
+    }
+    // A primitive is a bare name only. A method of that name would put
+    // `this.devops` (or `this.fork`) in the body's scope, which is exactly the
+    // second spelling §3.1 forbids — and on Plan it would make `this.devops`
+    // exist for a program that declares it, hiding the fact that the adapter
+    // never puts it there.
+    for (const name of PRIMITIVES) {
+      if (Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), name) !== undefined) {
+        throw new TypeError(
+          `a program may not declare \`${name}\`: it is a top-level primitive, so it is called as \`${name}(...)\`, never as this.${name}`,
         );
       }
     }
@@ -224,9 +252,14 @@ export const bindMembers = (instance, surface) => {
 
 // The primitives this surface offers, as an object of bare names. They are
 // parameters of the compiled factory, never properties of the instance.
-export const primitiveScope = (surface) => {
+//
+// `role` is the composition role the surface runs as (`plan`, `manager`,
+// `coder`, `devops`). It gates the role-scoped primitives: `devops` is Plan's
+// alone, so a member map that happens to carry the name still cannot hand it
+// to another face.
+export const primitiveScope = (surface, { role = null } = {}) => {
   const scope = {};
-  for (const name of PRIMITIVES) {
+  for (const name of primitivesFor(role)) {
     if (typeof surface[name] === "function") scope[name] = surface[name];
   }
   return scope;
@@ -296,14 +329,42 @@ export const startProgram = ({ source, surface, program, parks, onEnd = null }) 
   // `bindMembers` binds each member to the surface object, so the body calls
   // the bound copy; the guard must wrap those, or a park never suspends.
   const members = typeof surface.surface === "function" ? surface.surface() : surface;
+  // The role the surface runs as (`plan`, `manager`, `coder`, `devops`). It
+  // gates Plan's `devops` primitive: compose removes it from the Plan member
+  // list and publishes it as a primitive, so it is resolved from the surface's
+  // own handler when the member list does not carry it.
+  const role = typeof surface?.roleName === "string" ? surface.roleName : null;
   const bound = {};
   for (const [name, handler] of Object.entries(members)) {
     bound[name] = typeof handler === "function" ? handler.bind(members) : handler;
   }
+  // Compose publishes role-scoped primitives beside the members
+  // (`SURFACE_PRIMITIVES`). A surface may expose them as a method or a plain
+  // object; both are read here, and only a name this role is allowed to call is
+  // taken.
+  const published =
+    typeof surface?.primitives === "function" ? surface.primitives() : (surface?.primitives ?? null);
+  for (const name of primitivesFor(role)) {
+    if (typeof bound[name] === "function") continue;
+    const fromSurface = published !== null && typeof published === "object" ? published[name] : null;
+    if (typeof fromSurface === "function") {
+      bound[name] = fromSurface.bind(members);
+      continue;
+    }
+    // A primitive compose publishes beside the members (`SURFACE_PRIMITIVES`).
+    // It is built by the same handler that built the members, so it reads the
+    // same ports and ledger; asking the surface for it is the only way to reach
+    // a capability that is deliberately not a member.
+    const handler =
+      typeof surface?.handler === "function"
+        ? surface.handler(name, typeof surface.core === "function" ? surface.core() : undefined)
+        : null;
+    if (typeof handler === "function") bound[name] = handler.bind(members);
+  }
   const guarded = guardedMembers(bound, program, parks);
   // The primitives travel as bare parameters; the members travel on the
   // instance. One capability, one spelling (§3.1).
-  const primitives = primitiveScope(guarded);
+  const primitives = primitiveScope(guarded, { role });
 
   void (async () => {
     let result;

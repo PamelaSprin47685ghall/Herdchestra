@@ -263,7 +263,7 @@ export class SessionControl {
   // Run `fn` once when the turn in flight ends, or at once when no turn is in
   // flight. The callback is how fission interrupts a turn that was admitted
   // before its present was marked: aborting now would race the host's own turn
-  // bookkeeping, and the tail of the turn is where the queued brief would start.
+  // bookkeeping, and the tail of the turn is where the queued intent would start.
   //
   // A callback that throws is dropped, never rethrown into the host's loop: it
   // runs from a turn's end, and a throw there would fail the turn after it.

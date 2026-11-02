@@ -1,7 +1,7 @@
 // Plan's draft directory is prepared before anything can write into it (§2.2).
 //
 // `atomicWriteFile` (`core/fs.mjs`) creates its temp file INSIDE the target's
-// directory, so the first `write` to `.Herdchestra/drafts/<session>.md` fails as
+// directory, so the first `write` to `plans/<session>.md` fails as
 // `ENOENT` when that directory does not exist. The message then names a temp
 // file the Plan never asked for, in a directory it cannot create: Plan has no
 // `mkdir`, and its only file members are `cat` and `write`.
@@ -41,13 +41,18 @@ test("a fresh workspace gets its draft directory before the first write", async 
   const root = tempRoot();
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
-  // Nothing exists yet: no `.Herdchestra`, no `drafts`.
+  // Nothing exists yet: no `.Herdchestra`, no `plans`.
   const port = makeDraftPort({ root, name: "fresh" });
   assert.equal(port.dirFailure(), null, "a writable root prepares its directory");
 
   const file = port.path();
   assert.equal(file, planDraftPath(root, "fresh"));
   assert.equal(path.dirname(file), path.join(root, PLAN_DRAFT_DIR));
+  // Root §1.1 item 3: the draft is the operator's output, visible in the
+  // workspace, never inside the adapter's own state directory.
+  assert.equal(PLAN_DRAFT_DIR, "plans");
+  assert.equal(file.startsWith(path.join(root, "plans") + path.sep), true);
+  assert.equal(file.includes(".Herdchestra"), false);
 
   // The real atomic write the Plan member performs: it needs the directory to
   // exist, and now it does.

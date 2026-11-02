@@ -5,14 +5,12 @@
 // `resetScope` without `newScopeGoal` and `newScopeRetentionBudget`. That refusal
 // is correct and stays: a reset with no goal cannot open a Scope.
 //
-// What was wrong is that nothing told the model. A free-form
-// `{ type: "object" }` says a `scope` field exists and nothing about its
-// language, so on the real host (live6, 2026-11-01) the model wrote
-// `{"kind":"resetScope"}` — the only reading a bare object permits — and every
-// call was refused before it ran. The sibling adapters already declare the
-// per-kind shape (`host-cline/scope-schema.mjs`, `host-omp/program-tools.mjs`
-// `SCOPE_PROPERTY`); this module gives this host the same answer from the same
-// source.
+// The language itself is explained ONCE, in the system prompt's Scope section
+// (root §1.1 item 5). Every tool carries the same annotation, so repeating the
+// full explanation in each tool description spends the model's context on the
+// same paragraph six times. What remains here is the field shape, which the
+// schema itself must state so a call decodes; the model reads the meaning in the
+// prompt and the shape here.
 //
 // The schema is `oneOf` over the four kinds, each branch closed
 // (`additionalProperties: false`), matching the parser's per-kind allow-list: a
@@ -46,13 +44,12 @@ const RESET_BRANCH = Object.freeze({
     kind: Object.freeze({ type: "string", enum: [SCOPE_KINDS.RESET] }),
     newScopeGoal: Object.freeze({
       ...NON_BLANK,
-      description: "What this new Scope aims at. Non-blank.",
+      description: "The new Scope's goal. Non-blank.",
     }),
     newScopeRetentionBudget: Object.freeze({
       type: "integer",
       minimum: 1,
-      description:
-        "How many substantive `keepLast` beats this goal still needs. Positive, no upper bound.",
+      description: "Substantive beats this goal still needs. Positive.",
     }),
   }),
   required: Object.freeze(["kind", "newScopeGoal", "newScopeRetentionBudget"]),
@@ -65,7 +62,7 @@ const REMOVE_BRANCH = Object.freeze({
     kind: Object.freeze({ type: "string", enum: [SCOPE_KINDS.REMOVE] }),
     replacement: Object.freeze({
       ...NON_BLANK,
-      description: "The lesson that replaces the previous beat. Non-blank.",
+      description: "The lesson replacing the last beat. Non-blank.",
     }),
   }),
   required: Object.freeze(["kind", "replacement"]),
@@ -80,14 +77,12 @@ const bareBranch = (kind) =>
     additionalProperties: false,
   });
 
-// The prose the model reads first. The example is the shape that actually runs:
-// a bare `resetScope` is the one the book refuses.
+// The pointer plus the field shape. The meaning is in the system prompt's Scope
+// section, and the branches below say which fields each kind accepts.
 export const SCOPE_DESCRIPTION =
-  "Scope annotation for this call (spec §6.2), required on every non-exempt tool. " +
-  'First call of a session: {"kind":"resetScope","newScopeGoal":"...","newScopeRetentionBudget":N}. ' +
-  "Then one true annotation per model turn: {\"kind\":\"keepLast\"}, " +
-  '{"kind":"removeLast","replacement":"..."}, or {"kind":"resetScope",...}; ' +
-  'every other call of the same turn: {"kind":"meToo"}. ' +
+  "Scope annotation for this call; the Scope section of your system prompt explains it. " +
+  'Shape: {"kind":"keepLast"} | {"kind":"removeLast","replacement":"..."} | ' +
+  '{"kind":"meToo"} | {"kind":"resetScope","newScopeGoal":"...","newScopeRetentionBudget":N}. ' +
   "A kind accepts only the fields listed here.";
 
 export const SCOPE_SCHEMA = Object.freeze({

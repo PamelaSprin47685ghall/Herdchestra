@@ -42,6 +42,7 @@ import { Admission } from "../core/scope/admission.mjs";
 import { DEFAULT_EXEMPT_MEMBERS } from "../core/scope/errors.mjs";
 import { PairHint, REBASE_REASONS, REQUEST_KINDS } from "../core/pair-hint/pair-hint.mjs";
 import { RECORD_KINDS } from "../core/pair-hint/facts.mjs";
+import { messageDigest } from "../core/pair-hint/chain.mjs";
 import { resolveLanguage } from "../core/pair-hint/language.mjs";
 import { projectionBoundary, shouldAnchor } from "../compose/request-boundary.mjs";
 import { readJson, readJsonOrError, writeJson, ensureDir, appendJsonLine, readJsonLines } from "./files.mjs";
@@ -119,6 +120,12 @@ export class SessionState {
   // request ids. The id is what a verdict speaks for; the host gives none.
   #requestId = null;
   #requestSeq = 0;
+  // The last settled verdict this process produced, and the `previous` verdict
+  // the in-flight request must carry. They are held in memory because the file
+  // is now written only when the VERDICT changes: an unchanged "allowed" across
+  // two requests costs no write, and the turn boundary flushes the request id.
+  #lastVerdict = null;
+  #gatePrevious = null;
 
   constructor({ sessionId, role, root }) {
     this.#sessionId = sessionId;
@@ -147,8 +154,9 @@ export class SessionState {
         fenceThrough: Number.isInteger(savedFence.fenceThrough) ? savedFence.fenceThrough : 0,
       };
     }
-    // Plan's draft directory (spec §6). The draft is the one file a Plan writes,
-    // and its parent must exist BEFORE the path is advertised: a fresh Plan
+    // Plan's draft directory (root §1.1 item 3): the workspace-root `plans/`,
+    // never `.Herdchestra`. The draft is the one file a Plan writes, and its
+    // parent must exist BEFORE the path is advertised: a fresh Plan
     // whose first `write` met `ENOENT` would see a failure it cannot diagnose,
     // and the hand-off would later read an empty draft for the same reason.
     //
@@ -616,9 +624,19 @@ export class SessionState {
   // retried call can be told apart from a new request), otherwise the next
   // number of this session's sequence.
   //
-  // The new verdict carries `previous`: the id and verdict of the last SETTLED
-  // request. That is what keeps a call from the response already streaming
-  // admissible while a steering projection for the same request is in flight.
+  // NOTHING is written here (root §1.1 item 1). The file carries the last
+  // SETTLED verdict, which is the verdict a tool call is judged by; a request
+  // that is still projecting cannot have issued one. Writing "refused" at every
+  // open and "allowed" at every settle was two whole-file rewrites per request
+  // for a verdict that usually did not change. Crash safety is unchanged: an
+  // absent file refuses (`requestRefusal`), and a stale verdict is the last
+  // request that really completed, whose response is the only thing that could
+  // have issued a surviving call.
+  //
+  // The in-flight request carries `previous`: the id and verdict of the last
+  // SETTLED request. That is what keeps a call from the response already
+  // streaming admissible while a steering projection for the same request is in
+  // flight.
   openContextRequest(id = null) {
     // The sequence continues from the file, not from this object: a restart
     // starts at zero, and an id minted there would collide with the one on disk
@@ -629,7 +647,7 @@ export class SessionState {
     const next = typeof id === "string" && id.length > 0 ? id : String(this.#requestSeq + 1);
     this.#requestSeq += 1;
     this.#requestId = next;
-    const previous =
+    this.#gatePrevious =
       settled === null ||
       typeof settled.request !== "string" ||
       settled.request.length === 0 ||
@@ -637,36 +655,61 @@ export class SessionState {
       settled.settled !== true
         ? null
         : { request: settled.request, allowed: settled.allowed === true, stage: settled.stage ?? null, code: settled.code ?? null, detail: settled.detail ?? null };
-    return this.#writeGate({
-      request: next,
-      settled: false,
-      previous,
-      allowed: false,
-      stage: "request",
-      code: "CONTEXT_PROJECTION_PENDING",
-      detail: "the request never finished projecting",
-    });
+    return true;
   }
 
   // The request was decided. `failure` is `null` when every projection ran, or
   // `{stage, code, detail}` for the one that did not.
+  //
+  // The file is written ONLY when the verdict changes. The answer says whether
+  // it changed (`changed`) and whether the write landed (`ok`), so the caller
+  // can record a diagnostic exactly when a reader would see a different verdict
+  // — and a write that fails still fails closed, because the caller holds the
+  // refusal in memory.
   settleContextRequest(failure = null, id = null) {
     const request = typeof id === "string" && id.length > 0 ? id : this.#requestId;
     if (request === null) return false;
-    const opened = this.requestGate;
-    const previous = opened?.request === request && opened.previous ? opened.previous : null;
-    if (failure === null) {
-      this.#requestId = request;
-      return this.#writeGate({ request, settled: true, previous, allowed: true, stage: null, code: null, detail: null });
-    }
+    this.#requestId = request;
+    const verdict =
+      failure === null
+        ? { allowed: true, stage: null, code: null, detail: null }
+        : {
+            allowed: false,
+            stage: typeof failure.stage === "string" ? failure.stage : "request",
+            code: typeof failure.code === "string" ? failure.code : "CONTEXT_PROJECTION_FAILED",
+            detail: String(failure.detail ?? ""),
+          };
+    this.#lastVerdict = { request, ...verdict };
+    const onDisk = this.requestGate;
+    const unchanged =
+      onDisk !== null &&
+      onDisk.settled === true &&
+      onDisk.allowed === verdict.allowed &&
+      (onDisk.stage ?? null) === verdict.stage &&
+      (onDisk.code ?? null) === verdict.code &&
+      (onDisk.detail ?? null) === verdict.detail;
+    if (unchanged) return { ok: true, changed: false, written: false };
+    const written = this.#writeGate({ request, settled: true, previous: this.#gatePrevious, ...verdict });
+    return { ok: written, changed: true, written };
+  }
+
+  // Persist the latest request id at a turn/agent boundary, without writing on
+  // every request. The verdict is already on disk whenever it changed; this only
+  // refreshes the request id a reader uses to match the line to a transcript.
+  // It never changes a verdict, and a failed write leaves the previous (equally
+  // valid) verdict in place.
+  flushContextGate() {
+    if (this.#lastVerdict === null) return true;
+    const onDisk = this.requestGate;
+    if (onDisk !== null && onDisk.request === this.#lastVerdict.request && onDisk.settled === true) return true;
     return this.#writeGate({
-      request,
+      request: this.#lastVerdict.request,
       settled: true,
-      previous,
-      allowed: false,
-      stage: typeof failure.stage === "string" ? failure.stage : "request",
-      code: typeof failure.code === "string" ? failure.code : "CONTEXT_PROJECTION_FAILED",
-      detail: String(failure.detail ?? ""),
+      previous: null,
+      allowed: this.#lastVerdict.allowed,
+      stage: this.#lastVerdict.stage,
+      code: this.#lastVerdict.code,
+      detail: this.#lastVerdict.detail,
     });
   }
 
@@ -711,7 +754,8 @@ export class SessionState {
   // safety fact, so a write that does not land must not look like one that did:
   // the caller treats `false` as "the gate could not be updated" and refuses the
   // work. A read-only or full disk therefore fails CLOSED — the previous verdict
-  // stays, and `openContextRequest`'s refusal is the one that survives.
+  // stays (or, with no file at all, `requestRefusal` refuses), and the hook holds
+  // the refusal in memory.
   #writeGate(value) {
     const target = this.#gateFile();
     try {
@@ -1206,8 +1250,14 @@ export class SessionState {
     // pair's place), so anchoring again would throw that decision away.
     // An ephemeral request is a BRANCH of the chain, never a step of it: it
     // anchors nothing and records nothing (core's `REQUEST_KINDS.EPHEMERAL`).
+    // The chain the journal keeps: a frozen `Chain` of digests, not the full
+    // presented copy. It survives a cold start, which is what lets the boundary
+    // be judged without re-reading the conversation. `PairHint#presented` is
+    // gone with no alias; a core without a chain answers `null`, and the
+    // boundary then treats this request as the chain's first.
+    const presented = hint.chain ?? null;
     const boundary = sideChannel ? null : projectionBoundary({
-      presented: hint.presented,
+      presented,
       projected: chain,
       incoming,
       givenItems,
@@ -1229,7 +1279,7 @@ export class SessionState {
       // one-shot rule is what makes this a chain break and not a standing
       // permission — without it every later request would re-base and bless any
       // rewrite (found by `src/compose/prefix-state-machine.test.mjs`).
-      durableRewrite: freshCompaction(hint.presented, chain),
+      durableRewrite: freshCompaction(presented, chain),
     });
     if (!sideChannel && !opensEpoch) {
       if (barriered) hint.anchor(chain, { reason: REBASE_REASONS.RELAY });
@@ -1253,26 +1303,36 @@ export class SessionState {
 // The rule is IDENTITY, not presence. "The copy carries a summary" stays true
 // for the rest of the session — every later request is built from the compacted
 // history — so a presence test would re-base once and then bless any rewrite
-// inside that history. Comparing the summary's TEXT is what makes it a
-// one-shot per compaction while still allowing a SECOND one: a host merges the
+// inside that history. Comparing the summary's DIGEST at the same index makes it
+// a one-shot per compaction while still allowing a SECOND one: a host merges the
 // earlier summary into the new one (`compaction.ts` builds
 // `previousSummaryForCompaction` and emits one summary), so a second compaction
-// changes the text and is a new chain, while the same compacted history
+// changes the digest and is a new chain, while the same compacted history
 // compares equal and is compared normally.
-const summaryText = (messages) => {
-  if (!Array.isArray(messages)) return null;
-  const summary = messages.find((message) => message?.role === "compactionSummary");
-  if (summary === undefined) return null;
-  if (Array.isArray(summary.content)) {
-    return summary.content.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
-  }
-  return typeof summary.summary === "string" ? summary.summary : String(summary.content ?? "");
-};
+const summaryIndex = (messages) =>
+  Array.isArray(messages) ? messages.findIndex((message) => message?.role === "compactionSummary") : -1;
 
-const freshCompaction = (presented, projected) => {
-  const next = summaryText(projected);
-  if (next === null) return null;
-  return next === summaryText(presented) ? null : REBASE_REASONS.HISTORY_COMPACTED;
+// Whether this request is the FIRST one after a compaction. `chain` is the
+// frozen `Chain` the journal keeps (digests only, no text, and it survives a
+// cold start).
+//
+// The comparison is IDENTITY, not presence: "the copy carries a summary" stays
+// true for the rest of the session, so a presence test would re-base once and
+// then bless any rewrite inside that history. Comparing the summary's digest at
+// the same index makes it one-shot per compaction while still allowing a
+// SECOND one: the host merges the earlier summary into the new one, so the
+// digest changes, while the same compacted history compares equal and is
+// compared normally.
+const freshCompaction = (chain, projected) => {
+  const index = summaryIndex(projected);
+  if (index < 0) return null;
+  // No chain yet: `projectionBoundary` already answers "first", so there is no
+  // presented copy this summary could have replaced.
+  if (chain === null || chain === undefined) return null;
+  // A chain shorter than this index never presented a summary there, so this
+  // request carries the first one: a new chain.
+  if (index >= chain.digests.length) return REBASE_REASONS.HISTORY_COMPACTED;
+  return chain.digests[index] === messageDigest(projected[index]) ? null : REBASE_REASONS.HISTORY_COMPACTED;
 };
 
 // The file-name sanitiser lives in `host-facts.mjs` (`safeSessionName`): the

@@ -2,7 +2,9 @@
 //
 // A member is a plain method on the program object the model sees. Every member
 // is one real call: to core (files, text, lifecycle) or to a host port
-// (fork/join/ask/fission/review/devops). Nothing here invents an outcome.
+// (fork/join/ask/fission/review). Plan's `devops` is not here: it is a
+// top-level primitive in `surface.mjs`, so the program awaits one report rather
+// than calling a method on itself. Nothing here invents an outcome.
 //
 // Files. `cat`, `stat`, `ls`, `write`, `mkdir`, `rm`, `mv` are core's
 // `FileMembers`. Core reports expected conditions as receipts; a failed receipt

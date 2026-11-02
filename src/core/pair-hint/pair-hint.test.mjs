@@ -28,6 +28,7 @@ import {
   callIdParts,
   canonicalKey,
   digestOf,
+  Chain,
   PairHintInjector,
   INJECTION_MODES,
   PairHint,
@@ -437,7 +438,10 @@ test("the presented anchor survives a restart and catches a rewritten prefix", a
   const first = await live.project({ messages: [{ role: "user", content: "x" }] });
 
   const restarted = await PairHint.open({ root, sessionId: "anchor" });
-  assert.deepEqual(restarted.presented, first.messages);
+  assert.ok(
+    restarted.chain.equals(Chain.fromMessages(first.messages, { pairIndex: first.fact.inserted })),
+    "the chain resumes from digests, not a stored copy",
+  );
   assert.equal(
     await asyncCode(
       restarted.project({
@@ -608,7 +612,7 @@ test("the state fold is pure and the last record of a kind wins", () => {
   ]);
   assert.equal(rendered.fact.digest, digestOf(text));
   assert.equal(rendered.fact.after, 1);
-  assert.deepEqual(rendered.presented, messages);
+  assert.ok(rendered.chain.equals(Chain.fromMessages(messages)));
   const epoched = foldRecords([
     { kind: RECORD_KINDS.BIND, binding: { sessionId: "s", language: "English", source: "env", ownerSessionId: null } },
     { kind: RECORD_KINDS.PRESENTED, messages, length: messages.length, fact: fact.toRecord() },
@@ -616,7 +620,7 @@ test("the state fold is pure and the last record of a kind wins", () => {
   ]);
   assert.equal(epoched.epoch, 3);
   assert.equal(epoched.fact, null);
-  assert.equal(epoched.presented, null);
+  assert.equal(epoched.chain, null);
   assert.equal(epoched.binding.language, LANGUAGES.ENGLISH);
 });
 
@@ -832,6 +836,119 @@ test("a copy that already starts with the presented request is never drift", asy
   );
 });
 
+test("property: any request sequence keeps a digest chain, and a rewrite reports its first index", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.integer({ min: 1, max: 8 }),
+      fc.integer({ min: 0, max: 7 }),
+      async (length, rawIndex) => {
+        const index = rawIndex % length;
+        const hint = new PairHint({ store: new MemoryJournal() });
+        await hint.bind({ sessionId: "drift-index", ladder: { explicit: "English" } });
+        const request = history(length);
+        await hint.project({ messages: request });
+
+        // The chain is exactly the pair-free request's digests plus this
+        // epoch's pair; no copy is kept.
+        assert.equal(hint.chain.length, length + 2);
+        assert.equal(hint.chain.pairIndex, length);
+        assert.ok(hint.chain.withoutPair().equals(Chain.fromMessages(request)));
+
+        const tampered = request.map((message, at) =>
+          at === index ? { ...message, content: `rewritten-${index}` } : message,
+        );
+        const error = await hint.project({ messages: tampered }).then(
+          () => assert.fail("expected a refusal"),
+          (caught) => caught,
+        );
+        assert.equal(error.code, PAIR_HINT_CODES.PREFIX_DRIFT);
+        assert.equal(error.details.index, index, "the first differing index is exact");
+      },
+    ),
+    { ...fcRuns(40) },
+  );
+});
+
+test("property: a cold fold rebuilds the same chain and verifies the same prefix", async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.array(fc.string({ maxLength: 12 }), { minLength: 1, maxLength: 8 }), async (texts) => {
+      const journal = new MemoryJournal();
+      const hint = new PairHint({ store: journal });
+      await hint.bind({ sessionId: "cold-fold", ladder: { explicit: "English" } });
+      const request = texts.map((text, index) => hostMessage(index, text));
+      await hint.project({ messages: request });
+
+      const folded = foldRecords(journal.records);
+      assert.ok(folded.chain.equals(hint.chain), "the fold rebuilds the chain from digests");
+      assert.equal(folded.fact.text, hint.text, "the frozen presentation comes back");
+
+      const cold = new PairHint({ store: new MemoryJournal(journal.records) });
+      await cold.load();
+      const replay = await cold.project({ messages: request });
+      assert.ok(findInjection(replay.messages) !== null, "the cold hint can still place the pair");
+      const tampered = request.map((message, index) =>
+        index === 0 ? { ...message, content: "rewritten" } : message,
+      );
+      assert.equal(
+        await asyncCode(cold.project({ messages: tampered })),
+        PAIR_HINT_CODES.PREFIX_DRIFT,
+      );
+    }),
+    { ...fcRuns(30) },
+  );
+});
+
+test("property: new records carry digests, and an old-shape record folds to the same chain", async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.array(fc.string({ maxLength: 10 }), { minLength: 1, maxLength: 6 }), async (texts) => {
+      const journal = new MemoryJournal();
+      const hint = new PairHint({ store: journal });
+      await hint.bind({ sessionId: "shape", ladder: { explicit: "English" } });
+      const request = texts.map((text, index) => hostMessage(index, text));
+      await hint.project({ messages: request });
+
+      const records = journal.records;
+      const presented = records.filter((record) => record.kind === RECORD_KINDS.PRESENTED);
+      assert.equal(presented.length, 1);
+      assert.equal(presented[0].messages, undefined, "no full copy is written");
+      assert.equal(presented[0].digests.length, presented[0].length);
+      assert.match(presented[0].digest, /^[0-9a-f]{64}$/);
+      assert.equal(
+        records.filter((record) => record.kind === RECORD_KINDS.PRESENTATION).length,
+        1,
+        "the hint text is stored once",
+      );
+      assert.equal(
+        records.some((record) => record.fact !== undefined && record.fact.text !== undefined),
+        false,
+        "no presented fact repeats the hint text",
+      );
+
+      // The same chain, written by the old version as a full copy.
+      const fact = factFor({
+        epoch: 0,
+        text: hint.text,
+        handles: [],
+        after: request.length,
+        inserted: request.length,
+        entries: [...RESOURCE_IDS],
+        freeze: true,
+      });
+      const oldMessages = [...request, ...syntheticMessages({ fact, text: hint.text })];
+      const old = foldRecords([
+        { kind: RECORD_KINDS.BIND, binding: hint.binding.toRecord() },
+        { kind: RECORD_KINDS.PRESENTED, messages: oldMessages, length: oldMessages.length, fact: fact.toRecord() },
+      ]);
+      assert.ok(
+        old.chain.equals(Chain.fromMessages(oldMessages, { pairIndex: request.length })),
+        "the old shape folds to the same chain",
+      );
+      assert.equal(old.fact.text, hint.text);
+    }),
+    { ...fcRuns(30) },
+  );
+});
+
 test("a changed handle list opens a new epoch, an unchanged one does not", async () => {
   await fc.assert(
     fc.asyncProperty(fc.array(fc.stringMatching(/^[a-z][a-z0-9-]{0,5}$/), { maxLength: 4 }), async (handles) => {
@@ -909,12 +1026,12 @@ test("a chain anchored on a successor's copy keeps the host's copy and the pair'
   // The anchor is the copy with this epoch's pair after it: the prefix rule
   // compares two requests that BOTH carry the pair, so the anchor must carry it
   // too, and the placement is decided here (`after = fenced.length`).
-  assert.equal(hint.presented.length, fenced.length + 2, "the anchor is the copy plus this epoch's pair");
+  assert.equal(hint.chain.length, fenced.length + 2, "the anchor is the copy plus this epoch's pair");
 
   // The successor's first request must extend the anchored copy.
   const opened = await hint.project({ messages: [...fenced] });
   assert.doesNotThrow(() =>
-    hint.injector.assertPrefix({ previous: hint.presented, next: opened.messages }),
+    hint.injector.assertPrefix({ previous: hint.chain, next: opened.messages }),
   );
   assert.equal(findInjection(opened.messages).index, 1);
 
@@ -938,7 +1055,7 @@ test("an anchor before the epoch's first request leaves the chain to that reques
   const hint = new PairHint({ store: new MemoryJournal() });
   await hint.bind({ sessionId: "anchor-cold", ladder: { explicit: "English" } });
   hint.anchor([{ role: "user", content: "only input" }]);
-  assert.equal(hint.presented, null);
+  assert.equal(hint.chain, null);
   const placed = await hint.project({ messages: [{ role: "user", content: "only input" }] });
   assert.equal(placed.mode, INJECTION_MODES.PLACED);
   assert.equal(findInjection(placed.messages).index, 1);
@@ -1000,7 +1117,7 @@ test("the chain after an anchor is held to the anchored bytes", async () => {
   const grown = [...normalized, { role: "assistant", content: [{ type: "text", text: "answer" }] }];
   const next = await shaped.project({ messages: grown });
   assert.doesNotThrow(() =>
-    shaped.injector.assertPrefix({ previous: shaped.presented, next: next.messages }),
+    shaped.injector.assertPrefix({ previous: shaped.chain, next: next.messages }),
   );
 
   // Same conversation, one message rewritten: still drift.
@@ -1122,8 +1239,11 @@ test("a refused request writes one diagnostic record and raises the same error",
   assert.equal(record.index, 2, "the first message the rule disagreed on");
   assert.equal(record.previous.count, 3);
   assert.equal(record.next.count, 3);
-  assert.equal(record.previous.shapes[2].role, presented[2].role);
-  assert.deepEqual(record.previous.shapes[2].parts, record.next.shapes[2].parts);
+  // The chain side has no copy, so it names the message by digest alone. The
+  // request side still carries the full shape it was handed.
+  assert.deepEqual(Object.keys(record.previous.shapes[2]), ["digest"]);
+  assert.equal(record.next.shapes[2].role, presented[2].role);
+  assert.ok(Array.isArray(record.next.shapes[2].parts));
   assert.notEqual(record.previous.shapes[2].digest, record.next.shapes[2].digest);
   // The recorded length and digest are over the SAME text the prefix rule
   // compared — the canonical identity of the message (canonical.mjs), not the
@@ -1131,11 +1251,12 @@ test("a refused request writes one diagnostic record and raises the same error",
   // later request line: equal digests mean the same conversation, and a
   // differing digest at index N is the drift.
   assert.equal(
-    record.previous.shapes[2].length,
-    canonicalKey(presented[2]).length,
+    record.next.shapes[2].length,
+    canonicalKey(rewritten[2]).length,
     "the recorded length is the compared text's length",
   );
   assert.equal(record.previous.shapes[2].digest, digestOf(canonicalKey(presented[2])));
+  assert.equal(record.next.shapes[2].digest, digestOf(canonicalKey(rewritten[2])));
   // The unchanged messages agree digest for digest: a reader can tell "one
   // message changed" from "the conversation is another one".
   for (const index of [0, 1]) {
@@ -1197,12 +1318,17 @@ test("a refusal record never carries the conversation, its tool I/O or its text"
   );
   for (const side of [refusal.previous, refusal.next]) {
     for (const shape of side.shapes) {
-      assert.deepEqual(Object.keys(shape).sort(), ["calls", "digest", "length", "parts", "results", "role"]);
+      const keys = Object.keys(shape).sort();
+      assert.ok(
+        (keys.length === 1 && keys[0] === "digest") ||
+          keys.join(",") === "calls,digest,length,parts,results,role",
+        "a shape is either a digest alone or the full message shape",
+      );
       assert.match(shape.digest, /^[0-9a-f]{64}$/);
-      for (const part of shape.parts) assert.match(part, /^[a-z-]+$/);
+      for (const part of shape.parts ?? []) assert.match(part, /^[a-z-]+$/);
       // The ids are HANDLES, not content: the secret is the value the call
       // carried and the value the result returned, and neither is an id.
-      for (const id of [...shape.calls, ...shape.results]) assert.match(id, /^[A-Za-z0-9_.:-]+$/);
+      for (const id of [...(shape.calls ?? []), ...(shape.results ?? [])]) assert.match(id, /^[A-Za-z0-9_.:-]+$/);
     }
   }
   await fs.rm(root, { recursive: true, force: true });
@@ -1223,7 +1349,10 @@ test("a cold start reads a refusal record without moving the chain", async () =>
   assert.equal(reopened.refusal?.code, PAIR_HINT_CODES.PREFIX_DRIFT);
   assert.equal(reopened.refusal?.index, 1);
   assert.equal(reopened.epoch, hint.epoch);
-  assert.deepEqual(reopened.presented, first.messages, "the last presented copy is the anchor");
+  assert.ok(
+    reopened.chain.equals(Chain.fromMessages(first.messages, { pairIndex: first.fact.inserted })),
+    "the last presented chain is the anchor",
+  );
   assert.equal(reopened.fact.after, first.fact.after, "the placement did not move");
 
   // And the next request that extends the anchor still goes through: a
@@ -1283,12 +1412,11 @@ test("the refusal record caps how many message shapes it keeps", async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
-// A `presented` record stores the whole request copy, and every request used to
-// re-write the whole copy: 33 requests of a 67-message session produced 34 MB,
-// and the repository's journals reached 133 MB. Only the LAST `presented` record
-// is ever observed (the fold replaces `#presented` wholesale), so compaction
-// drops the copies of superseded records and keeps everything else.
-test("compaction drops superseded request copies and keeps the last one", async () => {
+// A `presented` record used to store the whole request copy, and every request
+// re-wrote it: 33 requests of a 67-message session produced 34 MB, and the
+// repository's journals reached 133 MB. New records carry digests, and the hint
+// text lives once per epoch/digest; compaction also migrates an old journal.
+test("compaction keeps no request copy and stores the hint text once", async () => {
   const root = await tempRoot();
   const previousBudget = JournalStore.COMPACT_BYTES;
   JournalStore.COMPACT_BYTES = 4096;
@@ -1306,33 +1434,97 @@ test("compaction drops superseded request copies and keeps the last one", async 
     assert.equal(presented.length, 10, "no request is lost from the fold");
     assert.equal(
       presented.filter((record) => Array.isArray(record.messages)).length,
-      1,
-      "only the newest copy keeps its messages",
+      0,
+      "no request copy is stored",
     );
-    assert.ok(Array.isArray(presented.at(-1).messages), "the newest record is the one that keeps them");
     assert.equal(presented.at(-1).length, last.messages.length);
-
-    // What compaction bounds is the COPIES, not the whole file: every record
-    // still carries its frozen presentation (the hint text, which a cold start
-    // must reproduce byte for byte), so the file keeps growing with the epoch's
-    // text. What it no longer does is grow with conversation length.
-    const copies = presented.reduce((sum, record) => sum + (Array.isArray(record.messages) ? JSON.stringify(record.messages).length : 0), 0);
-    const lastCopy = JSON.stringify(presented.at(-1).messages).length;
-    // The bytes kept are the LAST copy alone, however many requests preceded it.
-    assert.equal(copies, lastCopy, "exactly one request copy is kept");
-    // Without compaction every request would keep its own copy, and they grow
-    // with the conversation: the tenth copy alone is ~10x the first.
-    const uncompacted = 2000 * ((10 * 11) / 2);
-    assert.ok(copies < uncompacted / 2, `compaction removed the superseded copies (${copies} of ${uncompacted})`);
+    assert.equal(presented.at(-1).digests.length, presented.at(-1).length);
+    assert.match(presented.at(-1).digest, /^[0-9a-f]{64}$/);
+    const presentations = records.filter((record) => record.kind === RECORD_KINDS.PRESENTATION);
+    assert.equal(presentations.length, 1, "one presentation for the epoch/digest");
+    assert.equal(presentations[0].text, hint.text);
+    assert.equal(
+      presented.every((record) => record.fact === undefined || record.fact.text === undefined),
+      true,
+      "no fact repeats the frozen text",
+    );
 
     // A cold start folds to exactly the state the live hint held.
     const reopened = await PairHint.open({ root, sessionId: "compact" });
-    assert.deepEqual(reopened.presented, last.messages, "the chain resumes from the newest copy");
+    assert.ok(reopened.chain.equals(hint.chain), "the chain resumes from its digests");
     assert.equal(reopened.fact.after, hint.fact.after, "the placement survives compaction");
     assert.equal(reopened.text, hint.text, "the frozen presentation survives compaction");
     // And the chain continues: the next request extends what was presented.
     const next = await reopened.project({ messages: history(11) });
-    assert.doesNotThrow(() => reopened.injector.assertPrefix({ previous: last.messages, next: next.messages }));
+    assert.doesNotThrow(() => reopened.injector.assertPrefix({ previous: hint.chain, next: next.messages }));
+  } finally {
+    JournalStore.COMPACT_BYTES = previousBudget;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("compaction migrates an old journal's copies and hoists its text", async () => {
+  const root = await tempRoot();
+  const previousBudget = JournalStore.COMPACT_BYTES;
+  JournalStore.COMPACT_BYTES = 1;
+  try {
+    const store = new JournalStore({ root, sessionId: "old-shape" });
+    const text = await renderFor(LANGUAGES.ENGLISH);
+    const firstFact = factFor({
+      epoch: 0,
+      text,
+      handles: [],
+      after: 1,
+      inserted: 1,
+      entries: [...RESOURCE_IDS],
+      freeze: true,
+    });
+    const first = [{ role: "user", content: "a" }, ...syntheticMessages({ fact: firstFact, text })];
+    const secondFact = factFor({
+      epoch: 0,
+      text,
+      handles: [],
+      after: 2,
+      inserted: 2,
+      entries: [...RESOURCE_IDS],
+      freeze: true,
+    });
+    const second = [
+      { role: "user", content: "a" },
+      { role: "assistant", content: [{ type: "text", text: "b" }] },
+      ...syntheticMessages({ fact: secondFact, text }),
+    ];
+    await store.append({
+      kind: RECORD_KINDS.BIND,
+      binding: { sessionId: "old-shape", language: "English", source: "env", ownerSessionId: null },
+    });
+    await store.append({ kind: RECORD_KINDS.PRESENTED, messages: first, length: first.length, fact: firstFact.toRecord() });
+    // The append that crosses the threshold runs compaction.
+    await store.append({ kind: RECORD_KINDS.PRESENTED, messages: second, length: second.length, fact: secondFact.toRecord() });
+
+    const records = await journalRecords(root, "old-shape");
+    const presented = records.filter((record) => record.kind === RECORD_KINDS.PRESENTED);
+    assert.equal(presented.length, 2, "both presented records survive the fold");
+    assert.equal(
+      records.some((record) => Array.isArray(record.messages)),
+      false,
+      "the old copies are gone",
+    );
+    const presentations = records.filter((record) => record.kind === RECORD_KINDS.PRESENTATION);
+    assert.equal(presentations.length, 1, "the same epoch/digest stores its text once");
+    assert.equal(presentations[0].text, text);
+    assert.equal(
+      presented.every((record) => record.fact?.text === undefined),
+      true,
+      "no fact repeats the frozen text",
+    );
+
+    const reopened = await PairHint.open({ root, sessionId: "old-shape" });
+    assert.ok(
+      reopened.chain.equals(Chain.fromMessages(second, { pairIndex: 2 })),
+      "the migrated chain is the old copy's chain",
+    );
+    assert.equal(reopened.text, text, "the hoisted presentation rebuilds the same bytes");
   } finally {
     JournalStore.COMPACT_BYTES = previousBudget;
     await fs.rm(root, { recursive: true, force: true });
@@ -1348,7 +1540,7 @@ test("a superseded presented record still folds its fact, and corruption is stil
     // no `messages`: this is what compaction leaves behind
   });
   assert.equal(state.fact.after, 1, "the fact is still folded");
-  assert.equal(state.presented, null, "no copy was invented");
+  assert.equal(state.chain, null, "no chain was invented");
 
   // A length that is not a number is still corruption.
   assert.throws(
@@ -1378,7 +1570,7 @@ test("a superseded presented record still folds its fact, and corruption is stil
 // shape carries them. They are opaque tokens — the host mints them, the model
 // never sees them as content — which is why recording them cannot leak the
 // conversation.
-test("a refusal names the tool calls and results of every message it compared", async () => {
+test("a refusal names the tool calls and results of the request it compared", async () => {
   const root = await tempRoot();
   const hint = await refusingPairHint(root, "ids");
   const withCall = [
@@ -1409,18 +1601,21 @@ test("a refusal names the tool calls and results of every message it compared", 
 
   const refusal = (await journalRecords(root, "ids")).filter((record) => record.kind === RECORD_KINDS.REFUSED).at(-1);
   assert.ok(refusal, "the refusal was recorded");
-  const callShape = refusal.previous.shapes[1];
-  const resultShape = refusal.previous.shapes[2];
+  // The chain side is digests only; the request side still carries the ids,
+  // which are handles rather than content.
+  assert.deepEqual(Object.keys(refusal.previous.shapes[1]), ["digest"]);
+  const callShape = refusal.next.shapes[1];
+  const resultShape = refusal.next.shapes[2];
   assert.deepEqual(callShape.calls, ["c6"], "the call the assistant message issued");
   assert.deepEqual(callShape.results, []);
-  assert.deepEqual(resultShape.results, ["c6"], "the call the result answers");
+  assert.deepEqual(resultShape.results, ["c7"], "the result the request carries");
   assert.deepEqual(resultShape.calls, []);
   // The two sides are named in the same vocabulary, so a reader can ask the one
   // question the digest cannot answer: is every result's id present in some
   // call of the same side?
-  const issued = new Set(refusal.previous.shapes.flatMap((shape) => shape.calls));
-  const answered = refusal.previous.shapes.flatMap((shape) => shape.results);
-  assert.equal(answered.every((id) => issued.has(id)), true, "the compared side was a whole conversation");
+  const issued = new Set(refusal.next.shapes.flatMap((shape) => shape.calls));
+  const answered = refusal.next.shapes.flatMap((shape) => shape.results);
+  assert.equal(answered.every((id) => issued.has(id)), false, "the request carries the orphan");
   const nextIssued = new Set(refusal.next.shapes.flatMap((shape) => shape.calls));
   assert.equal(
     refusal.next.shapes.flatMap((shape) => shape.results).some((id) => !nextIssued.has(id)),
@@ -1456,8 +1651,8 @@ test("ids are sorted and repeat-free, so two records of one message compare equa
   );
   await hint.project({ messages: rewritten }).catch(() => {});
   const refusal = (await journalRecords(root, "sorted")).filter((record) => record.kind === RECORD_KINDS.REFUSED).at(-1);
-  assert.deepEqual(refusal.previous.shapes[1].calls, ["c1", "c9"], "sorted, so order is never the difference");
-  assert.deepEqual(refusal.previous.shapes[2].results, ["c1", "c9"]);
+  assert.deepEqual(refusal.next.shapes[1].calls, ["c1", "c9"], "sorted, so order is never the difference");
+  assert.deepEqual(refusal.next.shapes[2].results, ["c1", "c9"]);
   await fs.rm(root, { recursive: true, force: true });
 });
 

@@ -274,7 +274,9 @@ test("fork starts, then steers, then join reports the first worker", async () =>
   const host = await fakeHost({ sessions });
   const first = await host.call("js-manager", { code: 'return await fork("w1", "role: coder. do it");' }, { agent: "Manager" });
 
-  assert.deepEqual(first.value, { name: "w1", steered: false, started: true });
+  // The model source is reported (root §1.1 item 6): the parent's model is the
+  // fallback when no task model is configured.
+  assert.deepEqual(first.value, { name: "w1", steered: false, started: true, modelSource: "parent" });
   const second = await host.call("js-manager", { code: 'return await fork("w1", "role: coder. more");' }, { agent: "Manager" });
   assert.deepEqual(second.value, { name: "w1", steered: true, started: false });
   assert.equal(prompts[0].delivery, "queue");

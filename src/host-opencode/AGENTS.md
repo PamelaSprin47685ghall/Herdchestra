@@ -14,5 +14,8 @@
 - `spec/test-temp.mjs` —— 测试临时工作区的统一登记表：进程退出时删除，property 场景
   在场景结束即删，因此 `node --test` 不再留下 `herd-*` 目录。它不是 `*.test.mjs`，
   不会被测试运行器当成套件加载。
+- `spec/primitives.mjs` —— 程序面的顶层原语表（compose 的 `SURFACE_PRIMITIVES` 加本宿主的
+  Plan `devops`）；`spec/cancel.mjs` —— 操作员 Esc 向全部子孙会话的传播与三种豁免。
+  Plan 的底稿在**工作区根** `plans/<name>.md`，不在 `.Herdchestra`。
 
-改动适配器只改 `spec/`。本轮（2026-11-01）的行为修订见 `spec/AGENTS.md` §14。
+改动适配器只改 `spec/`。行为修订见 `spec/AGENTS.md` §14（2026-11-01）与 §15（2026-11-02）。

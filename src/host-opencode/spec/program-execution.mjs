@@ -80,17 +80,20 @@ export const guardedMembers = (members, program, parks, onParked = () => {}) => 
 };
 
 // The top-level primitives of §3.1: bare names in the body, never members.
+// A surface may add one (Plan's `devops`, root §1.1 item 3), so the list is
+// supplied per program; this is the shared floor.
 const PRIMITIVES = Object.freeze(["fork", "join", "review"]);
 
 // Compile a program. Members reach the body through `this` alone; the
 // primitives reach it as parameters alone (§3.1: no capability has two
 // spellings, so there is no bare `cat(...)` and no `this.fork`).
-export const compile = (code, members, Base) => {
+export const compile = (code, members, Base, primitiveNames = PRIMITIVES) => {
   if (typeof code !== "string" || code.trim() === "") throw new TypeError("program source must be a non-empty string");
+  const primitiveSet = new Set(primitiveNames);
   const instance = {};
   const primitives = {};
   for (const [name, handler] of Object.entries(members)) {
-    if (PRIMITIVES.includes(name)) primitives[name] = handler;
+    if (primitiveSet.has(name)) primitives[name] = handler;
     else instance[name] = handler;
   }
   const names = Object.keys(primitives);
@@ -128,7 +131,7 @@ export const compile = (code, members, Base) => {
 // the channel performed (the host calls it there), and the wrapper's check for a
 // park a member made synchronously. `signal` is idempotent, so whichever path
 // fires first is the one the call answers with.
-export const startProgram = ({ code, members, program, Base = JsProgram, parks }) => {
+export const startProgram = ({ code, members, program, Base = JsProgram, parks, primitives = PRIMITIVES }) => {
   let finishOutcome;
   let finishPark;
   const outcome = new Promise((resolve) => {
@@ -150,7 +153,7 @@ export const startProgram = ({ code, members, program, Base = JsProgram, parks }
 
   void (async () => {
     try {
-      const value = await compile(code, guarded, Base)();
+      const value = await compile(code, guarded, Base, primitives)();
       // A body that ran to the end is finished, even when it was parked and
       // resumed on the way: the parked site was consumed by the resume, so the
       // program is no longer suspended (spec §3.3: the resume continues the run,

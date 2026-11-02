@@ -394,13 +394,16 @@ fields moved on omp 18.14.2 and why the allowlist was needed, not a list to
 extend. Do not reintroduce `normalizedForChain` as a second rule: two rules for
 one question is what made the drift recur.
 
-**How to re-check it against a newer host.** Take one session with a tool call,
-read `.Herdchestra/<session>.requests.jsonl` (one line per `context` call), and
-compare `incoming.shapes` with `presented.shapes`: the same message must have
-one digest in every line it appears in. If a new host field changes between
-lines, the chain will drift again and that field must be classified by the
-canonical allowlist (never a blacklist) — the record names it without exposing
-the conversation.
+**How to re-check it against a newer host.** `.Herdchestra/<session>.requests.jsonl`
+now writes one line only for a FAILED request (`v: 2`, `kind: "request"`); a
+clean request writes nothing. The line carries `length`, `root` (the first
+message's digest), `firstDivergence` (`{index, previousDigest, nextDigest}`),
+`dropped` (shapes, capped at 64), `pair`, `mode` and `failure` — never the copy.
+For a field that moves between requests, read the Pair Hint journal
+`.Herdchestra/<session>.jsonl`: consecutive `presented` records carry
+per-message digests, and the same message must keep one digest. If a new host
+field changes it, classify that field in the canonical allowlist (never a
+blacklist) — the record names where and how much, never the conversation.
 
 **Not claimed.** The exact call path that let the hook see the placeholder
 mid-stream is not reproduced: the record shows both copies existed, not which
@@ -529,10 +532,10 @@ Side requests that do **not** reach the hook: advisors, compaction, handoff,
 `buildSideRequestContext` directly.
 
 **Why the adapter cares.** The side copy extends the pair-free prefix of the last
-real request, so Pair Hint accepted it and stored it as `#presented`. Four
-milliseconds later the turn's tool results arrived and the real request was
-refused with `PREFIX_DRIFT` at index 1; the durable gate then blocked every tool
-call. Measured on session `01a19547`.
+real request, so Pair Hint accepted it and stored it as the chain (`#presented`
+then; `PairHint#chain` now). Four milliseconds later the turn's tool results
+arrived and the real request was refused with `PREFIX_DRIFT` at index 1; the
+durable gate then blocked every tool call. Measured on session `01a19547`.
 
 **The mark is not readable.** OMP tags these messages with the symbol
 `agent.message.perCallContext`, but `emitContext` `structuredClone`s the copy
@@ -549,11 +552,14 @@ recorded or moved; the context handler does not open or settle the gate, does no
 run Scope bookkeeping, and keeps the host's own copy when a projection fails.
 
 **How to re-check it against a newer host.** Run one session that triggers a
-title, then read `.Herdchestra/<session>.requests.jsonl`: the side request must
-appear with `presented.count = incoming.count + 2` and the next real request must
-have `allowed: true`. If a new host adds a side-turn kind with a different shape,
-it will show up as a request whose `incoming` carries messages the conversation
-never had — and the chain will drift again until that shape is named here.
+title. The side request must leave no failure line in
+`.Herdchestra/<session>.requests.jsonl` (that file records failed requests
+only), the next real request must be allowed, and
+`.Herdchestra/<session>.request.json` must keep the same verdict — the gate file
+is written only when the verdict changes. If a new host adds a side-turn kind
+with a different shape, it will show up as a request whose messages the
+conversation never had, and the chain will drift again until that shape is
+named here.
 
 **Not claimed.** Whether every ephemeral caller produces exactly these two
 messages is not verified per caller; the title fork is the one measured live.
@@ -631,29 +637,41 @@ same server. The table had lived only in the activation.
 
 **What the adapters do about it.** The roster is a durable fact, written under
 `.Herdchestra/` and replayed when the table is built. `fork`, `steer`, `settle`
-and `claim` are the recorded events, so a rebuilt table knows which workers are
-live, which hold an unclaimed result, and which were already collected.
+`claim`, `release` and `cancel` are the recorded events, so a rebuilt table
+knows which workers are live, which hold an unclaimed result, which were already
+collected, and which the operator stopped. Each table indexes workers and
+unclaimed results in a `Map` (OpenCode by session id, Cline and OMP by turn id),
+so a replay never scans a queue and a claim is O(1).
 
 | host | files |
 |---|---|
 | OpenCode | session log (`stateFile`), records of type `worker`; `activation.mjs` builds `WorkerTable({ restored })` |
-| Cline | `<session>.workers.jsonl` (append-only journal) + `<session>.workers.restored.json` (snapshot written by `save()`, read by `restoredRoster()`) |
-| OMP | lane facts carried in the session state beside the ledger and fence |
+| Cline | `<session>.workers.jsonl`, one append-only journal, replayed by `restoredRoster()` when the table is built |
+| OMP | `<session>.workers.jsonl` (`worker-roster.mjs`: `worker-fork` / steer / settle / claim / release / restore) |
 
-**Two facts a journal alone cannot hold, and why Cline has two files.** A
-release record says a runtime stopped; it does not say the next run starts from
-nothing, so a session that starts again cannot tell which records belong to the
-run that is over. The snapshot is that boundary. It is written when the table
-is built and again at `release()`, and a snapshot that could not be written is
-reported beside the teardown receipt rather than dropped.
+**Why Cline no longer has a snapshot beside the journal.** It used to write
+`<session>.workers.restored.json` at build and at `release()`. Two files that
+can disagree are two answers to one question, and a mid-session reload read the
+stale one. Everything a reload needs is in the journal: `release` says the
+runtime stopped, `claim` says a completion was already handed over, and `cancel`
+says which subtree the operator stopped. A torn last line is a crash during
+append and carries no record.
+
+**OMP strips claimed text instead of keeping it.** The journal is append-only,
+so a claimed answer would otherwise stay forever. On `claim` the table rewrites
+the journal atomically with that answer removed; a small journal (≤64 records)
+is rewritten at every claim, a larger one only when the stale text is worth it
+(`COMPACT_MIN_BYTES = 64 KiB`). The replay's `unclaimed` list is exactly the
+turns nobody claimed, in the order they ended.
 
 **The invariant, and how it is proved.** `join` must never answer "nothing to
 collect" while a forked worker is still running or holds an unclaimed result.
-`src/host-opencode/spec/worker-roster.test.mjs` generates arbitrary
+All three adapters now have a `worker-roster.test.mjs` that generates arbitrary
 interleavings of `fork`, `steer`, `join`, host completion events and plugin
 reloads, and asserts both progress and accounting (every forked worker claimed
 exactly once), plus that the restored roster matches the journal the table
-wrote.
+wrote. OpenCode additionally checks the restored roster against the host's own
+answer for which sessions are alive.
 
 **If it changes.** A host that stops writing its own session state between
 reloads is fine — the roster is ours. A host that keeps the plugin's module
@@ -671,9 +689,9 @@ real install. This records what was actually wrong, what was done instead of
 giving up, and how to re-check it.
 
 **The symptom.** `delegatedAgentApi()` returned `null`, so `fork`, a fission
-lane, `this.devops`, and the Plan hand-off all refused. Only `CLINE_CORE_MODULE`
-or a bare `import("@cline/core")` could answer, and neither works inside a
-plugin loaded from `~/.cline/plugins/...`.
+lane, Plan's devops investigation, and the Plan hand-off all refused. Only
+`CLINE_CORE_MODULE` or a bare `import("@cline/core")` could answer, and neither
+works inside a plugin loaded from `~/.cline/plugins/...`.
 
 **What is actually true (measured, `@cline/core` 0.2.0).**
 
@@ -723,11 +741,14 @@ plugin loaded from `~/.cline/plugins/...`.
 - `SessionState.model` is a ladder: last request → setup context → host session
   record → `CLINE_PROVIDER_ID`/`CLINE_MODEL_ID`. Both halves must be present;
   half a connection is no connection. `resolveModel()` is the awaited form that
-  also asks the host record, and `fork`, `startManager`, `openPlan` and
-  `this.devops` all use it. `modelSource` names the reading.
-- `this.devops` used to send `providerId: "cline"` with an empty `modelId`. That
-  is a guess, and the host answers a guess with a connection error the model
-  cannot read. It now uses the same ladder and refuses `MODEL_UNKNOWN` by name.
+  also asks the host record; `startManager` and `openPlan` use it, while `fork`
+  and the `plan-devops` runner use `resolveTaskConnection()` (the
+  `HERDCHESTRA_TASK_*` pair first, the main ladder otherwise). `modelSource`
+  names the reading (`task` / `main`).
+- The devops runner used to send `providerId: "cline"` with an empty `modelId`.
+  That is a guess, and the host answers a guess with a connection error the
+  model cannot read. It now uses the task ladder (`resolveTaskConnection`) and
+  refuses `MODEL_UNKNOWN` by name.
 
 **Fission groups are durable now.** `persistGroup` appends ONE record
 (`{ v, at, kind: "fissionGroup", groupId, owner, lanes }`) to
@@ -1151,20 +1172,20 @@ at every request boundary — `consumePendingUserMessage()`
 (`sdk/packages/agents/src/agent-runtime.ts:1689`), forwarded from the runtime
 config (`runtime/config/agent-runtime-config-builder.ts:117`). `runtime.mjs`
 installs that member when the host did not (`decorateConfigProvider`), so
-`handle.steer(brief)` puts the text in the queue and the RUNNING turn takes it at
-its next request. `notifyPendingUserMessage()` only interrupts the model request
-(`agent-runtime.ts:633`): tools in flight finish, and the next request reads the
-queue.
+`handle.steer(verboseIntent)` puts the text in the queue and the RUNNING turn
+takes it at its next request. `notifyPendingUserMessage()` only interrupts the
+model request (`agent-runtime.ts:633`): tools in flight finish, and the next
+request reads the queue.
 
-The table counts a steered brief as an admitted turn, carried by the turn that
-took it: one report settles the carrier and the briefs it carried, and each is a
-`join` record (`workers.mjs` `#settle`). The receipt is exactly
+The table counts a steered verboseIntent as an admitted turn, carried by the turn
+that took it: one report settles the carrier and the verboseIntents it carried,
+and each is a `join` record (`workers.mjs` `#settle`). The receipt is exactly
 `{ name, steered, started }` — never a rejection inside a success.
 
 **How to re-check.** `src/host-cline/host-cline.test.mjs` "gap 3: a same-name fork
-onto a LIVE worker steers its running turn": the brief comes out of the runtime's
-own queue, the receipt has no `rejection`, and one settlement hands over the
-carrier and the steered turn.
+onto a LIVE worker steers its running turn": the verboseIntent comes out of the
+runtime's own queue, the receipt has no `rejection`, and one settlement hands
+over the carrier and the steered turn.
 
 ## Cline fission: replacing a present from inside its own turn (2026-11-01)
 
@@ -1209,3 +1230,246 @@ the fence and the ledger advance still leaves the successor judging": the test
 stops after `handOver` (ledger still at tenure 0), restores from the file, and
 asserts the successor's tenure and milestone come from the fence, `retired` is
 false, and its first review promotes.
+
+---
+
+## OpenCode: one path per fact, no directory scans (2026-11-02)
+
+Root §1.1 items 1 and 2 forbid copying what the host already holds, algorithms
+that grow with the state directory, and orphaned descendants. Seven OpenCode
+behaviours needed a workaround over a host that offers no session-scoped index
+and does not cascade cancellation. Each says what it depends on and what would
+remove it.
+
+**1. A successor finds its relay record by path, not by scanning.** The hand-over
+already wrote the record under the incumbent's file. The successor had no file of
+its own, so `relay-facts.mjs` listed the whole `.Herdchestra` directory and read
+every `*.relay.json` on every miss — 32k entries on a long-lived workspace, on
+the tool-call path. The hand-over now writes a COPY of the same record under
+`{successor}.relay.json` in the same step that commits the incumbent's file
+(`relay-host.mjs` `writePointer`). A successor reads exactly one path; an absent
+file means no record, a corrupt one fails closed, and there is no fallback scan.
+*Depends on:* the record naming both identities, and the pointer being written
+before the successor's first prompt (a crash between the two is repaired on the
+next hand-over, which is idempotent). *If it changes:* a host that writes the
+parent session path into the successor header removes the pointer file; a host
+that publishes a session-scoped record API removes both. *No longer needed:* when
+either exists, delete the pointer write and the `RelayFacts` signature cache with
+it — do not keep a second lookup as a fallback.
+
+**2. The calls journal keeps a payload digest, not the payload.** `.Herdchestra/
+<session>.calls.jsonl` used to copy the whole tool input, duplicating the program
+source and the scope annotation on every call. The only question a cold start
+asks is "is this the same payload?", so the record now stores
+`payloadDigest = sha256(stableJson(input))` beside the receipt
+(`call-record.mjs`). A legacy line that still carries `payload` is read by
+hashing it, so old journals keep working. A cold start that knows an id is spent
+but cannot reproduce the receipt answers `CALL_REPLAY_LOST` rather than guessing.
+*Depends on:* `stableJson` giving one text for one value (key order, `undefined`,
+cycles) and the host delivering the same input object on a replay. *If it
+changes:* a host that provides its own durable idempotency table keyed by call id
+makes the file redundant. *No longer needed:* when the host replays tool calls
+itself, drop the journal; until then, do not add the payload back "for
+diagnostics" — the receipt is the diagnostic.
+
+**3. The roster is a `Map`, and a restored one is reconciled with the host.** The
+session log's `worker` records are folded into a `Map` keyed by name, with a
+second `Map` for unclaimed results, so a claim is O(1) and a replay never scans a
+queue (`spec/worker-sessions.mjs`). A roster restored from the journal is not
+trusted blindly: `#needsReconcile` makes the table ask the host once which of
+those sessions are still alive. *Depends on:* the host's answer for a session id
+being cheap and authoritative. *If it changes:* a host that reports liveness in
+an event instead of a query lets the reconcile become an update. *No longer
+needed:* never remove the replay while a plugin reload can keep a worker running;
+remove only the reconcile if the host guarantees restored sessions are live.
+
+**4. Cancellation is a breadth-first walk, because the host does not cascade.**
+`session.execution.interrupted` names only the session that was interrupted; the
+adapter walks `activation.workers`, `activation.lanes` and a successor's
+relay-record roster, and calls `activation.sessions.interrupt({ sessionID })` on
+each (`spec/cancel.mjs`). Nothing is disposed. Three interrupts are excluded
+because they are not the operator stopping work: an `ask` park, a relay silencing
+its incumbent, and a fission present replacement. *Depends on:* the adapter's own
+roster being complete (a child started outside it would be missed) and
+`interrupt` being idempotent. *If it changes:* a host that cascades cancellation
+along `parentID`, or offers one "interrupt this tree" call, makes the walk dead
+weight. *No longer needed:* delete the walk then, not the guards — the guards are
+about meaning, and the host cannot know which interrupts were programmatic.
+
+**5. Plan's devops is one fixed worker.** `PLAN_DEVOPS_NAME = "plan-devops"` is
+reused: a live worker is steered, a finished one's session takes the next
+investigation, and a second concurrent call is refused by compose
+(`DEVOPS_IN_FLIGHT`). *Depends on:* the host allowing a prompt on an idle session
+without creating a new one. *If it changes:* a host that charges a session per
+investigation makes reuse pointless. *No longer needed:* never while the spec
+requires one dedicated worker per plan task.
+
+**6. The task model is an environment pair with an honest fallback.** `fork`
+workers, fission lanes and `plan-devops` use `taskModelOf`
+(`spec/model-inherit.mjs`): both `HERDCHESTRA_TASK_PROVIDER_ID` and
+`HERDCHESTRA_TASK_MODEL_ID` must be present, and the receipt says
+`modelSource: "task" | "parent"`. Half a pair is a refusal, never a silent
+default. *Depends on:* the operator setting the pair; the host accepting a
+`Model.Ref` in `Session.create({ model })`. *If it changes:* a host that exposes
+`modelRoles.task` makes the pair redundant. *No longer needed:* delete the
+environment pair the day a named role exists; keep the `modelSource` field so a
+receipt still says which ladder answered.
+
+**7. A Plan hand-off finds its own dedup record by path, not by scanning.** A
+replayed `review([])` must not start a second Manager, and the fact that answers
+"did this call already hand off?" used to be found by listing `.Herdchestra` and
+reading every `*.relay.json` — O(directory) on the hand-off path. `planHandoffOf`
+(`relay-host.mjs`) now reads exactly one file:
+`.Herdchestra/handoff-<sha256(handoffId)[0:32]>.relay.json` (`relay-record.mjs`
+`handoffFile`). The hand-off writes that record FIRST, then the Manager's own
+`{manager}.relay.json`; a crash between the two is repaired from the dedup copy,
+and a caller with no call id has no deterministic path and never matches.
+*Depends on:* the call id being stable across a replay, and `handoffFile` hashing
+it rather than sanitising it (two ids that differ only in characters a file name
+cannot hold would otherwise share one record). *If it changes:* a host that
+provides its own durable "this call already started a session" table removes the
+dedup file; a host that exposes a session-scoped lookup removes both the dedup
+copy and the Manager copy. *No longer needed:* when either exists, delete the
+dedup write; do not keep a directory scan as a fallback — a missing deterministic
+path is "no record", and the scan is exactly the O(directory) cost this removes.
+
+**Verified offline.** `spec/cancel.test.mjs` ("an operator interrupt stops every
+nested descendant, once"; the three guards), `spec/worker-roster.test.mjs`
+(reload progress and accounting), and `features.test.mjs` ("a forked worker runs
+the task model and reports its source", "half a task model is a refusal, not a
+silent parent fallback", "Plan's dedicated devops runs the task model"). No live
+run was needed for these; the 32k-entry scan is from the measured session named
+in `relay-facts.mjs`.
+
+---
+
+## Cline: one Plan DevOps handle, and a cancellation that keeps the evidence (2026-11-02)
+
+**One lazy runtime, reused.** Plan's `devops(verboseIntent)` needs a real
+delegated runtime, and starting one per investigation threw away the worker's own
+conversation and paid the host's start-up cost each time. `devops.mjs` builds one
+handle on the first call and every investigation is `handle.run(verboseIntent)`;
+a failed turn is not a dead runtime, so the next call reuses the same handle. An
+operator interrupt aborts it, and the next call refuses with `PLAN_DEVOPS_DEAD`
+instead of quietly starting a second DevOps behind the same plan.
+*Depends on:* the runtime accepting a second `run` after the previous turn
+settled, and the injected factory (`guardedDelegatedApi`) surviving a narrowed
+tool list. *If it changes:* a host that cannot restart a settled runtime makes
+`PLAN_DEVOPS_DEAD` the normal answer, which is still honest; a host that lets one
+runtime run two turns concurrently would break the single-flight rule, so compose
+must keep `DEVOPS_IN_FLIGHT`. *No longer needed:* when the host exposes a
+first-class persistent subagent with its own conversation, use it and delete the
+handle cache.
+
+**Cancellation aborts, never disposes.** `guard.mjs` recognizes an operator
+interrupt from the run status or a `stopReason: "aborted"` assistant message,
+then excludes an `ask` park (`parkStopOwed` / `parkStopped`).
+`SessionState.cancelDescendants` calls `WorkerTable.cancelAll` and the Plan
+devops runner's `cancel`: every live runtime is aborted with the reason, no
+runtime is disposed, unclaimed completions stay collectable, every owed turn is
+settled as `finishReason: "cancelled"`, and the subtree is marked cancelled so a
+later `fork`/steer refuses `WORKER_CANCELLED`. The `cancel` record is in the
+journal, so the marks survive a reload. *Depends on:* `handle.abort(reason)` not
+destroying the transcript, and `cancelAll` being idempotent. *If it changes:* a
+host that disposes a runtime on abort would lose the evidence `join` still
+reports; that would be a reason to keep the mark and stop claiming the result is
+readable. *No longer needed:* the abort call disappears only if the host cascades
+cancellation itself; the marks must stay, because they are the answer to "was
+this stopped or did it finish?".
+
+**The roster is one journal.** `.Herdchestra/<session>.workers.jsonl` is the
+single source: `fork` / steer / settle / claim / release / cancel append one line
+each, and `restoredRoster()` replays them when the table is built. The snapshot
+file beside it is gone — two files that can disagree are two answers, and a
+mid-session reload read the stale one. The table indexes workers by name and
+completions by turn id in `Map`s; a `claim` record means the replay does not
+offer that answer again, so claimed text is not restored. *Depends on:* the
+journal tolerating exactly one torn last line (`readJsonLines`), and every
+mutation going through the table. *If it changes:* a host that provides a durable
+roster of its own makes the journal redundant; a host that writes the journal
+itself would make ours a second answer. *No longer needed:* only when the host's
+roster survives a plugin reload AND names the worker's role and turn; until then
+one journal is the minimum that answers `join` honestly.
+
+**Verified offline.** `host-cline.test.mjs` "Plan's devops worker is one
+dedicated runtime, fixed name, reused, and refuses after death", "an operator
+interrupt cancels every descendant, keeps unclaimed results, and refuses later
+work", "the ask park is not an operator interrupt, so the subtree survives it",
+and `worker-roster.test.mjs` "the journal records one line per change, and the
+journal is what the next load reads", "a claimed answer is not part of the roster
+a reload restores".
+
+---
+
+## OMP: `@task` as a model selector, one Plan lane, failure-only diagnostics (2026-11-02)
+
+**`modelPattern: "@task"` is the task model.** `createAgentSession` accepts a
+`modelPattern` (`sdk.ts:607`), and `config/model-resolver.ts` expands a role alias
+through `settings.getModelRole("task")`. The host's own task agent declares
+exactly `model: "@task"` (`task/agents.ts:56`), so this is the supported selector,
+not a string this adapter invented (`host-facts.mjs` `TASK_MODEL_PATTERN`). Worker
+lanes and Plan's `plan-devops` pass it; a Manager lane keeps the main model. The
+lane receipt reports `modelSource: "task-role"`; a host that cannot resolve the
+alias leaves the lane without that pattern and the receipt says so instead of
+pretending. *Depends on:* the host keeping `@task` resolvable through the session
+settings; the alias is resolved by the host, so a renamed role is a host change,
+not an adapter one. *If it changes:* a host that requires an explicit
+`{ provider, model }` pair makes the alias useless; read the resolved model back
+and pass it, or refuse by name. *No longer needed:* when the host exposes a
+typed task-model getter on the extension API, use it and delete the pattern.
+
+**One Plan lane.** `PLAN_DEVOPS_LANE = "plan-devops"` is a dedicated lane in the
+session's own roster (`ports.mjs` `devopsPort`). A live lane is steered, a
+settled lane is prompted again, and a second investigation while one is in flight
+is refused. *Depends on:* `LaneTable` keeping the lane after its turn settles,
+and the lane's transcript being the worker's memory. *If it changes:* a host that
+cannot prompt a settled session would force a new lane per call — that would
+violate the spec's dedicated-worker rule, so refuse instead. *No longer needed:*
+never while root §1.1 item 3 stands.
+
+**Cancellation walks adapters and lanes.** `index.mjs` `cancelSubtree` collects
+the children BEFORE aborting, then calls each lane's own
+`AgentSession.abort({ reason })`; nothing is disposed, so transcripts and
+unclaimed results stay readable. The walk is idempotent and marks every roster it
+passes, so a later `fork`/steer refuses by name and `join` reports the
+cancellation. *Depends on:* the adapter owning the lane's session object (it
+created it, so it does), and `abort` not waiting for the calling turn. *If it
+changes:* a host that offers one tree-wide abort removes the walk; a host that
+disposes on abort would lose the evidence, so keep the marks and stop claiming
+the results are readable. *No longer needed:* delete the walk when the host
+cascades; keep the marks.
+
+**The request diagnostic is failure-only and bounded.** `.requests.jsonl` used to
+carry one line per `context` call. It now carries one line per FAILED request
+(`v: 2`, `kind: "request"`): `length`, `root`, `firstDivergence`, `dropped`
+(shapes, capped at `DROPPED_SHAPE_LIMIT = 64`), `pair`, `mode`, `failure` — no
+message list. A clean request writes nothing. The segment rotates to `.1` by one
+rename past `DRIFT_LOG_LIMIT = 2 MiB`, so an append never rewrites the file, and
+the newest segment plus the one before it is the recent history. *Depends on:*
+the failure carrying `firstDivergence` in the shape the record reads; a failure
+without one records `null` rather than inventing an index. *If it changes:* a
+host that reports its own refusal shape would let the record shrink further; a
+host that keeps no failure signal would make the file empty, which is the honest
+result. *No longer needed:* keep it while a refusal can leave no other trace —
+the 2026-11-01 incident was exactly a refused request with no line anywhere.
+
+**The request gate writes only on a verdict change.**
+`.Herdchestra/<session>.request.json` (`session-state.mjs`
+`settleContextRequest`) compares the new verdict with the one on disk; an
+unchanged "allowed" writes nothing, and a changed verdict is written before the
+request can be abandoned. `flushContextGate` refreshes only the request id at a
+turn/agent boundary. A write that does not land fails closed: the previous
+verdict stays (or, with no file, `requestRefusal` refuses), and the hook holds
+the refusal in memory. *Depends on:* the on-disk verdict being the authority for
+the next tool call, and `writeJson` reporting failure instead of throwing.
+*If it changes:* a host that persists its own gate makes this file redundant.
+*No longer needed:* only when the host itself refuses tool calls after a failed
+request projection; until then, writing on every request would be the O(n²)
+behaviour root §1.1 item 1 forbids.
+
+**Verified offline.** `host-omp.test.mjs` "worker lanes run on the task model; a
+Manager lane keeps the main model", "the devops port reuses the same lane instead
+of starting a new one", "cancelAll aborts the lane's own session, refuses new
+work, and reports the cancellation honestly", "a clean request writes no line,
+and a refused one writes a bounded record", and `worker-roster.test.mjs`
+"replayRoster folds fork, steer, settle, claim and release in order".

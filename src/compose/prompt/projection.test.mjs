@@ -82,7 +82,7 @@ test("the two compositions are plain concatenation", () => {
   assert.equal(systemPromptFor(ROLES.CODER), COMMON + WORKER);
   assert.equal(systemPromptFor(ROLES.DEVOPS), COMMON + WORKER);
   // §5: coder and devops receive the byte-identical system prompt; identity is
-  // carried by the director message and by the fork brief, not by this text.
+  // carried by the director message and by the fork verboseIntent, not by this text.
   assert.equal(systemPromptFor(ROLES.CODER), systemPromptFor(ROLES.DEVOPS));
   assert.equal(isWorkerRole(ROLES.CODER), true);
   assert.equal(isWorkerRole(ROLES.DEVOPS), true);
