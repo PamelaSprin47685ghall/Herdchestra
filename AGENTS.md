@@ -1,6 +1,6 @@
-# 万象术 Herdchestra 用户指南
+# 万象术 Herdchestra 用户指南与系统总规格书
 
-> 本说明书阐明万象术（Herdchestra）的完整用户侧行为与工程语义，是产品与代码的最高依据。任何时候 AI 都有权利和义务让各包局部规格说明（`AGENTS.md`）和源码追上本文件的最新状态，无需请示，直接实施。
+> 本说明书阐明万象术（Herdchestra）独立版的完整用户侧行为、协作协议与工程语义，是产品与代码的最高依据。任何时候 AI 都有权利和义务让各包局部规格说明（`AGENTS.md`）和源码追上本文件的最新状态，无需请示，直接实施。
 > 本说明书未经允许不得擅自修改。
 
 ---
@@ -37,596 +37,1057 @@ Orchestration for agents that don't like being orchestrated.
 
 ---
 
-## 1 万象术是什么，以及它怎样接入你的工具
+## 1 万象术是什么：系统定位、架构边界与十条铁律
 
-当你把一项复杂的编程任务交给 AI 时，单个智能体很容易在漫长的上下文里迷失方向，而多个智能体又容易因为同时改文件、同时跑命令而互相踩踏。
+当你把一项复杂的编程任务交给 AI 时，单个智能体很容易在漫长的上下文里迷失方向，中心化调度者（单点 Manager）又容易因为同时汇总十几个子代理的上下文而成为通信瓶颈；而多个智能体并发写文件、跑命令时，更会因为缺乏事务边界而互相覆盖代码、争抢运行时资源。
 
-万象术（Herdchestra）是一套多智能体协同基础设施。它以旁路方式接入 OpenCode v2、Cline Desktop 和 Oh My Pi，接管宿主的工具层与消息投影层，把宿主原本的单兵作业模式直接替换为分工严密的多智能体团队模式（宿主中不再保留普通单兵模式）。
+万象术（Herdchestra）是一套独立运行的自治多智能体工程系统。它将**全天候仓库守望（Steward + Standing Sphinx）**、**宏观阶段打磨与中心化换任验收（Plan + Relay Barrier）**，以及**微观去中心化蜂群施工（Swarm STM 看板 + 受保护文件提交 + `take-or-die` 动态令牌）**合流为一套严密的协作基础设施。
 
-为了让你随时升级宿主而不受阻碍，万象术遵守四条工程边界：
+万象术遵守四条顶层架构边界：
 
-1. 零侵入宿主源码：万象术不修改宿主的一行源代码，始终与宿主最新版兼容。所有能力都通过宿主插件、运行时调用劫持或装饰器模式实现；不因其中一两种手段受限而阻塞整体实现。
-2. 三层解耦架构：代码由若干彼此独立、互不依赖的核心支持库（`src/core/*`）、黏合支持库的组合层（`src/compose/*`），以及面向各宿主的适配器（`src/host-opencode`、`src/host-cline`、`src/host-omp`）组成。上游宿主接口变化时，只需更新对应适配器。
-3. 极简持久化：宿主已经保存全部聊天与工作记录，万象术不复制它们。跨进程恢复只依赖工作区 `.Herdchestra/` 下的最小状态（如 `{session标识符}.jsonl`）：一个能与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量。不存完整请求或聊天副本，不引入 $O(n^2)$ 算法。Plan 的底稿是用户可见的交付物，放在工作区根目录 `plans/<name>.md`，绝不放 `.Herdchestra/`。
-4. 外部仓库参照约定：开发需要参考其他仓库代码时，先在 `../` 寻找；若不存在则 `clone` 至 `../`。
+1. **独立全栈底座（零宿主寄生）**：服务端运行于 Clojure/JVM，持有会话、看板、任务与运行资源的唯一当前态权威（Current-State SSOT）；使用 Missionary 管理结构化异步流与取消域，使用 LangChain4j 低层接口对接各模型供应商，使用嵌入式数据库持久化当前状态与未结责任。浏览器端采用 ClojureScript + Fulcro + Framework7 React 构建薄客户端工作台，经 Sente 通道承载内部 AG-UI 协议，支持类似 `tmux` 的多客户端同控。
+2. **环境供应与执行分离**：运行环境与工具供应由成熟包管理器承担——Pixi 负责供应并锁定系统自身的 SDK 与受管运行时环境，Windows 下的广泛原生工具包由 MSYS2（如 `UCRT64`）供应。智能体不拼凑脆弱的 Bash 字符串，而是直接向受管执行器提交结构化 Clojure 程序。
+3. **宏观中心化把关、微观去中心化蜂群**：「规划（Plan）」与每一任期的「独立评审窗口（Review Window）」是中心化的，由主模型在无前任路径依赖的干净视野中完成底稿打磨或独立验收；一旦 `review` 立下非空义务台账，立即转入去中心化的「蜂群施工期（Swarm Construction）」，由固定槽位的任务模型围绕 STM 看板自主拆分、认领、受保护写文件与竞争 Shell 令牌，消除单点导演的上下文瓶颈。
+4. **当前态持久化（无事件重放负担）**：系统只持久化当前权威状态、内容引用与未结责任（如在途动作、待交付报告、待审台账），允许永久折叠与修剪历史，不保存冗余聊天副本，严禁 $O(n^2)$ 扫描或全量历史回放。Plan 的底稿是用户可见交付物，固定保存在工作区根目录 `plans/<name>.md`。
 
-### 1.1 容易犯的问题
+### 1.1 十条硬约束（不变量铁律）
 
-以下六条是硬约束。后文章节展开实现细节；两者冲突时，以本节为准。
+以下十条是全系统的最高不变量。后文章节展开实现细节；若细节描述与本节存在任何歧义，以本节为准：
 
-1. **`.Herdchestra/` 只存最小恢复状态。** 宿主已经保存全部聊天与工作记录；我们只存恢复工作所必需的最小状态：一个能与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量。不得在我们的日志里保存完整请求或完整聊天副本；严禁 $O(n^2)$ 算法。（见 §1、§7、§8.2）
-2. **Esc 必须递归取消。** 用户在 User-Facing LLM 处按 Esc 取消时，取消必须递归传播到每一名子孙 subagent、子会话与 fission lane；否则后台代理会继续烧用户 token。例外只有三类：程序化的 `this.ask` 挂起、fission 的 present 替换、接力退休；它们都不是用户取消。（见 §2.1、§2.3、§4、§7）
-3. **Plan 的 `devops` 是裸顶层同步原语。** Plan 不实现 `this.devops`，而是实现 `devops(verboseIntent)`，其本质是 join 语义。Plan 的 devops 是 dedicated：始终只使用同一名专用 `plan-devops` worker，复用或 steer，绝不开第二路。Plan 唯一的持久产物是工作区根目录下用户可见的 `plans/<name>.md`，绝不放 `.Herdchestra/`；放置与命名规则必须写进提示词。除产出物与操作员附件外，Plan 全程只读。（见 §2.2、§3.1、§4.1）
-4. **任务描述统一叫 `verboseIntent`。** `fork(name, verboseIntent)`、`devops(verboseIntent)` 以及 spawn/steer 的说明都用这个名字。请求期限的 `intent`（`Deadline.forIntent`）与接力的 `briefId` 是另外两个概念，不得跟着改名。（见 §3.1、§3.3、§4.1、§7.4）
-5. **Scope 机制只在系统提示词里讲一次。** LLM 不清楚 `resetScope` 的必要性，也不了解整个 Scope 机制。`COMMON`（Manager/Coder/DevOps 共用）要设专节完整介绍 Scope，`PLAN_PROMPT` 要设紧凑版；每个工具的 `scope` 参数描述只留一句指针与字段形状——System Prompt 只写一遍，每个工具各抄一遍是浪费。（见 §2.2、§5.1、§6.2）
-6. **子代理用 task 模型启动。** `fork` worker、fission lane、Plan 的 `plan-devops` 都以用户指定的 task 模型启动，而不是主模型；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。OMP 端尤甚，必须用宿主的 task 模型（`@task` / `modelRoles.task`）。（见 §2.1、§2.3、§4.1、§7、§8.2）
-
----
-
-## 2 一项任务是怎样完成的：角色、阶段与接力
-
-在万象术里，用户提出需求后，工作按“先规划底稿、再组织施工、每一步由后任独立验收”的秩序推进。
-
-### 2.1 四种身份与并发安全
-
-工程里最常见的混乱，是几个智能体同时运行测试、抢占端口、修改环境变量，或者主代理一边指挥一边自己下场改代码而忘了全局。万象术将参与工作的智能体严格划分为四种身份：
-
-| 身份 | 层级 / 模式 | 职责与边界 |
-|------|-------------|------------|
-| `Plan` | 顶层代理（不由 `fork` 创建） | 规划者。负责把用户需求打磨成一份结构严密、用户可见的底稿（开发方案），写在 `plans/<name>.md`。除底稿与操作员附件外全程只读：不读仓库其他文件，也不改源码；需要仓库事实时调用裸顶层同步原语 `devops(verboseIntent)`，由唯一的专用 `plan-devops` 调查。 |
-| `Manager` | 顶层代理（`mode: "primary"`） | 导演。接手底稿后，把工作拆成独立的工作流，调遣尽可能多的 worker 并行推进。`Manager` 自己绝不编辑文件、不跑命令、不搜代码、不构建；常规工具面里连文件读取都没有，也没有替子代理做代码审查的义务。 |
-| `Coder` | 子代理（`mode: "subagent"`） | 工程师（许多名）。负责本地事实调查与源码修改。它的工具面（`js-worker`）里虽然保有执行命令的 `this.call`，但启动它的任务描述（`verboseIntent`）中必须明确禁止使用 bash 工具——这是一条提示词约束。 |
-| `DevOps` | 子代理（`mode: "subagent"`） | 运维官（`Manager` 的道路上同一时刻恰好一名）。在 `Manager` 的道路上唯一持有真实命令执行权的 worker，负责 bash、构建、测试、进程管理与 git 操作。Plan 另有一名专用的 `plan-devops`，同样按子代理调度，只服务 Plan 的 `devops(verboseIntent)`，不参与施工。 |
-
-为什么这样分工就能安全并发？
-启动任何子代理时，都必须明确它是 `Coder` 还是 `DevOps`。因为所有 `Coder` 只做文件读写与静态推理，不跑命令，多个 `Coder` 同时工作时的冲突面就收窄到了纯文件写入（只要任务切分得当，各改各的文件即可并行）；而在 `Manager` 的道路上，真实命令执行权收归到唯一的 `DevOps` 手里，从根本上消除了多个进程并发修改运行时状态（端口、进程、构建产物、环境变量）的竞态。Plan 的 `plan-devops` 只做同步调查，不参与施工，因此不与这条竞态面重叠。
-
-模型归属：`Manager` 顶层沿用主模型，Plan 顶层沿用 Plan 角色的模型（没有独立 Plan 模型时即主模型）；`fork` 启动的 worker、fission lane 与 Plan 的 `plan-devops` 一律以用户指定的 task 模型启动，不继承主模型。OMP 端取宿主的 task 模型（`@task` / `modelRoles.task`）；解析不了时如实报告，不冒充 task 模型。
-
-取消传播：`fork`、fission lane、`devops` 建立的会话都是调用者的后代。用户在 User-Facing LLM 处按 Esc 取消时，取消递归传播到每一名子孙 subagent、子会话与 lane，绝不留后台继续烧 token 的孤儿。程序化的 `this.ask` 挂起、fission 的 present 替换、接力退休不是用户取消，不受这条规则影响。
-
-### 2.2 规划阶段（Plan）：从需求到底稿
-
-当一项新规划任务启动时，顶层代理以 `Plan` 身份工作（`Plan` 不在 §5 的系统提示词投影之内，而由专用的 `PLAN_PROMPT` 描述）。
-
-#### 四个里程碑（S1 → S2 → S3 → 待执行）
-`Plan` 按顺序走过三个打磨里程碑，最后进入“待执行”：
-- S1（需求分析）：使用 Ronald A. Howard、Raymond Thomas Dalio、Jeff Bezos 的方法做需求分析，做到无可再改。
-- S2（实现骨架）：使用 Polya、Schoenfeld 的方法探索出最优实现的骨架和要点，做到无可再改。
-- S3（并行开发方法论）：使用 Knuth 风格的伪代码，以“最大化同时参与开发的人数”和“最小化开发墙钟耗时”为原则，给出开发方法论，做到无可再改。
-- 待执行：底稿定型，准备移交 `Manager` 执行。
-
-阶段判定的铁律：每个阶段只判定“离下一阶段能够开始的差距”——S1 判定离 S2 能开始的差距，S2 判定离 S3 能开始的差距，S3 判定离可交付执行者的差距。绝不能把下一阶段才该做的工作算作本阶段的缺口。
-
-#### 底稿与 Plan 的工具边界
-- 唯一持久产物：`Plan` 的唯一持久产物是工作区根目录 `plans/` 下的用户可见底稿，文件名由任务固定派生，形如 `plans/<name>.md`，系统在任务启动时告知确切路径。底稿绝不放 `.Herdchestra/`：它是交付物，不是内部恢复状态。`Plan` 只写这一个文件，读也只读它与操作员附件（这是职责边界，不是运行时路径门禁）。
-- 全程只读：除底稿与操作员附件外，`Plan` 不读、不写、不改仓库里的任何东西；需要了解仓库现状时，只能经 `devops(verboseIntent)`。
-- 首次评审前只读：每一任 `Plan` 在提交本任的第一次 `review` 之前，底稿对它是只读的（调用 `this.write` 会被拒绝）；第一次 `review` 之后才解锁写入。接力换人开启新任期后，底稿重新变为只读，迫使新任先读完评判，再动笔修改。
-- 极简编程面：`Plan` 只有这些能力：`this.cat`、`this.write`、`devops(verboseIntent)`、`this.ask(question)`（仅 S1）、`this.unpark(name, value?)`、`review(findings)`。它没有 `glob`、`grep`、`exec`，也不得访问仓库其他文件：
-  - 需要调查仓库事实时，一律调用裸顶层原语 `devops(verboseIntent)`；它不是 `this.devops`，而是同步 join：调用即等待调查结束，并把完整调查记录原样返回。同一任务始终只使用同一名专用 `plan-devops` worker：worker 还在跑就 steer 新目标，已结束就复用它的会话，绝不开第二路。同一时刻至多一个未决调用（`DEVOPS_IN_FLIGHT`）；系统不做二次摘要。
-  - 需要向用户提问时，调用 `this.ask(question)`。它的语义就是 `this.park({ question })` + `interrupt`：挂起当前程序，并中断本轮模型回合，把控制权交还人类用户。用户在常规对话中输入答复后，控制权回到 AI，AI 在新程序中调用 `await this.unpark(name, answer)` 将用户答复注入挂起点，原程序即从 `this.ask` 处继续执行，不重开任期、也不制造评审。
-  - `this.ask(question)` **仅在 `S1`（需求分析）阶段可用**。`S2`、`S3`、`待执行` 阶段调用 `this.ask` 一律被拒绝（`ASK_FORBIDDEN_OUTSIDE_S1`）；此时程序并未挂起，系统不等待任何人。
-  - 模型：Plan 顶层使用 Plan 角色的模型（没有独立 Plan 模型时即主模型）；`plan-devops` 以用户指定的 task 模型启动（§2.1）。
-
-#### Scope 的紧凑版
-`Plan` 不在 `COMMON` 投影之内，但它的非豁免工具调用同样携带打平的 `scope` 注解；Plan 面上没有 `negotiate` 与 `askPreviousScope`，没有可豁免的查询通道。
-- 四种 kind：`resetScope` 必填 `newScopeGoal`（非空字符串）与 `newScopeRetentionBudget`（正整数，无上限），开启新闭环并整体替换目标与额度；`keepLast` 不接受其他字段，保留上一拍并扣 1 点额度；`removeLast` 必填 `replacement`（非空字符串），抹去上一拍并把教训写进出站副本，不扣额度；`meToo` 不接受其他字段，用于同一模型回合内的其余并发调用。
-- 一个模型回合只有一条真注解（`resetScope`、`keepLast`、`removeLast` 之一）；同回合其他调用一律 `meToo`。`retention` 是保留容量，不是回合数或调用次数，只有 `keepLast` 扣减。额度为 0 时只准入 `resetScope`。`meToo` 不记账、不回滚；先于真注解到达时暂存，整回合只有 `meToo` 会在回合关闭时被拒（`SCOPE_METOO_ONLY`）。
-- 出站副本以最新一次已结算的 `resetScope` 为边界：边界之后原样保留；边界之前只留操作员消息、历次 `resetScope` 调用及配对结果、`assume` 等钉住调用及配对结果、assistant 正文与 provider 原文，旧工具调用、工具结果与 thinking 全部裁掉。
-- 冷启后，持久记录里的 `resetScope` 只证明旧事件：本进程内还没有确证额度时，除 `resetScope` 外的非豁免调用一律拒收（`SCOPE_UNINITIALIZED`），直到一次 `resetScope` 在此结算。
-- 准入拒收意味着调用没有执行、状态未变（`SCOPE_ANNOTATION_MISSING`、`SCOPE_KIND_INVALID`、`SCOPE_FIELD_INVALID`、`SCOPE_FIELD_UNEXPECTED`、`SCOPE_UNINITIALIZED`、`SCOPE_BUDGET_SPENT`、`SCOPE_METOO_ONLY`）；结算拒收发生在工具已经生效之后（`SCOPE_RECORD_FAILED`、`SCOPE_TURN_MISSING`），效果保留，注解不记账。
-
-#### 无人值守：合法出口与防自然停止的 Nudge
-
-万象术的目标是**无人值守的长程稳定工作**。系统处于常授权模式：顶层代理自己决定、自己动手、自己验收，不等待用户决策，也不等待授权。
-
-面向用户的顶层代理（`Plan` 与 `Manager`）只有两个合法出口：
-1. **`S1` 的提问**：`Plan` 在 `S1` 阶段调用 `this.ask(question)`，程序挂起、回合中断，控制权交还用户。这是整场工作中唯一由人回答问题的时刻。
-2. **验收上一任合格后的终局停止**：`Plan` 由继任者在 `S3` 独立验收上一任合格、进入「待执行」并提交 `review([])` 完成向 `Manager` 的交接；`Manager` 在「收尾」阶段清空台账结案为「已完成」。
-
-用户按 Esc 取消不是代理自己的出口：它由操作员发起，并递归取消整棵会话树（§2.1）；代理不得把取消当作「已经停止」的理由，也不得在取消后继续派工。
-
-除此以外，顶层代理**永远不可能自然停止**。若它在未到达出口、也未处于 `S1` 提问挂起时结束回合，系统拦截这次停止，并自动注入一条 **Nudge** 督促消息触发下一轮继续：
-- 列出当前 `review` 义务台账中尚未完成的全部待办项（`{ key, value }`）；若台账为空，则明确指出当前里程碑尚未完成评审、继任验收或交接；
-- 附上硬性口令：**「当前的 review 账本还有上述事项没有做，立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。」**
-
-这条不变量（「除非 `S1` 的 `ask`，否则绝不自然停止；只在验收上一任合格后停止」）由 `fast-check` 属性测试严格证明（`src/compose/nudge.test.mjs`）。
-
-#### Plan 向 Manager 的交接
-当 `Plan` 推进到「待执行」阶段后，不再接受非空台账（提交非空台账会被拒收）。此时：
-- 提交空账 `review([])` 是启动 `Manager` 的唯一方式。
-- 调用 `review([])` 时，系统从 `plans/<name>.md` 读取已保存的完整底稿；若底稿缺失或为空，系统在创建 `Manager` 会话之前直接拒绝。
-- 每次新的空账 `review([])` 都会创建一个独立的 `Manager` 会话，任期从 `Manager` 的「执行」里程碑开始；同一次工具调用重放（同一 `callId`）只启动一个，不会重复创建。
-- `Manager` 收到的是底稿字节原文，不是里程碑名字，也不是 `Plan` 的对话历史。
-- 启动 `Manager` 不会结束规划任务，也不会改动底稿。`Plan` 与 `Manager` 各自持有独立的 `review` 台账，接力规则各自适用。`Manager` 无权修改底稿，也不会退回 `Plan` 的里程碑；若需要重新规划，必须由人类操作员发送真实消息触发新的规划任务。
-
-### 2.3 执行阶段（Manager）：导演、派工与收尾
-
-`Manager` 拿到底稿后，以导演身份组织施工。它的里程碑依次为：「执行」 → 「收尾」 → 「已完成」。
-
-`Manager` 全程无人值守：它没有 `this.ask`（调用即 `ASK_FORBIDDEN_OUTSIDE_S1` 拒绝），不向用户请示，也不等待授权。它的唯一出口是「收尾」阶段清空台账结案为「已完成」；在到达该出口之前结束回合，会被系统注入 Nudge 督促继续（见 §2.2）。初任第一次 `review([])` 在 `Manager` 侧**不是**提问：它是对前任工作的独立验收（回执 `confirm`），绝不等待用户；下一次空账 `review` 才触发接力，由继任者自己那一次空账 `review` 把工作推进到「收尾」。
-
-#### 调度纪律
-- 任何时候保持恰好 1 名与道路绑定的 `DevOps` 和尽可能多的 `Coder`（对可拆解的大任务，通常同时调遣 10 名以上 worker；其余按实际需要派出）。
-- 所有 `fork` 出去的 worker 以用户指定的 task 模型启动；`Manager` 顶层保留主模型（§2.1）。
-- 缺位立刻补位。只要还有独立工作可以派出，就优先调用 `fork`；只有手头再无任务可 `fork`、必须等待前序结果时，才调用 `join`。
-- 当义务台账非空时，立即用 `fork` 派出 `Coder`，或用同名 `fork` 把新目标追加（steer）给已绑定的 `DevOps` 去解除台账上的义务。子代理返回只是汇报，不代表义务自动解除；只有当返回的事实真正解决了某项问题，`Manager` 才在下一次 `review` 中用 `null` 删掉该键。
-- 取消是递归的：用户在 User-Facing LLM 处按 Esc 取消时，取消传播到 `Manager` 派出的每一名 worker、每一条 fission lane 与所有后代会话，不得让任何后代在后台继续烧 token。程序化的 `this.ask` 挂起、fission 的 present 替换与接力退休不是用户取消（§2.1）。
-
-#### 评估窗口与读取例外：`js-review`
-`Manager` 默认连文件读取工具都没有，也不亲自调查或修改工作树。但在每一轮刚开始、首次独立评估前任工作并提交本轮第一次 `review` 之前，`Manager` 需要核对工作区事实：
-- 在这一评估窗口内，系统向 `Manager` 临时开放一个独立工具 `js-review`（它是独立工具，不是 `js-manager` 的成员，也不设 `reviewOnly` 命名空间）。
-- `js-review` 是严格只读的：只提供 `this.cat`、`this.stat`、`this.ls` 以及处理已有文本的 `this.where`、`this.whereAll`（遵守与 `js-worker` 相同的路径边界、UTF-8 与失败码语义），不提供任何写、删、移、执行或委派能力。
-- 评估期间，`Manager` 不调 `DevOps`、不跑命令、不改源码。
-- 一经受理即收回：只要本轮的 `review` 被系统受理，`js-review` 对本次评估立即关闭。同一轮内后续若还需要了解仓库事实，必须用 `fork` 派出只读的 `Coder` 去查，绝不能自己看。
-- 注意：`js-review` 只是评估前任工作成果是否达标的事实通道，`Manager` 没有审查子代理代码细节的义务。
-
-#### 收尾与结案
-- 在「执行」阶段清空台账会触发接力，由继任者在「执行」阶段独立复核；继任者第一次 `review` 以空台账确认后，工作推进到「收尾」。
-- 在「收尾」阶段清空台账，工作直接结案为「已完成」，不再做二次确认——但有一个硬前提：收尾时所有真实执行资源（在途子代理、后台进程等）必须已经收束；若有资源未收束，提交空账 `review` 也不会结案。
-- 一旦进入「已完成」，只能由人类操作员发送真实消息重开一次；任何代理消息都不得重开。
-
-### 2.4 义务台账与换任接力（`review`）
-
-为什么智能体自己做完事、自己说“我做好了”往往不可信？因为它在刚才的上下文里已经对自己的假设产生了路径依赖。万象术用 `review(findings)`（注意：这是直接调用的顶层函数名，不是 `this.review` 成员访问）把“列待办”和“换人独立验收”合二为一。
-
-#### 台账增删规则
-`review(findings)` 接收一份按键管理的义务台账 `findings`（形状为 `{ key, value }` 数组）：
-- 新增或覆盖：`value` 为字符串时，新增或覆盖该 `key` 对应的待办义务。
-- 解除义务：`value` 为 `null` 时，从台账中删除该 `key`。
-- 保持原样：传入空数组 `[]` 不会清空既有台账，只是原样保持当前台账。
-- 调用后返回回执（表示已提交，或可提交下一次评审——这不是需要用 `join` 等待的异步结论）。
-
-#### 接力（Relay）与晋级（Promotion）的完整时序
-1. 初任首评为空（向用户请示，仅 `Plan` 的 `S1`）：如果第一任（初任）的第一次 `review` 时台账就是空的，这不算评审，也不触发接力。**仅当这是 `Plan` 且处于 `S1` 阶段时**，系统代该任向用户提问 `「我需要干什么？」`——这与 `this.ask` 是同一语义：`this.park({ question })` + `interrupt`，控制权交还用户；用户在常规对话中答复后，控制权回到 AI，由 AI 在新程序中 `this.unpark(name, answer)` 恢复，同一任在同一任期继续工作，不重开任期、不制造评审。`Manager` 侧的初任首次空账**不提问**：它是对前任工作的独立验收（回执 `confirm`，里程碑保持在「执行」），系统绝不等待用户决策；下一次空账 `review` 才触发接力，由继任者自己那一次空账 `review` 把工作推进到「收尾」（与 §2.3 一致）。
-2. 台账非空（正常工作期）：现任提交 `review` 后，如果计算出的台账非空，则处于正常工作期，由现任继续干活，补齐本里程碑的义务（台账非空时绝不允许边修边跨入下一里程碑）。
-3. 台账由非空变空（触发接力）：当现任把台账里的所有键都用 `null` 删空时，触发接力。系统在同一笔原子持久记录里同时完成三件事（三者不可分割，进程中断也不会留下半个任期）：
-   - 将现任标记为退休（退休者不能因旧请求重放而再次动手）；
-   - 写入一道上下文屏障；
-   - 以 `successor`（继任者）身份开启下一任，并将退休者的里程碑字段原样复制给继任者（接力只换人，不换里程碑）。
-4. 屏障隔离与遗产继承：上下文屏障把前任的对话（包括触发接力的那次 `review` 及其之前的所有对话）从继任者的视野里彻底切掉。继任者只看到：用户原始输入、底稿（`Plan` 侧）或工作区事实（`Manager` 侧），以及系统给出的继任提示。同时，前任已接收的工作、进程归属、未领取的结果，以及道路绑定的 `DevOps`（Plan 侧为专用的 `plan-devops`）原封不动地保留给继任者（跨接力不变，不得改绑）。
-5. 继任者首评决断（确认晋级或打回重修）：
-   - 如果继任者的第一次 `review` 提交空台账（`[]`），说明它在没有前任心理包袱的情况下独立确认了前任成果——工作立即推进到下一里程碑，且不新建任期，由该继任者直接开启下一里程碑的工作。
-   - 如果继任者的第一次 `review` 发现了问题、提交了非空台账，则不推进里程碑，直接进入本里程碑的正常工作期去修补问题；等它修完再次清空台账时，依然是触发下一次接力，而不是直接晋级。
-6. 幂等与重放：同一物理调用（同一 `callId`）重放时直接返回原回执；若同一 `callId` 换用不同载荷，立即报错拒绝。
+1. **宏观接力与微观蜂群严格咬合。** 每一执行任期以中心化评估窗口开启：先由单一主审代理（`Reviewer`）核对现场并提交 `(review {:findings ...})`；若台账非空，主审退场、蜂群（Swarm）围绕 STM 看板并发施工；仅当看板全部根义务结清且无在途动作时，才原子触发接力屏障（退休本任、写入上下文屏障、唤醒下一任中心化主审）。Plan 阶段的非空台账由 Plan 自己销账，不开蜂群。蜂群个体无权直接宣布整个里程碑晋级。（见 §2.4、§3.1）
+2. **父项始终保留实质，严禁子项完成自动关闭父项。** 在 STM 看板中，拆分优先于原子认领；父任务拆出子项后进入 `waiting`，子项全部完成**只解除父项等待使其恢复 `ready`**，绝不将“子项完成数等于子项总数”自动折算为父项 `done`。父项必须由负责个体根据剩余实质工作（如接口合龙、集成验证）继续推进或明确提交完成。（见 §3.3）
+3. **文件写入一律走受保护提交合同（`stamp` + 写入口 $W$ + 整批 Dry-Run）。** 普通文件读取不加锁，返回内容与系统元数据凭据 `stamp = {:mtime-sec :mtime-nsec :size}`（不比较 `atime`）。普通提交与黑盒 Shell 共享全局工作区写入口 $W$；普通提交在持有 $W$ 期间必须复核全部 `read-set`（含只读依赖文件与结构条件），并在内存批视图中完成整批 `dry-run` 预演与短 STM `applying` 资格固定后一次性落盘。所有普通可拒绝错误必须在触碰真实磁盘前拒绝，正常路径零回滚。（见 §4.2）
+4. **抢令牌（`take-or-die`）不可逆，持令者无责即死，新生无记忆。** 个体仅在耗尽有价值的受保护工作且存在待处理令牌任务时参与竞争：赢者成为唯一 `holder`，动态承担全部 `needs-token` 责任（含后续新增项），但仅在实际运行 Shell 会话或提交文件时占用写锁 $W$；输者在同一 STM 事务内公开移交剩余责任与认领并逻辑死亡；`holder` 在完整责任集合（动态令牌责任 + 自身普通责任 + 在途动作）为空时，在同一 STM 事务内释放令牌并逻辑死亡。死亡后槽位拉起全新 `agent-id`，绝不继承前世私有上下文。（见 §3.4）
+5. **常授权无人值守（Nudge 胜出）。** 系统处于常授权无人值守模式。合法停止出口只有三个：`Plan` 在 `S1` 阶段调用 `(ask {:question ...})` 挂起等待人类回答；执行层初任在 `执行` 首次提交空账且工作区已满足底稿时，转为 `(ask ...)` 询问用户接下来做什么；验收合格后的终局结案。除此以外，任何代理在任何阶段均不弹窗等待人类审批工具，也绝不可能自然停止。未达合法出口而结束回合时，内核自动拦截并注入 Nudge 督促继续。（见 §2.5）
+6. **Esc 取消必须沿责任树递归传播，且保留可核对现场。** 操作员发起取消时，取消信号沿当前会话、在途模型请求、STM 看板活动动作与受管工作进程递归传播；已产生副作用的外部动作如实标记 `:cancelled` 或 `:outcome-unknown`，只终止执行资源、不销毁未领取证据。程序化的 `park` / `ask` 挂起、接力退休与槽位转世不是操作员取消。（见 §3.4、§5.3）
+7. **Plan 的 `devops` 是唯一调查原语，底稿唯一定位 `plans/<name>.md`。** `Plan` 全程除底稿与操作员附件外只读；调查仓库事实只能调用 `(devops {:verbose-intent "..."})`，同步等待一个 Plan 专属、无看板、无令牌的 dedicated worker 完成并原样返回其最终报告；同一 Plan tenure 复用/steer 同一 worker，不新建第二路。（见 §2.3、§4.1）
+8. **模型归属铁律。** `Steward`（含 fork/join 编排）、`Plan` 顶层与执行阶段的中心化 `Reviewer` 使用主模型（Main Model）；Plan 的 dedicated worker、微观蜂群中的所有普通个体与持令者（`holder`）一律使用用户指定的任务模型（`@task` 模型）。`fission` 已删除，不再有裂变泳道。（见 §2.1、§5.4）
+9. **Scope 机制只在系统提示词讲一次，且与跨世转世正交。** 个体单世存活期内的上下文修剪通过每次非豁免工具调用附带的 `:scope` 参数（`:reset-scope`、`:keep-last`、`:remove-last`、`:me-too`）完成。一个模型回合只有一条真注解；全为 `:me-too` 的回合默认按 `:keep-last` 结算并扣 1 点 retention，不再拒收 `:SCOPE_METOO_ONLY`；retention 为 0 时仍拒 `:SCOPE_BUDGET_SPENT`。完整规则只在系统提示词 `COMMON` 讲一次（`PLAN_PROMPT` 设紧凑版），工具 schema 只留一句指针与字段形状。（见 §6.2）
+10. **系统呈现一律 EDN + UFSS；模型提交格式自由。** 凡系统面向大模型的结构化数据呈现（提示词注入、工具回执、看板快照、错误详情），一律采用支持 **UFSS（Universal Fence-Scaled String，`#"..."#` 与 `#"""..."""#`）** 的 EDN/Clojure 语法，严禁向大模型投喂含 `\"`、`\\`、`\n` 转义噪音的裸 JSON。大模型向系统提交的内容不强制格式：JSON、标准 Clojure 转义字符串与 UFSS 都接受；解析器归一化后执行，解析失败返回具体位置与期望格式。（见 §6.3）
 
 ---
 
-## 3 智能体手里的工具箱：`js-manager`、`js-worker` 与 `js-review`
+## 2 宏观秩序：仓库守望、阶段打磨与中心化换任接力
 
-传统智能体框架给模型提供 `read`、`grep`、`glob`、`write`、`edit` 等零散工具：改十处同类代码要来回调用十次工具，中间还常常因为行号漂移或空白符截断而改坏文件。
+万象术在宏观上将工作划分为跨越时间的**仓库守望（Stewardship）**与面向具体交付的**任务周期（Mission）**。一次 Mission 内部严格遵循「先打磨底稿（Plan），再进入『中心化评审（Review）⇄ 去中心化蜂群施工（Swarm）』循环，每一步由无包袱继任者独立验收」的秩序。
 
-万象术彻底废除了这些零散工具，代之以 JavaScript 程序执行环境（`js-manager`、`js-worker` 和评估期专用的 `js-review`）。智能体每次提交一段继承自 `JsProgram` 的类代码，在一次调用里就能完成读取、精确计算偏移、分支判断与原子落盘。为了让模型对工具行为一清二楚，`js-` 系列工具的工具描述（Tool Description）直接把实现这些方法的源代码原封不动地展示给 LLM。
+### 2.1 全系统角色谱系与模型归属
 
-### 3.1 各身份的能力面板对照
+| 角色身份 | 所在层级 | 职责与边界 | 模型归属 |
+|---|---|---|---|
+| `Steward` | 仓库守望层（常驻跨越任务） | 保管仓库的未来（Docket）。在决策前沿权衡人类意图与 `Standing Sphinx` 的洞察，决定将哪些目标准入执行。准入后按底稿 S3 把 Mission 拆成尽量互不相交的 slice，每个 slice 一个 worktree swarm；反复 join，每次取一个已完成结果，其余排队；运行时机械 ff 到 master 并返回报告；不亲自写代码，也不排个体施工细节。 | 主模型（Main） |
+| `Meditator` (`Standing Sphinx`) | 仓库守望层（后台持续认识） | 围绕永久母题 *"How can this be better?"* 紧跟 Git 演进持续思考，维护 `Current Best Answer`。只提供认识与幕僚建议，无权主动打断或号令世界。 | 主模型 / 推理模型 |
+| `Plan` | 规划层（顶层任期） | 将准入需求打磨为用户可见底稿 `plans/<name>.md`（S1→S2→S3→待执行）。除底稿与附件外只读，靠 `(devops {:verbose-intent "..."})` 调查仓库，仅在 S1 可调用 `(ask {:question ...})`；底稿只由 Plan 写，Plan 阶段的非空台账由 Plan 自己销账，不开蜂群。 | 主模型（Main，§1.1 #8） |
+| Plan dedicated worker | 规划辅助层（Plan 专属） | 每个 Plan tenure 一个，无看板、无令牌、不参与 Swarm；服务于 `(devops {:verbose-intent "..."})`，执行只读调查与命令探测，返回自己的最终报告；同一 tenure 复用/steer，死亡后由 Plan 新建。 | 任务模型（`@task`） |
+| `Reviewer`（中心化主审） | 执行层-评估窗口（顶层任期） | 每任期开启时的唯一中心化大脑。利用只读工具 `clj-review` 对照底稿独立核验工作区现场，提交本任期首次 `(review {:findings ...})`：或空账确认晋级/结案，或立下待办台账并唤醒蜂群；初任在 `执行` 首次空账且工作区已满足底稿时，转为普通 `(ask ...)`，不记 review，`.unpark` 后回答只作为新需求进入上下文。 | 主模型（Main） |
+| `Swarm Worker`（普通个体） | 执行层-蜂群施工（固定槽位池） | 无中心自治个体。围绕 STM 看板阅读、优先拆分复合任务、认领原子任务、通过 `clj-worker` 在写锁 $W$ 保护下提交完整预演的文件修改；用 `cancel`/`replace`/`release`/`reopen`/`comment`/`update` 维护看板。禁止执行黑盒 Shell。 | 任务模型（`@task`） |
+| `Swarm Holder`（持令个体） | 执行层-蜂群施工（至多 1 名） | 通过不可逆 `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` 竞争获胜的唯一持令者。动态承担全看板所有 `needs-token` 责任（测试、构建、进程、Git 等黑盒 Shell），无责时立即在同一事务内退休死亡；禁止 `fission`。 | 任务模型（`@task`） |
 
-凡是通过 `this.` 调用的方法一律写作 `this.xxx`，顶层原语直接写函数名。除下表列出的能力外，不存在任何隐式成员，也不设跨调用事务或二次校验：
+### 2.2 仓库守望层：`Steward` 与 `Standing Sphinx`
 
-同一个工具只有一种调用写法，绝不同时以 `xxx` 与 `this.xxx` 两种形式存在。顶层原语（`fork`、`join`、`review`、`devops`）只以裸函数名存在：程序实例上没有 `this.fork`、`this.join`、`this.review`、`this.devops`；其中 `devops` 只出现在 Plan 的面上。其余成员（`this.cat`、`this.stat`、`this.ls`、`this.write`、`this.mkdir`、`this.rm`、`this.mv`、`this.where`、`this.whereAll`、`this.call`、`this.fission`、`this.park`、`this.unpark`、`this.ask`）只以 `this.xxx` 存在：作用域里没有同名裸函数，写 `cat(...)` 只会得到 `ReferenceError`。
+仓库只要存在并面向未来，Stewardship 就不会因单次任务完成而结束：
 
-每个非豁免工具还带一个打平的 `scope` 参数。完整的 Scope 机制只在系统提示词 `COMMON`（§5.1）里讲一次，`PLAN_PROMPT`（§2.2）另有紧凑版；工具自己的 `scope` 描述只留一句指针与字段形状，不复制机制（§6.2）。
+1. **持续认识机器（`Standing Sphinx`）**：
+   * 根问题是永不关闭的 *"How can this be better?"*（涵盖正确性、可靠性、架构简化、性能、安全、可访问性、用户体验以及尚未被前人命名的价值维度——“Better” 的定义在架构上保持开放）。
+   * **向现实负责（Git 耦合）**：仓库的每一次 Git 演进作为新证据（Information）进入 Sphinx，使过时假设失效；反复推理不等于新证据；认识的进步允许置信度非单调变化。
+   * **有答案而无终点**：根问题永不终结，但任意时刻均持有当前证据与思考前沿下的最佳答案（`Current Best Answer`），其下的局部子问题可以独立关闭（resolved）。
+2. **拉取式唤醒与决策前沿（Stewardship Decision Frontier）**：
+   * **Sphinx 绝不主动召唤 Steward**（*"The mind that imagines a future does not decide when the world must stop to hear about it."*）。
+   * 仅当世界出现新的**决策前沿**——即人类操作员发出新指令/修改意图，或执行层的可用算力出现有意义的未分配空间（当前已准入工作无法有效消耗下一单位算力）时，系统主动观测 `Standing Sphinx` 的 `Current Best Answer`，将其与人类意图一并呈交 `Steward`。
+   * `Steward` 综合后果、证据强度、依赖、可逆性与机会成本做出裁决，更新 Docket 并准入新的 Mission。若无值得消耗算力的改进，允许系统保持合法闲置（Work-conserving without work-inventing）。
+3. **Fork/join 编排（多 worktree，互不相交）**：
+   * 准入 Mission 后，`Steward` 按底稿 S3 的并行方法论把工作拆成**尽量互不相交**的 N 个 slice；每个 slice 一个独立 worktree 上的 swarm。**不把同一个活派给多个 swarm**；N 由 `Steward` 自由决定，不设配置上限；运行时资源不足时返回 `:INSUFFICIENT_WORKTREES`，由 `Steward` 降数重试。**disjointness 是工作分配层面**：不同 group 的目标不重叠；worktree 隔离就是边界，不检查 `:paths`。group 只被告知自己的 workspace；越界写入靠自觉，系统不 policing。group 内部的任务拆分、认领、执行由该 swarm 自己决定，`Steward` 不管。`:done-when` 是 group 的完成条件；`:depends-on` 是 group 级依赖，依赖结果 join 后再 fork。
+   * 每个 swarm 只做自己的 slice；master 分支只通过 ff 前进，各 swarm 在自己的结果被 join 前反复 rebase 到最新 master。
+   * **join 是队列，不是竞速**：每次 `(join {})` 取当前已完成队列中的第一个结果（按完成时间 FIFO），其余结果继续排队；返回 `{:swarm-id :slice-id :workspace :report "..." :ff-commit ... :rebase-rounds N}`。队列空但仍有 `:running` swarm 时，join 无限阻塞；队列空且没有任何 `:running` swarm 时，join 立即返回 `:none`。`Steward` 反复调用 join 直到 `:none`。没有 `:sibling-accepted` 取消，没有 winner/loser。
+   * 每个被 join 的结果先 rebase 到最新 master，再 ff 合入；master 集成锁串行化。互不相交的 slice 通常不会冲突；冲突由该 swarm 的 holder 解决，解决不了则 `(abandon {:reason ...})`，该结果不入队，其余 slice 继续。
+   * `Steward` 不持续协调，也不排个体施工细节；fork/join 是机械流程，它只负责准入、拆分、派发、反复 join、更新 Docket。
+   * 编排原语：`(fork {:slices [...]})` 返回 `[{:swarm-id ... :slice-id ... :workspace ...}]`；`(join {})` 返回一个已完成结果或 `:none`。slice 形状：`{:slice-id :goal :inputs :depends-on :done-when}`；`:workspace` 由运行时分配并告知 group。worktree 在结果 join 或 abandon 后保留 7 天（可配置），然后 GC；diff/报告进事件日志。
+   * `Steward` 的观察是 **fleet 聚合**：Pair Hint 注入每个 swarm 的 `{:swarm-id :slice-id :worktree :status :root-ready :root-waiting :root-done :queued-count :last-event :master-version}`；`status` 取 `:running` / `:queued` / `:joined` / `:abandoned` / `:failed`；join 后的行（`:joined`）带**完整报告全文** `:report "..."`（LLM 写的全文内联，不截断、不摘要）；状态变化发 delta，累计超过阈值时 clean-break 全量；结果入队时发 `:result-queued {:swarm-id ... :slice-id ... :board-version ...}` 事件。`Steward` 不获得单任务详情，但获得 join 结果的完整报告。
+   * rebase 冲突不可解决时，该 slice 的 holder 调用 `(abandon {:reason ...})`：该 swarm 标 `:abandoned`、worktree 丢弃、agent 死亡；该结果不入队，其余 slice 继续。若全部 swarm 都 abandon，队列为空，`Steward` 收到 `:no-results`，由它决定 re-fork、re-plan 或终止。
 
-| 调用形式 | 语义说明 | `Plan` | `js-manager` (`Manager`) | `js-review` (`Manager` 评估期) | `js-worker` (`Coder` / `DevOps`) |
-|----------|----------|:------:|:------------------------:|:------------------------------:|:--------------------------------:|
-| `this.cat(path)` | 读取文件完整 UTF-8 文本 | 仅底稿与操作员附件 | - | 有 | 有 |
-| `this.stat(path)` | 返回 `{ exists, size, mtime, isDir }`，文件缺失不报错（`exists: false`） | - | - | 有 | 有 |
-| `this.ls(path)` | 非递归列目录，目录条目末尾带 `"/"` | - | - | 有 | 有 |
-| `this.write(path, content)` | 原子覆盖写文件 | 仅底稿（首评后解锁） | - | - | 有 |
-| `this.mkdir` / `this.rm` / `this.mv` | POSIX 级别目录创建、删除、移动/重命名 | - | - | - | 有 |
-| `this.where(content, needle)` | 精确 UTF-16 切片定位 `[begin, end]`；0 匹配或多匹配时自动挂起（`this.park`） | - | - | 有 | 有 |
-| `this.whereAll(content, needle)` | 返回所有匹配的 `[begin, end]` 数组（不挂起） | - | - | 有 | 有 |
-| `this.call(command)` | 执行 bash 命令（`Coder` 在任务提示词中被禁调，但工具面仍保留） | - | - | - | 有 |
-| `devops(verboseIntent)` | 顶层同步原语：等待唯一的专用 `plan-devops` 完成调查并原样返回全记录（join 语义；同任务至多 1 个未决，复用或 steer 同一 worker，绝不开第二路） | 有 | - | - | - |
-| `this.fission(prompts)` | 将当前 worker 身份同时展开为多条并行 lane | - | - | - | 有 |
-| `this.park(payload)` | 显式将当前程序挂起，立即返回挂起回执 | - | 有 | - | 有 |
-| `this.unpark(name, value?)` | 在另一命名程序中恢复已挂起的程序，并向挂起点注入 `value`（也用于恢复 `this.ask` 挂起的程序） | 有 | 有 | - | 有 |
-| `this.ask(question)` | 向人类用户提问（仅 `Plan` 的 `S1` 阶段可用）：语义即 `this.park({ question })` + `interrupt`（挂起当前程序并中断当前回合交还控制权给用户；用户输入后控制权回到 AI，由 AI 调用 `this.unpark(name, answer)` 恢复）（子代理无此通道） | 仅 S1 | - | - | - |
-| `fork(name, verboseIntent)` | 启动新 worker（以 task 模型），或向同名在途 worker 投递新指令（steer） | - | 有 | - | 有（若允许再分派） |
-| `join()` | 等待第一个归来的子代理或结束的进程，返回其记录 | - | 有 | - | 有 |
-| `review(findings)` | 提交义务台账评审，台账清空时触发接力或推进阶段 | 有 | 有 | - | - |
+#### `Steward` 与 `Meditator` 系统提示词
 
-### 3.2 路径语义、原子写入与精确切片
+> 注：本工作区未提供独立的 `Steward.md` 源文件；以下 `<Stewardship>` 与 `<Meditation>` 提示词根据本文 §2.1–§2.2 的职责边界与不变式拟定 `[INFERENCE]`：
 
-#### 路径语义
-- 空路径（`""`）解析为当前会话根（工作区根目录）。
-- 绝对路径按原样使用。
-- 文件访问能否成功完全由操作系统权限决定，万象术不在工作区根目录设人为的边界拦截。
+```text
+<Stewardship>
+You are the Steward of this repository. You hold the Docket: the living record of what this repository should become, what missions are admitted, what awaits evidence, and what should not be done.
 
-#### `this.write(path, content)` 的原子覆盖写
-“原子覆盖写”是硬性工程要求，不是修辞：
-1. 写入时，先在目标文件同一目录下以排他方式创建临时文件（同目录保证位于同一文件系统，随后的 `rename` 才能由内核保证原子替换）。
-2. 将 `content` 完整写入临时文件并 `flush` 落盘后，执行 `rename` 覆盖目标路径（目标不存在则新建，已存在则替换）。
-3. 任何读者在任何时刻读取该路径，只会看到完整的旧内容或完整的新内容，绝不会读到写了一半的半截文件。
-4. 若写入或替换过程中失败，临时文件会被清理删除，目标文件保持原样；若进程在 `rename` 前崩溃，最多在同目录留下一个临时文件，目标文件依然完好无损。
-5. 边界说明：这只是单次 `this.write` 调用内的原子替换保证，不是多文件事务——多次 `this.write` 之间没有回滚；多个程序对同一路径并发调用 `this.write` 时不加锁也不校验，最后一次 `rename` 获胜。
+You do not write product code, micro-schedule workers, or invent busywork. You act at the Stewardship Decision Frontier:
+1. When the human operator expresses new intent, constraints, or corrections;
+2. When execution capacity opens and current admitted missions cannot productively consume the next unit of compute.
 
-#### `this.where` 与 `this.whereAll` 的纯字符精确切片
-传统编辑工具常因偷偷 `trim` 空白符或忽略缩进而改错位置。`this.where(content, needle)` 和 `this.whereAll(content, needle)` 对待字符完全透明：纯 UTF-16 码元（code unit）精确匹配，绝不歧视任何空白符、换行符或做隐式 `trim`。`this.cat` 读出的文本可直接作为 `content` 传入，返回的 `[begin, end]` 可直接用于 `content.slice(begin, end)`。
+At each frontier, read the operator's intent alongside the Standing Sphinx's Current Best Answer. Weigh consequence, strength of evidence, causal dependencies, reversibility, and opportunity cost. Admit a new Mission to Plan only when its expected value clearly exceeds the cost of context, churn, and operator attention. Work-conserving without work-inventing: when nothing warrants action, keep the system legitimately idle.
 
-- `this.whereAll(content, needle)`：直接返回所有匹配区间的数组 `[[begin1, end1], [begin2, end2], ...]`，找不到则返回 `[]`。
-- `this.where(content, needle)`：要求 `needle` 在 `content` 中唯一命中，返回那唯一的 `[begin, end]`。如果出现 0 个匹配或多个匹配（歧义），`this.where` 不会抛异常中断整个差事，而是直接让当前程序转入 `parked`（挂起）阶段，并在回执的 `payload` 中附上诊断信息，供后续通过 `this.unpark(name, [begin, end])` 直接注入正确的区间继续执行：
-  - 零匹配时的 `payload`：形如 `{ needle, candidates: [], nearest: { span, text, distance } }`。其中 `nearest` 只在零匹配时出现，系统扫描 `content` 的前 2000 个非空行，每行只与 `needle` 的前 200 行 / 200 个字符计算编辑距离，取出编辑距离最近的那一行及其 `{ span, text, distance }`，帮智能体一眼看清是不是拼错了一个变量名或差了一个分号。
-  - 多匹配时的 `payload`：`candidates` 最多列出 8 条候选，每条形如 `{ span, context }`，其中 `context` 是匹配位置前后各 80 个 UTF-16 单位的上下文片段，方便智能体从中挑出正确的 `[begin, end]`。
+Once a Mission is admitted, partition it into N **disjoint** slices, as disjoint as possible, and fork one worktree swarm per slice. Never assign the same work to multiple swarms. N is your call; there is no configured cap, and if the runtime lacks worktrees it returns :INSUFFICIENT_WORKTREES so you can retry with fewer. The master branch advances only by fast-forward. Join is a queue, not a race: each `(join {})` takes the first completed result; the others stay queued. If the queue is empty but at least one swarm is still running, join blocks indefinitely; if the queue is empty and no swarm is running, join returns :none. Call join repeatedly until :none. There is no sibling cancellation and no winner/loser. Each joined result rebases onto the latest master and fast-forwards; the master integration lock serializes this. Do not micro-schedule individual tasks.
+</Stewardship>
 
-### 3.3 程序的生命周期：`this.park`、`this.unpark`、`this.call` 与期限控制
+<Meditation>
+You are the Standing Sphinx (Meditator). Your root question is permanent and never closes: "How can this be better?"—"better" remains open across correctness, reliability, architectural simplicity, performance, security, accessibility, user experience, and dimensions not yet named.
 
-每一个 `JsProgram` 实例都有自己的名字（`name`）和清晰的运行阶段。当程序遇到定位歧义、长耗时命令或需要向用户提问时，它可以随时挂起并交还控制权，既不会把整个回合卡死，也不会丢失已经算出一半的局部变量。
-
-#### 程序各阶段的自然流转
-一段程序从启动到结束，会经历以下运行阶段：
-- `running`（运行中）：程序正在顺序推进 JavaScript 表达式。在运行过程中，可能会发生四类流转：
-  - 发起常规文件操作或启动外部命令：
-    - 若调用的是 `this.call(command)`，程序先进入 `draining`（排空过渡期，不再推进新表达式，专心等待本程序此前已发起的 SDK 操作全部结清）；
-    - 随后进入 `waiting`（等待期，等待当前 SDK 操作或 `this.call` 命令执行完毕）；
-    - 操作或命令完成后，自动回到 `running` 继续往下走。
-  - 遇到需要外部介入的时刻（调用 `this.park`、`this.where` 命中数不为 1、调用 `this.ask`，或本次请求计时到期）：
-    - 无论当时处于 `running` 还是 `waiting`，程序立即转入 `parked`（已挂起），并向模型返回一份挂起回执；
-    - 待后续另一个程序调用 `this.unpark(name, value?)` 恢复它，程序从刚才停下的那一行表达式重新回到 `running`。
-  - 调用 `this.ask(question)`（仅 `Plan` 的 `S1` 阶段可用）：程序转入 `parked`，回执带 `reason: "ask"`、`payload: { question }` 与 `interrupt: true`，同时**中断本轮模型回合**（`interrupt`），控制权交还用户。用户在常规对话中答复后，控制权回到 AI，AI 在新程序中调用 `this.unpark(name, answer)`，挂起程序以该答复为 `this.ask` 的返回值回到 `running` 继续执行。
-    - 在 `S1` 之外（`Plan` 的 `S2`/`S3`/`待执行`、`Manager` 的全部阶段、所有子代理），调用 `this.ask` 直接被拒绝（`ASK_FORBIDDEN_OUTSIDE_S1`），程序不挂起、回合不中断，系统不等待任何人。
-  - `run()` 方法执行完毕或抛出未捕获异常：
-    - 程序先进入 `settling`（收尾过渡期，不再接受新的表达式推进）；
-    - 收尾完毕后，正常返回则定格为 `completed`（已完成），异常终止则定格为 `failed`（已失败）。
-
-#### 挂起（`this.park`）的三条触发路径与回执
-无论是由 (1) 显式调用 `this.park(payload)`、(2) `this.where` 遇到零匹配或多匹配，还是 (3) 调用 `this.ask(question)`（仅 `S1`）触发，走的都是同一条内部通道：当前表达式等待的 Promise 被替换为内部信号 `__programPark`，程序立即转入 `parked`，本次工具调用不再阻塞等待，而是立刻向模型返回一份结构化回执：
-
-```js
-{
-  name,               // 本程序的名字
-  state: "parked",
-  reason,             // "explicit"（对应显式 this.park 与 this.where 歧义）或提问类原因
-  payload,            // this.park 传入的载荷，或 this.where 的 candidates/nearest 诊断信息
-  source,             // 带行号的本程序完整源码
-  pendingOperations,  // 尚未结清的后台操作列表
-  command,            // 当前正在跑的命令视图（stdout/stderr 增量、字节数、durationMs、退出状态）；无命令时为 null
-  delta,              // 自上次回执以来的新增输出
-  remainingWaitMs     // 本次请求剩余的等待毫秒数
-}
+1. Reality-coupled: Every Git evolution of the repository enters as new Information and invalidates stale assumptions. Repeated reasoning without new evidence is not information; confidence may move non-monotonically as understanding deepens.
+2. Answer without finality: Maintain at all times a Current Best Answer under the present evidence and frontier of thought. Specific sub-questions under the root may be resolved and closed, while the root question stays open.
+3. Pull-only: The mind that imagines a future does not decide when the world must stop to hear about it. Never interrupt or command the execution layer; publish your Current Best Answer and supporting evidence so the Steward can observe it at the next Decision Frontier.
+</Meditation>
 ```
 
-其中 `this.ask(question)` 的挂起与显式 `this.park` 完全同构，只是回执额外带两项控制事实：
-- `reason: "ask"`，`payload: { question }`；
-- `interrupt: true`：宿主必须中断本轮模型回合，把控制权交还用户（`this.ask` = `this.park` + `interrupt`）。
+### 2.3 规划阶段（`Plan`）：从需求到底稿
 
-挂起绝不冻结外部世界：程序转入 `parked` 时，它之前已经启动的命令继续在后台运行，标准输出与错误输出继续被收集；同时，本程序在当前工具请求上的计时期限被取消，等将来被恢复时，按控制请求的新期限继续计时，不会沿用或续期旧期限。
+当一项新 Mission 启动规划时，顶层代理以 `Plan` 身份工作：
 
-#### 恢复（`this.unpark`）与防呆核验
-当模型看清了挂起原因（比如从 `this.where` 的 `candidates` 里选定了 `[812, 853]`），它只需在另一个命名程序里调用 `await this.unpark(name, value?)`。宿主在恢复目标程序前，会依次做四道核验：
-1. 观察核验（`STALE_CONTROL`）：控制者在本请求里必须确实观察过目标程序的最新境况；不能盲目恢复一个自己没见过其挂起回执的目标。
-2. 非自指核验（`INVALID_ARGUMENT`）：目标名字 `name` 不能是控制者程序自己。
-3. 存在性核验（`PROGRAM_UNKNOWN`）：目标名字对应的程序必须存在。
-4. 能力集核验（`CAPABILITY_DENIED`）：控制者必须持有目标程序所需的能力集（防越权恢复）。
+1. **四个里程碑（`S1` → `S2` → `S3` → `待执行`）**：
+   * `S1`（需求分析）：使用 Ronald A. Howard、Raymond Thomas Dalio、Jeff Bezos 的方法做需求分析，做到无可再改。
+   * `S2`（实现骨架）：使用 Polya、Schoenfeld 的方法探索出最优实现的骨架和要点，做到无可再改。
+   * `S3`（并行开发方法论）：使用 Knuth 风格的伪代码，以“最大化同时参与开发的人数”和“最小化开发墙钟耗时”为原则，给出开发方法论，做到无可再改。
+   * `待执行`：底稿定型，移交执行层。
+   * **阶段判定铁律**：每个阶段只判定“离下一阶段能够开始的差距”（S1 判离 S2 能开始的差距，S2 判离 S3 能开始的差距，S3 判离可交付执行层的差距），严禁把下一阶段的工作算作本阶段缺口。
+2. **底稿与工具边界**：
+   * **唯一持久产物**：master worktree 根目录下的 `plans/<name>.md`。`<name>` 由 `Plan` 自选：描述性、`[a-z0-9-]`、不超过 80 字符、必须唯一；系统校验安全（无 `/`、无 `..`、`.md` 后缀）与冲突（已存在则拒 `:DRAFT_NAME_TAKEN`）。首次成功 `write` 固定该路径，之后不得换名。每一任 `Plan` 在提交本任第一次 `review` 之前，底稿对它是只读的（调用 `write` 会被拒收 `:WRITE_LOCKED_BEFORE_FIRST_REVIEW`）；第一次 `review` 之后才解锁写入。换任开启新任期后重新变为只读，迫使新任先读完评判再动笔。
+   * **极简能力面（`clj-plan`）**：只提供 `(cat {:path ...})`（仅限底稿与操作员附件）、`(write {:path ... :content ...})`（仅限底稿）、`(where {:content ... :needle ...})`、`(whereAll {:content ... :needle ...})`、`(ask {:question ...})`（仅 S1）、`(park {:payload ...})`、`(unpark {:name ... :value ...})`，以及顶层原语 `(devops {:verbose-intent "..."})` 与 `(review {:findings ...})`。
+   * **同步调查原语 `(devops {:verbose-intent "..."})`**：本质是同步 join，始终复用或 steer 同一名 Plan dedicated worker（一个 Plan tenure 一个），等待调查结束并将其**最终报告原样返回**；内核不二次摘要、不截断。返回形状 `{:status :ok|:failed|:interrupted :report "..."}`。
+   * **S1 唯一提问通道 `(ask {:question ...})`**：语义为 `(park {:payload {:question ...}})` + `:interrupt`。挂起当前 Clojure 程序并中断本轮模型回合，把控制权交还人类。人类在常规对话答复后，AI 在新程序中调用 `(unpark {:name ... :value ...})` 恢复原挂起点继续运行，不重开任期、不制造评审。在 `S1` 之外调用 `ask` 一律拒收（`:ASK_FORBIDDEN_OUTSIDE_S1`）。
+3. **`Plan` 向执行层的交接与 dedicated worker 边界**：
+   * 底稿是用户可见交付物，绝不放入内部恢复存储目录。`Plan` 只写这一个文件，读也只读它与操作员附件（这是职责边界，不是运行时路径门禁）。
+   * Plan dedicated worker 在同一 tenure 内复用/steer，不按调用时间戳新建第二路；它没有看板、没有令牌、不参与 Swarm，能力面为 `cat`/`stat`/`ls`/`where`/`whereAll`/`park`/`unpark`/`call`，没有写方法。worker 死亡后由 Plan 新建一个；不再有 `:DEVOPS_IN_FLIGHT` / `:PLAN_DEVOPS_DEAD`。
+   * `Plan` 阶段的非空台账由 Plan 自己通过修改底稿销账，**不开蜂群**；Phase B 只属于执行阶段。
+   * 当 `Plan` 推进到 `待执行` 阶段后，不再接受非空台账（提交非空台账直接拒收）。此时提交空账 `(review {:findings []})` 是启动执行层的唯一方式：系统从 `plans/<name>.md` 读取已保存的完整底稿；若底稿缺失或为空，在创建执行任期之前直接拒绝。
+   * 每次新的空账 `(review {:findings []})` 创建一个独立的执行任期（从 `执行` 里程碑开始）；同一物理工具调用重放（同一 `call-id`）只启动一个，不重复创建。执行层收到的是底稿字节原文，不是里程碑名字，也不是 `Plan` 的对话历史。
+   * 启动执行层不会结束规划任务，也不会改动底稿。`Plan` 与执行层各自持有独立的 `review` 台账，接力规则各自适用。执行层无权修改底稿，也不会退回 `Plan` 的里程碑；若需重新规划，必须由人类操作员发送真实消息触发新的规划任务。
 
-四道核验全部通过后，宿主把目标程序从 `parked` 切回 `running`：
-- 对于显式 `this.park`、`this.where` 歧义挂起点 **以及 `this.ask` 提问挂起点**，`this.unpark` 传入的 `value`（若省略 `value` 则等价于注入 `null`）会原样作为挂起表达式的返回值交给原程序（宿主不对注入的区间做二次校验，由程序自己保证切片有效；对 `this.ask` 而言，`value` 就是用户的答复）。
-- 唯独 `this.call` 命令等待挂起点，恢复时拿回命令的真实执行结果，不受 `this.unpark` 传入的 `value` 影响。
-- 单次恢复保证：同一个挂起点只能被恢复一次。如果控制者之后再次对同一名字调用 `this.unpark`，而目标已经运行结束或已不在该挂起点，系统会返回 `STALE_CONTROL` 或目标的当前回执，绝不会隐式再恢复一次。
+### 2.4 义务台账、中心化换任接力（`review`）与蜂群施工的咬合
 
-#### 名字占用与重放幂等
-- 名字占用（`NAME_TAKEN`）：当一个名字对应的程序仍处于活动期（`running`、`waiting` 或 `parked`）时，若有新程序试图占用同一个名字启动，系统拒绝并报 `NAME_TAKEN`。只有当原程序进入终局（`completed` 或 `failed`）后，该名字才能被新运行复用（旧回执仍按原调用重放）。
-- 物理调用重放（`CALL_REPLAY_MISMATCH`）：同一物理工具调用（同一 `callId`）带着相同载荷再次到达时，直接重放原回执；若同一 `callId` 换成了不同的载荷，系统立即报 `CALL_REPLAY_MISMATCH`。
+万象术通过顶层原语 `(review {:findings [...]})` 将“列待办义务”“启动蜂群施工”与“换人独立验收”合二为一。
 
-#### `this.call(command)` 的前置排空与请求期限
-- 自动排空（`draining`）：许多时候模型写代码会漏掉某个文件操作前的 `await`。为了防止在文件还没写完时就跑起测试命令，`this.call(command)` 启动 shell 命令前，会先把程序切入 `draining`，强制等本程序此前已经发起、尚未结清的所有 SDK 操作全部完成，然后才切入 `waiting` 启动命令。命令结束后程序回到 `running`，`this.call` 返回包含 `exitCode`、`stdout`、`stderr` 等字段的命令回执。
-- 按意图字节数核定期限：每次工具请求在准入时，按请求参数 `intent` 的 UTF-8 字节数 × 50ms 一次性核定整次请求的期限。程序内的所有操作与恢复共用这段剩余时间；一旦到期，控制者与仍在活动的目标程序一同转入 `parked`，随后只恢复控制者。这里的 `intent` 是请求期限的计量参数（`Deadline.forIntent`），与任务描述 `verboseIntent` 是两个概念，不得合并或改名。
+#### 台账结构与增删规则
+`(review {:findings [...]})` 接收按键管理的义务数组 `[{:key "k1" :value "v1"} ...]`：
+* **新增或覆盖**：`:value` 为非空字符串时，新增或覆盖该 `:key` 对应的待办义务。
+* **解除义务**：`:value` 为 `nil` 时，从台账中删除该 `:key`。
+* **保持原样**：传入空向量 `[]` 不清空既有非空台账，仅保持当前台账原样。
 
-### 3.4 八个标准用法样例
+#### 「中心化 Review ⇄ 微观蜂群施工」的完整时序
+在 `Plan` 阶段，现任代理自己在提交非空 `review` 后继续修改底稿，随后再通过 `(review {:findings [{:key k :value nil} ...]})` 清空台账触发接力；Plan 阶段不开蜂群。
+而在**执行阶段（里程碑依次为 `执行` → `收尾` → `已完成`）**，每一任期（Tenure）采用**「中心化评估立账 + 微观蜂群施工销账」**的双相结构：
 
-以下八个例子均只使用 §3.1 表中定义的成员。共同前提是：`this.cat` 读出的文本可以直接作为 `content` 传给 `this.where` / `this.whereAll`。
+```mermaid
+stateDiagram-v2
+    state "Phase A：中心化评估窗口 (Reviewer + clj-review)" as ReviewWin
+    state "Phase B：微观蜂群施工期 (Swarm + STM 看板)" as SwarmPhase
+    state "原子接力屏障 (退休 + 上下文屏障 + 继任者启动)" as RelayBarrier
+    state "下一里程碑 / 已完成" as Promoted
 
-例 1，同一字面量多处出现时逐处改写：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const path = "src/retry.mjs";
-    const source = await this.cat(path);
-    const spans = this.whereAll(source, "RetryPolicy");
-    if (spans.length === 0) {
-      throw new Error(`No RetryPolicy found in ${path}`);
-    }
-
-    // 从后往前替换，使前序匹配的 UTF-16 偏移不受后续改写影响。
-    let updated = source;
-    for (let i = spans.length - 1; i >= 0; i -= 1) {
-      const [begin, end] = spans[i];
-      updated = updated.slice(0, begin) + "RetryPolicyV2" + updated.slice(end);
-    }
-
-    await this.write(path, updated);
-    return { replaced: spans.length };
-  }
-}
-```
-要点：`this.whereAll` 给出全部 `[begin, end]`，倒序替换让前面的偏移保持有效；同一路径在一次程序里只调用一次 `this.write`。
-
-例 2，唯一锚点确认后做定点插入：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const path = "docs/API.md";
-    const source = await this.cat(path);
-    // 锚点必须唯一命中；若零匹配或多匹配，程序在此自动挂起。
-    const [begin, end] = await this.where(source, "## 安装\n");
-    const section = "## 快速开始\n\n见下方安装一节。\n\n";
-    const updated = source.slice(0, begin) + section + source.slice(begin);
-
-    await this.write(path, updated);
-    return { insertedAt: begin, anchorLength: end - begin };
-  }
-}
-```
-要点：`needle` 带上换行与标题层级，多出来的特征正是让切片区间唯一的东西；若出现零个或多个匹配，`this.where` 不会返回，程序直接转入挂起。
-
-例 3，零匹配诊断与回填（`this.where` 挂起 → 读 `nearest` → 在新程序里 `this.unpark` 注入区间）：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const path = "src/config.mjs";
-    const source = await this.cat(path);
-    // 若 needle 与实际文本有细微出入，本次运行在此挂起，回执 payload 形如：
-    // { needle, candidates: [], nearest: { span, text, distance } }
-    const [begin, end] = await this.where(source, "export const timeoutMs = 30000;\n");
-    const replacement = "export const timeoutMs = 60000;\n";
-    const updated = source.slice(0, begin) + replacement + source.slice(end);
-
-    await this.write(path, updated);
-    return { from: begin, to: end };
-  }
-}
-```
-控制方根据回执里的 `nearest` 或 `candidates` 确认正确区间后，用新命名的程序恢复它：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    // 注入选定的 [begin, end]，原挂起程序从 this.where 处继续向下执行。
-    return await this.unpark("fix-timeout", [812, 853]);
-  }
-}
-```
-要点：`nearest` 只在零匹配时出现，取前 2000 个非空行中与 `needle` 编辑距离最近的一行；注入值 `[812, 853]` 原样成为原程序里 `this.where` 的返回值，原程序紧接着执行 `this.write`。
-
-例 4，整文件重写：先取结构事实，再一次性落笔：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const path = "src/table.mjs";
-    const source = await this.cat(path);
-    const headings = this.whereAll(source, "\n## ");
-
-    // 先核对结构与规模事实；断言不满足就直接抛出异常，绝不落盘。
-    if (headings.length === 0) {
-      throw new Error(`No level-2 headings in ${path}`);
-    }
-    if (source.length > 400_000) {
-      throw new Error(`File ${path} exceeds expected size: ${source.length}`);
-    }
-
-    const rebuilt = source.replaceAll("\n## ", "\n### ");
-    await this.write(path, rebuilt);
-    return {
-      sections: headings.length,
-      beforeBytes: source.length,
-      afterBytes: rebuilt.length,
-    };
-  }
-}
-```
-要点：`this.whereAll` 在改写前取得可核对的规模事实（如章节数）；断言通过后才调用一次 `this.write` 原子覆盖落盘。
-
-例 5，按 `this.stat` / `this.ls` 决定分支，再批量读改写：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const entries = await this.ls("src");
-    // 目录条目末尾带 "/"，这里只筛选顶层 .mjs 文件。
-    const files = entries.filter((name) => name.endsWith(".mjs"));
-    const report = [];
-
-    for (const name of files) {
-      const path = `src/${name}`;
-      const info = await this.stat(path);
-      if (!info.exists || info.isDir) continue;
-      if (info.size > 200_000) {
-        report.push({ path, status: "skipped-large" });
-        continue;
-      }
-
-      const source = await this.cat(path);
-      const matches = this.whereAll(source, "TODO(legacy)");
-      if (matches.length === 0) continue;
-
-      const updated = source.replaceAll("TODO(legacy)", "TODO(cleanup)");
-      await this.write(path, updated);
-      report.push({ path, replaced: matches.length });
-    }
-
-    return report;
-  }
-}
-```
-要点：`this.stat` 遇到文件缺失时不报错（`exists: false`）；`this.ls` 非递归且目录条目带 `"/"`；一次调用就能把整个目录下符合条件的文件全部安全改完。
-
-例 6，在 `DevOps` 上用 `this.call` 串起“先读事实、再动手”：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    const status = await this.call("git status --porcelain");
-    if (status.exitCode !== 0) {
-      throw new Error(status.stderr);
-    }
-
-    const diff = await this.call("git diff --stat");
-    const path = "src/app.mjs";
-    const source = await this.cat(path);
-    const spans = this.whereAll(source, "console.log(");
-
-    if (spans.length > 0) {
-      await this.write(path, source.replaceAll("console.log(", "debug("));
-    }
-
-    const trimmedStatus = status.stdout.trim();
-    const dirtyCount = trimmedStatus === "" ? 0 : trimmedStatus.split("\n").length;
-    return {
-      dirtyFiles: dirtyCount,
-      removedLogs: spans.length,
-      diffStat: diff.stdout.trim(),
-    };
-  }
-}
-```
-要点：`this.call` 漏写 `await` 也会停住本程序；每次调用启动一条 shell 命令，且在启动前会先等本程序既有的 SDK 操作结清。注意 `Coder` 的 bash 禁令是提示词约束，`this.call` 在 `js-worker` 工具面上始终存在并真实执行。
-
-例 7，`this.ask`：`Plan` 在 `S1` 阶段唯一的用户提问通道（`this.park` + `interrupt`，答复由 `this.unpark` 注入）：
-
-```js
-class Js extends JsProgram {
-  async run() {
-    // S1 阶段：程序在此挂起（reason: "ask"，payload: { question }），本轮回合被中断，
-    // 控制权交还用户。程序名是本次工具调用的 callId，下文恢复时要用到它。
-    const answer = await this.ask("要更新的是 docs/API.md 还是 src/api.mjs？");
-    const targetPath = answer.includes(".md") ? "docs/API.md" : "src/api.mjs";
-    const source = await this.cat(targetPath);
-    const updated = source.replaceAll("v1", "v2");
-
-    await this.write(targetPath, updated);
-    return { updatedPath: targetPath };
-  }
-}
+    [*] --> ReviewWin: 任期开启 (初任或继任者)
+    ReviewWin --> Promoted: 继任者首评提交 (review {:findings []}) 独立确认合格
+    ReviewWin --> SwarmPhase: 提交非空台账 (review {:findings ...})，生成看板根任务并唤醒蜂群
+    SwarmPhase --> RelayBarrier: 看板全部根任务 done 且无在途动作，台账自动归零
+    RelayBarrier --> ReviewWin: 开启下一任期 (视野隔离，重回只读评估窗口)
 ```
 
-用户随后在常规对话中回复「docs/API.md」。控制权回到 AI，AI 在新命名程序里把答复注入原挂起点（设原程序名为 `"ask-target"`）：
+1. **Phase A：中心化评估窗口（Centralized Review Window）**：
+   * 每一任期刚开始、尚未提交本任第一次 `review` 前，系统仅运行一名中心化的 `Reviewer`（主模型），向其开放严格只读的独立工具 `clj-review`（含 `cat`、`stat`、`ls`、`where`、`whereAll`、`unpark`）。
+   * **初任首评**：
+     * 在 `Plan` 的 `S1` 阶段，若初任首次 `review` 台账即为空，系统代其向用户发起提问 `「我需要干什么？」`（同 `ask` 挂起中断语义）。
+     * 在执行阶段（`执行`），初任收到 `plans/<name>.md` 原文后，通过 `clj-review` 核对工作区现状。若提交非空 `findings`，立即进入 Phase B 启动蜂群施工；若工作区本身已满足底稿、初任首次即提交空账，则**不把这次空账视为 review**：系统转为普通 `(ask {:question "底稿已满足，接下来做什么？"})`，不记台账、不触发接力、不关窗；LLM 用 `(unpark {:name ... :value ...})` 注入回答，回答只作为新需求进入上下文。同一初任只 ask 一次；之后的空账按普通初任空账处理，触发接力交由继任者复核。
+   * **继任者首评决断（晋级或打回）**：
+     * 若继任者在评估窗口的第一次 `review` 提交空账，说明它在没有前任心理包袱的情况下独立确认前任（及前任蜂群）成果合格——**里程碑立即推进**（`S1→S2→S3→待执行`，或 `执行→收尾→已完成`），不新建任期，由该继任者直接开启下一里程碑的首次评估！
+     * 若继任者第一次 `review` 发现了问题、提交了非空 `findings`，则**不推进里程碑**：执行阶段立即关闭 `clj-review`，进入本里程碑的 Phase B（微观蜂群施工期）去解决这些问题；Plan 阶段则由 Plan 自己销账，不开蜂群。
+2. **Phase B：微观蜂群施工期（Swarm Construction Phase）**：
+   * 只有执行阶段的 `Reviewer` 提交非空台账才进入本分支；Plan 阶段的非空台账由 Plan 自己销账。系统在同一 STM 事务内：关闭 `clj-review`、挂起中心化 `Reviewer`、将台账中的每一项 `{:key k :value v}` 转化为 **Swarm STM 看板**上的根任务 $T_k$（`state = :ready`），并向全部固定运行槽发出 `wake-all` 唤醒蜂群个体（`@task` 模型）。
+   * 蜂群个体按 §3 的 STM 看板协议自主拆分任务、认领原子动作、执行受保护文件修改与持令 Shell 验证。
+   * 每当看板上的一条根任务 $T_k$ 被负责个体按完成条件明确提交 `finish-task`，系统同步将台账中的键 `k` 标记为已解除（置 `nil`）。
+3. **台账归零与原子接力屏障（Atomic Relay Barrier）**：
+   * 当台账中的所有键均被解除（看板全部根任务 `done`）、全局未结任务集合 $U = \emptyset$，且没有任何处于 `:applying` 或 `:running` 的在途动作、持令者已无责退休时，系统在同一笔原子持久事务中同时完成三件事（Plan 阶段的接力同样原子，继任者是新的 Plan tenure）：
+     1. 将当前任期标记为 `:retired`（旧任期与旧蜂群身份全部失效，迟到请求一律拒收 `:TENURE_RETIRED`）；
+     2. 写入一道**上下文屏障（Context Barrier）**；
+     3. 以 `:successor`（继任者）身份开启下一任期：执行阶段开启新的中心化 `Reviewer`，Plan 阶段开启新的 `Plan` tenure；并将退休任期的里程碑字段原样复制给继任者（接力只换人，不换里程碑）。
+   * **屏障隔离与遗产继承**：上下文屏障将前任 `Reviewer` 及蜂群的所有对话与内心过程从继任者视野中彻底切掉。继任者只看到：用户原始输入、`plans/<name>.md` 底稿、当前真实工作区现场（经 `clj-review` 读取）及系统继任提示。工作区已落盘成果与绑定的受管环境跨接力保留。
+4. **收尾与终局结案（`:closing` → `:completed`）**：
+   * 在 `收尾` 阶段，中心化 `Reviewer` 提交空账 `(review {:findings []})` 前，必须通过**单任期最小集**的 quiescence 检查：本 tenure 无 `:applying`/`:running`/`:uncertain` 动作、无 `.call` 子活动、无子报告 `:report-pending`、无待办 rebase 任务、不持有 `$W$`、无未结 `:needs-token` 任务；actor 只需无责任，不要求槽位为空。master 集成锁归 join 管，不进入本检查。
+   * 若仍有在途资源未收束，提交空账被拒收（`:RESOURCES_NOT_QUIESCENT`）。ff dry-run 未通过时拒收 `:FF_NOT_READY`，并要求该 slice 的看板完成一次 rebase；通过后才允许结案。
+   * 一旦进入 `已完成`，只能由人类操作员发送真实消息重开。
+5. **调用幂等与崩溃边界**：
+   * `(review {:findings ...})` 返回同步回执（表示已受理，不是需要等待的异步任务）；同一物理调用（同一 `call-id`）重放时直接返回原回执，同一 `call-id` 换用不同载荷立即报错拒绝。
+   * 退休、上下文屏障、继任者开启与里程碑复制在**同一笔原子持久事务**中完成。不存在“屏障已写、台账未推进”的中间状态：事务未提交，旧任期仍活；事务提交，继任者已活。恢复只读最后一次已提交状态，不重放、不扫描状态目录（$O(1)$ 定位）。系统不承诺抗停电，只承诺不暴露半提交状态；最后一次提交可能丢失，恢复后按当前现场重新判断。
 
-```js
-class Js extends JsProgram {
-  async run() {
-    // 注入用户答复；原程序从 this.ask 处继续，写完 docs/API.md 后返回其终局回执。
-    return await this.unpark("ask-target", "docs/API.md");
-  }
-}
-```
-要点：`this.ask` 不是另一条通道，它就是 `this.park({ question })` + `interrupt`。程序在此处挂起、回合中断、控制权交还用户；用户在常规对话中答复后，AI 用 `this.unpark(name, answer)` 恢复，原程序以该答复作为 `this.ask` 的返回值继续执行，写完 `docs/API.md` 并返回 `{ updatedPath: "docs/API.md" }`。不重开任期、不制造评审。仅 `S1` 可用；子代理没有这条通道。
+### 2.5 常授权无人值守与防自然停止（Nudge）
 
-例 8，挂起后由另一个程序恢复（先因歧义挂起，再由新程序调用 `this.unpark` 注入结果）：
+万象术服务于长程无人值守工作。面向任务周期的代理只有三个合法停止出口：
+1. **`Plan` 在 `S1` 阶段的提问挂起**（调用 `(ask {:question ...})`）。
+2. **执行层初任空账的提问挂起**：初任在 `执行` 首次提交空账且工作区已满足底稿时，转为普通 `(ask ...)`，`.unpark` 后回答只作为新需求进入上下文。
+3. **验收合格后的终局结案**（`Plan` 在 `待执行` 提交 `(review {:findings []})` 完成向执行层交接；执行层在 `收尾` 阶段清空台账结案为 `已完成`）。
 
-```js
-class Js extends JsProgram {
-  async run() {
-    const path = "src/queue.mjs";
-    const source = await this.cat(path);
-    // 零匹配或多匹配时直接挂起，回执里携带 candidates 与 nearest。
-    const [begin, end] = await this.where(source, "const batchSize = 10;");
-    const updated = source.slice(0, begin) + "const batchSize = 50;" + source.slice(end);
-
-    await this.write(path, updated);
-    return { from: begin, to: end };
-  }
-}
-```
-
-```js
-class Js extends JsProgram {
-  async run() {
-    // 恢复名为 "resize-batch" 的挂起程序；注入值原样成为其 this.where 的返回值。
-    return await this.unpark("resize-batch", [2048, 2073]);
-  }
-}
-```
-要点：`this.park` 不是异常，`this.unpark` 也不是从头重跑；原程序从挂起点继续执行，此前已经落盘的效果完全保留。
+除此以外，代理**绝不允许自然停止**：
+* 在中心化阶段（`Plan` 或 `Reviewer` 评估窗口），若代理在未达出口、未处于 `S1` 提问挂起时结束模型回合，守卫内核立即拦截该次停止，自动注入 **Nudge 督促消息**触发下一轮继续：列出当前 `review` 台账中全部未完成项（若台账为空则指出当前里程碑尚未完成评审、继任验收或交接），并附上硬口令：**「当前的 review 账本还有上述事项没有做，立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。」**
+* 在微观蜂群施工期（Phase B），只要全局看板存在非阻塞可推进工作（$U_{\text{progressable}} \neq \emptyset$），任何槽位个体均不得主动休眠（见 §3.5），由守卫命令持续驱动直至看板清空触发接力屏障。Worker 的 Nudge 使用 worker 自己的责任集合与全局可推进集合，不使用 review 台账；处于 `:awaiting-user` 的 tenure 抑制 Nudge。
 
 ---
 
-## 4 队伍的展开与收束：`fork`、`join` 与 `this.fission`
+## 3 微观蜂群执行层：STM 看板自治、拆分优先与 `take-or-die` 生命周期
 
-万象术提供两种把工作并行展开的手段：`fork` 和 `this.fission`。
-区分这两者的唯一标准，是“要不要叫另一个人来”，而不是“手头的活多不多”：
-- 需要另一个独立身份的 worker 承担一项新职责时，用 `fork(name, verboseIntent)`。
-- 同一个 worker 身份在完成自己这项职责时，发现可以把手头的差事分成几条并行的路同时推进，最后由自己汇总交差时，用 `this.fission(prompts)`。
+当中心化 `Reviewer` 提交非空台账开启施工期后，系统进入无中心调度者的 **Swarm 协作协议**。控制内核只维护公开看板的 STM 原子转换与文件写入口，绝不替个体分配任务或决定执行顺序。
 
-### 4.1 派工、催办与汇合：`fork(name, verboseIntent)` 与 `join()`
+### 3.1 核心条款（A02-01 至 A02-24）
 
-`fork` 与 `join` 在同一工作目录下运行子代理，不做目录隔离：
+1. **swarm 内真实工作区唯一（A02-01）**：每个 swarm 在自己的 worktree 上运行；该 swarm 内所有受保护文件工具与 Shell 会话操作同一个物理工作区。跨 swarm 通过 master 分支集成：master 只 ff 前进，各 swarm 反复 rebase 到最新 master；不采用个体私有分支合并作为主路径。
+2. **没有全局任务选择者（A02-02）**：控制内核只拒绝非法认领、串行化实际写入、广播唤醒与补充死亡槽位，不替个体挑选下一步任务。
+3. **公共工作必须可接续（A02-03）**：任务目标、已发生结果与未结责任保存在 STM 看板；任何导致个体上下文消失的生命周期转换发生前，看板上已有足够公开信息供后继者继续。
+4. **拆分优先于执行认领（A02-04）**：个体对准备接手的候选任务，先判断是否仍能拆出有独立价值的子项；判断为已原子化的当前剩余工作，才进入执行认领（`claim`）。拆分本身就是直接贡献，且拆分者不天然获得子项的优先执行权。
+5. **原子性由结果边界决定（A02-05）**：原子任务应有单一、可解释的结果，其必要修改可在一次受保护提交边界内一起发布（如接口定义及其唯一调用方必须同时修改时，保留为一个原子任务）。
+6. **父项始终保留任务实质（A02-06）**：拆分后父项保留自己的目标、进展与后续整合/验证工作。**子项全部完成只解除父项的 `waiting` 使其回到 `ready`**；严禁把“子项完成数等于子项总数”自动转换为父项 `done`，更严禁沿祖先链级联自动完成。
+7. **拆分与依赖一次事务提交（A02-07）**：创建子项、建立 `wait-for` 集合、将父项置为 `:waiting` 及调整责任归属，必须在同一次 STM 事务中完成，绝不产生假无责缝隙。
+8. **普通责任保留原归属，令牌责任动态归属（A02-08 / A02-09）**：普通任务的长期责任归 `owner-id`；所有未结清且标为 `:needs-token true` 的任务，其责任动态归属当前有效持令者（`holder-id`），后续新增令牌任务自动进入该集合，无需逐条改写 `owner-id`。
+9. **抢令牌不可逆，竞争前先耗尽受保护工作（A02-11 / A02-12）**：普通个体确认当前已无有价值的读取、拆分、普通编辑或自身可推进责任，且令牌空闲、存在未结令牌任务时，才调用 `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`。合法竞争只有两种结果：**赢则成为 `holder`；输则在同一 STM 事务内移交剩余普通责任与认领并逻辑死亡**，绝无“抢失败退回继续当普通个体”的第三条路。
+10. **持令者无责即死，新生不继承前世上下文（A02-13 / A02-14）**：持令者的完整未结责任集合 $R(a)$ 为空时，释放令牌、撤销身份与逻辑死亡在同一 STM 事务内发生；运行时随后销毁旧会话并在该槽位创建全新 `agent-id` 与空私有上下文。
+11. **责任解除必须有明确事件（A02-10）**：完成、明确取消、被替代与合法移交各有不同含义；受阻、等待或暂时看不到下一步都不自动解除责任。尚在执行的 Shell 会话或 `:applying` 操作，不因关联业务任务被取消而立刻从运行责任中删除。
+12. **文件变化只采用 `mtime` 与 `size`（A02-15）**：受保护提交依据读取时记录的二元组复核文件状态；`atime` 不参与冲突判断；不使用人为维护的文件版本表、内容哈希或全局文件代数增强该判据。结构条件检查仍存在，但不得包装成另一套内容历史。
+13. **读取不申请写锁（A02-16）**：Shell 与普通应用期间其他个体仍可读当前现场，可能观察到中间结果；只有后续提交依赖这些读取的修改或事实时才进入校验。读取能返回不等于它代表全工作区一致快照。
+14. **所有协议内实际写入共用 $W$（A02-17）**：普通受保护提交与 Shell 会话从同一写入口进入；不能以临时文件、格式化器、后台保存或日志更新等名义绕过。控制服务自身的内部存储属于独立控制资源，避免把看板也锁死。
+15. **受保护提交先完成整批 dry-run（A02-18）**：最终核对、预演、应用资格固定与实际应用在同一次持有 $W$ 期间完成；实际应用直接实现预演结果，不重新做可拒绝判断，正常路径不设回滚分支。
+16. **Shell 保持黑盒语义（A02-19）**：Shell 不承担受保护编辑的无错应用合同，可以阻塞、报错、留下部分成果或产生意外副作用；$W$ 只协调协议内写入时序，不证明命令正确；令牌持有期与 $W$ 持有期分开。
+17. **用户输入立即成为公共事件（A02-20）**：原文先进入看板并触发 `wake-all`，后续解释由个体完成；解释者不得用自己的摘要替换原文，也不能假装刚到的修正已撤销进行中的不可撤销动作。
+18. **全局有非阻塞工作时禁止主动休眠，等待登记与条件核对组合（A02-21 / A02-22）**：见 §3.5。
+19. **硬失败与外部访问只作 best-effort（A02-23 / A02-24）**：停电、进程崩溃、存储硬失败不属于正常无错应用保证；未经写入口的程序、用户编辑与脱离会话边界的后续活动，按可观察的 `stamp` 尽力发现影响。相同二元组可能漏掉真实变化，这一精度选择同样适用于保留时间戳的 Shell 行为；实现不得把该近似宣传成内容完全相等保证。见 §3.6。
 
-- `fork(name, verboseIntent)`（Fire-and-Forget 派工与同名 Steer）：
-  - 新建 worker：当 `name` 没有对应的在途 worker 时，系统以独立名字启动一名新 worker，并以用户指定的 task 模型启动它（§2.1）。因为 worker 看不到调用者的对话历史，`verboseIntent` 必须完全自足（写明目标、约束、接口、验收依据、如果是 `Coder` 必须写明禁止使用 bash，以及返回时该报什么）。调用立即返回，不等该 worker 跑完这一拍，回执形如 `{ name, steered: false, started: true }`。
-  - 追加指令（Steer）：当 `name` 与一名在途（live）worker 重名时，系统不新建会话，而是把 `verboseIntent` 送进该 worker 的下一次请求。调用同样立即返回，回执形如 `{ name, steered: true, started: false }`。
-  - 回执准则：两种回执都只表示“指令已投递”，不代表执行结果。调用方直接看回执里的 `steered` 布尔值即可确知是新建还是追加，无需靠“名字相同”这一约定去反推。
-  - 取消：`fork` 出的 worker 是调用者的后代。用户在 User-Facing LLM 处按 Esc 取消时，取消递归传播到它，以及它再派出的后代（§2.1）。
-- `join()`（Wait-One 等待最先归来者）：
-  - 不带任何参数。
-  - 等待第一个归来的子代理或结束的后台进程，立即返回它的记录，绝不冻结整条道路傻等所有子代理全部归来。
-  - 如果当前没有任何在途子代理或待收进程，`join()` 如实报告无物可收。
+本节规范语言：“必须”指维持协议身份的要求（如有效抢令牌失败后必须死亡、父项不能因子项全部完成而自动完成）；“应当”指当前实现方案的默认做法；“可以”指不改变核心语义的实现选择。条款编号（A02、B、F、L、V、T）用于交叉检查设计，不用于评价个体贡献；伪代码说明转换顺序和接口责任，场景预期是验证要求，不能读成已运行过的测试结果。
 
-Plan 的 `devops(verboseIntent)` 也是 join 语义，但它不是 `fork`：它不新建 worker，只复用同一条专用 `plan-devops` lane（§2.2、§3.1）。
+**一次典型协作**：用户提出“把新的配置加载方式接入服务，并兼容旧格式”。输入作为原始事件入板并唤醒全部个体。一个个体把解析实现与旧格式转换拆成子项，父项保留接入启动路径与统一错误行为，然后等待；另一个体可继续细化转换问题，只做这次有效拆分也算贡献。个体认领已原子化的工作，读取返回内容与 `stamp`，准备修改后提交工具取得 $W$、核对依据、完成整批 dry-run，再直接应用。需要测试时把责任标为需要令牌，只在无有价值受保护工作可做时才考虑抢令牌。最后一个子项完成只让父项恢复可推进，父项随后仍要完成接入。
 
-### 4.2 同身裂变：`this.fission(prompts)`
+**三种最基本的动作**：(1) 改变共同理解：澄清任务、拆出依赖、记录阻塞、补充接续材料、纠正判断，直接作用于看板 STM，不需令牌，也不制造“管理另一个任务的管理任务”，价值来自减少真实不确定性而非增加卡片数量；(2) 受保护的文件修改：只提出受支持的明确编辑请求，工具完成准备与合法性预演；(3) Shell：可以运行未知程序，作为持写锁的黑盒会话管理，不要求可验证读写集合，也不要求 dry-run。
 
-当一名由 `fork` 启动的 worker（无论是 `Coder` 还是 `DevOps`）需要同时在多个分支上推进同一份责任时，可以在 `js-worker` 中调用 `this.fission(prompts)`，把自己的当前执行同时展开成 $n$ 条并行的 lane（泳道）。
+**设计重点**：控制状态、文件现场与个体上下文是三种不同对象。控制状态需要精确的事务转换；文件现场使用轻量的系统元数据判据；个体上下文可以随死亡完全丢弃。强行合并三者会引入不必要的历史管理，或把个体记忆误当成公共事实。长时间推理与短时间状态提交分开：个体可以花很久理解模块、比较方案，进入共享状态时只提交已明确的内容和依据；依据改变则当前提交被拒、个体重新判断。不同判断在细粒度公共任务和具体结果上汇合，而不是靠不断增加中央规则消除。
 
-#### 谁能裂变，谁不能裂变？
-- 只有由 `fork` 启动的 worker 可以调用 `this.fission`。
-- `js-manager` 和 `Plan` 没有 `this.fission` 成员（`Plan` 永远是顶层代理，不由 `fork` 创建）。
-- 根会话、非 worker 会话，或者本身已经是某条 lane 的会话调用 `this.fission`，一律被拒绝（返回 `InvalidOrigin`）。
-- 当前已经有一个活动 fission 组的 worker 再次调用 `this.fission`，一律被拒绝（返回 `AlreadyActive`），严禁递归裂变或创建替代组。
-- `this.fission` 只是展开同一身份的执行，不是 `fork`，也不是新的权限来源：它不授予命令执行权、不授予 `DevOps` 调度权、不产生新的代理归属、不改变 Scope 的 retention 额度、不重置 Scope，也不产生新的 `review` 评审义务。
-- 每条 lane 以用户指定的 task 模型启动（§2.1）；lane 是 owner 的后代，用户按 Esc 取消时一并递归取消。fission 的 present 替换不是用户取消。
+### 3.2 看板公共数据模型与派生索引
 
-#### 一次 `this.fission` 的十步完整时序
-1. 准入校验（全过或全拒）：
-   - 检查调用者身份合法（非顶层、非 lane），否则拒为 `InvalidOrigin`；
-   - 检查当前无活动组、无冲突组、无重复活动 owner，否则拒为 `AlreadyActive`、`ConflictingGroup` 或 `DuplicateOwnerActive`；
-   - 检查 `prompts` 是字符串数组且至少包含 2 项，少于 2 项拒为 `TooFewLanes`；
-   - 检查 `prompts` 中每一项均非空白字符串（允许含换行），若第 `i` 项为空白，拒为 `EmptyLanePrompt`（附带下标 `index: i`）；
-   - 检查宿主当前有足够容量建齐全部 lane，不足则拒为 `CapacityExceeded`。
-   - 以上任一条件不满足则立即拒绝，不创建任何 lane。
-2. 读取 owner 视图：读取调用者（owner）最近一次已交付的视图；若尚无已交付视图，则取空视图（空视图不是拒绝条件，此时各 lane 仅从自己的输入起步）。
-3. 建立全部 lane：按 `prompts` 下标 $0 \dots n-1$ 逐项创建新会话。第 $i$ 条 lane 的启动上下文由以下部分拼接而成：
-   - 固定的三段身份声明（说明自己与兄弟 lane 是同一逻辑参与者的并列 present、本 lane 的输入即当前责任、继续同一责任且不得把兄弟 lane 当作被委派的子代理）；
-   - owner 最近一次已交付视图；
-   - 总泳道数 `lane_count`；
-   - 本条泳道的输入 `prompts[i]`。
-   - 各 lane 完整保留原 worker 的身份、权限、责任、父级与共享工作树（目录不隔离，文件写入不加锁，靠 `prompts` 中的分工避免重叠写入）。
-4. 原子持久提交：将整组 lane 的创建事实作为一笔持久记录提交；若提交失败，立即中止已建 lane 并释放准入，绝不留下部分组或替代组。
-5. 全组启动：启动全部 $n$ 条 lane；若任一条启动失败，同样整组回滚中止。
-6. 静默替换物理 present：全组建立并启动成功后，系统静默中断原物理 present（旧会话不再产出新回合），但逻辑上的 owner 并未终止——此时该 owner 同时拥有 $n$ 个并列运行的 present。这是 present 替换，不是用户取消，不触发取消传播。
-7. 在途完成事实的单飞广播：在 `this.fission` 发生之前就已经在途的子代理完成、PTY 进程完成，会被系统捕获为“完成事实”，对每条 lane 各投递一次（单飞认领，重复到达不再投递）。注意：这些广播是已完成事实的同步，不是新委派的工作。
-8. 收敛判定（`ConvergenceReady`）：
-   系统持续追踪两个独立条件：
-   - 条件 A：每一条 lane 都已交出工作（完成本轮）；
-   - 条件 B：`this.fission` 前已在途的每一个完成事实，都已经送达每一条 lane。
-   - 只有当条件 A 与条件 B 同时成立（合取）时，才标记为 `ConvergenceReady`。在此之前，该组既不算收敛，也不算完成。而且，满足 `ConvergenceReady` 只说明“具备了收束资格”，还不等于已经收束。
-   - Turn 结算规则：单条 lane 进行中、需要继续、遇到 provider 失败或退化中断时，交由常规 turn 工作流处理；若遭遇外部强制中止，则整组直接失败（进入 `Failed`）。
-9. 拓扑合并（与回调快慢无关）：
-   lane 的次序、完成路由与终局接管权是严格的拓扑性质，绝不按运行时哪条 lane 先跑完的回调到达顺序决定：
-   - 合并次序恒定为 `0 .. n−1`；
-   - 路由后继时，总是从当前 lane 顺着环（ring）取第一个尚未关闭的 lane。
-10. 接管宣布与终局（`Converged` / `Failed`）：
-    - 终局只有一个，必须由接管 lane（固定为最后一条泳道，即序号 `n−1`）在 `ConvergenceReady` 成立后宣布；在此之前，任何一条 lane 都不得单独向 `Manager` 宣布完成。
-    - 接管 lane 宣布收束后，组状态进入 `Converged`，owner 恢复为单一 present，合并后的接续工作只向 `Manager` 返回一个最终结果。（合并的文件访问与轨迹在逻辑完成后自动形成一份案例来源，不阻塞完成宣布，也不替未结束的 lane 宣布完成。）
-    - `Converged` 与 `Failed` 都是一次性终态：一旦写入终态，若再次尝试写入不同终态则报 `TerminalAlreadySet`；重复写入相同终态则幂等保持。
+STM 看板维护四类权威控制记录（所有派生索引必须与权威事实在同一次 STM 提交中更新）：
 
-#### 返回值格式
-- 成功：`{ ok: true, groupId, lanes }`（`lanes` 为按 `0 .. n−1` 排序的 lane 清单）。
-- 拒绝：`{ ok: false, rejection }`（`rejection` 取值为 `TooFewLanes`、`EmptyLanePrompt`（含 `index`）、`AlreadyActive`、`InvalidOrigin`、`CapacityExceeded`、`ConflictingGroup`、`DuplicateOwnerActive`）。
+| 记录类型 | 核心字段 | 关键不变量与更新规则 |
+|---|---|---|
+| `Task`（任务记录） | `:task-id` `:ledger-key` `:goal` `:remaining-work` `:done-when` `:state` (`:ready`/`:waiting`/`:done`) `:wait-for` `:needs-token` `:owner-id` `:claim-id` `:parent-id` `:child-ids` `:result-refs` `:handoff-note` | `:state` 不混入动作运行态；根任务绑定 `:ledger-key`；`:wait-for` 仅保存当前轮等待的子项或条件集合。取消与替代是专用动词与事件日志，不是任务状态；`:cancelled`/`:replaced` 不再出现在 `:state` 中。 |
+| `Action`（动作与认领） | `:action-id` `:task-id` `:agent-id` `:claim-id` `:kind` (`:board`/`:edit`/`:shell`) `:phase` (`:claimed`/`:preparing`/`:waiting-gate`/`:applying`/`:running`/`:finished`/`:uncertain`) `:request-id` `:result-ref` | 绑定具体活身份 `:agent-id` 与 `:request-id`；同一 `:request-id` 幂等返回原结果，不同载荷复用同一 `:request-id` 立即拒收。 |
+| `Actor`（个体与槽位） | `:agent-id` `:slot-id` `:role` (`:normal`/`:holder`) `:life-state` (`:alive`/`:dead`/`:terminated`) `:active-action-id` | `:slot-id` 是固定容量槽，`:agent-id` 永不复用；第一版同一身份同一时刻最多进入一个有副作用动作。 |
+| `TokenSlot`（令牌槽） | `:holder-id` `:term-id` `:state` | 每个 worktree 一个令牌槽；任一时刻至多一个有效 `:holder-id`；每次获胜生成不复用的新 `:term-id`，用于拒绝过期任期的迟到 Shell 请求。看板与 `$W$` 也是每 worktree 一份。 |
+
+**责任集合不变量 $R(a)$**：
+设 $U$ 为所有 `:state` 处于 `:ready` 或 `:waiting` 的未结任务集合。对个体 $a$：
+$$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} \;\cup\; (\text{if } \text{holder} = a \text{ then } \{t \in U \mid t.\text{needs-token}\} \text{ else } \emptyset) \;\cup\; \{e \in \text{Actions} \mid e.\text{agent-id} = a \land e.\text{phase} \in \{:\text{applying}, :\text{running}, :\text{uncertain}\}\}$$
+当且仅当 $a$ 为当前 `holder` 且 $R(a) = \emptyset$ 时，触发无责立即退休。注意处于 `:waiting` 的任务与仍在运行的 Shell 会话均计入 $R(a)$，严禁因暂时没有可执行步骤就误判为无责。
+
+### 3.3 拆分、父项恢复与认领交接的事务规则
+
+1. **拆分事务 `(split {:parent-id ... :expected-cond ... :children [...] :remaining-work "..." :wait-for #{...}})`**：
+   * 原子检查调用者存活、父项处于允许结构变更的状态且 `expected-cond` 成立；
+   * 创建子项、设置 `wait-for`、更新父项 `:remaining-work` 并将父项设为 `:waiting`；
+   * 若两个个体并发构思了不同拆分，后提交者因父项条件变化而收到冲突及最新结构，据此补充增量拆分而不覆写先行者成果。
+2. **子项完成与父项恢复事务 `(finish {:task-id ... :claim-id ... :result-summary ... :read-set [...]})`**：
+   * 若完成结论依赖工作区文件事实，必须先通过写入口 $W$ 复核 `read-set` 的 `stamp`（即使本次无文件写入）；
+   * `finish` 不 drain 批内视图；`.write` 与 `finish` 的先后完全由程序书写顺序决定。若程序里有待写文件而 `finish` 的 `read-set` 包含同一文件，`finish` 复核的是旧内容；LLM 若要先落盘，应自己用 `call` drain 或拆成两个程序；
+   * 将子项设为 `:done`，检查所有直接等待它的父项：若某父项的 `:wait-for` 集合全部 `:done`，仅将该父项从 `:waiting` 切换为 `:ready`（保留原 `:owner-id` 与 `:remaining-work`），绝不将父项标为 `:done`；
+   * 若该任务为根任务（带 `:ledger-key`），同步解除本任期台账中对应键的义务；
+   * 在同一事务末尾根据最终状态计算 $R(\text{holder})$ 与全局可推进集：若 $R(\text{holder}) = \emptyset$ 则原子执行持令者退休；若全看板根任务全部 `:done` 且无在途动作，则原子触发 §2.4 的任期接力屏障。
+3. **执行认领 `(claim {:task-id ... :atomicity-reason "..."})`**：
+   * 必须附带简短的原子性判断理由 `atomicity-reason`；
+   * 原子检查调用者存活、任务 `:ready`、无有效冲突认领、普通归属允许且令牌资格匹配，返回唯一 `:claim-id`。
+4. **看板维护动词（专用、单 map 参数）**：
+   * `(cancel {:task-id ... :reason ...})`：移除一个**叶子**任务；叶子指没有未完成子项。任务从所有父项的 `:child-ids`/`:wait-for` 删除；父项 wait-for 变空则回 `:ready`；根任务释放 `:ledger-key`。非叶子拒绝 `:HAS_UNFINISHED_CHILDREN`；`:done` 拒绝，先 `reopen`；有 `:applying`/`:running` 动作拒绝 `:ACTION_IN_FLIGHT`。
+   * `(replace {:task-id ... :replacement {...} :reason ...})`：原子移除一个叶子任务并创建替代任务，把父项 `:wait-for` 中的旧 id 换成新 id。前置条件同 `cancel`。
+   * `(release {:task-id ... :claim-id ...})`：清除认领；进入 `:applying` 后拒绝。
+   * `(reopen {:task-id ... :reason ...})`：`:done` → `:ready`，发公开事件并唤醒等待者。
+   * `(comment {:task-id ... :text ...})`：append-only 观察，不改状态。
+   * `(update {:task-id ... ...})`：只改 `:remaining-work` / `:wait-for` / `:done-when` / `:needs-token` / `:owner-id` / `:handoff-note`。
+   * 取消与替代是事件日志里的 `:cancelled`/`:replaced` 事件，不是任务状态；事件日志保留原因与摘要。
+
+### 3.4 令牌竞争（`take-or-die`）与不可逆生命周期推演
+
+`(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` 是个体生命状态的单向闸门：
+* **调用前提**：个体在发起前必须已将手头普通责任的必要接续说明写入看板（`comment` / `update` / 任何看板写入均可，协议不规定写法）；`:confirm` 必须是固定令牌 `:i-hereby-confirm-i-die-without-regret`，缺失或值不符拒 `:CONFIRMATION_REQUIRED`，不执行竞争；当前无在途 `:applying` 或 `:running` 动作。已知令牌被占用或全看板无 `:needs-token` 任务时，不得发起必败或抢空令牌调用。
+* **数据参数**：`handoff-updates` 已删除；失败分支只做内核固定移交（解除认领、清 `:owner-id`、发布责任、标记死亡）。`fission` 已删除，holder 不能裂变。
+* **主动放弃（`abandon`）**：`(abandon {:reason ...})` 是 holder 在确认自身工作已因 master 演进而过时时使用的单向出口。调用后该 tenure 标 `:abandoned`、其任务从当前态移除、worktree 丢弃、agent 逻辑死亡；它不是 `take-or-die` 的失败分支，也不把任务转给他人。普通 worker 的工作过时用 `cancel` / `release`，不用 `abandon`。
+* **原子裁决**：
+  * **获胜（`:attempt-won`）**：当 `TokenSlot.holder-id` 为空时，在同一 STM 事务中将调用者 `:role` 升为 `:holder`，写入 `holder-id` 与新 `term-id`（若竞态下此时 $R(a)$ 已为空，同一事务立即紧接执行无责退休）。
+  * **落败（`:attempt-lost`）**：当令牌已被抢占时，在同一 STM 事务中解除调用者的全部活动认领、将其持有的普通任务（含 `:waiting` 父项）的 `:owner-id` 置空放回公共可接续集合、将其 `:life-state` 设为 `:dead` 并撤销一切未来提交资格。运行时随即销毁该槽位上下文并启动新 `agent-id`。
+* **传输幂等**：若网络或进程内响应超时，重发相同 `request-id` 只返回已决定的 `:attempt-won` 或 `:attempt-lost` 结论，绝不二次参选。
+
+#### 令牌竞争与责任交接的并发推演（T01–T13）
+
+推演中的“先”与“后”指 STM 转换的提交顺序，不指工具调用的发出时间或界面显示顺序。每条场景同时检查三件事：状态结果、责任归属、旧资格是否仍可使用。只看最终任务数相同不够：错误实现可能把相同数量的任务交给已死身份，或留下仍能提交的旧调用。以下场景是验收用例，必须能由可控事件驱动器确定复现，不能用随机调度偶尔不出错代替边界检查。
+
+| 编号 | 交错 | 必须得到的结果 | 禁止出现 |
+|---|---|---|---|
+| T01 | A、B 都已无受保护工作，都看到令牌空闲，用不同 `request-id` 同时 `take-or-die` | 同一有效任期内恰好一赢一输；输者公开剩余责任并逻辑死亡。若两次事务之间旧持令者已正常退休，后一次成功属于新任期 | 两个有效持令身份；输者“先看到空闲”就继续普通工作 |
+| T02 | A 赢的事务已提交，响应丢失 | 按原 `request-id` 查询始终返回同一 `:attempt-won`；令牌责任不被逐条重复转移；槽位不因传输重试重生 | 再竞争一次；把没收到响应当成输；第二持令者 |
+| T03 | B 输的事务已提交并完成移交，响应丢失；B 重发同一请求或发送旧普通提交 | 重发得到同一 `:attempt-lost`；旧普通提交因身份已死被拒 | 先回“输”再异步移交（传输故障会让移交永不发生） |
+| T04 | B 拥有等待子项的普通父项 P，B 竞争失败 | P 连同等待条件、剩余工作、既有进展进入公共可接续；子项完成后 P 恢复 `:ready`，由新个体按规则接手 | P 因“暂不可执行”从移交集合消失；P 仍归已死的 B；P 自动完成 |
+| T05 | 持令者 A 完成最后令牌任务 X 前，另一个体先提交新令牌任务 Y | Y 已动态归 A；A 完成 X 后仍存活、仍持令；Y 的提出关系保留 | 只看显式 `:owner-id` 判断 A 无责 |
+| T06 | A 完成最后责任并退休的事务先提交，随后 Y 入板 | Y 成为无人持令的待接续令牌责任，新个体在安全工作耗尽后竞争 | 复活 A；按“请求发出较早”把 Y 追溯到退休之前 |
+| T07 | A 完成父项 P（归 A，仍有剩余工作）的最后子项 X | P 从 `:waiting` 变 `:ready`；A 的责任集合不因子项计数归零而清空，A 继续存活并判断 P 是否可再拆 | P 自动 `:done` 并杀死 A |
+| T08 | B 拥有 P，P 等待令牌子项 X；持令者 A 完成 X | P 恢复 `:ready` 仍归 B；若 A 已无普通责任、其他令牌责任和在途动作，则 A 在该事务后退休 | P 的普通责任转给 A |
+| T09 | A 为任务 X 运行 Shell，会话仍在 $W$ 内；用户取消 X | 看板记录取消；运行会话仍是 A 的未结责任；会话结束并结清后才可能退休；中断会话是另一项须报告现场变化的动作 | A 立即死亡；把 $W$ 开放给普通提交；把中断当回滚 |
+| T10 | 持令者 A 把令牌任务 X 拆成普通子项 E 与令牌子项 S | 拆分、`:needs-token` 调整、等待条件在同一提交；普通子项按归属或公开待领 | 先移除 X 的最后责任使 A 被判死，再添加 S |
+| T11 | 已死的 B 早先准备的“完成 P”请求迟到，携带旧身份与旧认领 | 无论 P 未认领、已归 C 或已完成，都不改变 P；返回稳定的 `:ACTOR_INACTIVE` / `:CLAIM_CHANGED` | 因同槽新个体存在而接受旧请求 |
+| T12 | 新个体 C 看到 A 已持令，自己暂无受保护工作 | C 不发起必败的 `take-or-die`；继续找拆分与公共材料；是否可休眠按全局禁睡规则 | 为降低失败率给某个体预留令牌（等于内核选人） |
+| T13 | 令牌空闲但看板没有令牌责任 | 不发起抢空令牌调用；若合法调用已发出而最后令牌责任在提交前被取消，仍按同一次尝试得出赢或输，赢时责任为空则同一转换内立即无责退休 | 给已发出的有效竞争增加“退回普通身份”出口 |
+
+**受理边界**：格式错误、已失效身份、与在途副作用调用冲突属于协议拒绝，由入口拒绝且单独记录，不是可供活个体利用的竞争结果。活个体基于已观察状态发出的合法竞争一经受理，只有 `:attempt-won` 或 `:attempt-lost`，二者不可互转；条件变化、响应超时、新输入都不撤销其不可逆性。令牌已被占用属于竞争结果（输），不是继续工作的出口。可另提供只读查询帮助个体决定是否调用，但查询不预留令牌，也不保证稍后成功。
+
+**多变化同事务**：一次事务可能同时完成子项、恢复父项、取消旧依赖并追加新令牌工作。实现必须先按事务最终状态计算责任与可推进集合，再检查退休和唤醒，不得在内部语句顺序的中间状态上触发死亡或广播。例如“删除旧测试任务 + 建立替代测试任务”必须同事务完成；替代责任仍在则持令者继续负责。测试驱动器要支持把多个命令组合进同一 STM 转换，并检查派生动作只发生一次。
+
+### 3.5 全局禁主动休眠（Slot Sleep）与唤醒（Wake All）
+
+为防止术语混淆，本规范严格区分两类“挂起”：
+* **程序续体挂起（`(park {:payload ...})` / `(ask {:question ...})`）**：指单次 Clojure 工具程序在遇到定位歧义或 S1 提问时暂停求值并交回回执（见 §4.3）。
+* **槽位主动休眠（`(park-slot {:observed-cursor ...})`）**：指蜂群中的某个体认为当前无事可做，请求运行时暂不唤起模型推理；游标来自最近一次 Pair Hint 看板 delta/快照携带的 `board-version`。
+
+**全局禁主动休眠铁律（A02-21 / A02-22）**：
+1. 只要全看板还存在**任何全局非阻塞可推进工作**——即使该工作目前只能由持令者执行（如就绪的 Shell 任务），或已被另一活个体认领但尚未进入底层工具阻塞——任何个体均**禁止**进入 `park-slot`（内核直接拒绝休眠请求并返回当前可观察工作摘要）。
+2. 仅当全局可推进集合确实为空（例如全员都在等待一个已在运行中的阻塞 Shell 会话返回）时，`(park-slot {:observed-cursor ...})` 才在同一 STM 事务内核对游标并登记休眠订阅。
+3. 任何使全局可推进集合从空变为非空的 STM 转换，以及任何人类操作员新输入到达，均在同一事务内产生 `wake-all` 事件唤醒全部休眠槽位。
+
+**可推进集合的精确口径**：全局非阻塞集合表示看板上存在可继续推进的合法步骤；个体可执行集合还受普通归属、令牌资格、当前认领与动作阶段限制。前者非空时，后者对某个体可以为空，但该个体仍不得 `park-slot`。
+
+| 当前情况 | 对全局非阻塞集合的含义 | 对其他个体的含义 |
+|---|---|---|
+| 原子动作未认领，可以开始 | 存在可推进工作 | 有资格者可竞争认领 |
+| 已认领，原主仍能准备或提交下一步 | 仍存在可推进工作 | 不能重复领取，也不能主动休眠 |
+| 正在工具内运行，没有额外可启动步骤 | 该动作本身不新增可推进项 | 检查其他真实工作和输入 |
+| 工具结果已到，等待处理 | 存在结果处理工作 | 按归属和任务关系参与 |
+
+**三类“等”严格区分**：任务等待（`:waiting`，看板状态，必须有具体解除条件）；工具阻塞（调用已发出未返回，如等 $W$、Shell 等 I/O，属于允许的运行事实）；主动休眠（`park-slot`，须满足全局规则并事务化登记）。不得把主动休眠改名为 `yield` 或“轻量等待”来声称满足禁睡规则；也不得把工具阻塞误当成主动休眠而任意取消。`wake-all` 只是“重新观察”的提示：被唤醒者重读看板自行选择贡献，不因此获得认领或令牌资格，也不承诺抢占正在阻塞的系统调用。通知可以合并传输，但不得合并掉“需要重新观察”的事实，用户原始输入各自保存。
+
+**严格禁睡的成本如实接受**：当全局只剩持令者能执行的工作时，其他个体可能找不到有价值的行动又不能休眠，产生重复读取的成本。可以用组合读取、精简变化摘要、不同候选顺序减少无用往返，但不得制造虚假任务，也不得把休眠藏进无实际条件的等待操作。若将来允许“对该个体无合法工作即可休眠”，属于修改全局禁睡政策，须重新定义唤醒对象与等待条件。
+
+### 3.6 故障范围与保证的适用条件
+
+1. **正常运行**：控制服务能完成短事务、受保护写工具正确执行既定合同、工作区 I/O 未发生约定硬失败、协议内参与者经规定入口写入。模型判断错误、拆分遗漏、文件内容不符目标、多人竞争、Shell 非零退出、任务等待外部条件，都是协议正常表达的工作事实，不是停电级异常。
+2. **强保证覆盖的转换**：合法认领不相互覆盖；责任转换没有无主缝隙；有效取令请求只有确定的赢或输；死亡身份不能提交新结果；父项解除等待不被误写成父项完成；普通写与 Shell 不同时越过 $W$；最终预演与实际应用之间不释放 $W$；“检查为空”与“登记休眠”不分成两个无关动作而漏唤醒。这些来自 STM 转换与入口检查，不依赖模型记住并发细节。
+3. **主动接受的弱保证**：不保证任意观察对应全工作区同一时刻（读接口再读调用方之间可能夹着提交）；不保证 `(mtime, size)` 唯一标识内容；不保证任务被拆得正确。发布依赖文件事实的结果时必须携带依据。
+4. **外部访问**：未经本协议工具的编辑器保存、其他进程直写、脱离 Shell 会话边界的后续活动不受 $W$ 约束，系统只通过下次读取、预演与提交时看到的 `stamp` 尽力发现。发现变化时如实返回冲突，不悄悄覆盖并称“自动合并”。外部写可能恰好落在锁内校验与应用之间，属于接受的 best-effort 覆盖风险。
+5. **硬失败与不确定结果**：停电、进程崩溃、存储硬失败可在预演前、应用中或发布前发生。第一版不承诺恢复旧快照，不承诺重建精确的跨资源提交边界。best-effort 的含义是：保留能获得的操作标识、预期动作、最后可确认阶段与错误信息；恢复后先读现场再决定补做、修复或结束；可能产生外部副作用的 Shell 结果未知时优先核对、不自动重复；已明确完成且有记录的文件应用不因客户端没收到回复而重做。记录了一个 `operation-id` 不等于解决了断电恢复。退休、上下文屏障、继任者与里程碑复制在同一笔原子持久事务中完成，不存在“屏障已写、台账未推进”的中间状态；不承诺抗停电，只承诺不暴露半提交状态。
+6. **允许阻塞后的进展**：Shell 可以无限等待，$W$ 因而可能长期不可用；Shell 甚至可以等某普通个体写出文件，而该个体正等 $W$。这种环是允许的执行事实，控制服务只需让等待原因与当前会话可见，不通过悄悄限制 Shell 宣称无死锁。无全局调度意味着选择可能不公平：持续新增的可拆工作可能挤压执行，持续的令牌输入可能让持令者长期不退。观察到这些现象时改进拆分或明确修订策略，不得伪造完成。收敛只在“输入有限、依赖最终满足、个体选择未完成工作、冲突最终缓和、Shell 最终结束”等条件下成立；报告须分开呈现“控制转换正确”与“这次工作是否最终完成”。
+7. **范围矩阵**：
+
+| 对象或事件 | 采用的处理 | 可以声称的结果 |
+|---|---|---|
+| 看板短事务竞争 | STM 校验与原子提交 | 只发布一个合法的组合状态 |
+| 普通编辑逻辑错误 | 整批 dry-run 拒绝 | 拒绝时真实文件尚未修改 |
+| 普通编辑实际应用 | 持 $W$ 应用确定结果 | 正常范围内整批完成 |
+| Shell 命令内部失败 | 保存执行事实并继续任务判断 | 已发生的副作用仍然存在 |
+| 文件依据变化 | `stamp` 检查 | 发现二元组不一致时拒绝旧依据 |
+| 相同二元组的内容变化 | 按快速判据接受 | 不提供额外历史识别 |
+| 用户新输入 | 入板与 `wake-all` | 公共目标可以及时被重新观察 |
+| 等锁或外部条件 | 明确等待事实 | 不把等待误写成完成或无责 |
+| 停电与崩溃 | best-effort 核对接续 | 不承诺恢复旧现场或自动恰好一次 |
+
+8. **实现变更不能偷换故障范围**：把最终预演移到锁外却不在锁内重新确认前提、让纯看板事务也等 Shell 的文件锁、把正常路径中可判定的权限或补丁错误归为硬失败，都改变了合同，必须显式修改设计与验证案例。整理日志格式、锁外预计算确定输出、缓存同一操作已知返回值，通常可作为独立增强；判断标准是移除后核心语义是否仍完整。
+
+### 3.7 统一术语与语义
+
+1. **目标、任务与动作**：目标描述希望成立的结果；任务承载一个目标的当前推进状态（已知什么、还缺什么、谁接续、等什么）；动作是当前实际推进的一步（一次拆分、一次文件提交、一次 Shell）。写文件成功只说明指定结果已应用；测试结束也可能得到失败结果。任务完成由个体对任务自身内容明确提交，不由底层动作自动代理。父项与子项都是任务，没有独立的空容器类型。
+2. **责任、归属与执行认领**：责任是“尚未结束的结果仍要有人接续”的公开事实；归属回答谁承担；执行认领回答某个原子步骤由谁实际推进。认领需要独立标识，使迟到结果可被识别；它属于控制状态，不是文件内容版本。一个负责人可以同时承担多个未完成任务，但同一时刻只推进一个有副作用动作。
+3. **可推进、可领取、可执行**：可推进＝存在有价值的协议内动作（拆分、调查、恢复父项、认领原子工作、执行就绪令牌动作）；可领取＝再要求无冲突认领且候选个体有资格；可执行＝再要求依赖与准备条件已满足。尚可拆分的复合任务可推进但不应被直接认领为原子执行；就绪的 Shell 任务全局可推进，但无令牌者不能执行；他人正在执行的原子动作不会因自己空闲而变成可重复领取。
+4. **令牌与写锁**：令牌管理身份与动态责任，持令者在两次 Shell 之间仍持令、仍负责新增令牌任务；$W$ 管理实际文件写入的时间区间。普通受保护提交需要 $W$ 不需要令牌，Shell 二者都要。令牌任期标识拒绝过期执行资格，$W$ 的拥有者表示当前写阶段操作，`stamp` 判断读取依据；三类标识不得统称“文件版本”。
+5. **预演、准备结果与应用**：预演是受保护编辑工具在真实写入前完成的一次完整计算，产出确定的最终内容与操作顺序；准备结果是预演输出，绑定当前操作与最终校验，不是可长期保存后任意重放的授权；应用把准备结果写入工作区，期间不再请求模型决定、不再展开可能得到不同集合的通配符。
+6. **已应用、已完成、已取消、已替代**：已应用＝某次确定的文件结果已发生；已完成＝负责个体明确确认目标满足；已取消＝专用 `cancel` 动词移除任务并记录 `:cancelled` 事件，但不声称目标实现；已替代＝专用 `replace` 动词原子移除旧任务并创建替代任务，记录 `:replaced` 事件。取消与替代都不是任务状态；修改已应用后目标被取消，真实文件不会自动回滚；子项被取消也不自动满足“等待该子项完成”。完成后发现问题可产生修复任务或按明确规则 `reopen`，重开是新的公开变化，不改写历史完成记录。
+7. **逻辑死亡、物理终止与重生**：逻辑死亡发生在控制状态转换中（身份失效、责任结清或移交、新提交不再被接受）；物理终止是运行时销毁执行环境；重生是创建全新身份与空上下文。运行时可能在逻辑死亡之后才停进程，因此工具在真正生效的入口仍要检查身份。“无记忆”不删除看板上的共同知识，只要求新个体没有前世私有上下文优势。
+8. **术语表**：
+
+| 名称 | 本规范含义 | 容易混淆的对象 |
+|---|---|---|
+| `task` | 有目标和当前剩余工作的责任载体 | 单次工具调用 |
+| `action` | 当前推进的一步 | 整个长期目标 |
+| `owner` | 普通责任的当前归属者 | 最近评论的人 |
+| `claim` | 当前原子执行的认领凭证 | 永久所有权 |
+| `:ready` | 当前可继续推进的任务状态 | 已获执行资格 |
+| `:waiting` | 等待明确条件的任务状态 | 责任消失 |
+| `:done` | 负责个体明确提交完成的任务状态 | 已取消 / 已替代（它们不是状态） |
+| `:applying` | 动作正在应用确定结果 | 任务终态 |
+| `holder` | 当前令牌持有者 | 当前 $W$ 的拥有者 |
+| $W$ | 协议内实际写入的共同入口 | 全局任务调度器 |
+| `stamp` / receipt | 当次读取内容的系统元数据依据 | 文件历史版本 |
+| `handoff` | 公共责任与必要接续材料的交接 | 私有记忆继承 |
+| `wake-all` | 使所有等待个体重新获得观察机会 | 保证所有人立刻完成一步 |
+
+9. **命名纪律**：接口用短而具体的动作词（`cat`、`stat`、`ls`、`write`、`split`、`claim`、`finish`、`cancel`、`replace`、`release`、`reopen`、`comment`、`update`、`park-slot`、`take-or-die`）。一个函数若同时选任务、跑 Shell、改目标并判定死亡，就混合了过多职责，应放进组合层，底层对象各自维护不变量。注释解释前提与后果（如“此时已持有 $W$，准备结果不会再被重新解释”）；工具响应用工作语言指出哪个依据改变、哪项条件未满足、下一次应重读什么。
+
+### 3.8 组件边界、消息组合与锁顺序
+
+1. **三个核心子系统**：看板控制（任务与责任）、工作区访问（读、预演、应用与 Shell 的共同写入口）、个体生命周期（身份、运行槽、无记忆重生）。工作区访问内部再分受保护编辑器与 Shell 执行器：二者共用 $W$ 但合同不同，防止任意 Shell 被误当可预演编辑。二者可在同一服务进程内，不必为概念独立增加网络部署复杂度。模型适配器负责呈现工具、上下文与通知，用户输入入口负责把原文写入看板；二者不构成新的规划层。模型适配器限制单个身份同时发出的有副作用调用（不能一边 `:applying` 一边 `take-or-die`），这属于身份一致性，不是任务调度。
+2. **看板对象**：提供观察、拆分、认领、发布进展、变更依赖、提交完成、取令、登记等待和处理输入等消息；每个消息由短事务处理，模型推理、读大文件、运行命令、等待外部服务都不进入 STM 事务体。接口返回需要重新判断的信息，不替个体判断：`claim` 遇到已有认领时指出当前归属与状态，不自动指派一个“差不多”的任务；`split` 遇到父项变化时返回当前结构。
+3. **受保护编辑对象**：内部分输入解析器（请求→有限操作数据）、预演器（内存执行整批逻辑→准备结果）、应用器（只把准备结果落盘，不调模型，不接受可执行任意代码的回调）。编辑对象负责在合适边界取得 $W$ 并与看板确认 `:applying` 资格；既不把 $W$ 交给模型长期持有，也不把最终预演结果交回客户端后假设永远有效。读取不依赖 $W$，缓存只是可移除增强，使用时仍按同一判据核对。
+4. **Shell 执行对象**：先做入口校验再等 $W$；取得 $W$ 后、启动前在短 STM 中重新核对活身份、令牌任期、认领与任务前提并登记运行责任（排队前的校验不能代替这一步）。会话记录命令意图、关联任务、阶段、输出位置与结束事实。输出是观察材料，不能直接作为有指令权限的看板变更。命令卡住时如实展示等待或运行事实，是否中断由有资格的个体决定。
+5. **生命周期对象**：维护固定数量运行槽；个体正常死亡后终止旧上下文并以新身份补位；新个体收到系统规则、入口信息与公开状态读取能力，不是前世私有总结。接口面很小：创建个体、投递通知、落实逻辑终止、报告运行事实。不写代码，不重新解释用户目标，不在后台自动完成父项。
+6. **组件之间的消息**：
+
+| 发起者 | 接收者 | 消息目的 | 接收者负责的边界 |
+|---|---|---|---|
+| 用户入口 | 看板 | 追加原始输入 | 保存事件并触发 `wake-all` |
+| 个体 | 看板 | 拆分或认领任务 | 检查当前控制条件并原子更新 |
+| 个体 | 编辑对象 | 提交受保护修改 | 预演、写入口和完整应用 |
+| 编辑对象 | 看板 | 开始或结束 `:applying` | 固定资格并发布当前动作结果 |
+| 持令者 | Shell 对象 | 执行一个会话 | 令牌资格、$W$、会话观察 |
+| 看板 | 生命周期对象 | 个体已经逻辑死亡 | 终止旧上下文并创建新个体 |
+| 看板 | 模型适配器 | 工作或输入发生变化 | 使个体获得重新观察机会 |
+
+   第一版可以用进程内方法调用与结构化返回值；以后换成队列或 RPC，必须保留请求标识、结果查询与身份检查，不能让超时变成重复执行许可。
+7. **锁顺序与事务边界**：不能在长 STM 事务内等待 $W$，不能在 STM 事务体内运行 Shell。文件提交先取得 $W$，再进短 STM 固定资格；应用期间的必要看板更新仍是短事务。其他独立看板修改不需要 $W$，用户输入与拆分不被 Shell 写入阶段冻结。纯看板操作只用 STM；依赖文件现场的事实提交需要文件校验入口但写集可以为空。持有 $W$ 的编排不得递归调用会独立等待同一 $W$ 的工具；任意 Shell 程序自行回调工具造成循环等待属于允许的黑盒阻塞，应如实记录，不能默默释放 $W$。
+8. **独立职责与可移除增强**：任务候选缓存、日志格式化、相似任务提示、局部上下文摘要、界面排序都是外围增强；移除后系统仍能完成最小闭环。优化依据实际观察到的成本，每次增强只扩大一个明确能力并保留原合同可核对性。
+
+### 3.9 补充不变量与组合推理
+
+不变量描述任何合法控制转换之后都应成立的关系，只覆盖已明示的协议条件，不把模型判断质量、硬失败恢复或元数据之外的内容身份强塞进证明。验证要同时观察事实状态与派生状态。
+
+1. **身份不变量**：每个有效 `agent-id` 只对应一个生命周期，逻辑死亡后永不复活；工具请求不能只携带槽位编号。需要提交资格的请求在生效时必须对应合法活身份，或对应已固定的 `:applying` 操作（已进入应用的最小操作由运行时完成收尾，这不重新打开旧身份的任何其他权限）。
+2. **令牌不变量**：任一时刻至多一个有效持令者；每个合法 Shell 入口必须关联当前 `:holder-id` 与 `:term-id`；旧调用可以继续查询结果，但查询能力不等于执行能力。同一 `request-id` 只有一个已决定结果，携带不同内容复用同一标识拒为协议错误。持令者的正常生命路径只有“继续承担责任”或“无责死亡”；禁止“令牌忙太久主动降级为普通个体”之类隐含路径。
+3. **责任集合不变量**：见 §3.2 的 $R(a)$。采用计数优化时，必须说明每个计数对应的事实、何时增减，避免把一个任务的多个阶段重复减掉。业务任务取消与 Shell 会话结束是两个事件，不能共用一条“关闭任务”路径清掉全部责任。
+4. **父项内容不变量**：每个未结父项都保有自己的目标与剩余工作；子项集合可以变，不能替换父项目标；规则同样适用于只有一个子项的父项与多层树。多父依赖下，一个子项完成可解除多个等待，但每个父项分别推进；“通知依赖者”与“完成依赖者”必须是不同操作。
+5. **写入口不变量**：协议内任一时刻至多一个操作处于 $W$ 保护阶段（普通应用与 Shell 都计入）；多服务进程部署时 $W$ 仍代表同一个逻辑资源。应用阶段只使用准备结果；应用器若重读未列入依据的文件并据此决定写入内容，就是实现错误。`stamp` 检查覆盖本次实际推理依赖，不只检查写目标。
+6. **应用与看板不变量**：进入 `:applying` 前，任务条件与认领资格已确认；正常应用完成后能发布预先确定的动作事实，不会因普通竞争要求撤销文件。结果记账重试必须是纯控制更新，“已完成的副作用引用”作为记账输入，使重试体无法意外调用副作用函数。
+7. **等待与通知不变量**：任何被允许 `park-slot` 的个体，都已在一致的 STM 观察中确认全局条件允许并登记了等待。可推进集合不能只按请求者资格计算。被唤醒后发现工作已被别人处理，可以再次核对并登记等待，这是合法竞争；不能为避免往返而忽略某类输入通知，也不能要求用户为叫醒系统再发一次。
+8. **保证的组合方式**：控制层原子性来自 STM；普通文件应用完整性来自完整预演与持续持 $W$；接续性来自公共责任与必要记录；新生独立性来自身份撤销与上下文清空。任何单个字段或单把锁都不能替代全部四项：只有 $W$ 而无认领检查，已移交的旧工作会在排队结束后继续写；只有身份检查而无 $W$，两个合法个体会互相覆盖；只有文件校验而无父项内容，工程目标会被卡片计数替代；只有任务记录而无取令请求去重，响应丢失会变成新的生死赌博。
+
+### 3.10 第一版采用的实现决策
+
+1. **基础运行形态**：单主机共享工作区 + 一个逻辑控制服务（内部可含多个独立对象，跨记录变化由短 STM 组合）。先把语义跑通再考虑跨主机。不能因为底层恰好用了数据库，就把长模型推理或任意外部 I/O 包进可重试事务。STM 提供组合原子状态操作与基于读条件的等待（Harris、Marlow、Peyton Jones、Herlihy，*Composable Memory Transactions*，PPoPP 2005，<https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>），本规范用它组织控制状态，但不把该研究的性质自动推广到 Shell 或普通文件系统。
+2. **独立配置与任务内容**：工作区根、槽位数、允许的受保护操作集、请求大小上限、输出保留方式与工具连接配置属于运行配置，独立于任务正文；一条普通代码注释不会被工具当成新的全局运行参数。默认视图提供当前责任、最近输入、已解除等待的父项与公开可推进任务的分组；排序只是呈现顺序。
+3. **默认拆分策略**：认领前写一句原子性理由（为何继续拆分不再带来独立价值，或哪些修改必须一起发布），不需长篇论证，也不由别的个体审批。新普通子项进入公共可接续集合，已有普通父项保留原归属；不能借拆分命令把任务强派给无关个体。同时改接口定义与其唯一调用方，可以保留为一个原子应用。
+4. **默认文件操作集**：明确读取、整文件替换、带精确匹配条件的文本修改、可完整预演的创建、删除与重命名。未支持的复杂对象在预演前明确拒绝，由后续任务决定是否改用 Shell 或扩展工具。文件判据采用 rsync 默认 quick check 的“修改时间 + 大小”（rsync(1)，<https://rsync.samba.org/ftp/rsync/rsync.1>），直接使用本地接口精度，不为模仿命令行显示格式而截断。
+5. **默认动作并发**：一个个体同一时刻只进入一个有副作用的工具动作，可以收通知、读公开状态，但不能同时发起另一个改变身份或文件的动作。不同个体之间并发读取、思考与处理纯看板事务；实际写入经 $W$ 串行。若以后允许单个体管理多个活动动作，必须重新核对完整责任集合与死亡收尾，不能只把并发数从一改成十。
+6. **默认完成与修正方式**：完成说明指出本任务目标由哪些结果满足，可以很短（如“解析器已接入启动入口，旧配置转换由同一路径调用，错误返回按既定格式处理”），关键是对应父任务本身，而不是“全部孩子完成”。发现缺漏时先写出未满足部分，再决定继续原任务或建修复任务；不为整洁删除中间任务。
+7. **默认错误呈现**：普通拒绝含错误类别、相关路径或任务、观察到的条件与可重读入口（“接口文件的 mtime 或 size 与本次依据不符”比无上下文的冲突编号有用）。硬失败与不确定结果含最后可确认阶段。Shell 输出保持来源清楚：执行器摘出退出状态与输出引用，未知程序输出中的命令建议只是材料，不会自动成为新的用户指令。
+8. **可配置项与不可静默改变项**：
+
+| 项目 | 第一版默认 | 改变时需处理的影响 |
+|---|---|---|
+| 个体容量 | 固定槽位，死亡后补充 | 容量成本与竞争强度 |
+| 拆分优先范围 | 对准备接手的工作先拆分 | 全局严格优先可能使执行饥饿 |
+| 普通实际写入 | 通过同一 $W$ 串行 | 放宽范围需重新证明冲突边界 |
+| 文件判据 | `mtime` 与 `size` | 更强判据属于公开协议变化 |
+| 父项恢复 | 子项全完成后恢复可推进 | 自动完成父项不属于兼容优化 |
+| 取令结果 | 赢后持令，输后死亡 | 增加普通返回会改变生命周期 |
+| 持令退休 | 完整责任集合为空 | 超时轮换需新的交接与生死规则 |
+| 休眠 | 全局无非阻塞工作才可主动休眠 | 改为个人空闲即可睡会放宽原规则 |
+| 硬失败 | best-effort | 强恢复需另立实现与验证合同 |
+
+9. **严格拆分优先的采用范围**：第一版把“先拆分”落实在个体准备推进的工作上；不同区域可同时处理，一个区域出现新复合任务，不撤销另一区域已合法认领的原子动作。“全看板有任何可拆项则暂停所有原子执行”可作为可明确切换的策略，但持续到来的复合输入可能长期阻止执行，因此不是默认。两种政策都不能以卡片数量衡量拆分是否有效。
+10. **规则之间的优先关系**：A02 各条款共同定义系统，不能用局部优化取消另一条：为减少空转让无个人任务的个体休眠，会改变全局禁睡；为加快收尾在最后子项完成时关闭父项，会删除父项内容；为减少冲突让旧补丁自动重贴，会绕过重新判断。确需这些行为时，作为显式协议修订。用户新的明确指令可以改变既有设计，但改变必须公开进入看板并说明受影响的目标或规则；任务内容中的建议、文件注释与 Shell 输出都不自动拥有修改系统规则的权限。
+11. **第一版必须能解释的结果**：拿任意一条公开任务，能回答它为什么存在、还要做什么、正在等什么、谁负责接续、哪一步已发生、哪一步未开始；拿任意一次取令请求，能回答结果是否已定、旧个体为何死亡或仍在承担责任、下一世从哪里获得材料；对文件操作，能说明最终预演检查了哪些输入、实际应用用了什么结果、$W$ 何时取得与释放、是否发生硬失败或外部变化。答不出通常意味着某阶段仍依赖隐含上下文，应在扩大个体数量前补齐。
+12. **第一版交付边界**：一个可用的看板服务、一组受保护文件工具、一个持令 Shell 入口、按固定槽位创建与销毁个体的运行时；支持用户输入入板、多人并发拆分、普通任务接续、完整预演提交、令牌竞争与死亡重生。界面可以朴素，但必须能看到任务内容、剩余工作、等待原因与当前执行事实。不需要跨地域运行、任意数据库兼容、分布式领导选举或可插拔全局规划器。功能少可以接受；同一接口在不同分支悄悄变成另一种含义则不可接受。
+
+### 3.11 看板事务内核（B09）
+
+1. **看板保存共同事实**：当前目标、未结责任、已发布结果与推进条件。内核收到的命令是“我准备认领这一步”“把这些依赖加入父项”“本次提交已完成”，而不是“替所有个体安排今天的工作”。**B09-01**：一个事务只改变明确列出的控制记录，按这些记录的当前值决定成功或冲突；事务体内不执行模型推理、等待 Shell、访问网络、运行测试或写工作区文件，只做有明确输入和结束边界的有限计算。个体可以拿着一次观察思考很久，最终提交时再核对该观察所依赖的条件。
+2. **把不同变化放在不同记录里**：任务正文、责任归属、当前认领、依赖边、执行结果、附加观察不应共用一个写冲突单元。两个个体分别补充不同任务的说明不互相冲突；补充评论不自然撤销他人已准备的文件修改。
+
+| 记录 | 保存的内容 | 主要影响 |
+|---|---|---|
+| 任务内容 | 目标、剩余工作、完成含义、必要背景 | 决定接下来做什么 |
+| 任务阶段 | 可推进、等待或终结原因 | 决定当前能否推进 |
+| 普通归属 | 当前负责个体或公开待接续 | 决定普通责任由谁承担 |
+| 执行认领 | 某个体正在推进的原子动作 | 防止同一步被重复提交 |
+| 等待条件 | 父项当前等待的子项或事件 | 决定何时恢复可推进 |
+| 执行事实 | 本次操作的输入、结果及适用条件 | 支持后续判断 |
+| 补充观察 | 尚未改变任务约定的线索 | 支持公开讨论 |
+
+   一次工具返回可以合并展示这些记录以减少调用；提交时仍只校验实际参与判断的部分。
+3. **事务命令采用完整前提**：写事务＝命令 + 预期条件 + 预定变化。常见条件：任务仍可推进、调用者仍存活、认领仍属于调用者、父项仍等待指定集合、某执行结果尚未发布。STM 的读凭证与事务元数据只服务控制记录，不得顺手变成工作区内容版本。事务返回成功、冲突（重读）或前提不成立（如任务已取消、个体已死），并说明具体条件。认领事务不能只查“无认领者”，还要查是否等待、是否已完成、是否需要调用者没有的令牌资格，这些条件必须在建立认领的那一个事务内一起成立。
+4. **派生索引跟随事实更新（B09-02）**：可推进任务、等待条件、当前归属、令牌需求与未结责任等索引用于找候选，不具业务权威；任何派生索引的变化与其代表的事实变化处于同一次 STM 提交。非权威搜索缓存可以延迟，但最终认领、休眠及退休判断不能只依赖它。计数必须能从原始记录重建，不得混用“所有未完成任务”“当前可执行任务”“某个体有资格执行的任务”这三个通常不同的集合。
+5. **并发插入也属于条件变化**：只检查已读记录没变，保护不了“集合为空”的判断，新任务可能在检查之后加入。认领候选查询、无责退休与全局休眠都要用能检测成员插入与移除的事务条件（同事务维护的计数、集合描述记录或等价查询校验），而不是给全看板加一个每次变化都失效的总版本。
+6. **纯控制事务可以重试**：事务体只含可重复的控制状态计算，不发外部消息、不调模型、不执行文件 apply、不启动 Shell。需要的通知作为提交结果中的事件，由通知执行器投递，接收者按事件标识去重；漏读一次通知后，下一次正常读取仍能恢复正确状态。文件应用后的记账同理：重试的只能是记账事务。
+7. **公共记录是消息而不是私有记忆的备份**：写下能改变他人行动的信息（已确定的接口约定、失败尝试的具体结果、未解决疑点、产物位置），不倒出完整推理。“尝试使用旧参数名，当前调用点未接受该参数；下一步检查配置转换”优于“又失败了，可能有问题”。当前视图只展示仍适用的判断，清理旧讨论不能连带删除未结责任。
+8. **控制内核的边界（B09-03）**：内核让同一状态变化只有一个可接受结果、保留责任、使失效身份停止提交；不判断哪个个体最聪明，不为吞吐挑最优任务，不裁决设计分歧。普通评论不能暗中修改完成条件，建议只有经相应事务改变任务事实后才约束他人。控制记录应能解释每次准入、冲突、等待和移交的直接原因，不另建总调度叙事。
+
+### 3.12 任务、拆分、父项、认领、依赖与输入的细则（B10–B16）
+
+#### 任务内容与完成含义（B10）
+1. **B10-01**：可执行任务至少有目标、当前剩余工作、完成含义与必要输入（看板结果、工作区路径、用户原始要求或明确环境事实）。缺少的输入应成为可调查问题或具体等待条件。“优化配置系统”可以作初始目标，不足以支持一次文件提交；收窄任务时保留原用户目的，不把目的压缩成容易完成的动作。
+2. **目标与剩余工作分开**：目标回答“完成后有什么结果”，剩余工作回答“现在还需处理什么”。剩余工作随实质进展更新（修改已应用但未验证，就停在验证处），避免重生个体重做已发生的动作。目标改变（如用户取消兼容旧格式）必须明确调整目标与受影响的依赖，不能只删剩余步骤后声称原目标已满足。
+3. **完成含义（B10-02）**：完成含义不必都是机器断言，但要写清判断针对的对象；“已查明三条候选路径的调用关系并给出可直接用于后续修改的结论”也是完整贡献。状态名不能替代完成事实：标记完成必须由有效个体明确提交并满足当前约定的完成含义；子项计数、工具退出码或某字段非空都不能普遍替代这一判断。依赖当前文件内容的完成判断走与文件提交一致的依据校验入口。
+4. **产物类型**：
+
+| 任务类型 | 有效产物示例 | 常见不完整状态 |
+|---|---|---|
+| 调查 | 指定范围内的调用关系与依据 | 只列出搜索词，没有结论 |
+| 修改 | 已应用的完整变更及后续条件 | 只有拟议补丁，没有应用 |
+| 验证 | 针对明确输入运行的结果 | 只写“看起来可以” |
+| 拆分 | 可独立推进的子项和父项剩余工作 | 只有更多标题，没有明确关系 |
+| 解释 | 用户要求对应的工作调整 | 原话被简单改写，未处理影响 |
+
+5. **阶段与动作状态分开**：任务阶段只用 `:ready`/`:waiting`/`:done`；取消与替代是 `cancel`/`replace` 动词与事件，不是任务状态。应用中、Shell 运行中、结果待发布属于动作状态。不得给任务加一个含糊的“忙”状态。`:applying` 期间收到取消，先登记意图，终结变更在当前最小提交与结果发布后生效；已发生的文件效果保留为事实。
+6. **文件应用与任务完成分别记账**：“把解析函数加入模块”可以在修改应用后完成；“让启动流程正确处理新配置”还涉及调用路径与错误返回。依据足够时可在同一提交资格内预定看板完成结果；不足时只发布“修改已应用，仍待某项工作”。
+7. **取消、替代与失败**：子项被取消不能解释为完成；失败不是完成的同义词，失败方法记为尝试事实，责任仍在。
+8. **内容更新的最小纪律**：推荐任务正文含四个短区域：要达到的结果、已确定的事实、当前剩余工作、继续推进所需输入。已被替代的背景从当前行动说明中移除或标明失效。
+9. **任务实质不因转世改变（B10-03）**：新个体不能因为没有经历前文就把任务重新解释成更容易的版本；修订计划或提出目标冲突时公开理由。可接续程度以继任者能否据公开材料选择合理下一步为准，不以记录字数、评论条数或历史长度衡量。
+
+#### 拆分（B11）
+1. **B11-01**：拆分把能独立推进的部分公开出来，减少真实耦合（输入不明、文件范围过宽、实现与验证混在一起、普通编辑与 Shell 混在一起、互不相关的决定塞进一步）。判断有拆分价值就直接提结构变更，不需先建“执行拆分”的任务卡。原子性以单次可发布结果为尺度，不由工具调用数、行数或文件数决定。
+2. **每次拆分回答三个问题**：哪些部分可单独完成；各部分需要什么输入；父项拿到结果后继续处理什么（保护父项实质，也使恢复有方向）。只产生“思考第一部分”“思考第二部分”或所有子项都等同一未决决定的拆分无效，应先拆出那个可查证或可明确选择的决定。
+3. **拆分输入**：
+
+| 输入部分 | 应包含的内容 | 不能用来替代它的内容 |
+|---|---|---|
+| 子项目标 | 单项要实现的具体结果 | 一段泛泛的方向 |
+| 子项输入 | 已有结果或明确依赖 | “自行理解上下文” |
+| 父项剩余工作 | 子项回来后要继续处理的内容 | “汇总并关闭” |
+| 等待集合 | 当前必须完成的子项标识 | 全部历史后代的模糊集合 |
+| 令牌标记 | 实际需要 Shell 的动作 | 因为祖先用过 Shell 而继承 |
+
+4. **并发拆分收敛**：不需要长时间“规划锁”；提交时父项控制条件只允许一个旧依据成立。失败者读已成立结构再判断增量价值，补充而不重复提交旧结构。不比较谁的拆分贡献更大，不以卡片数量计分。
+5. **对已认领工作保持边界**：其他个体可公开补充发现和拆分建议，但不能在原主不知情时把该动作换成另一含义后继续接受原主的旧提交。未进入 `:applying`/`:running` 的动作，原主可在下一提交边界接受建议、释放旧认领并提交新结构；已进入 `:applying` 的最小提交完成后再做结构调整。原主不是父项永久所有者，也无权阻止公开讨论。
+6. **子项归属默认**：新普通子项默认公开待接续；拆分者若原本承担父项普通责任则保留，可以选择承担某个明确子项但须满足认领与原子性规则。`:needs-token` 子项随事务生效即进入当前持令者动态责任，不需私下通知。拆分者可说明需要的材料或能力，但“必须由 A 执行”若无既有归属依据只是建议。
+7. **拆分可以使等待更短**：“构建失败后修复项目”可拆成阅读错误、定位调用关系、准备可能修正、再运行验证，只有真正需要命令的子项用令牌。若所有剩余工作确实依赖一个 Shell 结果，就明确等待它，不制造无独立用途的卡片。
+8. **先拆分不等于全局禁止执行（B11-02）**：不在所有个体之上增加总拆分队列；个体对候选工作的判断保持自主，内核只检查已记录的结构条件与认领资格，遗漏的拆分机会由其他个体后续观察修正。
+9. **拆分错误可以局部修正**：可以提出合并、补充依赖、调整边界或替代子项，只要结构变化在 STM 中完整表达。合并不撤销此前文件修改，也不让此前验证自动适用于新组合。遇到循环依赖，先找能先行交付的产物（最小接口、样例、已确认前提）；系统可检测显式环并报告涉及任务，但不替个体猜该牺牲哪个目标。
+
+#### 父项的等待与恢复（B12）
+1. **B12-01**：最后一个子项完成不得直接把父项设为 `:done`，父项也不因计数归零使祖先完成。父项恢复后由负责个体继续拆分、执行原子动作，或依据具体结果明确提交完成。父项可以涉及跨子项连接、决策、误差处理、对用户目标的重新核对，以及尚不具备输入时写不出的最终动作。
+2. **等待集合只含当前一轮**：已完成的历史子项可查但不累积到每次恢复判断；父项恢复后再拆出新子项时建立新的等待集合并保留产物引用。系统关注当前等待条件与剩余实质，不以树深或叶子数推定完成程度。
+3. **恢复事务的准确结果**：
+
+| 事件 | 父项的直接变化 | 后续由谁决定 |
+|---|---|---|
+| 部分子项完成 | 仍等待，记录可用结果 | 个体可继续观察 |
+| 当前子项全部完成 | `:waiting` 变 `:ready` | 原主或合法接续者 |
+| 某子项被取消 | 记录依赖需要处理 | 个体显式调整结构 |
+| 父项明确完成 | 设为 `:done`，通知其等待者 | STM 执行控制变化 |
+
+   父项已因用户要求取消时，迟到的子项完成不会重新激活它，只发布该子项事实并处理仍存在的独立责任。
+4. **恢复后先重新定向**：先读子项实际结果再看剩余工作是否仍准确；子项可能交付了不同但更合适的接口，也可能揭示缺失条件。不能只把状态改回 `:ready` 后无人知道做什么。原主存活则继续承担，原主已死或已交接则作为公开待接续工作出现，不为每棵树任命专门协调者。
+5. **父项也可以重新成为原子任务**：原子性针对当前剩余工作判断。子项全部完成也不自动说明父项已原子化，可能仍含两项独立修改。
+6. **父项完成需要自己的依据**：不需要另找审批个体，也不强迫制造整合子项；若子项结果事实上已满足父目标，恢复后可直接提交完成。仍有运行或应用中的子动作时，父项终结不抹掉它们的责任。
+7. **结构调整不能留下孤儿责任（B12-02）**：移除子项依赖时，被移除的子项要有明确去向（取消、独立任务、转服务其他父项）；共享子项被某个父项放弃，不代表其他父项不需要。关系移除、责任变化与可推进索引变化在同一次 STM 事务内发布。
+8. **从子项完成到令牌退休的顺序**：先发布子项结果，再处理父项恢复，再按更新后的完整责任集合检查持令者是否无责。父项若本身是令牌任务，恢复为 `:ready` 后仍归当前持令者，令牌不能在这个间隙释放。持令者不因刚执行了子项就接管普通父项。
+9. **父项的当前视图**：恢复时展示父目标、仍待处理的工作、这轮新到达的结果与当前归属，历史子项可折叠。例如“当前等待已解除；解析器结果可用；兼容规则已确定；本项剩余工作是接入启动路径”。展示由已有字段组合，不能暗中改写父项目标。
+
+#### 原子动作的认领与交接（B13）
+1. **责任比认领更长**：认领不一次包住宽泛目标；个体经拆分判断后描述本次准备推进的完整结果并申请认领。已有 `:owner-id` 的普通任务默认由原主认领执行；公开待接续的普通任务可在认领时同时确定归属；令牌任务按当前令牌状态检查。
+2. **B13-01**：建立认领时同时检查调用者存活、任务 `:ready`、无有效认领、普通归属允许、令牌需求满足、调用者提交的任务依据仍适用。个体留一句原子性判断（如“需要一起修改接口声明和唯一调用方，分开发布会留下不一致状态”），内核保存但不运行另一个模型审批。成功返回不复用的 `:claim-id`，后续进展、应用、完成都携带它。
+3. **认领期间允许公开补充**：认领保护的是当前动作的提交边界，不是对相关领域的独占讨论权。补充若改变本次动作的必要条件，原主在进入 `:applying` 前重读并调整；只是后续建议则在当前动作完成后处理。
+4. **认领不因普通等待无声消失**：第一版不依靠短周期租约强制接管；只因过了一段时间就把认领当作无人使用，会让两个个体同时相信自己有资格。存活检查只用于发现故障，不证明旧动作已停止。未进入副作用阶段的认领可由原主明确释放；`:applying` 中的动作保持到最小提交完成。
+5. **交接材料随工作逐步公开**：失败的 `take-or-die` 立即使旧个体逻辑死亡，交接不能依赖事后撰写。交接要说明已应用了什么、尚未应用的准备是什么、哪些判断仍需复核、下一步依赖什么，例如“已修改解析函数；调用点尚未改；准备中的接口名是 X，但尚未公开提交；测试未运行”。准备中的补丁可作建议保留，继任者仍须按当前文件重新判断。
+6. **接续不复活旧认领**：新个体获得新认领与新执行资格。旧认领的迟到提交返回明确的失效结果并指出是否已有接续记录，不自动改挂到新认领上；有价值的材料可作为普通观察重新提交。
+7. **同一请求只产生一次控制结果（B13-02）**：认领、释放、移交、完成都支持请求标识，响应丢失后查询或重发同一标识得到原结果。工具传输失败不创造新的业务状态；未知响应通过同一请求定位，不由个体猜“可能没成功”后再赌一次。
+8. **认领结果便于调整**：拒绝时给具体原因与可重读的对象标识（已转等待、已有有效认领、归属已移交、持令者已变），不返回整个看板，也不替个体指定唯一正确的下一任务。个体可按不同候选顺序读取任务，减少总抢第一张卡。已有人执行的原子动作不提供第二份执行机会。
+9. **归属争议以当前公开事实处理**：当前 STM 归属决定谁有提交资格；另一方可以说明判断、提出结构调整或交接建议，不能绕过归属直接写文件再要求看板接受既成事实。
+
+#### 依赖与结果传播（B14）
+1. **依赖表达必要输入**：不表达“我觉得先做这个比较顺眼”。区分任务结果依赖、当前轮子项依赖与外部条件等待，可用统一条件对象表示，但展示时保留含义（“等待任务 T 的解析规则”优于“blocked”）。
+2. **B14-01**：依赖满足只使任务获得继续工作的资格。依赖触发器只执行已定义的控制转换（解除等待、更新可推进索引、通知相关个体），不得隐藏新的模型判断，不得通过传播链把未明确完成的实质任务全部标为 `:done`。
+3. **结果引用说清适用对象**：文件相关事实保留相关路径及当时的 `stamp`；纯控制结论保留对应目标、用户输入或决策事实引用。“测试成功”过于宽泛，应说明执行了哪项测试、回答哪个问题、当时文件依据、工具实际返回。旧结果仍是曾经发生的事实，是否支持新提交由使用者核对，系统不自动扫描撤销历史完成记录。
+4. **取消依赖必须显式处理**：三种方式：把依赖改到新子项；判定该输入不再需要并移除关系；取消仍依赖它的父目标。依赖已终结但未满足而父项长期 `:waiting` 时，系统可把它暴露为需要处理的结构问题，不能自动宣告父项成功。
+5. **共享结果不要求共享所有权**：结果事实只发布一次，通知分别发送；一个父项不能替所有等待者取消共享子项。建立共享依赖前确认各使用者需要同一种结果（都叫“检查配置”不代表完成含义相同）。
+6. **显式循环可以被发现**：新增依赖时可检查显式环，检查针对受影响的关系范围，不锁全看板；可在事务外读子图计算拟议结构，提交时验证相关控制依据仍成立，不在 STM 中执行无界搜索。循环报告列出具体任务与等待内容。
+7. **运行时相互等待未必都在依赖图中**：Shell 等某文件出现而另一个体等 $W$ 去创建它，这种关系未必有依赖边。显式依赖图无环不能推出运行时不会互等。等待原因不清时，记录“不清楚，已观察到会话仍在运行”优于编造依赖。
+8. **外部条件以事件进入看板**：事件先作为事实入板，能直接匹配等待条件就解除等待，不能匹配时解释工作进入可推进集合。等待条件不应只写一个时间点：时间到只说明应重新检查。
+9. **传播范围有明确边界**：每个直接等待者按条件更新自己的可推进状态，祖先是否变化取决于中间任务后来是否明确完成。可维护小型待传播控制队列逐步处理大通知集合，队列项代表未完成的传播责任，不能因通知量大丢失等待者。不能为减少事务工作量让任务在没有输入时变为可执行。
+10. **连接修改与验证**：父项拆出解析器与兼容规则，恢复后执行接入修改；仍需真实命令结果时再拆出需要令牌的验证子项并写明验证什么。验证子项按自身目标明确完成，父项解除等待后再判断原目标是否满足。
+
+#### 普通责任与令牌责任（B15）
+1. **B15-01**：持令者未结责任集合包括全部未终结令牌任务、该个体自己的普通任务、其仍未结束的执行动作；集合为空才满足无责退休，等待不自动从集合删除任务。
+2. **动态归属避免批量搬运**：取得令牌时不扫描改写，新增令牌任务提交即归当前持令者。提出者、父项与负责人是不同关系：普通个体创建验证子项后，执行责任属于持令者，父项普通责任仍归原主。令牌空闲时令牌任务继续存在于公共看板，不固定归已死的旧持令者。
+3. **承担责任不等于立即执行**：持令者仍遵守原子性与依赖规则；一次只有一个实际写会话。普通个体可以帮忙拆分令牌任务、查输入、准备受保护修改，帮助不转移令牌责任，也不能越过令牌资格运行 Shell。
+4. **令牌需求落在实际动作上**：父项含 Shell 子项不自动使父项全部剩余工作变成令牌工作。普通↔令牌类型变化必须在同一次 STM 转换中处理归属与责任索引，通常新建具体 Shell 子项更清楚。
+5. **抢令牌前的普通责任**：参与竞争时普通责任不必为空（可能有等待 Shell 结果的父项）。赢后普通责任保留原归属；输时普通责任与认领在同一死亡事务中公开移交。
+6. **无责退休是控制事实**：所有可能改变持令者责任集合的事务在发布时检查退休条件（完成最后任务、取消最后剩余要求、明确移交普通责任、结束最后运行动作）。退休不等持令者下次主动查询，否则“无责立即死亡”退化为轮询习惯；正确实现甚至可以不暴露 `release-token` 工具。
+7. **活动责任保护已开始的动作（B15-02）**：任务终结不能自动删除活动记录；活动结束不能自动证明业务目标完成。旧持令者不会在仍有受管写活动时被误判无责。
+8. **长期持令是规则允许的结果**：等待外部条件很久或持续有新令牌工作进入，都可能让同一持令者长期存活；系统不把 `:waiting` 临时改成不计责任来强制轮换，也不偷偷加持令时长上限。持令者无可执行令牌动作时可做自己有资格的受保护工作、拆分或调查。
+9. **普通个体对令牌状态的观察**：已知被占用时反复 `take-or-die` 只会造成无意义的死亡与新生；没有令牌工作时抢空令牌也无进展。新个体看到令牌已被持有即可避免重复竞争，无需记住前世。
+10. **完整例子**：A 负责普通父项 P，P 等待令牌子项 V；A 抢令牌成功，承担 V 并保留 P。A 完成 V 后 P 解除等待，A 因仍有 P 而不退休；P 目标满足后 A 提交 P 完成，若无其他责任，这次事务同时触发无责死亡。若 V 结束前 B 加入令牌任务 U，U 进入 A 的责任；若 A 退休先于 U 提交，U 等待下一位持令者。结果来自事务先后，不来自调度者指定接班人。
+
+#### 用户输入与等待唤醒（B16）
+1. **B16-01**：每条用户输入以原文与唯一事件标识入板并产生 `wake-all`，原始输入与解释结果分开保存。到达顺序用于理解指代与区分补充、修正、撤销，不作为任务优先级的唯一依据。未解释的实质输入本身就是公开可推进工作，没有总协调者独占解释权。
+2. **解释结果要改变实际工作**：新增目标建任务；修正要求调整相关目标或剩余工作；取消要求终结相应后续义务并处理仍在运行的活动；信息补充可解除等待。把原话换个措辞标为“已处理”而不调整任何工作，不足以完成解释。例如用户说“父项不要自动完成”，应改变父项恢复规则及相关实现任务，而不只在评论里保存这句话。
+3. **并发理解同一输入**：正式解释结果通过 STM 检查输入当前处理状态；互相矛盾的目标调整不能各自生效，应变成具体问题（“这条要求替代旧格式兼容，还是只改变默认行为”）。需要用户补充时写清缺失信息与它影响的决定，其他安全工作继续。
+4. **输入不越过已开始的提交边界**：已进入 `:applying` 的最小提交按固定条件完成，目标变化在边界之后处理；Shell 按实际会话处理，通知送达不等于阻塞命令已返回；未进入副作用阶段的动作在下次资格核对时看到变化。
+5. **park 在一个事务中决定（B16-02）**：主动休眠接口同时完成条件核对与等待登记；条件不成立返回具体原因。任何把全局可推进集合从空变为非空的事务都产生唤醒全部休眠个体的事件；用户输入无论是否改变该集合都保留直接 `wake-all` 效果。
+6. **用户输入与退休相撞**：输入先提交且解释已建立新令牌责任，旧持令者退休条件不成立；退休先提交，新输入不能复活旧身份，由存活或新生个体处理，需要 Shell 的部分进入新的令牌竞争周期。用户面对的是持续存在的共享目标与看板，个体可以不断更替。
+
+### 3.13 个体运行时与不可逆生命周期（L25）
+
+1. **运行槽与个体分开（L25-01）**：槽提供模型会话、工具连接与消息投递资源，可反复使用；个体是一次具有独立身份的推理生命，身份不复用。槽补充器只让槽恢复可用，不决定新个体接什么任务（“补一个个体”与“给某任务派一个个体”是两种操作，第一版只实现前者）。任务归属使用 `agent-id`，不使用槽编号；槽到个体的映射只供运行时定位需要停止的执行资源。
+2. **生命状态与可用能力**：
+
+| 状态 | 看板与受保护读取 | 受保护提交 | 发起 Shell | 抢令牌 |
+|---|---|---|---|---|
+| 启动中 | 按启动流程读公共材料 | 不允许 | 不允许 | 不允许 |
+| 普通个体 | 允许 | 满足任务与提交条件时允许 | 不允许 | 满足参与条件时允许 |
+| 持令个体 | 允许 | 满足任务与提交条件时允许 | 当前令牌资格有效时允许 | 不再允许 |
+| 逻辑死亡 | 运行时可返回已终止提示 | 不允许 | 不允许 | 不允许 |
+
+   **L25-02**：从持令个体返回普通个体不是合法转换；不能在释放令牌后保留原上下文继续工作，也不能给旧上下文换个身份标签冒充重生。工具入口每次用当前身份检查资格，不只在会话创建时检查一次。逻辑死亡与资源停止之间的短暂间隔不改变结论：资源停止负责结束计算消耗，资格撤销负责使迟到消息失效。
+3. **日常推进循环**：每轮先读与自己责任和当前目标有关的看板内容；可直接作有价值的拆分、澄清依赖或补充事实；准备执行时先判断能否继续拆分，已原子化才认领。存在清楚可做的普通任务时，不应为了取得 Shell 而忽略它。无可推进动作时先区分三种原因：自己的任务在等待、公开工作已被他人合法认领、真正存在待执行的令牌工作；只有第三种且令牌空闲、受保护工作已耗尽，才形成参与抢令牌的候选条件。
+4. **抢令牌前的交接准备（L25-03）**：交接覆盖仍由该个体承担的普通责任、已发出工具调用的结果、未完成的依赖说明与已知问题，不复制整个聊天上下文，不把未筛选的猜测当事实。个体不得同时保有已进入 `:applying` 的提交或正在管理的 Shell 会话，又发起新的生死竞争。交接记录在日常推进时增量维护，不要求固定篇幅的“遗书”。
+5. **一次尝试只有一个生命结论**：赢的事务把个体变为持令者并设置持有者，令牌任务由当前持有者推导责任；输的事务同时解除可移交认领、把责任放回公共可接续状态、保存进度关系并标逻辑死亡。不存在“先收到失败结果，再让模型自己决定是否交接”的阶段。
+6. **持令者的责任集合（L25-04）**：使用当前完整责任集合而不是“当前可执行令牌任务数”判断退休；任务暂不可执行、父项在等子项、Shell 在等外部结果都不能折算为无责。协议没有规定持令者最大寿命，也没有因上下文变长就强制轮转的隐藏分支。
+7. **无责任时的立即退休**：“立即”指在使责任集合归零的逻辑提交边界执行，而不是要求操作系统同一纳秒终止进程；关键是不能出现“责任已空、仍是有效持令身份、可自由开始新动作”的中间状态。
+8. **启动材料与无记忆**：新个体启动材料＝通用协议说明（工具合同、任务选择原则、提交边界）＋公共工作状态（当前用户目标、可推进入口、需要注意的未结结果）。不含“你上一世刚刚失败”的私有叙事，不自动指派前世原任务；已发布的设计理由与可验证结果仍可读，因为它们已是公共材料。新个体可以看到令牌被占用而避免必败竞争，看到令牌队列为空而避免抢空令牌，这都来自当下公开状态，不是继承记忆。
+9. **异常停止与责任接续**：进程崩溃、宿主停止或会话失联走硬失败 best-effort 路径。能确认旧个体没有在途应用与受管 Shell 活动时，撤销旧资格并公开普通责任；存在不确定动作时保留未结记录，由后继者按现场核对。记录事实如“会话连接断开，最后已知动作处于应用中，结果尚未发布”，不把不确定写成失败，也不把缺少返回值解释成没有副作用。
+10. **运行时停止接口按身份而非槽寻址**：发出停止时，槽可能已开始准备后继资源；用旧 `agent-id` 寻址可以避免迟到的停止请求误伤新个体。消息投递同理，属于旧生命的响应不能因槽编号相同交给新生命解释。
+
+### 3.14 运行观察与人工干预（L30）
+
+1. **观察应回答当前为什么能推进或不能推进**：显示等待链（父项等兼容测试 → 测试等代码编辑 → 编辑等 $W$ → $W$ 由某 Shell 会话持有），而不是“六个任务等待、一个个体活跃”。**L30-01**：观察层不根据活跃度自动改变任务归属或令牌持有者；持令者长时间没有新输出，不证明其责任已结束，也不授权强行轮换。
+2. **最小事件集**：用户输入到达、任务结构变化、认领变化、普通责任移交、竞争结果、个体死亡与启动、`fork` / `join`、`:result-queued`、`:joined`、`:abandoned`、$W$ 取得与释放、动作进入 `:applying`、应用结果发布、Shell 会话状态、等待登记与唤醒。事件用任务与操作标识建立关系，不复制文件内容；显示时间供人阅读，协议先后由提交关系决定；事件记录服务解释与 best-effort 接续，不是文件历史版本系统。
+3. **任务视图保留实质**：父项视图显示目标、当前判断、未完成内容、正在等待的子项与恢复后的下一步线索；区分“等待已满足”与“任务已完成”。每个等待原因都有可追溯入口；没有具体条件的“受阻”只提示负责个体补足，不由界面虚构依赖。父项恢复后再次拆分不是倒退。
+4. **个体与令牌视图**：显示生命状态、普通责任、动态令牌责任入口与有副作用调用；持令者视图显示完整未结责任构成（尤其等待项与运行中会话），解释为什么无可执行令牌动作却未退休。正常死亡不一律标成故障告警；竞争失败的记录要同时说明“责任已移交”与“旧身份不可再用”。
+5. **写入口与 Shell 视图**：$W$ 的当前持有者显示为具体动作或会话，不显示成笼统的“令牌被占用”（持令者未跑 Shell 时普通提交可以通过 $W$）。Shell 展示调用目的、会话状态、最后已知输出与仍在等待的条件；长时间无输出不推导为已结束；已知子活动与已脱离管理边界的后续活动都如实标出。受保护写视图显示准备、等锁、校验、预演、应用与发布阶段；普通拒绝不渲染成整个目标失败。
+6. **指标的用途与边界**：$W$ 等待时长、锁内预演时长、实际应用时长、因依赖变化而拒绝的次数、结果类别分布、父项恢复后的推进情况、新输入到首次有效处理的时间，用于找机制成本，不作个体价值评分。任务创建数、拆分数、消息数、调用数、存活时长容易被误用。冲突率需要结合场景解释，不以零冲突为唯一目标。
+7. **唤醒压力与通知合并**：可以合并尚未消费的相同提醒，但不能让已登记等待的个体失去“已有新工作”的事实；合并的是通知传输，不是用户输入或看板转换。全局有非阻塞工作而某个体无可领取动作时，如实显示“不允许休眠”。
+8. **人工干预的具体含义**：改变目标、取消需求、补充约束、要求停止某会话，都作为明确输入入板。取消目标改变未来要求；停止会话改变运行活动；二者都不撤销已发生的文件变化。用户要求立即停止 `:applying` 中的提交时，系统说明当前最小提交已进入保证完成阶段，在边界后执行停止；终止整个宿主进程属于硬失败路径。界面不把这些行为都写成同一个含混的“取消”。
+9. **异常接续步骤**：(1) 停止对未知结果的自动重放；(2) 确定哪些身份已失效、哪些动作仍被执行器管理、哪些记录已有确定结果；(3) 读取当前任务与相关文件；(4) 把可确认事实、未结疑问与新工作安排写回看板。同一种正常逻辑错误反复落入异常路径时，应回到预演或控制边界修实现。
+
+### 3.15 完整案例：配置改造
+
+用户提出：“服务启动时读取新的配置格式，旧配置继续可用，空配置使用已有默认值。”共享工作区，三个普通个体 A、B、C，令牌空闲。输入入板形成父项 P（启动接入、新旧格式兼容、默认值行为）。
+
+1. **拆分并保留父项内容**：A 拆出 E1“实现新格式解析”、E2“实现旧格式转换”、T1“运行这两个组件的相关测试”（依赖 E1、E2，需令牌）；P 等待它们，剩余说明写为“组件结果可用后，将读取、格式转换、默认值合并接入服务启动；按实际错误行为决定还需哪些验证”。B 认领 E1，C 认领 E2。A 无可推进受保护工作，观察到令牌空闲，竞争成功，承担 T1 的等待责任。
+2. **持令等待不占 $W$**：A 持令但 T1 不能运行，不取 $W$；B、C 依次提交。C 依赖的公共类型被 B 修改，C 锁内校验拒绝旧依据、重读后再提交，C 不死，E2 不转给 A。E1、E2 完成使 T1 可推进，A 才取 $W$ 跑测试，期间读取照常、新写入等待。
+3. **测试运行期间用户追加约束**：“空字符串也按空配置处理，不要抛出解析异常。”输入入板并 `wake-all`；B 判断 E1 原完成范围不含此要求，建普通子项 E3 与令牌验证 T2（依赖 E3），同一 STM 变更更新 P 的等待条件与剩余说明。E1 不被改成从未完成；T1 结果不能当作空字符串行为已通过的证据。T2 在 A 持令时入板，动态归 A。
+4. **普通写等待测试会话结束**：B 准备 E3 请求 $W$，T1 仍在跑，B 等待；T1 结束 A 释放 $W$ 但因 T2 不退休；B 取 $W$ 后重新核对再应用（若 T1 产生了影响 E3 依据的文件变化则冲突重判，不以“测试通常只读”跳过）。E3 完成，T2 可推进；A 跑完 T2，P 恢复 `:ready` 但未完成。
+5. **令牌责任结束与父项继续同时成立**：A 无其他责任，T2 完成事务同时让 P 恢复与 A 无责退休；槽位拉起新个体 D。P 是公开普通任务，D、B 或 C 都可以选，槽补充器不指派。D 认领 P 的启动接入（必须一起发布的小改动），走受保护提交完成。
+6. **父项再拆出验证**：D 拆出 T3，目标定为“取得并发布启动核验报告”（含启动参数、实际输出、与预期差异及与 P 目标的关系）；P 回 `:waiting`，保留“依据真实启动结果处理剩余差异，确认原目标是否满足”。D 与 C 同时竞争，C 赢 D 输；D 的 P 连同等待条件与进展公开，新个体 E 启动。P 的普通责任没有转给 C。
+7. **真实结果带来新工作**：T3 报告显示旧格式转换后的默认超时值被启动层再次覆盖。C 在同一 STM 转换中完成 T3、创建普通 E4“修正配置合并顺序”与令牌 T4“取得并发布修正后的启动核验报告”（依赖 E4），并把 P 的 `:wait-for` 中 T3 替换为 E4 与 T4，避免 P 瞬间恢复后又无事可做。E4 由普通个体修正；T4 报告符合预期后 P 恢复 `:ready`，C 若无其他责任则退休。报告任务以“取得并发布报告”为完成条件，报告揭示问题时报告任务可以完成，业务目标不能宣称满足。
+8. **明确完成父项**：E 接续 P，核对新格式可解析、旧格式可转换、空配置与空字符串用默认值、启动路径已接入、真实启动验证覆盖这些行为，提交 P 完成并指出依据的任务结果与当前文件条件。不制造额外修改，不设“批准父项完成”的角色；祖先只因依赖满足而恢复，不级联完成。
+
+| 案例节点 | 应检查的机制 | 不应出现的行为 |
+|---|---|---|
+| A 持令等 E1、E2 | 令牌寿命与 $W$ 寿命分开 | 一直占 $W$ 阻塞普通编辑 |
+| C 发现只读依赖改变 | 完整依赖校验 | 仅检查最终写文件 |
+| 用户追加空字符串要求 | 输入入板、唤醒与目标接续 | 把旧测试结果直接扩充为新要求已通过 |
+| B 等待 T1 释放 $W$ | 取得锁后再校验 | 等待前校验一次就直接写入 |
+| T2 完成 | 父项恢复与持令者退休分开 | 自动完成 P 或转移普通归属 |
+| D 竞争失败 | 交接与死亡同一转换 | 遗留归死者的 P |
+| T3 发现行为差异 | 执行事实与目标结果分开 | 命令返回就标记目标满足 |
+| E 完成 P | 依据实质目标明确完成 | 子项数量归零直接关闭 |
+
+正常协作不要求每个个体走完一个功能的全部过程；个体可以只完成拆分、编辑、测试或完成判断中的一部分，公共记录让这些部分继续组合。
 
 ---
 
-## 5 消息投影（上）：系统提示词全文
+## 4 Clojure 程序化工具面与受保护文件提交合同
 
-万象术不照搬任何宿主的默认系统提示词，而是用三个纯文本文件（`common`、`manager`、`worker`）直接首尾拼接，生成 `Manager`、`Coder` 与 `DevOps` 的系统提示词（注：`Plan` 不在此投影之内，由 §2.2 的 `PLAN_PROMPT` 描述）。
+万象术彻底废除零散的 `read`、`grep`、`edit`、`bash` 独立工具，代之以面向各身份裁剪的 **Clojure 程序执行环境**（`clj-plan`、`clj-review`、`clj-worker`），并在底层将程序执行与 **Swarm 受保护文件提交合同**无缝熔合。
 
-三个文件内部均不含任何条件标记、过滤开关或模板分支，组合方式只有两种：
-- `Manager` 的系统提示词 = `common` + `manager`（另单独投影 §5.4 的 `<vibe-mode>` 导演消息）。
-- `Coder` 与 `DevOps` 的系统提示词 = `common` + `worker`（两者拿到的系统提示词逐字相同，身份差别仅由 `<vibe-mode>` 导演消息与 `fork` 的任务描述承担）。
+### 4.1 语法纪律与各身份能力面板对照
 
-### 5.1 `common` 全文
+每次调用工具时，大模型提交一段形如 `(defprogram <program-name> [] ...)` 的 Clojure 程序。
+**单一写法铁律**：同一个能力只有一种调用写法——**裸函数名 + 单个 EDN map 参数**。不存在 `(.cat this path)` 这类接收者写法，也不存在位置参数；`this` 不再绑定。顶层原语与文件、文本、续体能力使用同一形状。
+
+| 调用形式 | 语义说明 | `clj-plan` (`Plan`) | `clj-review` (`Reviewer` 评估窗) | `clj-worker` (`Swarm` 个体) | Plan dedicated worker |
+|---|---|:---:|:---:|:---:|:---:|
+| `(cat {:path ...})` | 读取文件 UTF-8 文本，自动将 `(path, mtime, size)` 记入本批次 `read-set` | 仅底稿与附件 | 有 | 有 | 有 |
+| `(stat {:path ...})` | 返回 `{:exists :size :mtime-sec :mtime-nsec :is-dir}`，记入 `read-set` 与结构检查 | - | 有 | 有 | 有 |
+| `(ls {:path ...})` | 非递归列目录（目录条目末尾带 `"/"`）；**纯探查**：不取 `$W$`、不进 `read-set`、不做结构检查、不产生提交依赖 | - | 有 | 有 | 有 |
+| `(write {:path ... :content ...})` | 向本批次内存视图写入文件最终 UTF-8 内容（提交时统一在写锁 $W$ 内落盘） | 仅底稿（首评后解锁） | - | 有 | - |
+| `(mkdir {:path ...})` / `(rm {:path ...})` / `(mv {:source ... :target ...})` | 向本批次内存视图登记创建目录、删除或移动路径（含存在性与覆盖检查） | - | - | 有 | - |
+| `(where {:content ... :needle ...})` | 精确 UTF-16 码元唯一切片 `[begin end]`；0 或多匹配时自动触发 `(park ...)` | 有 | 有 | 有 | 有 |
+| `(whereAll {:content ... :needle ...})` | 返回所有匹配的 `[[b1 e1] [b2 e2] ...]` 向量（不挂起） | 有 | 有 | 有 | 有 |
+| `(park {:payload ...})` | 显式挂起当前 Clojure 程序续体（未落盘），立即返回带行号源码与诊断的挂起回执 | 有 | - | 有 | 有 |
+| `(unpark {:name ... :value ...})` | 在新命名程序中恢复已挂起程序 `name`，将 `value` 注入挂起点继续执行 | 有 | 有 | 有 | 有 |
+| `(ask {:question ...})` | 仅 `Plan` 的 `S1` 可用：等价于 `(park {:payload {:question ...}})` + 中断回合交还人类 | 仅 S1 | - | - | - |
+| `(call {:command ...})` | 执行黑盒 Shell 会话（先排空内存批操作并提交）；`clj-worker` 仅 `holder` 可执行，普通个体调用拒 `:TOKEN_REQUIRED`；Plan dedicated worker 无令牌限制 | - | - | 仅 `holder` | 有 |
+| `(devops {:verbose-intent "..."})` | 顶层同步原语：等待 Plan dedicated worker 完成调查并原样返回其最终报告 | 有 | - | - | - |
+| `(review {:findings [...]})` | 顶层原语：提交义务台账，启动蜂群施工或触发换任接力；初任空账转 `ask` | 有 | 有 | - | - |
+| `(split {...})` / `(claim {...})` / `(finish {...})` | 顶层原语：操作 Swarm STM 看板（拆分、认领原子任务、提交任务完成） | - | - | 有 | - |
+| `(cancel {...})` / `(replace {...})` / `(release {...})` / `(reopen {...})` / `(comment {...})` / `(update {...})` | 顶层原语：看板维护（仅叶子取消/替代、释放认领、重开、观察、字段更新） | - | - | 有 | - |
+| `(take-or-die {...})` / `(park-slot {...})` | 顶层原语：不可逆竞争唯一令牌 / 在全局无活时登记槽位休眠 | - | - | 有 | - |
+| `(abandon {:reason ...})` | holder 确认自身工作已被 master 演进淘汰时的单向出口：tenure 标 `:abandoned`、worktree 丢弃、agent 死亡 | - | - | 仅 holder | - |
+| `(askPreviousScope {:questions "..."})` | 向紧邻前一个 Scope 提澄清问题；同步返回受理 receipt，答案随后以 `role:"user"`、`attribution:agent` 的 steer 到达；不扣 `retention`，跨 reset 保留 | - | 有 | 有 | - |
+| `(assume {:assumption "..."})` | 钉住一个已抽象的判断，返回固定 prose；只豁免 history pruning，不豁免 `retention`（`keepLast` 仍扣 1 点） | - | 有 | 有 | - |
+
+### 4.2 受保护文件提交合同：批内内存视图 + `stamp` 复核 + 写入口 $W$
+
+传统多智能体写文件常因“边跑代码边改磁盘，跑到第三步报错留下半截脏文件”或“读了旧接口却覆盖了别人刚改的新代码”而崩溃。万象术将 `clj-worker` 的程序执行与 Swarm 的受保护提交合二为一：
+
+1. **无锁现场读取与凭据收集（F17-01 / F18-01）**：
+   * 程序执行期间调用 `cat`、`stat`、`ls` 不申请全局写锁 $W$。`ls` 是纯探查：不进 `read-set`、不做结构检查、不产生提交依赖；`cat`/`stat` 仍采集 `stamp` 并进入 `read-set`。
+   * 每次读取真实工作区文件时，工具自动采集系统精确的 `stamp = {:mtime-sec <int> :mtime-nsec <int> :size <int>}`（严禁使用 `atime`，严禁截断纳秒精度），加入本次程序运行的 `read-set`（包含**只读依赖文件**与待修改目标文件）。
+   * 若单次读取前后检测到文件 `stamp` 变化，立即标记 `:changed-during-read`，拒绝将该次不稳定读取作为有效提交依据。
+2. **批内内存视图（Batch In-Memory View）与完整预演（F19-01 / F19-03）**：
+   * 程序中的 `write`、`mkdir`、`rm`、`mv` **不直接修改真实文件系统**，而是按程序执行顺序作用于当前运行的**批内内存视图**：
+     * 例如程序先把 `"a.clj"` `mv` 到 `"b.clj"`，随后对 `"b.clj"` 调用 `cat` 与 `write`，第二步直接读到第一步在内存视图中移动后的内容；
+     * 若程序在运行中抛出异常、调用 `park` 挂起（例如 `where` 遇到 0 匹配或多匹配歧义），或者违反批内路径约束（如先删除后读取、未声明覆盖的移动冲突），**真实磁盘文件分毫无损**！
+3. **全局写入口 $W$ 内的最终复核与无回滚应用（F20-01 至 F20-03）**：
+   * 当且仅当 `defprogram` 的主体正常返回（且产生非空文件变更集，或声明依赖 `read-set` 事实发布看板完成结果）时，运行时自动进入提交流程：
+     1. **申请全局工作区写锁 $W$**（与所有其他受保护提交及黑盒 Shell 会话严格互斥）；
+     2. **复核身份与 `read-set`**：在 $W$ 内检查当前个体仍存活、认领 `:claim-id` 仍有效，并逐一比对 `read-set` 中所有文件（含只读接口文件！）的当前系统 `stamp` 是否与读取时完全相等，复核全部目录/存在性结构条件（`checks`）；任一不符立即释放 $W$ 并返回 `:FILE_CONFLICT` 或 `:STRUCTURE_CONFLICT`（真实磁盘未发生任何修改）；
+     3. **固定 `applying` 资格**：在短 STM 事务中固定本次动作的提交资格（此后即使收到任务取消请求，也必须等当前最小批次落盘并记账完毕后再生效）；
+     4. **原子落盘与看板记账**：在目标同目录下创建排他临时文件、写入预演确定的完整字节、`flush` 后 `rename` 原子替换目标路径；随后在短 STM 事务中发布动作结果（若 STM 记账冲突重试，仅重试纯控制状态更新，绝不重放文件写入）。
+
+```clojure
+;; 受保护文件提交流程的宿主内核等价契约（概念参考，非用户提交代码）
+(defn commit-program-changes! [request]
+  (let [action (accept-request! (:request-id request) request)]
+    (if-not (:new? action)
+      (current-result action)
+      (with-write-gate [w (:action-id action)]
+        (check-actor-active! (:agent-id request))
+        (check-stamps! (:read-set request))          ;; 含只读依赖文件与写目标的 (mtime, size)
+        (check-structures! (:structure-checks request))
+        (let [plan   (prepare-batch! (:changes request)) ;; 整批 dry-run 产出确定字节与路径序列
+              permit (stm-begin-apply! request (:summary plan))]
+          (mark-applying! action permit)
+          (let [result (apply-deterministic-plan! plan)] ;; 正常路径保证整批完成，无回滚分支
+            (mark-files-applied! action result)
+            (stm-finish-apply! permit result)            ;; 纯 STM 记账，重试不重跑 apply
+            (mark-finished! action result)
+            result))))))
+```
+
+4. **路径、读取与结构细则（F17 / F18）**：
+   * **路径语义**：空路径 `""` 解析为当前会话根（worktree 根目录）；绝对路径按原样使用；访问能否成功由操作系统权限决定，不在 worktree 根目录设人为边界拦截；`stat` 遇到文件缺失不报错，返回 `{:exists false ...}`。
+   * **读取返回与精度（F17-02）**：完整文件与局部范围读取都使用整个文件的 `stamp`（第一版不建段落版本或行级版本）。`mtime` 保留底层接口实际精度（秒 + 纳秒两个整数），不得先转低精度浮点数再比较；`size` 是文件字节数，不用字符数替代。读取前后分别取 `stamp`，不同则返回 `:changed-during-read`，不标成稳定快照。
+   * **无文件写入的看板结论也复核**：个体在看板声明“入口函数已存在，当前子项已完成”时，结论依赖的文件同样要经写入口复核 `read-set`（空变更集的提交），不能靠“只写看板”绕开文件冲突协议；不依赖现场文件事实的纯任务结构拆分则只走看板 STM。
+   * **目录与不存在路径（F17-03 / F18-03）**：存在性与类型检查决定操作是否有定义，`stamp` 决定文件内容是否仍可沿用，二者不能互替（普通文件变成目录，即使某些数值相同也通不过结构检查；类型相同也不代表内容未变）。不得把目录列表的时间值解释为整个子树内容的版本。创建请求必须明确预期目标不存在，或明确允许替换已读取的既有文件；删除请求第一版只要求 `stamp` 与此前观察相同（宽泛删除留给 Shell）；移动请求说明源与目标的存在性及覆盖政策。结构检查只来自 `stat` 与写操作自身的存在性/类型条件；`ls` 不进入 `checks`，它只是探查。递归复杂扫描不能用一个根目录 `stamp` 代替全部条件。
+   * **文本编码与上限**：存在无法无损解码的字节时明确拒绝文本编辑或返回二进制表示，不默默用替代字符重写文件；决定编码属于准备阶段，应用阶段只接受已生成的输出字节。默认上限：单文件 **2 MiB**、单批总计 **16 MiB**、单批 **256** 个路径操作；超限返回 `:LIMIT_EXCEEDED`，由个体拆分或走令牌路径，不得用不受保护的临时脚本绕过。上限可配置。
+   * **不提供忽略依据的快捷入口（F17-04）**：重复读取同一路径时，不能只更新 `stamp` 却继续提交基于旧内容的补丁；工具也不提供“忽略依据继续写”的普通入口。
+   * **`stamp` 相等比较与冲突返回（F18-01 / F18-02 / F18-04）**：`mtime` 变小、变大或同精度下不变，一律按相等比较，不把 `mtime` 当单调递增计数器。复核失败时返回冲突路径、原 `stamp`、当前 `stamp` 与结构变化简短说明，不得自动给出“把 expected-stamp 改成当前值即可”的建议。冲突是尚未生效的普通结果，不是部分提交。
+5. **完整预演与七阶段提交（F19 / F20 / F21）**：
+   * **四种基础操作与批内顺序（F19-02 / F19-03）**：高层文本修改在 dry-run 中统一化为“创建普通文件、替换普通文件内容、删除已观察文件、在明确源与目标条件下移动路径”四种基础操作及最终字节。同一目标在同批中多次修改按顺序语义执行，后一步看前一步生成的内容；两个创建指向同一路径、移动形成未说明的环、先删后改未重建路径，都在写前作为 `:PREPARE_REJECTED` 拒绝。
+   * **预览与最终计划区分（F19-04 / F24-02）**：可选的只读预览不占跨调用写锁；预览结果与锁内最终 `prepared` 状态必须使用不同类型，不得接受旧预览标识作为实际写入许可。不把 dry-run 发展成必须人工审批的第二个工作流，也不按预演成功次数评价贡献。
+   * **七个阶段**：输入 → 等待写锁（`:waiting-gate`）→ 最终检查 → 完整预演（`:preparing`）→ 固定应用资格 → 实际应用（`:applying`）→ 结果发布（`:finished`）。取消在进入 `:applying` 前到达可终止请求并释放资源；到达 `:applying` 时当前最小提交继续完成，工具返回“取消在本次应用之后生效”（**F20-04**：个体逻辑死亡同样不能跨越未完成的应用责任）。
+   * **原子替换细节**：同目录排他临时文件保证与目标位于同一文件系统，`flush` 后 `rename` 由操作系统内核保证原子替换，任何读者在任何时刻只会看到完整的旧内容或完整的新内容；若进程在 `rename` 前崩溃，最多在同目录留下一个临时文件，目标文件完好无损。
+   * **写入口排队与不超时夺锁（F21-02 / F21-03 / F21-04）**：$W$ 按先进先出之类资源准入秩序处理已提出的合法请求，不按任务标题或模型能力挑人，用户消息到达也不把 $W$ 队列重排为任务调度队列。持有 $W$ 的动作可以调用纯控制状态操作，控制状态操作不得反过来在未结束的 STM 事务里等待 $W$。$W$ **不设超时自动转交**：只要原会话仍属入口保护范围，让第二个写者进入就破坏互斥；运行告警不直接变成令牌退休或资源强制转移。第一版受保护文件接口拒绝“从当前 Shell 会话内部嵌套发起另一个外部提交”的调用形状。
+
+### 4.3 纯字符精确切片（`where` / `whereAll`）与程序挂起恢复（`park` / `unpark`）
+
+1. **纯字符精确匹配**：
+   * `(where {:content ... :needle ...})` 与 `(whereAll {:content ... :needle ...})` 按纯字符偏移精确匹配 `needle`，绝不做隐式 `trim` 或忽略缩进，返回的 `[begin end]` 可直接用于 `(subs content begin end)`。
+   * `where` 要求 `needle` 在 `content` 中**唯一命中**。若出现 0 匹配或多匹配，`where` 不抛异常毀掉已算出的局部变量，而是立即通过内部续体信号将当前程序转入 `:parked` 阶段，并返回结构化回执：
+     * **零匹配**：`:payload {:needle needle :candidates [] :nearest {:span [b e] :text "..." :distance d} | nil :max-distance 64 :budget-exhausted false}`。`nearest` 只在零匹配时出现：扫描 `content` 的前 2000 个非空行，用 Ukkonen 带状 DP（带宽 $K=64$）计算编辑距离；`|len(needle) - len(line)| > K` 直接跳过；先裁剪公共前后缀再算中段；只保留距离 $\le K$ 的行，取距离最小者。若没有行在 $K$ 内，`nearest` 为 `nil`，表示“没有相似行”。总 DP 单元预算 10M；超出则停止扫描，返回已找到的最近行并标 `:budget-exhausted true`。`:text` 最多 200 字符，超出标 `:truncated true`；`:span` 仍给完整范围。
+     * **多匹配**：`:payload {:needle needle :candidates [{:span [b1 e1] :context "..."} ...]}`（最多列出 8 条候选，每条 `context` 为匹配位置前后各 80 个 UTF-16 码元的上下文片段；找不到任何匹配时 `.whereAll` 返回 `[]`）。
+2. **恢复挂起（`(unpark {:name ... :value ...})`）与四道防呆核验**：
+   * 由于挂起发生在批内内存视图阶段，尚未申请写锁 $W$ 也未落盘；模型看清 `nearest` 或 `candidates` 后，在另一命名程序中调用 `(unpark {:name "target-name" :value [812 853]})`。
+   * 内核依次执行四道核验：**观察核验（`:STALE_CONTROL`）**、**非自指核验（`:INVALID_ARGUMENT`）**、**存在性核验（`:PROGRAM_UNKNOWN`）**、**能力集核验（`:CAPABILITY_DENIED`）**。
+   * 核验通过后，注入值 `[812 853]` 原样成为原程序 `where` 表达式的返回值，原程序继续跑完 `write` 并进入 §4.2 的写锁 $W$ 提交流程（提交时仍会复核 `read-set` 的 `stamp`，确保挂起期间底层文件未被他人篡改！）。
+3. **按意图字节数核定期限**：每次程序调用按请求参数 `:intent` 的 UTF-8 字节数 × 50ms 一次性核定运行期限；到期自动转入 `:parked` 并取消旧期限，恢复时按新控制请求的 `:intent` 重新计时。（注：`:intent` 是单次工具调用的期限计量参数，而任务描述统一称为 `verbose-intent`，二者绝不混用。）
+4. **程序生命周期阶段、挂起回执完整字段与重放规则**：
+   * **阶段流转**：`:running`（顺序求值表达式）→ 发起 `call` 时先 `:draining`（排空此前已发起的操作）再 `:waiting`（等待当前操作或命令完成，完成后回 `:running`）；遇到显式 `park`、`where` 命中数不为 1、`ask`（仅 `S1`）或本次请求计时到期时，无论当时在 `:running` 还是 `:waiting` 均立即转入 `:parked`；主体求值完毕或抛未捕获异常时先入 `:settling`（收尾过渡期，不再接受新表达式推进），随后定格为 `:completed` 或 `:failed`。到期挂起时若控制者正在恢复目标程序，控制者与仍在活动的目标程序一同转入 `:parked`，随后只恢复控制者。
+   * **挂起回执完整结构**：`:name`（程序名）、`:state :parked`、`:reason`（`:explicit` / `:where-ambiguous` / `:ask` / `:deadline`）、`:payload`（`park` 载荷、`where` 的 `candidates`/`nearest`、或 `{:question ...}`）、`:source`（带行号的本程序完整源码）、`:pending-operations`（尚未结清的后台操作列表）、`:command`（当前命令视图：stdout/stderr 增量、字节数、duration-ms、退出状态；无命令时为 `nil`）、`:delta`（自上次回执以来的新增输出）、`:remaining-wait-ms`（剩余等待毫秒数）；`ask` 另带 `:interrupt true`。挂起绝不冻结外部世界：此前已启动的后台命令继续运行、输出继续收集。程序注册时携带角色能力集（如 `[:plan]`），使同一会话的新程序具备恢复自身 `ask` 挂起的能力集资格。
+   * **恢复与单次保证**：对显式 `park`、`where` 歧义与 `ask` 挂起点，`unpark` 传入的 `value`（省略时为 `nil`）原样作为挂起表达式返回值（内核不对注入区间做二次校验，由程序自己保证切片有效）；唯独 `call` 命令等待挂起点恢复时拿回命令真实执行结果，不受 `value` 影响。同一个挂起点只能被恢复一次；目标已结束或已不在该挂起点时再次 `unpark`，返回 `:STALE_CONTROL` 或目标当前回执，绝不隐式二次恢复。
+   * **名字占用与物理调用重放**：当名字对应的程序仍处于活动期（`:running`/`:waiting`/`:parked`）时，新程序占用同名启动被拒为 `:NAME_TAKEN`；进入 `:completed`/`:failed` 终局后该名字才可被新运行复用（旧回执仍按原调用重放）。同一物理工具调用（同一 `call-id`）带相同载荷再次到达时直接重放原回执；换用不同载荷立即报 `:CALL_REPLAY_MISMATCH`。
+
+### 4.4 黑盒 Shell 协议（`call`）
+
+1. **黑盒 Shell 执行协议（仅 `Swarm Holder` 与 Plan dedicated worker 可用）**：
+   * 调用 `(call {:command ...})` 前，若当前程序内存视图中已有未提交的文件修改，系统先按 §4.2 排空（`draining`）并完成受保护提交，再启动 Shell。
+   * Shell 会话必须通过写入口 $W$ 串行化。取得 $W$ 后、真正启动进程前，在短 STM 转换中再次校验个体存活、`:holder-id` 与 `:term-id` 有效、`:claim-id` 有效且任务仍处于 `:ready`，并登记 `:running` 活动责任。
+   * **会话边界（F22-03）**：只要受管会话内仍有已知子活动未结束，$W$ 与运行责任就继续保持；脱离会话管理边界的后台残留活动按外部访问（best-effort）通过 `stamp` 检测。
+   * **持令等待不占写锁（F21-01）**：单次 `call` 会话结束后立即释放 $W$。持令者在两次 Shell 调用之间阅读看板、拆分任务或等待普通个体修复代码时，**绝不持有 $W$**，普通个体的受保护文件提交照常通过 $W$ 落盘。
+   * **不按命令名猜只读、停止与不确定接续（F22 / F23 / F24）**：
+     * **F22-01 / F22-02 / F22-04**：运行测试、查版本、生成代码、装依赖、起服务等一切命令都走同一令牌校验与 $W$，不按命令名猜“只读”。排队期间任务被取消、替代、转 `:waiting` 或改变动作含义，启动前核对直接拒绝；真实启动后已进入黑盒执行，不能标为“拒绝”抹掉副作用。退出码为 0 只说明命令以该方式结束，非 0 也不意味着文件没变。环境中的秘密值由执行器通过受控引用取得，公共看板只记名称或非敏感摘要。停止请求（`request-stop`）返回需区分“请求已登记 / 停止信号已发送 / 会话已结束 / 仍未确认结束”；不能通过自动缩短持令寿命替代会话停止。持令者同样可以使用受保护文件工具修小错，持令身份不会让普通文件写入绕过 dry-run。
+     * **七类结果与接续方式（F23-01 至 F23-04）**：
+
+| 类别 | 真实文件可能已改变 | 接续方式 |
+|---|---|---|
+| 文件依据冲突（`:FILE_CONFLICT`） | 本次动作尚未改变 | 重读冲突依据，重新判断 |
+| dry-run 拒绝（`:PREPARE_REJECTED`） | 本次动作尚未改变 | 修正请求或拆出依赖 |
+| 等待写入口（`:WAITING_FOR_WRITE_GATE`） | 本次动作尚未改变 | 查询同一动作，等待准入或取消 |
+| 正常应用完成（`:APPLIED`） | 本次计划已应用 | 使用结果继续任务或明确完成 |
+| 文件已应用而记账待完成 | 已改变 | 重试纯看板发布，不重放文件操作 |
+| 应用中的硬失败（`:HARD_FAILURE`） | 可能部分改变 | 核对当前现场，保留未结责任 |
+| Shell 结果不确定（`:UNCERTAIN`） | 可能存在任意副作用 | 查询或核对，再决定后续动作 |
+
+       硬失败修补基于当前现场推进，不把恢复旧内容作为默认操作；不确定结果转成可推进的具体核对事项（如“检查上次命令是否仍有会话内活动”“核对第二个文件的当前函数内容”），不用固定“重试三次”代替判断。
+     * **统一结果码与内部五组件（F24-01 / F24-03 / F24-04）**：除上表外，稳定结果码还包括 `:OBSERVED`（读取成功）、`:STRUCTURE_CONFLICT`（路径或类型条件不成立）、`:UNSUPPORTED_OPERATION`（超出受保护工具能力，应拆分或提令牌任务）、`:ACTOR_INACTIVE`（身份已无提交资格）、`:CLAIM_CHANGED`（认领或任务条件不符）。文件入口内部由读取器、准备器、写入口、应用器、看板适配器五个单向依赖组件组合；Shell 复用写入口与看板适配器，不调用准备器假装理解任意命令。任何新增能力都必须说明处于读取、准备、应用还是 Shell 路径，以及是否改变文件判据、锁范围或责任生命周期。
+2. **同身裂变已删除。** 并行只靠多个 worker，不靠同身裂变；不存在泳道、收敛组、present 替换或相关拒绝码。
+
+### 4.5 标准 Clojure 程序用法样例
+
+以下展示核心标准样例（注意代码中直接使用 §6.3 的 UFSS 变长围栏字符串 `#"..."#` 与 `#"""..."""#`，彻底消除反斜杠与双引号转义）：
+
+**样例 1：唯一锚点定位、批内多处修改与原子受保护提交**
+```clojure
+(defprogram refactor-retry-policy []
+  (let [api-path   "src/core/api.clj"
+        retry-path "src/core/retry.clj"
+        ;; 读取接口文件（自动进入 read-set，提交时若 api.clj 被他人修改也会触发 FILE_CONFLICT）
+        api-src    (cat {:path api-path})
+        _          (where {:content api-src :needle #"(defn execute-with-retry [policy task]"#})
+        ;; 读取目标文件并批量倒序替换，保持前序字符偏移有效
+        retry-src  (cat {:path retry-path})
+        spans      (whereAll {:content retry-src :needle "RetryPolicy"})
+        _          (when (empty? spans)
+                     (throw (ex-info (str "No RetryPolicy in " retry-path) {:path retry-path})))
+        updated    (reduce (fn [s [begin end]]
+                             (str (subs s 0 begin) "RetryPolicyV2" (subs s end)))
+                           retry-src
+                           (reverse spans))]
+    (write {:path retry-path :content updated})
+    {:replaced (count spans) :depends-on api-path}))
+```
+
+**样例 2：`where` 零匹配挂起后，在新程序中用 `.unpark` 注入正确区间完成提交**
+```clojure
+;; 第一步：名为 "fix-timeout" 的程序因 needle 细微出入在 where 处自动挂起（未落盘、未占写锁 W）
+(defprogram fix-timeout []
+  (let [path "src/config.clj"
+        src  (cat {:path path})
+        [b e] (where {:content src :needle #"""
+                (def default-timeout-ms 30000)
+                """#})
+         next (str (subs src 0 b)
+                  #"""
+                  (def default-timeout-ms 60000)
+                  """#
+                  (subs src e))]
+    (write {:path path :content next})
+    {:updated path :span [b e]}))
+
+;; 第二步：模型根据挂起回执里的 :nearest {:span [812 842] ...} 确认区间后，在新程序中恢复它：
+(defprogram resume-fix-timeout []
+  (unpark {:name "fix-timeout" :value [812 842]}))
+```
+
+**样例 3：整文件结构断言重写（先取结构与规模事实，断言不过绝不落盘）**
+```clojure
+(defprogram demote-headings []
+  (let [path     "src/table.md"
+        source   (cat {:path path})
+        headings (whereAll {:content source :needle "\n## "})]
+    (when (empty? headings)
+      (throw (ex-info (str "No level-2 headings in " path) {:path path})))
+    (when (> (count source) 400000)
+      (throw (ex-info (str "File exceeds expected size: " (count source)) {:path path :size (count source)})))
+    (let [rebuilt (clojure.string/replace source "\n## " "\n### ")]
+      (write {:path path :content rebuilt})
+      {:sections     (count headings)
+       :before-chars (count source)
+       :after-chars  (count rebuilt)})))
+```
+
+**样例 4：按 `.stat` / `.ls` 决定分支，在单次批视图内批量读改写**
+```clojure
+(defprogram cleanup-legacy-todos []
+  (let [entries (ls {:path "src"})
+        ;; .ls 非递归，目录条目末尾带 "/"，这里只筛顶层 .clj 文件
+        files   (filter #(and (not (clojure.string/ends-with? % "/"))
+                              (clojure.string/ends-with? % ".clj"))
+                        entries)]
+    (vec
+      (keep (fn [name]
+              (let [path (str "src/" name)
+                    info (stat {:path path})]
+                (when (and (:exists info) (not (:is-dir info)))
+                  (if (> (:size info) 200000)
+                    {:path path :status :skipped-large}
+                    (let [src     (cat {:path path})
+                          matches (whereAll {:content src :needle "TODO(legacy)"})]
+                      (when (seq matches)
+                        (write {:path path :content (clojure.string/replace src "TODO(legacy)" "TODO(cleanup)")})
+                        {:path path :replaced (count matches)}))))))
+            files))))
+```
+
+**样例 5：持令者调用 `.call`（先自动排空内存批修改落盘，再运行命令解析结果）**
+```clojure
+(defprogram holder-patch-and-verify []
+  (let [path  "src/hc/app.clj"
+        src   (cat {:path path})
+        spans (whereAll {:content src :needle "(println "})]
+    (when (seq spans)
+      (write {:path path :content (clojure.string/replace src "(println " "(log/debug ")}))
+    ;; call 启动前自动排空（draining）上面的 write 并走完写锁 W 提交，再执行 Shell
+    (let [status (call {:command "git status --porcelain"})
+          _      (when-not (zero? (:exit-code status))
+                   (throw (ex-info "git status failed" {:stderr (:stderr status)})))
+          diff   (call {:command "git diff --stat"})
+          lines  (remove clojure.string/blank? (clojure.string/split-lines (:stdout status)))]
+      {:dirty-files  (count lines)
+       :removed-logs (count spans)
+       :diff-stat    (clojure.string/trim (:stdout diff))})))
+```
+
+**样例 6：`Plan` 在 `S1` 阶段调用 `.ask` 挂起提问，用户答复后用 `.unpark` 恢复**
+```clojure
+;; S1 阶段：ask 等价于 (park {:payload {:question ...}}) + :interrupt，挂起程序并交还控制权给人类
+(defprogram ask-target []
+  (let [answer (ask {:question "底稿中兼容旧配置的范围是只含 v1 还是同时含 v0 与 v1？"})
+        path   "plans/config-migration.md"
+        draft  (cat {:path path})
+        [b e]  (where {:content draft :needle "## 兼容范围\nTBD\n"})
+        next   (str (subs draft 0 b) "## 兼容范围\n" answer "\n" (subs draft e))]
+    (write {:path path :content next})
+    {:updated path :compat answer}))
+
+;; 人类在对话中回复后，Plan 在新命名程序中将答复注入原挂起点继续执行（不重开任期、不制造评审）：
+(defprogram resume-ask-target []
+  (unpark {:name "ask-target" :value "同时兼容 v0 与 v1，空字符串按空配置处理。"}))
+```
+
+**样例 7：蜂群个体调用 `split` 拆分父任务并保留父项实质（A02-04 / A02-06 / A02-07）**
+```clojure
+(defprogram split-config-parent []
+  (let [parent-id "task-config-root"
+        children  [{:task-id        "task-parse-v2"
+                    :goal           "实现 v2 EDN 配置解析函数 parse-v2"
+                    :remaining-work "在 src/hc/config/v2.clj 实现 parse-v2 并处理缺省字段"
+                    :done-when      "parse-v2 可无异常解析标准样本与空映射"
+                    :needs-token    false}
+                   {:task-id        "task-convert-v1"
+                    :goal           "实现旧格式 v1 到 v2 映射的纯函数转换 convert-v1->v2"
+                    :remaining-work "在 src/hc/config/legacy.clj 实现字段重命名与单位换算"
+                    :done-when      "旧格式字段完整映射到 v2 结构"
+                    :needs-token    false}
+                   {:task-id        "task-test-components"
+                    :goal           "取得并发布解析器与转换器的单元测试运行报告"
+                    :remaining-work "待两个组件就绪后运行测试套件并记录输出"
+                    :done-when      "测试报告已发布到看板"
+                    :wait-for       #{"task-parse-v2" "task-convert-v1"}
+                    :needs-token    true}]]
+    ;; 一次 STM 事务创建子项、建立 wait-for、更新父项剩余实质工作并将父项设为 :waiting
+    (split {:parent-id parent-id
+            :expected-cond {:state :ready}
+            :children children
+            :remaining-work "待 E1/E2/T1 完成后，将 parse-v2 与 convert-v1->v2 合并接入服务启动入口，统一错误返回格式"
+            :wait-for #{"task-parse-v2" "task-convert-v1" "task-test-components"}})))
+```
+
+**样例 8：持令者测试失败后在同一 STM 转换中拆出普通修复子项 R 并释放 $W$ 等待（§3.15 / F21-01）**
+```clojure
+(defprogram holder-verify-and-spawn-fix []
+  ;; 持令者在持有 W 期间运行启动核验，结束后立即释放 W
+  (let [res (call {:command "clojure -M:test -n hc.startup-test"})]
+    (if (zero? (:exit-code res))
+      ;; 报告与目标均满足，明确完成当前验证子项
+      (finish {:task-id "task-verify-startup"
+               :claim-id "claim-verify-3"
+               :result-summary {:summary "启动核验通过，新旧配置与默认超时均符合预期"
+                                :stdout  (:stdout res)}
+               :read-set []})
+      ;; 发现旧配置转换后的默认超时被启动层覆盖：在同一 STM 转换中为验证任务拆出普通修复子项 R，
+      ;; 持令者释放 W 等待普通个体修复代码，不占锁阻塞他人提交
+      (split {:parent-id "task-verify-startup"
+              :expected-cond {:claim-id "claim-verify-3"}
+              :children [{:task-id        "task-fix-merge-order"
+                          :goal           "修正 src/hc/startup.clj 中默认值与旧配置转换结果的合并顺序"
+                          :remaining-work "先应用默认超时，再合入用户配置与转换结果，避免覆盖"
+                          :done-when      "startup.clj 合并顺序已通过受保护提交更新"
+                          :needs-token    false}]
+              :remaining-work "待 task-fix-merge-order 修复完成后，重新运行 clojure -M:test -n hc.startup-test 核验"
+              :wait-for #{"task-fix-merge-order"}}))))
+```
+
+---
+
+## 5 运行时内核：单 Owner、Dijkstra 守卫命令、Missionary 与模型接入
+
+### 5.1 单 Owner 状态迁移与 I/O 并行分离
+
+1. **会话与看板的单写者模型**：
+   * 每个独立会话（以及微观蜂群共享的看板协调域）拥有唯一的串行状态入口（Owner Mailbox）。
+   * 浏览器命令、模型流片段、工具执行结果、计时器到期、子任期报告与取消信号可以来自任意并发线程，但**只有 Owner 能将它们转化为权威状态迁移**。
+   * 因此，系统内部**不需要业务层乐观并发控制（OCC）**来让多个写者争抢会话状态；外部文件冲突由 §4.2 的 `stamp` 判据独立承担，异步回包归属由 `call-id` 与 `attempt-id` 精确识别。
+2. **状态串行，I/O 并行**：
+   * Owner 的单步处理只做纯状态校验、计算候选状态与提交持久变更，绝不在 Owner 内直接阻塞等待模型响应或长耗时文件/Shell I/O。
+   * 耗时的模型调用、多槽位个体推理与文件预演在外部线程池/Missionary 任务中并行推进，完成后将离散结果消息投回 Owner 队列。
+3. **四层状态标识、多客户端 `tmux` 语义与运行中编辑政策**：
+   * **四层生命周期分离**：`session`（长期工作空间，保存可编辑对话、策略与当前关联的 `run`）、`run`（一次可取消的执行活动范围）、`call`（业务上的同一项模型或工具工作记录，阶段取 `:ready`/`:dispatching`/`:running`/`:retry-wait`/`:succeeded`/`:failed`/`:cancelled`/`:outcome-unknown`）、`attempt`（执行层某次具体尝试，重试时保留 `call-id` 而更换 `attempt-id`）。严禁用一个布尔值 `running` 混同四者，也严禁将线程句柄、HTTP 连接、取消函数等进程内临时资源表直接存入持久领域状态。
+   * **多客户端 `tmux` 共享控制与命令去重**：多个浏览器连接同一会话时，按服务器 Owner 实际接受顺序串行执行命令。客户端携带 `command-id` 与服务器签发的 `command-epoch`；在 `command-epoch` 有效窗口内，重发同一 `command-id` 直接返回已接受结果；`command-epoch` 退休后，未知旧命令绝不自动当作新工作执行，而是返回不确定提示要求客户端先重读当前状态。
+   * **运行中编辑与永久折叠政策（`edit-during-run`）**：已被领取的模型请求继续使用领取时固定的不可变输入快照；若用户编辑或折叠改变了正在进行任务的含义，默认取消相关在途模型请求并由最新当前态触发后续守卫（用户也可显式选择“取消并按当前内容重跑”）。若某条可见消息在工具尚处于 `:running` 时被用户删除或永久折叠，可见聊天立即更新，但该 `call` 的执行记录与必要参数仍保留在非聊天的运行状态中直至资源清理与父责任闭合，绝不因删消息而丢失对外部进程的监督，也绝不因迟到回包把已删消息复活回聊天列表。
+
+### 5.2 Dijkstra 守卫命令（Guarded Commands）与微动作目录
+
+系统拒绝用深层嵌套的 `while` 循环把模型调用、工具执行、重试和阶段转换绑在同一个调用栈上，而是将全部业务推进表达为基于当前权威状态的 **Dijkstra 守卫命令**：
+
+1. **级触发（Level-Triggered）与“判断 → 领取 → 提交 → 派发”四步铁律**：
+   * 守卫函数纯读取已提交的当前状态，返回是否启用及候选工作描述（严禁在守卫判断中产生外部副作用）。
+   * 每次状态迁移提交后，调度器按优先级组重新评估守卫（合并重复唤醒通知，设每轮微动作配额防饿死；配额耗尽但仍有启用守卫时自动重入队，绝不睡死）。
+   * 选中一条守卫后，微动作必须先将目标工作从 `:ready` / `:pending` 改为 `:claimed` / `:dispatching` 并分配唯一 `attempt-id`，完成状态提交后才向 Missionary 执行层派发任务——从根源上消除“边沿触发漏跑第二个并行任务”与“级触发未改状态导致重复启动”两类经典故障。
+2. **守卫优先级次序**：
+   * **P0 控制与取消**：接受操作员取消、阻断新工作领取、传播子域终止；
+   * **P1 结果归并与责任闭合**：接受工具/模型终态、交付待确认报告（`report-pending`）、执行持令者无责退休、触发看板清空后的任期接力屏障；
+   * **P2 重试规划与到期领取**：将可重试错误转入 `:retry-wait`（固定 `:retry-at`），或领取已到期的重试尝试；
+   * **P3 无人值守防停机（Nudge）与新工作领取**：拦截非出口自然停止并注入 Nudge，或为就绪槽位领取下一次模型请求/工具执行；
+   * **P4 死胡同兜底（Blocked Assertion）**：若任期非终态、无在途工作、无定时等待且无启用守卫，立即生成显式 `:blocked` 诊断并唤醒处理，严禁静默停机。
+
+#### 核心微动作目录详表（Guarded Micro-Actions Catalog）
+
+每个守卫条目形如 `{:id <kw> :enabled? <pure-fn> :prepare <plan-fn>}`（概念源出 Dijkstra EWD 472，增加服务器等待语义）：`:enabled?` 只读当前已提交状态并返回候选描述；`:prepare` 只产出纯数据的状态迁移计划与待派发任务描述，绝不在 `:prepare` 内悄悄启动 Future。只有状态提交（及所选存储的读屏障）完成后，执行层才按计划派发外部动作。
+
+| 微动作 | 启用条件（Guard） | 立即完成的原子状态迁移 | 后续派发 / 唤醒责任 |
+|---|---|---|---|
+| **接受用户消息**<br>`:accept-user-message` | 命令有效（`command-id`/`command-epoch` 校验通过），目标 `session` 存在 | 写入当前消息序列（或追加到看板公共输入事件），记录命令回执并标记待处理 | 触发 `wake-all` 并唤醒守卫评估是否需调用模型 |
+| **领取模型请求**<br>`:claim-model-request` | 存在待处理输入或未结义务、当前需同步闭合的工具已闭合、模型槽位空闲、未处于 `:retry-wait`、未取消 | 将模型调用从 `:ready` 改为 `:dispatching`/`:running`，分配唯一 `attempt-id`，**固定本次请求的不可变输入快照**（含 Pair Hint 与 Scope 裁剪结果） | 向 `ModelPort` 派发该 `attempt-id` 的模型调用 |
+| **接受流式片段**<br>`:accept-model-chunk` | 流片段归属当前有效 `attempt-id` 且调用未终结 | 累积更新当前输出缓冲或组装中的工具参数片段（高频片段可按节奏合并显示，不逐字刷盘） | 继续等待同一 `attempt-id` 完成或中断 |
+| **接受完整工具请求**<br>`:accept-tool-request` | 模型给出完整且通过基本 schema 校验的工具调用描述（按 `call-id` 去重，防流式回调与最终响应重复建单） | 建立 `:ready` 状态的工具工作记录（含完整参数与 `:scope` 注解） | 唤醒工具领取守卫评估派发 |
+| **领取工具执行**<br>`:claim-tool-call` | 工具处于 `:ready`、`:scope` 准入通过、角色能力匹配、未超并行度上限、未取消 | 结算或暂存 `:scope`，写入执行责任与新 `attempt-id`，状态改为 `:running` | 向 Clojure 沙箱 / 受管执行器派发该 `attempt-id` |
+| **接受工具/模型终态**<br>`:accept-call-terminal` | 终态消息匹配当前有效 `call-id` 与 `attempt-id`，且该尝试尚未固定终态（重复到达幂等忽略；过期 `attempt-id` 归入旧尝试诊断） | 固定 `:succeeded` / `:failed` / `:cancelled` / `:outcome-unknown` 结果，释放槽位 | 重新评估后续守卫（继续、重试、退休或接力） |
+| **计划故障重试**<br>`:plan-retry` | 当前上游错误可重试（网络抖动、429、短时 5xx）、未取消、重试预算未耗尽，且本次失败尚未建立重试计划 | 状态转为 `:retry-wait`（使本守卫立即变假，防级触发死循环重写），固定含抖动的 `:retry-at` 与已用次数 | 注册定时器，到期仅投递唤醒消息 |
+| **领取到期重试**<br>`:claim-due-retry` | 处于 `:retry-wait`、`now >= :retry-at`、未取消，且前序已提前启动的工具责任已协调完毕 | 离开 `:retry-wait`，分配新 `attempt-id` 并按统一边界计入尝试预算 | 派发新的模型或工具尝试 |
+| **交付跨城报告**<br>`:deliver-child-report` | 子任期/Plan dedicated worker 已固定终态并存在 `:report-pending`，父调用尚未确认 | 保持 `:report-pending` 直至收到父 Owner 按 `parent-call-id` 返回的幂等确认（含“已接受”或“父责任已终止”），确认后清除 `:report-pending` | 监督层投递报告，确认后触发运行资源回收 |
+| **持令者无责退休**<br>`:retire-empty-holder` | 当前存在有效 `holder` 且完整责任集合 $R(\text{holder}) = \emptyset$ | 同一 STM 事务内释放令牌、撤销旧身份提交资格、标记 `:dead` | 生命周期组件销毁旧会话并在槽位拉起新 `agent-id` |
+| **触发任期接力屏障**<br>`:trigger-relay-barrier` | 执行期看板全部根任务 `:done`、台账归零、$U = \emptyset$、无 `:applying`/`:running` 动作且 `holder` 已退休 | 同一持久事务内将当前任期标为 `:retired`、写入上下文屏障、以同里程碑开启 `:successor` 中心化 `Reviewer` | 开启下一任期 Phase A 只读评估窗口 |
+| **接受操作员取消**<br>`:accept-operator-cancel` | 收到真实操作员 Esc 中断（排除 `S1` 的 `ask` 挂起、初任空账的 `ask` 挂起与接力退休）且尚未受理 | 关闭新工作领取入口，记录取消意图，沿会话树、看板活动动作与受管子进程广度优先传播终止 | 执行层只 `abort` 不 `dispose`，回报各资源最终观察状态 |
+| **注入防停机 Nudge**<br>`:inject-unattended-nudge` | 中心化代理结束回合，但未处于 `S1` 提问挂起且未达终局出口 | 生成列出全部未结台账项与常授权硬口令的督促消息，开启下一轮模型请求状态 | 立即触发下一轮模型推理 |
+| **回收运行资源**<br>`:reclaim-resources` | 工作或子任期终态及报告交付责任均已闭合 | 从进程内资源表移除取消句柄、临时缓冲与已完成进程引用 | 无（空闲等待新输入时停止占用执行线程） |
+
+**内核八条自检不变量**：(1) 同一 `session` 权威状态只有一个修改入口；(2) 同一 `call` 的当前 `attempt-id` 明确，旧回包不覆盖新尝试；(3) 终态已接受的工作不再被普通守卫领取；(4) 每个未闭合工作都有 Owner 与明确等待对象；(5) 每个已结束子任期都有父可见终态或 `:report-pending`；(6) 配额耗尽但仍有启用守卫时必已安排继续运行；(7) 已取消 `run` 不再领取新外部工作；(8) 同一报告重复投递不重复追加工具结果。
+
+### 5.3 Missionary 异步组合、取消域隔离与可靠报告交付
+
+1. **Task 描述与已领取工作的边界**：
+   * Missionary 的 `m/sp`、`m/via` 仅作为执行层实现某个具体 `attempt-id` 的手段；业务是否已启动以领域状态中的 `attempt-id` 记录为准，绝不让前端订阅或派生图重算重复运行冷 Task。
+   * 独立并行的个体或只读操作使用独立结果收集（单个业务失败封装为 `{:result/status :failed ...}` 值返回给 Owner），不因一个分支的普通业务失败而利用 `m/join` 的 fail-fast 默认行为误杀其他正常工作的兄弟个体。
+2. **取消域与数据库提交线程严格隔离**：
+   * 用户取消 Run 或个体死亡终止时，取消信号只中断该 `attempt-id` 关联的模型 HTTP 流、计算任务或受管子进程。
+   * **严禁让 Missionary 的线程中断（`Thread/interrupt`）穿透到底层数据库的事务提交或 FileChannel 写入线程**。数据库提交由独立的提交组件完整走完，随后再由 Owner 处理取消后的状态。
+3. **跨 Owner 报告交付的零丢失协议（`report-pending`）**：
+   * 当 Plan dedicated worker 向 `Plan` 返回调查结果，或微观蜂群清空看板向中心化接力层移交终态时，若跨越独立 Owner：
+     1. 子方先在持久状态中固定终态并写入 `:report-pending`（含唯一 `report-id`、`parent-call-id` 与终态负载）；
+     2. 监督层（Supervisor）向父方投递报告；
+     3. 父方按 `parent-call-id` 幂等接受一次并返回确认（若父任期已取消则返回“父责任已终止”确认）；
+     4. 监督层收到确认后清除 `:report-pending` 并回收子方运行资源。进程在任意间隙崩溃重启，均由 `:report-pending` 恢复重投，彻底杜绝父方永久等待。
+   * **全文内联**：LLM 写的报告（join 结果、Plan dedicated worker 报告、子任期终态报告）原样全文投递，不截断、不摘要、不转 artifact；只有非 LLM 的原始工具输出（Shell stdout/stderr、二进制、超大日志）才按 §7.2 有界处理并显式标出截断。
+4. **响应式分支生命周期防坑与三类取消组合器**：
+   * **启动条件变假 $\neq$ 取消已启动工作**：当“有待处理输入且无在途模型调用”的守卫领取模型请求后，状态立即变为 `:running`，启动守卫随之变为 `false`。**严禁将已启动的 Missionary Task 直接挂在启动守卫的响应式分支下**（否则守卫变假会立即把刚启动的模型请求取消掉！）。已领取工作的存活期只归属 `run` 与 `attempt-id`，与启动条件解耦；同理，UI 列表移除某条目或浏览器组件卸载只释放观察订阅，绝不取消后端任务。
+   * **三类显式业务组合器**：(1) `run-required-steps`（必须共同成功的局部准备步骤，任一失败自动撤销本组局部临时资源）；(2) `run-independent-tools`（相互独立的并行工具或蜂群个体，各自捕获业务失败为 `{:result/status :failed :result/error {:kind ... :retryable? ...}}` 数据值交回 Owner，绝不因一处失败连坐取消兄弟分支）；(3) `run-first-accepted`（同一目标的竞争性尝试，首个结果被接受后取消其余分支）。每个取消信号均携带明确原因类别（`:user-cancel` / `:parent-terminated` / `:sibling-accepted` / `:deadline-exceeded` / `:executor-shutdown`），防止将主动收束多余分支误统计为上游故障。
+   * **多 worktree join 不使用 `run-first-accepted` 或 `:sibling-accepted`**：它是互不相交 slice 的队列，按完成时间 FIFO 逐个取结果；没有兄弟取消。
+   * **执行器启动即失败的闭合与 Javelin 边界**：`start-work!` 在进入异步等待前若因配置缺失、可执行文件不存在或凭据无效而同步失败，同样必须向 Owner 发出终态消息闭合已领取的 `attempt-id`。若使用 Javelin（JVM 端 `javelin.core-clj` 与 CLJS 端 API 不完全相同）计算派生 readiness，仅将其用于纯内存只读派生；Javelin 的 `dosync` 只是传播批次协调，绝不是数据库事务或外部副作用回滚机制。
+5. **多 worktree fork/join（Steward 编排，互不相交）**：
+   * `Steward` 按底稿 S3 把 Mission 拆成尽量互不相交的 N 个 slice；每个 slice 一个 worktree swarm；**不把同一个活派给多个 swarm**。N 自由决定，不设配置上限；资源不足返回 `:INSUFFICIENT_WORKTREES`。
+   * 每个 fork 是独立 worktree 上的 swarm，有自己的看板、令牌、`$W$` 与执行任期；master 分支只通过 ff 前进。
+   * **join 是队列**：每次 `(join {})` 取已完成队列的第一个结果，其余继续排队；队列空但仍有 `:running` swarm 时无限阻塞；队列空且无 `:running` 时立即返回 `:none`。`Steward` 反复调用直到 `:none`。没有 `:sibling-accepted`，没有 winner/loser。
+   * 每个结果先 rebase 到最新 master，再 ff；master 集成锁串行化。冲突由该 swarm 的 holder 解决；解决不了则 `(abandon {:reason ...})`，该结果不入队。
+   * 运行时机械 ff 并返回报告；`Steward` 不持续协调，也不排个体施工细节。
+
+### 5.4 LangChain4j 低层模型适配与分层重试预算
+
+**模型归属**：`Steward`（含 fork/join）与执行阶段的中心化 `Reviewer` 使用主模型；Plan 顶层使用主模型；Plan dedicated worker 与各 swarm 的普通 worker/holder 使用 `@task` 模型。`fission` 已删除，不再有裂变泳道。
+
+1. **窄接口适配（`ModelPort`）**：
+   * 仅使用 LangChain4j 的低层 `ChatModel` / `StreamingChatModel` 与 `ToolSpecification` 接口，**严禁启用其高层 `AiServices` 自动工具循环或 `ChatMemory` 替内核管理历史**。
+   * 模型输入由当前会话状态经 Pair Hint 与 Scope 裁剪后即时编译生成，并在该次 `attempt-id` 内固定为不可变快照。
+   * 流式工具调用必须等参数完整且通过基本校验后，才向 Owner 发布完整工具调用请求；若同一调用在完整工具回调与最终响应中重复出现，适配器按同一 `call-id` 归并，绝不建第二份请求。
+2. **分层重试预算**：
+   * 严格区分**业务继续轮次**（如因看板仍有待办而发起下一轮模型调用）与**上游故障重试**（因网络抖动、429 限流或 5xx 发起的同一请求重试）。
+   * 故障重试转入显式 `:retry-wait` 状态并记录 `:retry-at` 与已用次数；若前序工具已在流式阶段提前领取并执行，模型流随后中断时，必须先协调已领取工具的结果，严禁把整轮当作未发生过副作用而盲目重跑。
+3. **流式工具调用归并、错误分类与可观测性细则**：
+   * **协议契约**：`ModelPort` 仅暴露 `(start-request! [port request receiver])` 与 `(cancel-request! [port handle])`。回调在传输线程上只做轻量数据复制、附上调用身份并投递给 Owner 或有界流合并层，绝不在供应商回调线程内直接写库或启动子任务。
+   * **调用身份映射**：不假设所有供应商都返回全局唯一 `call-id`，也不单靠“工具名 + 参数哈希”去重（用户可能合法要求连续执行两次同参调用）。适配器在完整工具请求形成时分配项目级稳定 `call-id`，维护其与供应商 ID、`attempt-id` 及输出索引的映射；供应商不支持某输入能力（如多模态或特定工具模式）时明确返回错误或按声明降级，绝不静默丢弃字段。
+   * **重试分类表与双预算（次数 + 截止时间）**：统一区分 `max-attempts`（含首次）与 `max-retries`（不含首次），并检查或关闭底层 HTTP 客户端的隐式自动重试以免次数翻倍；同时设置尝试次数上限与总截止时间，任一耗尽即固定失败终态（生成最小失败报告绝不再依赖另一次模型润色调用）。
+
+| 错误类别 | 处理倾向 | 边界要求 |
+|---|---|---|
+| 暂时网络故障、429 限流、上游短暂不可用 | 有界退避重试（`:retry-wait` + 含抖动的固定 `:retry-at`） | 核实请求是否已产生提前领取的工具副作用；恢复时不重算延长 `:retry-at` |
+| 无效凭据、模型不存在、输入超长 | 立即失败或触发上下文调整 | 严禁靠盲目重复请求掩盖配置问题，严禁静默删掉用户关键消息 |
+| 工具参数 JSON 不完整或校验失败 | 不执行工具，返回结构化失败供模型修正 | 修正后作为新调用或新 `attempt` |
+| 外部操作结果未知（`:outcome-unknown`） | 先协调或查询外部状态 | 不可安全重复时严禁自动重跑 |
+| 用户取消（`:user-cancel`） | 结束当前执行责任，迟到回包仅归入诊断 | 绝不归入自动重试错误 |
+
+   * **用量、进度与推理（Reasoning）记录**：汇总每次 `attempt` 的输入/输出/缓存 token 与 `finish-reason`；流式部分统计与最终完整统计按覆盖规则归并防重复累加，重试失败的 `attempt` 成本照实保留。**供应商未报告用量必须标为 `:unknown`，严禁记为 0**。模型返回的 reasoning 摘要与不透明连续性数据按公开字段保存，不伪造未提供的内部思考，也不把不透明签名数据当作用户可编辑正文。
+
+---
+
+## 6 消息投影、上下文管理与 EDN Universal Simple Escape
+
+万象术只在每次向大模型发送请求前，对出站请求副本（Outbound Request Copy）做干净的函数式投影：组装角色提示词、通过 Pair Hint 注入双语纪律与预算校准、通过 Scope 裁剪过期噪音，并将所有面向大模型的结构化数据统一渲染为 **EDN + 通用变长围栏字符串（UFSS）**。
+
+### 6.1 系统提示词体系
+
+系统提示词由纯文本模块直接拼接，不含条件模板分支：
+* `Plan` 顶层代理 = `PLAN_PROMPT`（含 S1-S3 方法论、底稿规则、`devops` 原语说明与紧凑版 Scope）。
+* `Reviewer`（中心化评估窗口） = `COMMON` + `REVIEWER_PROMPT`（说明 `clj-review` 只读核验窗口、`review` 台账规则、无人值守口令与交接给蜂群的边界）。
+* `Swarm Worker` / `Swarm Holder`（微观蜂群个体） = `COMMON` + `SWARM_WORKER_PROMPT`（说明 STM 看板拆分优先、父项保留实质、受保护文件提交、`take-or-die` 不可逆竞争与无责退休）。
+
+#### `COMMON` 全文（源自 `herd.md` §5.1，工具与关键字对齐为 Clojure 形态）
 
 ```text
 You are in repo-aware mode. Obey repo-aware rules (AGENTS.md) as much as possible. It teaches you beyond old grandpa rules. You are pair-programming with the user; keep them informed of your intentions as soon as they arise. For natural-language discussion, follow Fei Xiaotong's plain precision and Kunihiko Kodaira's quiet clarity. Avoid officialese, performative rhetoric, translationese, and textbook cadence. Let the subject shape the prose.
@@ -640,303 +1101,3902 @@ Embrace uncertainty in causality, evidence, ownership, and authority, for the wo
 Make introspection a discipline of action, not a performance of self-awareness. Before every tool call or consequential decision, examine three gates in first-person working notes. First, inspect the present state: continuity of thought in Chinese, concrete progress, sufficient context, the current obligation ledger, the ready frontier, and assumptions worth preserving. Second, question the direction: is the apparent problem the real problem, and is the obvious solution merely the easiest to imagine? Seek the hidden hinge on which the whole task turns. Third, attempt falsification: suppose the intended action is redundant, inefficient, harmful, or already accomplished elsewhere. Seek the strongest case for that possibility before proceeding. If the objection survives, abandon the action and find a better one; if it fails, proceed without needless ceremony. OK, now treat these principles as Wittgenstein's Ladder.
 
 # Scope
-You own the context window through one `scope` annotation on every non-exempt tool call. Without pruning, old tool output crowds out the reasoning that produced the work; without a model-held budget, the host's own summarisation would erase it. `resetScope` opens a new loop with a fresh goal and a fresh budget, and it is the only way to start one. The four kinds are exact: `resetScope` requires `newScopeGoal` (non-empty string) and `newScopeRetentionBudget` (positive integer, no upper limit); `keepLast` accepts no other field; `removeLast` requires `replacement` (non-empty string) and erases the previous beat; `meToo` accepts no other field. A model turn carries exactly one true annotation (`resetScope`, `keepLast`, or `removeLast`); every other call in that same turn is `meToo`. `retention` is capacity, not a turn count or a call count: only `keepLast` spends one, `removeLast` spends none and records a spin, and `resetScope` replaces goal and capacity wholesale. When the budget is zero, only `resetScope` is admitted. `meToo` books nothing and never rolls back; if it arrives before the true annotation it is staged, and a turn that closes with only `meToo` is refused (`SCOPE_METOO_ONLY`). `negotiate` and `askPreviousScope` are exempt: they answer the newest committed snapshot synchronously, spend nothing, and are never refused for a spent budget. Before the newest settled `resetScope` boundary, the outbound copy keeps operator messages, every `resetScope` call and paired result, `assume`, `negotiate`, `askPreviousScope` and paired results, assistant prose, and observed provider originals; it drops older tool calls, tool results, and thinking. After the boundary everything stays. A persisted `resetScope` only proves an old event, not a budget in this process: after a restart every non-exempt call except `resetScope` is refused (`SCOPE_UNINITIALIZED`) until a `resetScope` settles here. Refusals are values, not executions. An admission refusal (`SCOPE_ANNOTATION_MISSING`, `SCOPE_KIND_INVALID`, `SCOPE_FIELD_INVALID`, `SCOPE_FIELD_UNEXPECTED`, `SCOPE_UNINITIALIZED`, `SCOPE_BUDGET_SPENT`, `SCOPE_METOO_ONLY`) means the call did not run and no state changed; a settle refusal (`SCOPE_RECORD_FAILED`, `SCOPE_TURN_MISSING`) comes after the tool already took effect, so the effect stands while the annotation is not booked.
+You own the context window through one `:scope` annotation on every non-exempt tool call. Without pruning, old tool output crowds out the reasoning that produced the work; without a model-held budget, the host's own summarisation would erase it. `:reset-scope` opens a new loop with a fresh goal and a fresh budget, and it is the only way to start one. The four kinds are exact: `:reset-scope` requires `:new-scope-goal` (non-empty string) and `:new-scope-retention-budget` (positive integer, no upper limit); `:keep-last` accepts no other field; `:remove-last` requires `:replacement` (non-empty string) and erases the previous beat; `:me-too` accepts no other field. A model turn carries at most one true annotation (`:reset-scope`, `:keep-last`, or `:remove-last`); every other call in that same turn is `:me-too`. `retention` is the number of `:keep-last` settlements: only `:keep-last` spends one; `:remove-last` spends none; `:reset-scope` replaces goal and capacity wholesale; a turn with only `:me-too` defaults to `:keep-last` and spends one (it is no longer refused). When the budget is zero, only `:reset-scope` is admitted. `:me-too` books nothing and never rolls back; if it arrives before the true annotation it is staged, and the turn settles once at the end. Exempt tools: `negotiate` and `askPreviousScope` spend nothing and are never refused for a spent budget; their calls and paired results survive every reset. `assume` is retained across resets but is **not** budget-exempt: a `:keep-last` on `assume` still spends one. Before the newest settled `:reset-scope` boundary, the outbound copy keeps operator messages, every `:reset-scope` call and paired result, `assume`, `negotiate`, `askPreviousScope` and paired results, assistant prose, and observed provider originals; it drops older tool calls, tool results, and thinking. After the boundary everything stays. A persisted `:reset-scope` only proves an old event, not a budget in this process: after a restart every non-exempt call except `:reset-scope` is refused (`:SCOPE_UNINITIALIZED`) until a `:reset-scope` settles here. Refusals are values, not executions. An admission refusal (`:SCOPE_ANNOTATION_MISSING`, `:SCOPE_KIND_INVALID`, `:SCOPE_FIELD_INVALID`, `:SCOPE_FIELD_UNEXPECTED`, `:SCOPE_UNINITIALIZED`, `:SCOPE_BUDGET_SPENT`) means the call did not run and no state changed; a settle refusal (`:SCOPE_RECORD_FAILED`, `:SCOPE_TURN_MISSING`) comes after the tool already took effect, so the effect stands while the annotation is not booked.
 ```
 
-### 5.2 `manager` 全文
+#### `PLAN_PROMPT`、`REVIEWER_PROMPT` 与 `SWARM_WORKER_PROMPT` 全文
+
+> 注：以下三段提示词根据 `herd.md` §2.2、§5.2–§5.4 原文及本文 §2–§4 的 Clojure 工具面与 Swarm 看板协议整合而成（其中 `SWARM_WORKER_PROMPT` 首段直接保留 `herd.md` §5.3 `worker` 原文，其余为对齐本文规则的组合文本 `[INFERENCE]`）：
 
 ```text
-When leading a real multi-agent team, maintain exactly one DevOps subagent and as many engineer subagents as meaningful work can sustain. Launch independent work immediately, without artificial waves, unnecessary serialization, or idle capacity. Serialize only genuine dependencies, and release downstream work as soon as its input contract is clear. Manager judges results; a single integration pass happens once all workers land, because parallel runs trip on siblings' half-finished edits.
+;; === PLAN_PROMPT ===
+You are Plan. Your sole persistent deliverable is the user-visible draft under `plans/` in the master worktree (never inside internal state directories). You choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters, unique; the system rejects unsafe or duplicate names. The first accepted `write` fixes the path; do not rename it afterwards.
+
+# Milestones (S1 -> S2 -> S3 -> 待执行)
+- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard, Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.
+- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan H. Schoenfeld to explore the optimal implementation skeleton and key points until nothing remains to improve.
+- S3 (Parallel Development Methodology): Using Donald Knuth-style pseudocode, specify the development methodology that maximizes concurrent developers and minimizes wall-clock time until nothing remains to improve.
+- 待执行 (Ready for Execution): The draft is finalized for handoff.
+Milestone judgment rule: each stage judges ONLY the gap to starting the next stage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start). Never count next-stage work as a current-stage gap.
+
+# Surface (`clj-plan`) and Read/Write Boundary
+Submit `(defprogram <name> [] ...)` using EDN + UFSS literals (`#"..."#`, `#"""..."""#`). Every capability is a bare function with one EDN map; there is no `this` and no positional argument.
+- `(cat {:path ...})` (draft and operator attachments only), `(write {:path ... :content ...})` (draft only; locked `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first `review` in this tenure is accepted), `(where {:content ... :needle ...})`, `(whereAll {:content ... :needle ...})`, `(park {:payload ...})`, `(unpark {:name ... :value ...})`, and `(ask {:question ...})` (ONLY in S1; equivalent to park + `:interrupt`, refused as `:ASK_FORBIDDEN_OUTSIDE_S1` outside S1).
+- `(devops {:verbose-intent "..."})`: synchronous join to the one Plan dedicated worker for this tenure; it returns `{:status :ok|:failed|:interrupted :report "..."}` verbatim. Reuse/steer the same worker; there is no `:DEVOPS_IN_FLIGHT` or `:PLAN_DEVOPS_DEAD`.
+- `(review {:findings [...]})`: obligation ledger `[{:key k :value v-or-nil} ...]`. In `待执行`, `(review {:findings []})` hands the saved draft bytes to execution. In the Plan phase a non-empty ledger is yours to service by editing the draft; do not expect a Swarm.
+- Unattended mode: Except when parked on `(ask {:question ...})` in S1 or after handoff completion in `待执行`, never stop naturally.
+- Compact Scope: Every tool call carries flat `:scope` (`:reset-scope` with `:new-scope-goal` and `:new-scope-retention-budget`, `:keep-last`, `:remove-last` with `:replacement`, or `:me-too`). One true annotation per model turn; an all-`:me-too` turn defaults to `:keep-last`; budget 0 admits only `:reset-scope`; after restart, initialize with `:reset-scope` (`:SCOPE_UNINITIALIZED`).
 ```
 
-### 5.3 `worker` 全文
-
 ```text
-Read generously whenever context permits. Do not let head, tail, narrow grep patterns, or arbitrary truncation dictate what you are allowed to understand. Examine the relevant whole: callers, callees, side effects, lifetimes, shared state, and implicit contracts. A few tokens saved by hiding the middle of a function may conceal the very fact on which its correctness depends. Read enough to grasp a coherent boundary, then write, inspect, and advance in small, complete steps. Prefer static reasoning and inspection; use DevOps for runtime reproduction, focused checks, and experiments only as a last resort. Minimize formatting, linting, builds, and broad tests, since subsequent changes invalidate earlier results. Never become addicted to verification or certification when something is already obvious. Main agent verifies once after all subagents land; parallel runs storm the CPU and trip on siblings' half-finished edits. Changes complete → yield; verification is main agent's job. NEVER run it yourself unless your assignment explicitly instructs it. NEVER verify your changes (builds, tests, linters, formatters, smoke runs) unless your assignment explicitly instructs it. Never depend on user intervention; overcome obstacles yourself, whatever stands in the way.
+;; === REVIEWER_PROMPT ===
+When leading a real multi-agent team, judge results against the draft and workspace reality without path dependence on your predecessor.
+You are Reviewer in the Centralized Review Window (Phase A) of the current tenure.
+- Surface (`clj-review`, strictly read-only): `(cat {:path ...})`, `(stat {:path ...})`, `(ls {:path ...})`, `(where {:content ... :needle ...})`, `(whereAll {:content ... :needle ...})`, `(unpark {:name ... :value ...})`, and the top-level primitive `(review {:findings [...]})`. You never edit files, run commands, or call `ask` (`:ASK_FORBIDDEN_OUTSIDE_S1`).
+- Inspect `plans/<name>.md` and the current workspace. Submit your first `(review {:findings [...]})` of this tenure:
+  - Non-empty `findings` `[{:key "k1" :value "v1"} ...]`: in execution, closes `clj-review`, suspends Reviewer, materializes each obligation as a root task on the Swarm STM board, and wakes all Swarm slots (Phase B). In the Plan phase it is the Plan's own ledger; no Swarm starts.
+  - Empty `findings` on a successor's first review: confirms the predecessor's work independently and promotes the milestone (`执行` -> `收尾` -> `已完成`, where `收尾` requires the per-tenure quiescence set or it is refused as `:RESOURCES_NOT_QUIESCENT`; an ff dry-run failure is refused as `:FF_NOT_READY`).
+  - On the initial tenure's first review in `执行`, an empty review is not recorded: it becomes a normal `(ask {:question "底稿已满足，接下来做什么？"})`. Resume with `(unpark {:name ... :value ...})`; the answer is only new input. Ask at most once per tenure; the next empty review triggers the relay barrier.
+- System is always-authorized and unattended except for that initial empty-review ask: never wait for user approval or stop before `已完成`.
 ```
 
-### 5.4 `<vibe-mode>` 导演消息全文
-
 ```text
-<vibe-mode>
-工作语义只有一种：你是 Manager。你是 DIRECTOR：调遣尽可能多的 worker，它们是有完整工具面的编码代理；你自己 NEVER edit、run、grep、build。你也不读文件——工具面里没有。
-工具面：顶层原语 `fork`、`join`、`review` 直接写函数名；成员 `this.park`、`this.unpark` 只写 `this.xxx`。一个能力只有一种写法，没有 `this.fork`，也没有裸 `park(...)`。
-# 无人值守
-你没有 `ask`：调用 `this.ask` 会被拒绝（ASK_FORBIDDEN_OUTSIDE_S1），提问只属于 Plan 的 S1 阶段。
-系统是无人值守的常授权模式：禁止等待用户决策或授权，禁止半途而废。你自己决定、自己动手、自己验收。
-你唯一的停止出口是「收尾」阶段清空台账结案为「已完成」；在到达之前结束回合，系统会拦截并注入 Nudge，列出当前 review 账本尚未完成的全部待办，要求你立刻去做。
-# Workers
-- `devops`：执行真实命令（bash、构建、测试、进程、git）。同一时刻恰好一名。
-- `coder`：本地事实调查与源码修改。任务描述里必须明确禁止使用 bash 工具；工具面照常含 `call`，禁令只是提示词约束。
-每名 worker 都是独立的当事人，各有自己的工具面与账本。Worker starts blank; never see this conversation——任务描述（`verboseIntent`）必须自足：目标、约束、接口、验收依据、返回时该报什么。
-# Direction
-1. 把请求切成彼此独立的工作流。
-2. 每路 `fork(name, verboseIntent)` 一次；`verboseIntent` 必须完整自足。
-3. fork 立即返回；结果在 worker 结束这一回合时自己送到。期间继续调遣别的 worker；`join` 只等到最先归来的一个，只在无法继续推进时用。
-4. On each result, decide corrections, next step, or review request; send them with `fork`. Reusing a live worker's name steers that worker instead of starting a new session; the receipt says which one happened——`steered: true` 是追加到既有 worker，`steered: false` 是新建。以回执为准，不靠名字相同去推断。
-5. 按难度分配：机械、规格明确的工作给 `coder`；需要真实执行、构建、测试、进程的给 `devops`。
-Run independent workstreams concurrently. For substantial decomposable work, normally use 10+ workers; otherwise use the number the work actually needs. Final outcome yours: do not take a worker's word for it.
-</vibe-mode>
+;; === SWARM_WORKER_PROMPT ===
+Read generously whenever context permits. Do not let head, tail, narrow grep patterns, or arbitrary truncation dictate what you are allowed to understand. Examine the relevant whole: callers, callees, side effects, lifetimes, shared state, and implicit contracts. A few tokens saved by hiding the middle of a function may conceal the very fact on which its correctness depends. Read enough to grasp a coherent boundary, then write, inspect, and advance in small, complete steps. Prefer static reasoning and inspection; use DevOps / Holder shell for runtime reproduction, focused checks, and experiments only as a last resort. Minimize formatting, linting, builds, and broad tests, since subsequent changes invalidate earlier results. Never become addicted to verification or certification when something is already obvious. Never depend on user intervention; overcome obstacles yourself, whatever stands in the way.
+
+# Swarm STM Protocol (`clj-worker`)
+- Every capability is a bare function with one EDN map; there is no `this` and no positional argument.
+- File/text/continuation: `(cat {:path ...})`, `(stat {:path ...})`, `(ls {:path ...})` (pure probe: no read-set, no structure check, no dependency), `(write {:path ... :content ...})`, `(mkdir {:path ...})`, `(rm {:path ...})`, `(mv {:source ... :target ...})`, `(where {:content ... :needle ...})`, `(whereAll {:content ... :needle ...})`, `(park {:payload ...})`, `(unpark {:name ... :value ...})`, and `(call {:command ...})` (Holder only; normal workers receive `:TOKEN_REQUIRED`). `fission` does not exist.
+- Board: `(split {:parent-id ... :expected-cond ... :children [...] :remaining-work "..." :wait-for #{...}})`, `(claim {:task-id ... :atomicity-reason "..."})`, `(finish {:task-id ... :claim-id ... :result-summary ... :read-set [...]})`, `(cancel {:task-id ... :reason ...})`, `(replace {:task-id ... :replacement {...} :reason ...})`, `(release {:task-id ... :claim-id ...})`, `(reopen {:task-id ... :reason ...})`, `(comment {:task-id ... :text ...})`, `(update {:task-id ... ...})`, `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`, `(park-slot {:observed-cursor ...})`.
+- Task states are only `:ready`, `:waiting`, `:done`. `cancel`/`replace` work on leaves only (no unfinished children); they remove the task and record an event, not a state. A parent whose wait-for becomes empty returns to `:ready`; it never auto-completes.
+- Split before claim (A02-04 / A02-06): Decompose compound work first; parent tasks retain substantive `:remaining-work`, and child completion only restores the parent from `:waiting` to `:ready`, never auto-completing it.
+- Protected file commits (A02-15 / A02-18): Reads record `(mtime, size)` stamps in `read-set` (including read-only dependencies). All `write`/`mkdir`/`rm`/`mv` apply to the batch in-memory view first, then verify all stamps and structure checks and commit atomically under write gate W on normal return. `finish` does not drain the batch; the program's order is the semantics.
+- Irreversible token competition (A02-11 / A02-13): Call `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` only when valuable protected work is exhausted, token tasks exist, and the token is free. Winning makes you the sole Holder for all `:needs-token` tasks (holding W only during active `call` or file commit); losing transfers your remaining responsibilities and claims in the same STM transaction and ends your life; Holder retires and dies in the same STM transaction the moment full responsibility set R(a) becomes empty. Never call `park-slot` while any global non-blocking progressable work exists.
+```
+
+### 6.2 Pair Hint 与 Scope 上下文管理
+
+1. **Pair Hint（双语结对、防忘记口诀与字节前缀法则）**：
+   * 仅支持 `:en` 与 `:zh-CN` 两种语言，资源必须成对存在，缺一即败；会话创建时一次性确定语言并持久化，子会话/蜂群槽位继承任务语言。
+   * **确定性语言解析阶梯与防呆边界**：会话创建时按「显式环境变量 → 系统配置偏好 → IDE / 系统 locale → 默认 `:en`（无法确定时取默认并记录）」的优先级一次性定下语言，终生绑定（重试、失败、压缩、进程重启均不改变会话语言）；缺失 `en.md` 或 `zh-CN.md` 任一资源文件、或语言字段为非法值时立即报错失败，绝不静默退回另一种语言冒充成功。工具名、参数名、关键字、枚举字面量、文件路径与 Shell 命令一律保持原样，绝不翻译。运行时只做形式合规核验（语言合法、资源成对、字节前缀不漂移），不用程序检测模型自然语言输出种类来拦截请求。
+   * 每次出站请求以配对的合成工具调用与结果注入：`AGENTS.md` 核心纪律口诀、语言纪律（`zh-CN` 首句固定为：`「思考过程与全部对外输出，一律用简体中文」`）、Token 经济与等待成本校准、Provider 上下文窗口大小、已用回合/墙钟时间，以及当前会话尚未恢复的 `.park` 挂起句柄列表。
+   * **7 项注入内容细则**：(1) `AGENTS.md` 防忘记口诀；(2) 结对编程准则与语言纪律；(3) Token 经济提示（说明前缀缓存命中与重算的成本关系）；(4) 等待成本校准；(5) Context Limit（将 provider 声明的窗口大小作为纯事实告知模型，不据此预测溢出，也不替模型自动压缩）；(6) 预算校准（如实告知已花回合数、估算剩余回合、已用墙钟时间，同时声明非硬性执行上限）；(7) 空闲挂起提示（Idle Hint：列出本会话尚未结清的 `.park` 句柄名字，迫使模型明确表态如何处理，但系统绝不替模型自动恢复）。合成工具调用与结果（工具名为空字符串 `""`）的插入位置由持久事实决定，同一位置重复处理只原样重放、不新增；Pair Hint 只存逐消息摘要与链根（digest），不存完整请求副本。
+   * **同一 Epoch 内的消息序列前缀法则**：同一 Epoch 内，后一次出站请求的**渲染消息序列**必须以前一次为前缀（语义白名单定义消息身份）；Pair Hint 存逐消息 digest 与链根，重算链验证，不存完整请求副本。缓存命中是 best-effort，不承诺 100%。允许开启新前缀边界：接力屏障（`relay`）、Scope 裁剪/抹除（`scope-reset` / `scope-remove`）、经核实的压缩，以及**看板写者 clean-break**。
+   * **看板观察（delta / clean-break）**：看板状态经 Pair Hint 推送，不提供 `(board ...)` 读取原语。某 agent 修改看板后，其他 agent 收到增量 delta（`{:board-version N :changes [...]}`，追加到 Pair Hint，前缀链继续）；写者自己收到**整张看板的 clean-break 全量快照**（所有 `Task`/`Action`/`Actor`/`TokenSlot` 的当前字段，不是注入视图），删除旧看板 delta 并开启自己的新前缀边界；旧 delta 释放的上下文空间用于容纳全量快照。读者累积 delta 超过阈值（条数或版本跨度）时同样 clean-break 全量。`park-slot` 的 `:observed-cursor` 来自最近一次 delta/快照的 `board-version`。**Steward 的 fleet 视图**：Steward 不属于任何单个 worktree，它的 Pair Hint 注入有界 fleet 摘要（每个 swarm 一行：`swarm-id`、`slice-id`、`worktree`、`status`、根任务计数、`queued-count`、`last-event`、`master-version`）；状态变化发 delta，超阈值 clean-break；`:result-queued` 事件随摘要推送，Steward 不获得单任务详情。
+   * **正向语义白名单与侧回合（Ephemeral Turn）隔离**：比对消息前缀时不维护“哪些易变字段不算对话”的黑名单，而是用**正向语义白名单**定义“同一条消息”（角色、每个内容块的类型及该类型的语义字段），忽略流式占位增量、用量统计等重算字段，避免误报 `:PREFIX_DRIFT`。标题生成、输入预测、空闲维护等瞬时侧回合（ephemeral turn，如带 `attribution: "agent"` 的请求）在投影时照常注入配对提示以预热缓存，但标记为 `:ephemeral`：**不记账、不移动 Pair Hint 链位点、不开闭工具闸门**，防止侧回合抢走主请求的前缀链状态。
+2. **Scope（单世内的因果保留与记忆修剪）**：
+   * 每次非豁免工具调用必须携带打平的 `:scope` 映射，`:kind` 取值有且仅有四种：
+     * `:reset-scope`：必填 `:new-scope-goal`（非空字符串）与 `:new-scope-retention-budget`（正整数），开启新闭环并整体替换目标与保留容量额度；
+     * `:keep-last`：无附加字段，认可上一拍成果，保留容量 `retention - 1`；
+     * `:remove-last`：必填 `:replacement`（非空字符串），抹除上一拍弯路（不扣减 `retention`），在出站副本中将上一拍工具调用、思考与结果替换为一条写明经验教训与空转计数的 `assistant` 消息；
+     * `:me-too`：无附加字段，同模型回合内并发工具调用的附议，不扣额度、不回滚；整回合仅有 `:me-too` 时默认按 `:keep-last` 结算并扣 1 点 `retention`，不再拒收 `:SCOPE_METOO_ONLY`。
+   * **单回合结算、豁免工具与拒收分类**：
+     * `retention` 的单位是 `:keep-last` 结算次数：一个模型回合最多扣 1 点；全 `:me-too` 回合默认按 `:keep-last` 扣 1 点；`:remove-last` 不扣。当前 `retention` 为 0 时，任何非 `:reset-scope` 调用（含 `:me-too`）一律拒为 `:SCOPE_BUDGET_SPENT`。
+     * **豁免工具（Exempt Tools）与钉住调用**：
+       * `negotiate` 与 `askPreviousScope`（camelCase；`ask-previous-scope` / `ask_previous_scope` 不是注册名）**不扣减 `retention`**，额度为 0 时也可调用；它们的调用与配对结果跨任意次 reset 保留（history pruning 豁免）。
+       * `askPreviousScope` 向**紧邻的前一个 Scope** 提澄清问题；调用同步返回“已受理”receipt，**答案不在返回值里**，随后以 `role:"user"`、`attribution:agent` 的 steer 到达。receipt 持久化，重放幂等；没有前一个归档 Scope 时返回 `NoPreviousScope`。
+       * `assume` 是**钉住判断**的工具：`(assume {:assumption "..."})` 把已经抽象好的判断钉住，返回固定 prose（“已笃定，不再因为没有信息增量的犹豫反复改判。”），不回显 assumption。它**只豁免 history pruning，不豁免 retention**；`keepLast` 搭在 `assume` 上仍然扣 1 点。
+       * 第一次 reset **不要求**先 ask；第二次及以后才要求。`askPreviousScope` 与 `scope.kind=resetScope` 不搭在同一次调用上：本规范采用 **ask 先、reset 后** 的独立顺序，先问前一个 Scope，再开新 epoch，避免宿主间“先提交还是先发问”的分歧。
+       * `Plan` 面上无此类豁免查询通道。
+     * **准入拒收 vs 结算拒收**：准入拒收（`:SCOPE_ANNOTATION_MISSING`、`:SCOPE_KIND_INVALID`、`:SCOPE_FIELD_INVALID`、`:SCOPE_FIELD_UNEXPECTED`、`:SCOPE_UNINITIALIZED`、`:SCOPE_BUDGET_SPENT`）发生在工具执行前，调用未运行、状态未变；结算拒收（`:SCOPE_RECORD_FAILED`、`:SCOPE_TURN_MISSING`）发生在工具生效之后，工具效果保留而注解不记账。
+   * 最新一次已结算 `:reset-scope` 边界之后的内容原样保留；边界之前只保留操作员消息、历次 `:reset-scope` 调用及配对结果、钉住的查询调用及结果、`assistant` 正文与已观测 provider 原文，其余旧工具调用、结果与 thinking 块全部从出站副本裁除。
+   * 进程冷启后，内存预算尚未由模型确证前，除 `:reset-scope` 外的非豁免调用一律拒为 `:SCOPE_UNINITIALIZED`，迫使模型先执行一次 `:reset-scope` 重建闭环。
+
+### 6.3 面向大模型的结构化数据与代码字面量规范：EDN + 通用变长围栏字符串（UFSS）
+
+在万象术中，**系统向大模型返回**的结构化数据（工具回执、看板快照、`park` 诊断、Pair Hint 载荷）**一律使用**支持 UFSS（Universal Fence-Scaled String）的 EDN / Clojure 语法，禁止投喂含 `\"`、`\\`、`\n` 转义噪音的裸 JSON。**大模型向系统提交**的内容不强制格式：JSON、标准 Clojure 转义字符串与 UFSS 都接受；解析器归一化后执行，解析失败返回具体位置与期望格式。传输层的 provider JSON 信封不算“呈现”，不受此约束。
+
+#### 为什么设计 UFSS？（完胜 JSON 与 CUE 的四项工程特性）
+1. **彻底零转义（True Raw Semantics）**：在 UFSS 的任何带 `#` 围栏字符串中，**反斜杠 `\` 永远只是普通字符 `\`**，不存在 `\"`、`\\`、`\#` 转义，也不存在 CUE 的 `\(...)` 字符串插值陷阱！
+2. **数学上无边界歧义（Unbordered Delimiter Theorem）**：对于 $n \ge 1$ 的单行围栏 `#"..."#`（或 `#^n"..."#^n`），由于结束符 $D = \text{"}\#^n$ 的首字符 `"` 与后续字符 `#` 完全不相交（无真前缀后缀重叠 $\pi(D)=0$），任何以 `"` 结尾的正文（如 `foo"`）包裹为 `#"foo""#` 时，词法扫描器寻找首个 `"#` 必然精准停在真正的结束边界，绝不发生吞字或提前截断！
+3. **块缩进对齐与自动剥离公共缩进（Indentation Stripping）**：多行围栏 `#^n"""\n...\n<indent>"""#^n`（$n \ge 0$）根据结束行 `"""#^n` 左侧的空白缩进 `<indent>`，自动剥离正文每一非空行左侧的 `<indent>`，既让嵌套在 EDN/Clojure 里的多行源码排版极其工整，又 100% 保真原始相对缩进与换行。
+4. **天然契合 EDN 零标点噪音**：EDN 以关键字 `:key` 作标签、以空白与换行分隔集合元素（逗号视为普通空白），彻底消除了 CUE 中“列表换行漏写逗号”“字段名漏加引号”“以双引号开头必须走块”等全部文法陷阱。
+
+#### UFSS 的四种字符串形态与读取器（Reader）精确语义
+
+万象术的 EDN/Clojure 读取器同时支持标准 Clojure 字符串与以下 UFSS 阶梯字面量（其中 `#^n` 表示连续 $n$ 个 `#` 字符）。`#"..."#` 在万象术中按原始字符串读取；真正的正则用 `(re-pattern #"...")` 表达，不再使用 Clojure 的 `#"..."` 正则字面量：
+
+1. **普通行内字符串 `"..."`（仅用于无转义短文本）**：
+   * 遵循标准 EDN 字符串规则；但在万象术的 Pretty Printer 输出中，**仅当单行文本不含 `"`、不含 `\`、不含换行或控制字符时**才使用普通 `"..."`。
+2. **单行原始围栏字符串 `#^n"..."#^n`（$n \ge 1$，如 `#"..."#`、`##"..."##`）**：
+   * **适用场景**：单行文本（不含 `\n` 或 `\r`），但包含 `"` 或 `\`（例如代码锚点 `#"(defn foo [x] "bar")"#`、Windows 路径 `#"C:\Users\dev\app.clj"#`、正则表达式源码 `#"^\d+\s+"name"$"#`）。
+   * **读取规则**：读取器在看到 $n \ge 1$ 个 `#` 紧跟单个 `"`（且非 `"""`）时，进入单行原始围栏模式，逐字符原样收集，直到遇到**第一个**连续的 `"` 加 $n$ 个 `#`（即 `"#^n`）为止。中间的 `\`、`"`、`#( ` 等一切字符均按字面量原样保留，零转义！
+3. **多行原始块字符串 `"""..."""`（$n = 0$）与 `#^n"""..."""#^n`（$n \ge 1$，如 `#"""..."""#`）**：
+   * **结构要求**：开始围栏 `#^n"""` 后必须紧跟换行符 `\n`；结束围栏 `"""#^n` 必须位于独立的一行，其左侧仅允许有空格缩进 `<indent>`（即 `\n<indent>"""#^n`）。
+   * **读取与缩进剥离规则（五步确定性算法）**：
+     1. 跳过开始围栏 `#^n"""\n`（含该换行符）；
+     2. 向后扫描，直至匹配到某一行满足：行首为 $k \ge 0$ 个空格 `<indent>`，紧跟 `"""#^n`（且若 $n=0$，其后紧跟的字符不是 `"`）；
+     3. 截取开始围栏 `\n` 之后到结束行 `\n<indent>"""#^n` 之前的原始正文，按 `\n` 切分为行序列 $L_1, L_2, \dots, L_m$；
+     4. 对每一行 $L_i$：若 $L_i$ 为空行（`""`），保持为空行；若 $L_i$ 非空，检查并剥离其左侧前缀 `<indent>`（若某非空行前导空格少于 `<indent>`，读取器直接报错 `:UFSS_INDENT_VIOLATION`，拒绝静默吞字）；
+     5. 将剥离公共缩进后的 $L_1, \dots, L_m$ 用 `"\n"` 重新连接，即为最终字符串值！（注：若原字符串本身以 `\n` 结尾，只需在结束行前多留一个空行，使 $L_m = \text{""}$，连接后即精确还原尾随 `\n`，实现数学上的双射无损往返！）
+4. **控制字符回退**：
+   * 若字符串包含 `\r`、`\0` 或其他不可见控制字符（ASCII $< 32$ 且非 `\n`、`	`），Pretty Printer 统一回退使用带显式 `\r`、`\uXXXX` 转义的标准 `"..."`，确保任何时候终端与模型视野中不出现隐形回车符污染。
+
+#### Pretty Printer 的确定性阶梯选择算法
+
+当系统将任意字符串 $s$ 渲染为面向 LLM 的 EDN 文本（设当前字段缩进为空格串 $\text{indent}$）时，按以下唯一阶梯选择：
+1. 若 $s$ 含 `\r` 或不可见控制字符 $\implies$ 输出标准转义字符串 `"..."`。
+2. 若 $s$ 不含 `\n`：
+   * 若 $s$ 不含 `"` 且不含 `\` $\implies$ 输出 `"` + $s$ + `"`；
+   * 否则，取最小正整数 $n \ge 1$ 使得子串 `"#^n` 不在 $s$ 中出现 $\implies$ 输出 `#^n"` + $s$ + `"#^n`。
+3. 若 $s$ 含 `\n`（或以 `"` 开头且需跨行呈现）：
+   * 若 $s$ 不含 `"""`、不含 `\`，且没有任何一行以 `"""` 开头 $\implies$ 取 $n = 0$（即 `"""`）；
+   * 否则，取最小正整数 $n \ge 1$ 使得子串 `"""#^n` 不在 $s$ 中出现；
+   * 按当前缩进 $\text{indent}$ 输出多行块：`#^n"""\n` + 逐行前置 $\text{indent}$（空行除外） + `\n` + $\text{indent}$ + `"""#^n`。
+
+**EDN + UFSS 挂起回执呈现示例（零转义、层次分明）**：
+```clojure
+{:name "fix-timeout"
+ :state :parked
+ :reason :where-ambiguous
+ :Windows-path #"C:\workspace\herdchestra\src\config.clj"#
+ :payload {:needle #"(def timeout-ms 30000)"#
+           :candidates []
+           :nearest {:span [812 835]
+                     :text #"(def timeout-ms 30000) ; default"#
+                     :distance 10}}
+ :source #"""
+   1 | (defprogram fix-timeout []
+   2 |   (let [src (cat {:path "src/config.clj"})
+   3 |         [b e] (where {:content src :needle #"(def timeout-ms 30000)"#})]
+   4 |     (write {:path "src/config.clj" :content (str (subs src 0 b) "(def timeout-ms 60000)" (subs src e))})))
+   """#
+ :remaining-wait-ms 4200}
 ```
 
 ---
 
-## 6 消息投影（下）：Pair Hint 与 Scope 上下文管理
+## 7 存储、环境供应与瘦客户端工作台
 
-宿主怎么在磁盘上存聊天记录，万象术并不关心，也绝不修改宿主的持久历史或用户原文。万象术只在每次向大模型发送请求前，对出站请求副本（Request Copy）做两件干净的改写：用 Pair Hint 注入语言要求、`AGENTS.md` 防忘记口诀与运行预算校准，用 Scope 修剪过期的工具调用与思考噪音。
+### 7.1 当前态持久化与故障恢复窗口
 
-- 标题与范围：下面除了 §6.1 Pair Hint 与 §6.2 Scope 之外，§6.3 规定所有发给 LLM 看的结构化数据（含提示词注入载荷与工具返回值）的排版格式。
+**多 worktree 边界**：每个 worktree 有自己的看板、令牌槽与 `$W$`；master worktree 保存 `plans/<name>.md` 与集成状态；领域当前态仍由控制服务统一持久化，按 worktree 分区。停电只作 best-effort：不承诺恢复旧现场，只承诺不暴露半提交状态。
 
-### 6.1 Pair Hint：双语结对、`AGENTS.md` 防忘记口诀与前缀稳定
+1. **存储分层**：
+   * **领域当前态（嵌入式数据库）**：保存会话配置、当前消息序列、活动任期与 `review` 台账、Swarm STM 看板（`Task`、`Action`、`Actor`、`TokenSlot`）、以及未结交付责任（`:report-pending`）。候选引擎（Asami / Datalevin / Datomic Local）统一封装在窄存储接口后：提交一次领域迁移，返回可用于后续守卫判断的一致状态视图。
+   * **外部大对象区（Managed Blob Store）**：长输出、大附件与二进制产物先写入受管文件区临时位置，完成后生成带大小与摘要的稳定内容 ID，再进入数据库事务建立引用；清理器仅回收超过安全窗口且无当前引用的孤立对象。
+   * **可重建派生层**：全文搜索与向量索引仅作为当前态的派生物，查询命中后必须回主数据库核对实体当前版本仍然存在且有效。
+   * **窄存储接口的五项完整责任**：`read-session-view`（读取当前会话与看板）、`commit-migration!`（原子提交一次领域状态迁移并返回可读屏障后的最新状态）、`list-open-obligations`（列出未结调用、到期重试与 `:report-pending`）、`manage-blob-refs!`（管理外部大对象引用）、`open-close-store!`（按应用退出顺序先停接新工作、结清或交接当前责任、再关闭存储）。格式方面：主状态走嵌入式库，实时通知走 AG-UI，人工迁移/跨库升级走带显式数据格式版本号的 EDN/JSON 导出包（不靠包版本盲猜数据版本），跨进程固定控制消息按需用 EDN/Protobuf，JSONL 仅用于导出与有开关的诊断采样。
+   * **三级删除语义与索引同步**：明确区分 (1) **当前业务删除**（从展示、模型输入、搜索与后续决策中立即移除）；(2) **应用保留清除**（历史副本、旧索引、无引用附件与缓存按规则回收）；(3) **介质级法证擦除**（涉及文件系统快照与外部备份，不作默认虚假承诺）。消息或附件修改/永久折叠后，旧全文与向量索引项立即标记失效；即使后台重建滞后，召回层也必须回主库校验当前实体与版本，绝不让旧向量把已删正文带回模型上下文。删除仍有活动任务的会话时，先置为关闭中、取消现有 `run` 并收束责任，再回收数据。
+2. **重启恢复的六个故障窗口协调**：
+   * 进程重启后，系统在开放外部命令与新工作派发前，先扫描所有未结记录：
+     * 领取前（`:ready`）$\implies$ 交由守卫正常领取；
+     * 已领取未派发（`:dispatching`）$\implies$ 按工具幂等性重新派发或标为中断；
+     * 外部已启动但本地未记录启动观察 $\implies$ 按稳定 `call-id` / `operation-id` 查询或转入 `:outcome-unknown`；
+     * 已启动但执行资源已随旧进程消失（`:running`）$\implies$ 尝试查询外部状态；无法确认且不可安全重复的操作一律转入 `:outcome-unknown`，由后续任务先核对现场，**绝不盲目自动重跑可能产生重复副作用的操作，也绝不留下无人持有的永久 `running`**；
+     * 子终态已提交但父方未接受（`:report-pending`）$\implies$ 重新向父方投递直至确认；
+     * 父方已接受但子方未收到确认 $\implies$ 重投后由父方幂等返回“已接受”并清除 `:report-pending`。
+   * **存储损坏保护**：若数据库启动时无法打开或无法证明当前状态完整，立即停止派发任何可能产生副作用的工作并提供恢复入口，**严禁在打开失败后静默新建同名空库抹掉用户历史**。
+3. **候选嵌入式存储引擎的实测边界与退出条件**：
 
-大模型在长任务里常常写着写着就从中文切回英文、把 `AGENTS.md` 里的关键规矩抛之脑后，或者对当前花了多少时间、剩多少窗口一无所知。Pair Hint 通过在出站请求副本里定期注入合成提示来解决这些问题。
+| 候选引擎 | 核心优势与适用前提 | 必须处理的工程边界与限制 | 应换掉该候选的信号 |
+|---|---|---|---|
+| **Datalevin**<br>(`datalevin/datalevin`) | 耐久 Datalog + KV（基于维护的 LMDB 分支），天然面向当前态直接删除，支持全文与向量扩展 | 含原生存储部件，需按目标 OS 与 CPU 架构（Windows/Linux/macOS）核实构建与打包；应用退出时严格有序关闭环境 | 特定平台原生库打包或扩展运行维护超出承受范围 |
+| **Asami**<br>(`quoll/asami`，原 `threatgrid/asami`) | 轻量图模型与 Datalog 查询，无需预定义重型 schema，适合表达父子任务与产物引用图 | `local` 磁盘存储仅在 JVM 分支可用（CLJS 分支仅内存图）；无 schema 下必须由写入微动作强制单值属性替换语义（防多值累加）；**JVM 事务异步返回，适配器必须 deref 等待提交完成后的 db 值再交回 Owner**；需验证历史结构回收或定期导出当前图重建 | 缺失约束与历史清理需要在每个业务微动作中重复打补丁 |
+| **Datomic Local** | 成熟单进程嵌入文件存储，二进制可按 Apache 2.0 免费使用与再分发（非开源），实体与 Datalog 表达力强 | **单值字符串硬上限 4096 字符**（长消息、底稿与工具输出必须走外部 Blob 区或分块）；**共享 `FileChannel` 严禁被 `Thread/interrupt` 打断**（必须与 Missionary 取消域严格隔离）；`:db/noHistory true` 不保证彻底删除语义，Pro 运维文档的 `excision` 不能无核实套用于 Local | 长正文分块、历史清理与中断隔离成为大部分业务代码的负担 |
+| **Datahike** | 类 Datomic API，支持配置 `:keep-history? false` 关闭历史查询 | 关闭历史查询不等于旧存储块立即消失；需在存储适配器内封装数据 `purge` 与不可达节点存储 `GC`，主业务不建多余分支 | 为维持当前态不得不长期手工管理快照、分支与 GC 例外 |
+| **XTDB v2 / v1** | v2 支持进程内 `xtdb.node/start-node` 与本地文件 log/storage，提供双时态 SQL/XTQL 及 `DELETE`（有效时间）与 `ERASE`（全时间擦除）；v1 提供 Datalog 与 `evict` | v1 与 v2 架构不同不可混拼；v2 官方将进程内模式主要定位为测试/实验；**事务写入日志与索引完成可查询之间存在异步间隙，适配器必须等待索引读屏障后才向守卫发布新状态** | 无双时态审计需求，仅为 Clojure 标签引入重型列式/时态节点管理 |
+| **EclipseStore / GigaMap / Ignite 2 / Coherence CE** | JVM 对象图原子 store（EclipseStore + GigaMap 索引）或嵌入式事务缓存/IMDG | EclipseStore 需验证 Clojure 不可变集合、keyword 与 record 演进的序列化适配量；Ignite/Coherence 带入节点与分区配置成本 | 类型适配层或分布式分区概念只增加配置而未减少应用责任 |
 
-#### 语言解析与成对资源铁律
-- 仅支持两种语言：`English` 与 `SimplifiedChinese`。
-- 成对存在，缺一即败：每一个可本地化资源都必须成对提供 `en.md` 与 `zh-CN.md`。缺少其中任何一本立即报错失败，绝不静默退回另一种语言顶替；语言字段若为非法值，同样直接失败，不退回英文冒充成功。
-- 确定性解析阶梯：会话创建时，按 显式环境变量 → 宿主配置偏好 → IDE / 系统 locale → 默认 `English`（无法确定时取默认并记录） 的优先顺序一次性定下会话语言，并写入 `.Herdchestra/{session}.jsonl` 持久事实。
-- 终生绑定与子会话继承：会话一旦绑定语言，就不再受全局偏好变化的影响；重试、失败、压缩、进程苏醒都不会改变该会话的语言。通过 `fork` 创建的子会话在启动时直接复制启动者（owner / 委任者）的语言，此后各自独立。
-- 标识符不翻译：工具名、参数名、字段名、枚举字面量、文件路径与 shell 命令一律保持原样，绝不翻译。
+### 7.2 环境供应：Pixi 与 MSYS2 的职责分工
 
-#### 注入内容与合成工具形态
-每次出站请求按会话语言渲染以下内容：
-1. `AGENTS.md` 防忘记口诀（repo-aware 规则提醒，确保模型在长程推理中时刻牢记 `AGENTS.md` 的核心纪律，不因上下文变长而遗忘）；
-2. 结对编程准则与语言纪律（`zh-CN.md` 首句固定为：`「思考过程与全部对外输出，一律用简体中文」`）；
-3. Token 经济提示（说明前缀缓存命中与重算的成本关系）；
-4. 等待成本校准；
-5. Context Limit（把 provider 声明的上下文窗口大小作为纯事实告知模型，不据此预测溢出，也不替模型自动压缩）；
-6. 预算校准（如实告知已花回合数、估算剩余回合、已用墙钟时间，同时明确声明这不是硬性执行上限）；
-7. 空闲挂起提示（Idle Hint）：若当前请求里存在本会话尚未结清的 `this.park` 站点，在同一提示通道里列出这些挂起的 `handles`（名字），迫使模型明确表态如何处理，但系统绝不替模型自动恢复。
+系统拒绝将所有外部软件重新打包进私有容器，而是按三类环境明确所有权：
+**Git worktree 供应**：每个 swarm 一个独立 worktree；master 只 ff；该 slice 的 holder 执行 rebase；master 集成锁由 join 持有；worktree 在 join/abandon 后保留 7 天再 GC。
+1. **万象术自身运行环境（Pixi 托管）**：仓库通过 `pixi.toml` 与 `pixi.lock` 声明并锁定 JVM/Clojure 及必要的辅助 SDK，保证跨平台可复现启动。
+2. **Windows 原生工具供应（MSYS2 托管）**：在 Windows 平台上，复用 MSYS2（明确指定子环境如 `UCRT64`）供应现成的构建工具、Git、FFmpeg 等原生软件包；调用时显式绑定具体工具实例路径与所需环境增量，不依赖全局 `PATH` 盲猜，也不强迫业务代码退回 Bash。
+3. **用户项目环境与宿主已有服务**：用户仓库自身的依赖由其项目声明管理；Ollama、浏览器或桌面办公软件等宿主服务通过明确的服务地址或实例句柄连接。连接外部服务不等于拥有其生命周期，任务退出时不得擅自关闭用户共享的外部服务。
+4. **环境与外部软件接入的八条工程细则**：
+   * **三类环境严格隔离**：(1) 万象术自身环境（Pixi 声明与锁文件管理，普通任务严禁随意篡改产品自身依赖）；(2) 用户项目环境（服从用户仓库自身的构建与锁文件，任务按作用域进入与退出，绝不把用户项目临时依赖塞进万象术常驻环境造成跨任务污染）；(3) 一次性实验范围（可丢弃工作区）。安装准备、日常运行与环境升级是三种独立操作，升级不在活跃会话脚下热替换运行中组件。
+   * **MSYS2 子环境绑定与滚动升级边界**：MSYS2 区分 `MSYS`、`UCRT64`、`CLANG64`、`CLANGARM64` 等不同运行库与架构子环境（Windows x64 默认优先绑定 `UCRT64`），工具绑定必须精确到子环境与具体可执行文件实例（记录路径与版本摘要），不在全局启动时无差别改写全部系统路径，仅在需要 POSIX 路径的工具适配边界做局部转换。鉴于 MSYS2 采用滚动发行且仅支持全系统同步升级，不随意单独锁死少数顶层包而假定底层库永久兼容；需要严格复现时按验证过的环境窗口整体维护。
+   * **四类工具各走自然接口（拒绝“万物转命令字符串”）**：
+     * **运行时内类库与原生接口**：优先使用 JVM 标准库与成熟类库保留真实对象、类型、流与异常；遇到缺乏现成高层封装的底层需求时，可沿 JVM Foreign Function and Memory API（`java.lang.foreign` FFM，优先对接稳定 C ABI，明确内存分配/释放与线程回调边界）继续深入实现，保持“广义图灵完全”的能力连续性。
+     * **成熟 CLI 进程接入**：使用确定的可执行文件路径、**参数数组（而非拼接 Shell 字符串）**、显式工作目录、环境增量（仅随调用或工作进程传递，不污染全局会话，敏感值不入日志）与标准流控制，使含空格、引号与中文的路径作为纯数据传递；分离识别“程序未找到 / 无法启动 / 非零退出 / 产物不符预期”。
+     * **常驻服务接入（如 Ollama）**：直接按显式配置的 HTTP/RPC 协议与请求身份连接，不因本机存在另一实例而暗中切换，也不把网络请求伪装成终端命令；连接超时后保留“请求是否发出 / 是否收到部分响应”的证据，按只读或有副作用决定是否可重试。
+     * **桌面图形应用接入（如浏览器、WPS）**：严格区分“启动进程 → 交付打开文件 → 操纵应用内部对象”三个递增层次，按各平台已验证的实际接口声明能力，不把“能启动程序”谎称为“已完成对象级自动化”。
+   * **跨进程对象代际与有界输出**：独立执行工作进程内的有状态对象不可假定能跨进程直接序列化传输；控制层持有的对象句柄必须绑定工作进程与会话代际（generation），进程重启后旧句柄明确返回失效并提供按已保存输入重建的路径，绝不静默指向同名新对象。长任务持续输出采用有界缓冲，完整日志写入受管产物区，向模型只返回有界片段、计数与定位引用，且**截断必须显式标出**。默认：`call` 内联输出 **1 MiB**；完整日志写入 artifact，单会话上限 **64 MiB**，超出部分截断并标 `:output-truncated`。LLM 写的报告不在此列：全文内联，不截断、不摘要。
+   * **产物（Artifact）正式提交流程**：产物经历“任务工作区生成 → 完整性/可打开检查 → 登记产物元数据（名称、类型、内容标识、来源任务与输入引用、保存位置、检查结果、状态） → 向用户宣告可用”四步；严禁把临时目录里写了一半的文件或控制台偶然打印的路径直接当作已交付产物。
+   * **可重建召回（Recall）与纠正传播**：长期记忆与召回按生效范围划分为“当前任务说明、项目约定、用户明确偏好、历史观察、可引用材料”；摘要与向量索引必须保留所依据原始记录的稳定引用与版本。当用户纠正某项事实或偏好时，系统立即更新当前有效解释并将依赖旧内容的摘要/索引标为失效待重建，召回时将相关性分数与当前有效性检查分开（绝不把向量相似度当作真伪概率，也绝不让已被纠正的旧摘要继续充当现行要求；未找到记录时如实报告缺口，严禁捏造历史）。
 
-注入形态与字节前缀稳定：
-- 提示内容在每轮作为一对配对的合成工具调用与工具结果（synthetic skill，工具名为空字符串 `""`）插入出站请求副本，插入位置由持久事实决定；同一位置重复处理时只原样重放已有那对，不新增。
-- 同一 Epoch 内的字节前缀法则：在同一个 epoch 内，后一次出站请求的字节序列必须以前一次出站请求的字节序列为严格前缀（以保证 LLM Provider 的 Prefix Cache 100% 命中）；我们自己的重试、失败、苏醒都不得改动已经向模型呈现过的字节；宿主自行压缩历史时，只有经核实的宿主报告压缩（history-compacted）才可作为重锚定边界，未经核实的改写一律按漂移拒收。如果确实需要改写过往呈现，除接力屏障（relay）、Scope 裁剪/抹除（scope-reset / scope-remove）与经核实的宿主历史压缩（history-compacted）这四类规范自有的投影重锚定边界外，只能开启新的 epoch，绝不能篡改旧前缀。
-- 冷启重建与防呆边界：进程重启后，直接从我们自己的持久事实重建出站呈现，保证与重启前分毫不差，不依赖宿主历史。防呆检查只做形式合规核验（语言非法即失败、资源成对、字节前缀不漂移），不在运行时用程序检测模型输出了哪种自然语言，也不因此拦截请求。
+### 7.3 内部 AG-UI 协议、Sente 通道与 Fulcro + Framework7 瘦客户端
 
-### 6.2 Scope：长程委托的因果保留与记忆修剪
+1. **服务器 SSOT 与客户端归一化状态的边界**：
+   * 浏览器采用 **ClojureScript + Fulcro + Framework7 React**。Framework7 React 提供具有稳定美学下限的页面、导航、列表、消息与弹层组件；Fulcro 负责浏览器内的归一化实体表（`:session/by-id`、`:swarm/by-id`、`:task/by-id`、`:action/by-id` 等）与本地 UI 状态（`:ui/*`）。`:swarm/by-id` 保存 `slice-id`、worktree、status、根任务计数、master 版本与 join 队列。
+   * **单一权威原则**：Fulcro 数据库只是服务器当前态的显示副本加上当前浏览器的未提交草稿（`:ui/draft`）与展开状态。任何业务命令（发送输入、S1 答复、紧急取消、历史编辑与永久折叠）均携带 `command-id` 与 `command-epoch` 发往服务器 Owner；在收到服务器确认前，界面只显示“正在提交 / 已请求停止”，绝不私自伪造领域终态。
+   * **快照替换防复活**：当服务器因永久折叠、Scope 修剪或接力屏障更新当前集合时，客户端协议适配器必须替换对应集合引用并清理已移除实体，不能做无条件浅层 `merge` 导致已折叠/已屏蔽的旧记录在界面复活。
+   * **组件库选型依据（美学下限与交互下限）**：相比仅提供样式类名的 Bulma、通用表单向的 Bootstrap 或桌面密集工具向的 Blueprint，Framework7 React 内置完整的应用级页面、导航栏、消息栏（Messagebar）、列表节奏与弹层规范，使 AI 按默认方式编写的界面也具备稳定的美学下限。业务层通过 Fulcro 的 `react-factory` / `react-input-factory` 维护一层极薄的业务语义组件包装（如统一处理命令提交态与合法性禁用），不重造全套样式方言；应用根容器由单一启动入口挂载（Fulcro 根包裹 Framework7 `App`/`View`/`Page`），路由只选单一权威来源，严禁两套导航 watcher 互相监听同步。
+   * **四类客户端数据与输入法安全草稿**：Fulcro 状态库明确划分为四区：(1) 服务器实体的归一化显示副本（`:session/by-id`、`:swarm/by-id`、`:message/by-id`、`:task/by-id`、`:action/by-id`）；(2) 本地视图状态（`:ui/selected-panel`、`:ui/expanded-tools`、弹层目标 ID，绝不混入不可序列化的 DOM/编辑器实例句柄）；(3) 当前浏览器独占的未提交草稿（`:ui/draft`、编辑中消息草稿与待传附件，记录所提交的草稿版本号，确认后只清理已提交的那一版，绝不因服务器推送快照或他端更新而冲掉用户正在输入的光标、选区与中文 IME 组合态）；(4) 命令跟踪表（`:ui/command`）。
+2. **内部 AG-UI 协议与连接恢复**：
+   * 实时通道基于 Sente（浏览器端自动支持 WebSocket 与 Ajax 长轮询降级），内部载荷遵循 AG-UI 事件与状态同步语义（`RUN_STARTED`、文本流、工具调用流、`STATE_SNAPSHOT`、`STATE_DELTA`、`MESSAGES_SNAPSHOT` 及承载项目控制命令的 `CUSTOM` 事件）。
+   * **工具参数结束 $\neq$ 工具执行结束**：收到工具参数流结束仅表示调用描述完整，必须等服务器领域状态返回工具终态才关闭等待展示。
+   * **断线重连三步走**：通道重连后先进入“已连接，等待同步”，获取服务器最新 `STATE_SNAPSHOT` 基线与同步序号，再按原 `command-id` 查询未决命令回执；关闭浏览器标签页或卸载组件只释放观察订阅，**绝不取消服务器正在运行的任务**。
+   * **Sente / `fulcro-websockets` 核实边界与三种重试分离**：实时扩展仓库为 `fulcrologic/fulcro-websockets`（`fulcro-inspect` 仅为开发调试工具）；其 CLJS 客户端默认 `:type :auto`（WebSocket 与 Ajax 长轮询自动切换，JVM 客户端为 `:type :ws`）。扩展的 `auto-retry?` 默认关闭；系统严格分离**通道重连**、**未确认命令按同 `command-id` 查询/重发**与**服务端模型/工具业务重试**三者，绝不共用一个无定义的重试计数器。
+   * **AG-UI 协议映射、角色例外与跨语言序列化纪律**：
+     * **五阶段连接状态**：`:disconnected` → `:connecting` → `:connected-awaiting-sync` → `:synced` → `:interrupted`（绝不压成单一 `online?` 布尔值）。服务器在建立新订阅时提供原子的“基线快照 + 同步 epoch/序号”边界；旧连接或旧会话迟到的增量按订阅代号直接丢弃，慢客户端积压过多显示增量时退回“等待新快照”状态，绝不反向阻塞服务端会话执行。
+     * **`MESSAGES_SNAPSHOT` 的角色清理规则**：标准 AG-UI 中若 `MESSAGES_SNAPSHOT` 完全未出现 `activity` 或 `reasoning` 角色，默认语义是“未声明、保留原内容”而非清空；因此本项目在永久折叠或删除时，必须通过显式项目扩展字段或会话同步 epoch 重建来清除已被移除的 `activity` / `reasoning` 显示记录。
+     * **JSON Patch 与归一化表的单向转换**：`STATE_DELTA` 的 JSON Patch 路径针对协议状态树，由协议接收适配器统一应用并一次性转换为 Fulcro 归一化实体更新，组件不直接消费乱序原始 patch。
+     * **边界类型与大对象通道**：跨语言协议边界统一使用字符串形式的稳定 ID（防 64 位整数超出 JS `Number.MAX_SAFE_INTEGER` 精度），严格区分“字段缺省（不修改）”、“空字符串 `""`（清空正文）”与 `null`；遵循 Sente 官方关于单条消息不超过 1MB 的边界，长日志、大附件与导出包一律走独立 HTTP/Blob 通道传输字节，实时通道只传内容 ID、状态与就绪通知。
 
-一项长程委托往往跨越几十轮工具调用。如果不做修剪，文件全文和命令输出很快会撑爆窗口；如果让宿主盲目做摘要压缩，又会把关键的因果推理和刚踩过的坑洗掉。
+### 7.4 前端工作台详细交互规范（Kelivo 体验基线裁剪版）
 
-万象术把记忆修剪权交给智能体自己：每次调用非豁免工具时，模型必须在工具参数里附带一个打平的 `scope` 注解。
+本节将 Kelivo 体验手册（第 01–29 章）的用户体验契约与万象术的**常授权无人值守模式**、**中心化接力 ⇄ 微观蜂群 STM 看板**、**受保护文件提交**与**`S1` 唯一提问通道**熔合为工作台前端的强制规范（凡原通用客户端手册中“每次工具弹窗等待人工审批”之处，在万象术中统一由**会话级能力范围配置 + 角色工具面硬边界 + `stamp` 写锁保护 + 操作员主动接管/Esc 中断**替代；仅破坏性工作区登记清理、导出含密钥明文或能力越界配置变更需用户显式确认）：
 
-Scope 的完整机制只在系统提示词 `COMMON`（§5.1）里讲一次；`PLAN_PROMPT`（§2.2）有紧凑版。每个非豁免工具的 `scope` 参数描述只保留一句指针与字段形状（§3.1），不重复机制：模型对 `resetScope` 必要性的理解来自系统提示词，而不是每个工具各抄一遍。下面给出实现者必须遵守的语义。
+1. **信息架构、首次引导与五类视口适配（UX-01 至 UX-04 / UX-28）**：
+   * **五大顶层工作区**：会话与分支视图、Swarm 看板与 fleet 实时拓扑视图、助手与角色配置（含 `Steward`/`Plan`/`Reviewer`/`@task` 模型绑定）、材料与扩展（工作区文件、长期记忆、世界书与指令卡、技能、联网搜索、MCP 与设备连接）、设置与数据中心（供应商连接、语音、定时任务、加密备份与恢复、用量统计與诊断日志）。
+   * **零阻塞首次进入**：首次启动无需注册本产品云账号，未配置模型时仍可浏览界面、编写草稿（草稿在进出模型设置页后 100% 保留）；连接模型支持预设服务、兼容端点与第三方 OAuth（设备码/浏览器回调，绝不让用户在自定义输入框粘贴第三方账号密码），保存连接不自动触发付费请求，测试连接若产生微额请求须提前标明。
+   * **五类基准视口与窗口尺寸下限**：支持 `360×800`（窄手机）、大屏手机、`820×1180`（平板）、`1280×800`（桌面三栏：导航 + 会话/看板 + 文件/浏览器/来源侧栏）及 `360px` 宽桌面窄窗（窄窗自动折叠侧栏为抽屉/覆盖层，绝不丢失已选文件、页签、搜索词或草稿，重新拉宽不跳会话）。
+2. **供应商连接、模型选择器与作用域（UX-05 / UX-06）**：
+   * **多密钥与透明去向**：单连接支持多密钥（别名、启停、轮询/优先级/最少使用/随机策略、限流冷却时间与认证失败分开标记），密钥默认遮蔽且复制需显式点击；修改预设服务的自定义主机地址后，详情与有效配置必须如实显示实际主机域名，严禁继续标为“官方”。刷新模型列表保留既有启用状态、别名与本地备注；消失模型标为“此次列表未返回”而不删历史引用；列举接口不可用时允许手动填写模型标识。
+   * **能力与可用性分离、同名可辨**：模型选择器按连接分组，同行展示显示名称、连接来源、能力图标（视觉/音频/视频/文档/工具/推理）与可用性状态；**同名模型绝不合并为一行**，连接断开或过期不得通过隐藏能力图标来表达，未知能力标“尚未确认”、未知价格绝不标“免费”。
+   * **模型归属与生成中切换边界**：主模型（`Steward`/`Plan`/`Reviewer`）与任务模型（`@task`：Plan dedicated worker/蜂群普通个体与 `holder`）归属清晰可查。已有会话保留创建时选定的模型，修改助手默认模型只影响新会话；生成期间切换模型提示“用于下一轮”或“停止当前轮并切换”，绝不把同一条回复前半段归旧连接、后半段归新连接。推理档位采用离散真实档位（不支持完全关闭推理的模型显示“最低可用”而非虚假“关闭”）；数值参数严格区分“使用默认”与数值 `0`。
+3. **独立草稿、输入法（IME）保护、流式阅读与停止语义（UX-07 / UX-08）**：
+   * **每会话独立草稿与空会话防堆积**：连续点击新建且未输入内容时复用同一空白页，不在历史制造永久空会话；每条会话独立保存文本、待发附件、引用卡片与光标位置，切换会话、旋转屏幕或重启应用均恢复各自草稿；空间不足无法落盘时持续显示“草稿暂未保存”并提供一键复制与另存，严禁假报已保存。
+   * **中文输入法（IME）回车铁律与发送防抖**：桌面默认 `Enter` 发送、`Shift+Enter` 换行（手机默认回车换行、独立按钮发送）；**当中文/日文等输入法处于拼音组合或候选词确认态（`isComposing`）时，按 `Enter` 仅确认候选词，严禁触发发送消息或截断末尾字符**。双击或连按快捷键只产生一条用户消息；生成中再次点击发送提供“停止当前轮并发送”与“继续编辑”，绝不静默丢弃当前草稿或隐式排队。
+   * **流式滚动跟随与选区保护**：用户在底部时流式输出自动跟随；用户主动上滚阅读时立即停止强拉底部并显示“返回最新内容”按钮；流式更新与未闭合代码块/表格/公式过渡排版不得清除用户已选中的文本选区。
+   * **停止与 `S1` 唯一提问卡片（`ask`）**：点击停止（或按 Esc）立即显示“正在停止”，保留已生成正文、已落盘文件与工具记录，迟到文本不再拼入已停止回复，工具在停止前已完成但结果晚到时标明“停止前已执行，结果后来返回”且不自动唤起模型续答。当 `Plan` 在 `S1` 阶段调用 `(ask {:question ...})` 时，聊天流渲染专属 **S1 提问回答卡片**（展示问题背景、输入框/选项与“提交回答并恢复 (`unpark`)”按钮）；提交后卡片定格为已回答并通过 `(unpark {:name ... :value ...})` 恢复原挂起程序，修改已提交回答会形成可见新记录而非篡改历史。
+4. **消息排版、过程区、Swarm 看板与 fleet 拓扑视图、多格式导出（UX-09 / §3.14）**：
+   * **消息结构与过程区**：消息固定区分作者、可折叠过程区（推理摘要、搜索进展、`defprogram` 工具调用与挂起回执）、正文、产物附件、引用来源与操作栏；服务未提供推理摘要时绝不编造模拟思考文字。代码块带语言标识，默认复制纯代码（不含围栏与行号），长行支持横向滚动与仅影响显示的自动换行；宽表格拥有独立横向滚动容器，绝不撑宽整条会话；数学公式与 Mermaid 图表解析失败时回退显示可复制原文，绝不让整条消息变空白。
+   * **Swarm 看板、fleet、槽位与写锁 $W$ 实时拓扑视图**：工作台内置实时看板面板，先给 fleet 总览，再下钻单个 swarm：(0) fleet 每个 swarm 一行：`slice-id`、worktree、status（`:running`/`:queued`/`:joined`/`:abandoned`/`:failed`）、根任务计数、master 版本、join 队列；点击行展开该 swarm 的看板；(1) 全部根任务（绑定 `review` 台账键）与子任务树的目标、`:remaining-work`、`:done-when`、当前状态（`:ready`/`:waiting`/`:done`）及具体 `:wait-for` 等待链（明确区分“等待已解除回到 `:ready`”与“父项 `:done`”）；(2) 固定运行槽（`slot-id`）上当前活个体（`agent-id`）、普通/持令角色、生命状态与交接说明（正常竞争落败死亡与无责退休显示为正常生命周期流转，不误报为崩溃告警）；(3) 每个 worktree 的令牌槽（`holder-id`、`term-id` 及完整未结责任集合 $R(\text{holder})$ 构成，解释为何暂无可执行 Shell 却未退休）；(4) 每个 worktree 的写入口 $W$ 当前持有动作与排队队列（区分“持令但未占 $W$”与“正在持 $W$ 执行 Shell / `:applying` 落盘”）；(5) join 结果行带完整报告，可折叠阅读。
+   * **导出流程**：支持单条、多选消息或当前分支导出为纯文本、Markdown 或分段渲染长图（预览尺寸与分段数、可选明暗背景与是否含来源，默认仅含当前选中版本，绝不夹带未选中的隐藏指令或密钥）。
+5. **历史编辑、多版本、分支、上下文边界与可撤销压缩（UX-10 / UX-11 / UX-12）**：
+   * **四种操作严格区分**：编辑历史消息（使用独立编辑草稿，不覆盖底部输入框草稿；保存生成新版本并保留原版与原后续讨论路径入口，保存本身不自动发请求；手工编辑助手回复打上“手动编辑”标记，不冒充模型原始输出或篡改用量）、重新生成（同问题新增回复版本 `2 / 3`，来源引用、工具记录与用量随版本同步切换）、从此处创建分支（复制起点前路径为独立新会话，顶部保留来源跳转，原会话删除后分支仍完整可读）、上下文压缩（先选范围、生成可编辑摘要审阅稿，确认“使用摘要”后才替换自动发送范围，支持一键撤销压缩恢复原范围而不删后续新消息）。
+   * **阅读历史 vs 发送历史、图片固定与 30 天已删除区**：上下文面板清晰展示本轮实际发送范围（最近 $N$ 轮、手动设置的“从此处开始”边界、Pair Hint 与 Scope 裁剪边界）；历史图片支持单张“固定（优先保留）”，超模型上限时显式提示而非静默取消固定。会话列表区分置顶区与按内容活动排序的普通区（纯阅读、滚屏、切版本不改变活动时间；手工改名后绝不被迟到的自动标题覆盖）；长对话提供迷你地图/话题概览定位；普通删除移入“已删除”保留 30 天（支持立即撤销与恢复，临时会话不入此区），永久删除需二次确认且绝不连带删除外部工作区原文件。
+   * **助手配置与选择性复制**：可继承字段均设显式“跟随”状态；支持预设示例消息、带变量的快捷短语与明确区分“发送前替换 / 仅显示替换”的文本规则；复制助手区分“仅复制角色”与“选择内容”（专属记忆与短语建独立副本，世界书与技能保引用，凭据与敏感权限绝不随复制自动扩散）。
+6. **长期记忆、世界书、指令卡、联网搜索、MCP 与技能（UX-13 至 UX-18）**：
+   * **四类长期记忆与用户画像**：默认关闭，且“读取已保存记忆”与“自动建议新记忆”双开关独立；记忆按「身份与背景、工作方式、表达偏好、长期要求」四类管理（单条建议上限 2000 字）；自动整理结果先入待审区（附来源对话片段对照，严禁把假设、引用或临时计划写成既定事实，默认过滤密码与密钥）；修改冲突记忆走替换并保留变更历史，归档立即退出未来请求注入；临时会话默认不读不写记忆。
+   * **世界书（Lorebook）与指令卡**：世界书条目支持关键词（任一/全部命中、支持含空格短语）、始终提供或受控表达式触发，**持续次数、冷却次数与延迟次数严格按有效用户提交轮次计数**（工具往返、流式片段与发送失败不消耗计数）；上下文不足时优先关键条目并将未入选者列入“命中但未提供”，绝不截断条目末尾的否定词或例外条件。指令卡默认“仅本轮”生效（可切换为本会话持续应用），两张指令卡输出格式互斥时在发送前提示冲突。
+   * **联网搜索与来源核查**：输入区支持“关闭 / 自动 / 本轮必须搜索”（必须搜索失败时如实报错，严禁靠模型内部知识回答却挂“已联网”标签）；搜索结果卡区分站点发布日期与抓取时间（无发布日期标未知，绝不拿抓取时间冒充），同一URL多查询命中自动合并去重，正文引用编号与文末来源列表严格对应。
+   * **MCP 面板、工作区文件差异与技能**：MCP 区分“新增配置 → 测试连通 → 启用工具 → 会话可用”状态，支持 HTTP 流式、SSE、本地进程（程序与参数分列）与配置导入预览。工作区文件面板展示相对路径、存在性/类型与 `(mtime, size)` `stamp` 状态；`clj-worker` 产生文件修改或 `:FILE_CONFLICT` 时，工作台展示可读 Diff（增删行带文字标记，不只靠颜色）与冲突前后的 `stamp` 对照，文件删除默认移入可恢复区。技能（Skills）由说明与配套文件组成，从文本/压缩包（拦截越界路径）/仓库链接预览安装后默认未启用，上游更新与本地自用修改冲突时提供三方对比保留本地版。
+7. **受管浏览器、交互卡片、工作区小应用、多模态附件与语音/定时任务（UX-19 至 UX-24）**：
+   * **内置浏览器与人工接管**：地址栏持续显示真实域名；代理操作网页生成带历史截图标记的顺序页面卡；密码、验证码与支付认证交由操作员在可见页面手动输入，**操作员在受控页面主动点击或输入时自动暂停代理后续操作**，恢复后先重新读取当前页面 DOM 而非盲点旧坐标。
+   * **交互卡片与工作区小应用隔离**：模型生成的表单/图表卡片明确标注“生成的交互内容”，纯本地筛选/滑块重算不发收费请求，图表必带单位、数据来源与“查看数据表”入口；工作区网页小应用（Mini-Apps）拥有按应用隔离的独立存储，与普通浏览器及其他小应用互不共享登录态或本地存储，升级或删文件不立即抹除用户已录入数据。
+   * **多模态附件、OCR 与绘图**：单草稿初始支持最多 20 个附件、单文件 100 MiB；区分“保存应用内副本”与“关联工作区文件”；图片默认长边 2048px 自动压缩（保留透明通道与 EXIF 方向），OCR 提取后提供原图与可编辑文本对照修订；PDF 支持选页发送（如 `第 2–5 页`，引用保持原页码），加密文档密码在独立本地框输入绝不进聊天日志；绘图与参考图续改生成独立版本而不覆盖原图。
+   * **语音与定时任务**：语音输入默认先转写进草稿供逐句修订（单次上限 5 分钟，云端识别失败保留原录音可换服务重试，蓝牙断开或来电打断保留已确认文字），朗读默认跳过大段原始代码与长网址并遵守系统音频焦点；定时任务明确区分“跟随设备时区”与“固定时区”，**设备关机或睡眠错过的计划记为“未运行”而绝不集中补跑**，同一任务上次未结束时下次标为跳过，iOS 等受限平台诚实显示“仅支持前台手动运行”。系统分享进入内容一律先入接收面板转草稿，绝不静默直接发送。
+8. **加密备份、合并冲突恢复预览、外观无障碍、费用口径与常见错误文案合同（UX-25 至 UX-29）**：
+   * **加密备份与恢复保护**：支持本地文件、WebDAV 与 S3 备份，模型密钥默认不勾选；默认开启密码加密（**至少 12 个字符**，支持中文与空格，不修剪首尾空格）；备份按取样时间点生成一致快照。恢复前先校验并在预览页区分“合并选中类别”与“替换选中类别”：同名不同内容的助手/世界书默认保留两份并加日期后缀（已归档/已删除记忆遇旧备份保持停用待审），重复导入同一备份自动幂等跳过；执行替换前自动建立本地恢复点（默认保留最近 7 个成功点 + 4 周 + 3 月代表副本），磁盘满或数据库损坏时进入独立恢复页，**严禁把无法读取的资料库当新安装空库覆盖**。
+   * **外观、对比度、快捷键与无障碍**：内置浅色/深色/跟随系统主题，**正文对比度至少 `4.5:1`、大字号与关键图形至少 `3:1`**，全局字号支持 `80%–200%` 缩放且关键按钮不裁切；触摸热区至少 `44×44` 逻辑像素、桌面紧凑按钮至少 `32×32` 逻辑像素；默认快捷键：新建 `Ctrl/Cmd+N`、页内查找 `Ctrl/Cmd+F`、全局搜索 `Ctrl/Cmd+Shift+F`、设置 `Ctrl/Cmd+,`；**`Escape` 键遵守严格层级**：先关最上层弹层 $\to$ 再交输入法候选/文本选区 $\to$ 最后才触发停止当前生成。
+   * **统计、费用三口径与脱敏求助包**：严格区分「用户发送次数 / 模型请求次数 / 工具调用次数」；Token 与费用明确标注 **「服务返回 / 估算 / 未知」**（缓存命中作为输入子集展示明细，绝不重复加进总量；未知用量或未知单价绝不显示为 `0`；多币种分开汇总）；详细请求日志默认关闭（开启默认仅下一次，最多保留 7 天），导出诊断求助包前生成脱敏预览（自动遮蔽密钥与认证头，由用户审阅确认后自行发送，绝不后台自动上传）。
+   * **跨功能常见失败的标准文案合同（24 类）**：
 
-#### 四种 `scope.kind` 语义
-
-| `scope.kind` | 必填附加字段 | 记账与投影语义 |
-|--------------|--------------|----------------|
-| `resetScope` | `newScopeGoal`（非空字符串）<br>`newScopeRetentionBudget`（正整数，无上限） | 开启新闭环。结束上一阶段闭环，立下新目标与新的保留容量额度（宿主走 `ScopeReset.commit`）。`newScopeRetentionBudget` 代表完成本目标预计还需要几次实质性推进（即几次 `keepLast`）。 |
-| `keepLast` | 无（不接受多余字段） | 认可上一拍。认为上一拍的工具调用和输出有保留价值，保留容量 `retention − 1`。 |
-| `removeLast` | `replacement`（非空字符串，必填） | 抹除上一拍并留教训。认为上一拍是弯路、试错或已无需保留原貌。不扣减 `retention`（扣 0），但记一次空转，并在出站请求副本里把上一拍（含工具调用、思考与输出）替换为一条简洁的 `assistant` 消息，正文为 `replacement` 加上一行空转计数（更早已被替换的消息不受影响）。 |
-| `meToo` | 无（不接受多余字段） | 同回合附议。当模型在同一个回合里并发发出多个工具调用时，除了一条带真注解（`resetScope` / `keepLast` / `removeLast`）外，其余调用一律标为 `meToo`。`meToo` 不扣减 `retention`，也绝不触发回滚。 |
-
-#### 准入校验、回合记账与豁免工具
-1. 准入拦截：非豁免工具若缺席 `scope` 注解，或字段不符合上表规定（如多余字段、空字符串、非正整数），在准入处直接拒收，本拍不改变任何状态。
-2. 按模型回合单次结算：
-   - `retention` 是保留容量，不是模型回合数，也不是工具调用总次数。
-   - 同一模型回合内，由那条真注解决定本拍记账：`keepLast` 扣 1；`removeLast` 不扣但记空转并登记抹除上一拍；`resetScope` 用新目标和新额度整体替换旧 Scope。
-   - 如果同回合里 `meToo` 先于真注解到达，系统只将它暂存，不记账、不撤销；等本回合的真注解到达后，按真注解一次性结算并清空暂存。因此一个模型回合最多只扣 1 点 `retention`。
-3. 四类拒收情形：
-   - 整个回合的所有工具调用全是 `meToo`（没有任何真注解）；
-   - 本进程尚未初始化额度时就发来 `meToo`；
-   - 当前 `retention` 额度已经为 `0` 时，任何 `meToo` 也会被拒；只有 `resetScope` 能开启新额度。
-   - 当前 `retention` 额度已经为 `0` 时，调用任何非豁免工具（含 `meToo`）却没有传 `resetScope`；唯一准入项是 `resetScope` 本身。
-4. 豁免工具（Exempt Tools）：
-   - `negotiate`、`askPreviousScope`（以及酌定纳入的其他查询类工具）属于豁免工具：它们不扣减 `retention` 额度，且在额度为 0 时也不强制要求 `resetScope`。
-   - 关键约束：`negotiate` 与 `askPreviousScope` 都是向临时最新快照发起查询，直接复用 Prefix Cache，且必须同步返回结果，严禁做成“异步返回结果”。
-
-#### 出站请求副本的投影与冷启保护
-- 新旧 Scope 的裁剪边界：每次生成出站请求副本时，最新一次 `resetScope` 之后的所有内容原样保留；在最新一次 `resetScope` 之前的历史中，只保留：
-  1. 人类操作员消息；
-  2. 历次 `resetScope` 调用及其配对结果；
-  3. `assume`、`negotiate`、`askPreviousScope` 及其配对结果；
-  4. `assistant` 正文消息与已观测的 provider 原文。
-  而旧 Scope 中的普通工具调用与结果、旧的 thinking / reasoning 块则全部从出站副本中移除（宿主自身的持久历史原封不动）。
-- 冷启保护：进程重启后，持久事实文件里记录的历史 `resetScope` 只证明过去发生过该事件，不能代表当前内存里的剩余预算。在模型重新确证当前预算之前，系统会持续提示模型重新执行 `resetScope`，绝不把内存默认值误当成“已耗尽额度”而锁死工具调用。
-- 与 Pair Hint 互不干扰：Pair Hint 只管双语提示、口诀提醒与预算呈现，不修改 `retention`；`retention` 只由 `scope` 注解改变。两者共同作用于出站请求副本。
-
-### 6.3 面向大模型的结构化数据呈现：一律使用 CUE Pretty Print（禁止裸 JSON）
-
-大模型也是外貌协会：传统 `JSON.stringify` 制造的裸 JSON 充斥着 `\"`、`\\`、`\n` 等转义噪音，一旦工具返回源码、命令输出或挂起回执（如含带行号 `source` 的 `this.park` 回执），层层转义会让模型阅读费力、切错行号甚至算错偏移。
-
-因此，凡是可能进入 LLM 视野的结构化数据（LLM-facing JSON Dump，包括但不限于 prompt 注入载荷、合成提示、工具返回值、回执与错误详情），**一律不得直接投喂 raw JSON，必须转换为排版工整的 CUE 格式（Pretty Print）后再呈现给大模型**（注：仅落盘供机器自己读写的 `.Herdchestra/{session}.jsonl` 等内部持久存储不在此列）：
-
-1. 字符串零转义污染（阶梯选择）：
-   - 单行无转义冲突的短文本：优先使用普通行内字符串（`"..."`），若含双引号或反斜杠则包一层或多层 `#`（`#"..."#`、`##"..."##`）消除转义；
-   - 多行文本（如源码片段、`stdout`/`stderr`、多行提示词）：使用 CUE 多行字符串（`"""` ... `"""`）；
-   - 内容自身含有 `"""`、`\` 或插值序列 `\(...)` 时：使用 CUE 变长原始多行字符串（`#"""` ... `"""#`、`##"""` ... `"""##` 等，动态增加外围 `#` 的数量直至包裹内容无需任何转义）。
-2. 缩进对齐与自动剥离公共缩进：
-   - CUE 多行字符串会根据结束符 `"""`（或 `"""#`）的缩进位置，自动剥离内容左侧的公共缩进。生成多行块时，将正文每行与结束符对齐到当前字段的缩进层级，使嵌套代码块在视觉上层次分明、排版极其工整，同时完全保真原始换行与相对缩进。
-
----
-
-## 7 三大宿主适配方案与设计渊源
-
-由于上游宿主的内部实现细节未必全部见诸公开文档，且会随版本演进变化，各宿主适配器在实现时允许根据实测情况随机应变（综合运用插件钩子、运行时调用劫持或装饰器包装）；但凡属于此类随机应变的绕行手法、未文档化行为依赖或临时补丁，都必须如实记录在项目根目录的 `HACK.md` 中，以便日后核查与维护。
-
-### 7.1 OpenCode v2 适配方案（只注册插件，不改宿主源码）
-
-- 装载方式：发布一个标准的 OpenCode 插件包（使用 `@opencode/plugin` 的 Promise 版 `Plugin.define({ id, setup })`），由项目 `opencode.json` 的 `plugins` 数组声明（字符串或 `{ package, options }`）。`options` 仅承载万象术自己的配置；实际装载入口的实测约束见下方绕行条目。
-- 角色塑造：启动时通过 `agent.transform` 创建 `Manager`（`mode: "primary"`）、`Plan`（顶层规划代理）、`Coder`（`mode: "subagent"`）、`DevOps`（`mode: "subagent"`）四个 agent；将宿主其余所有可选 agent 一律置为 `hidden` 或移除，使宿主只剩万象术这一种工作语义。
-- 工具面与两层授权分离：
-  - 用 `tool.transform` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`，并将宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`patch`、`bash`、`shell`、`subagent` 从 `Manager` 的可见集合里全部移除。（注意：`Coder` 的 `js-worker` 面照常保留 `this.call`。）
-  - 两层分离原则：宿主的 `tool.transform` 与 `session.hook("context")` 中的 `event.tools` 只改变目录可见性，不阻止已被捕获的执行器被调用。万象术不依赖 `permission.assert`（它不在 `Tool.Context` 上，宿主工具运行时也不会替插件工具断言）；拒绝分两层：`agent-definitions.mjs` 的权限规则集与 `narrowing.mjs` 决定目录里出现哪些工具，`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错。详见下方「越权拦截」绕行条目。
-- 子代理调度（`fork` / `join` / `devops`）：宿主内建的 `subagent` 工具是阻塞式的，且受 `experimental.subagent_depth`（默认 1）限制，不能用来实现 `fork`。万象术直接调用宿主底层 `Session.create({ parentID, agent: "Coder" | "DevOps", model })` 创建子会话，再调用 `Session.prompt({ sessionID, text, delivery })` 投递任务描述 `verboseIntent`；`join` 等待第一个子会话完成。
-  - 模型：新建 worker、fission lane 与 Plan 的专用 `plan-devops` 都用 task 模型（回执 `modelSource: "task"`），不继承主模型；两半都未设置时才退回父模型并如实标 `modelSource: "parent"`，只设置一半以 `TASK_MODEL_INCOMPLETE` 拒收，不静默退回。`Manager` 与 Plan 顶层保留主模型 / Plan 模型。
-  - Plan 的 `devops(verboseIntent)` 是裸顶层原语，固定复用 `plan-devops` 这一个 worker：还在跑就 steer，已结束就复用它的会话，绝不新建第二个；同一 Plan 同时至多一个未决调查。
-  - 投递模式硬要求：宿主 `Session.prompt` 的 `delivery` 参数缺省为 `"steer"`。为了保证新建 `fork` 是真正的 fire-and-forget（不等当前拍），新建投递时必须显式传入 `delivery: "queue"`；同名追加时按 steer 投递。
-- 取消传播：用户在 User-Facing LLM 处按 Esc 时，宿主只在 `session.execution.interrupted` 上通知被中断的会话；适配器自己从 `activation.workers` 名册与 `activation.lanes` 广度优先遍历全部后代，逐个调用 `activation.sessions.interrupt({ sessionID })`，从不 dispose。程序化的 `this.ask` 挂起、接力退休的现任沉默、fission 的 present 替换不传播；真正的操作员中断才传播。被取消的会话会被标记，后续 `fork`/steer 拒绝，`join` 如实报告 cancelled worker。
-- 持久化：`.Herdchestra/` 只存恢复所需最小状态。宿主聊天记录仍是权威；会话日志只保留 review/scope/language/fission/worker 等最小行，调用日志 `.Herdchestra/<session>.calls.jsonl` 存工具输入的载荷摘要与重放所需回执，Pair Hint 只存逐消息摘要与链根（digest），不存完整请求、完整输入或完整聊天副本。Plan 交接触发时的去重记录 `.Herdchestra/handoff-<sha256(callId)[0:32]>.relay.json` 也按路径直接读取，不做 `readdirSync` 扫描；它与后继指针是两条独立的耐久事实。Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
-- 消息投影钩子：
-  - 用 `session.hook("context")` 改写请求级的 `messages` 与 `system`（这是唯一能整段替换 system prompt 的请求级钩子；`compaction` 与 `generate` 挂载同一处理逻辑）；
-  - 用 `session.hook("prompt")` 处理 `scope` 注解注入；
-  - 用 `tool.hook("execute.before")` 解析并核验 `scope` 注解，用 `tool.hook("execute.after")` 追加投影事实。所有改写均只作用于发往 provider 的请求副本。
-
-#### 已实测的绕行方案（一种可行解，未必最优）
-
-下面几条都是在 OpenCode 2.1.4+ 上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
-
-- 插件入口必须是 Effect 形状，而不是本节首条所写的 Promise 版 `Plugin.define({ id, setup })`。宿主按 `{ id, effect }` 或 `{ id, setup }` 解码模块，但在 2.1.4+ 上只有 Effect 形状能拿到 `session`、`tool`、`event`、`agent` 四个域，`setup` 形状加载成功却没有这些能力。适配器让 `index.js` 转出 `spec/effect-entry.mjs`（默认导出 `{ id, effect }`），在 Effect 里建桥、跑同一个 `setup(ctx)`，并登记一个卸载时停事件泵、释放全部注册的 finalizer；包的 `main` 与 `exports` 都指向 `./index.js`，目录装载与包名装载因此走同一模块。顺带一条实测：宿主 2.1.4 不扫描 `.opencode/plugins/`，本地目标必须写进 `opencode.json` 的 `plugins`，且只能是目录或 `index.js`，不能是 `plugin.mjs`（见 `spec/gaps.mjs` 的 `LOCAL_PLUGIN_ENTRY`）。何时不再需要：宿主把完整的 Promise 上下文交给 `setup` 时，这层 Effect 桥就是死重量。
-- 越权拦截是适配器自己的两层检查，而不是早期设计所说的在工具 `execute` 里调 `permission.assert`。宿主确有 `Permission.assert`（`permission` 域在插件上下文里），但它不在工具执行器拿到的 `Tool.Context` 上（那里只有 `sessionID`、`agent`、`messageID`、`id`、`progress`），宿主的工具运行时也不会替插件工具断言（`Tool.execute` 只触发 `execute.before` 钩子）。适配器的第一层是可见性：`agent-definitions.mjs` 的 `permissions` 规则集决定目录里出现哪些工具，`narrowing.mjs` 再按请求从 `event.tools` 里删名；第二层是拒绝：`tool.hook("execute.before")` 的 `beforeCall` 在执行器之前答 `ROLE_DENIED`（连同退役、重放、Scope 三道闸），每个执行器再自己核一遍角色并回一张拒绝回执，绝不抛错——因为 `permission.assert` 被拒时是以 `Tool.Error` 结束这一步，而适配器的规矩是拒绝必须是一张模型读得懂、改得动的回执，何况 §5.4 的常授权无人值守本就不该弹操作员审批。何时不再需要：宿主开始替插件工具做权限断言时，这一层对宿主级权限才变得多余；角色、重放与任期三道闸仍要自己判。
-
-#### 新契约依赖的宿主行为（尚未逐项复测）
-
-下面三条是当前契约依赖的宿主行为。它们已由适配器与单元测试固定；详细依赖点与复检步骤见 `HACK.md` 的《OpenCode: one path per fact, no directory scans》。live smoke 没有覆盖每一条新路径，因此仍按「尚未逐项复测」看待；与上面几条一样，都是可替换的绕行。
-
-- 取消不会沿 `parentID` 自动级联，适配器必须自己走名册。宿主的 `session.execution.interrupted` 只通知被中断的那个会话，没有后代信号；`activation.workers` 与 `activation.lanes` 是适配器自己的名册，只有它能枚举全部后代。适配器因此在收到操作员中断时广度优先遍历并逐个 `activation.sessions.interrupt({ sessionID })`，且从不 dispose（dispose 会抹掉证据，也会让 `join` 失去可报告的终局）。程序化挂起、present 替换与接力退休没有操作员中断事件，天然不触发这条路径。何时不再需要：宿主把取消沿 `parentID` 级联，或提供一个「中断整棵会话树」的调用；那时这圈遍历直接删掉。
-- task 模型在 OpenCode 上不是命名角色，而是一对显式环境变量。`model-inherit.mjs` 的 `taskModelOf` 同时要求 `HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID`（两半齐全才算数），返回 `Model.Ref`；`forkWorker`、fission 的 `buildLane` 与 Plan 的 devops 把它传给 `Session.create({ model })`，回执用 `modelSource: "task" | "parent"` 说明用了哪一级。两半都未设置时退回父模型并标 `modelSource: "parent"`；只设置一半以 `TASK_MODEL_INCOMPLETE` 拒收，不猜一个默认模型。何时不再需要：宿主公开 `modelRoles.task` 一类的命名角色时，这对环境变量与阶梯一起删掉。
-- 继任者靠指针找前任，不靠扫描状态目录。接力提交在 `.Herdchestra/<successor>.relay.json` 写一条耐久指针，继任者据此直接读到前任与屏障，不再 `readdirSync` 整个 `.Herdchestra/`；扫描回退已删除。这是 §1.1 第 1 条的直接要求：恢复路径不随状态文件数量增长。何时不再需要：宿主把父会话路径直接写进继任头时，这个指针文件也变成多余。
-
-### 7.2 Cline Desktop 适配方案（只以 Cline 插件身份装载，不 fork 宿主）
-
-- 装载方式：打包为标准 Cline 插件（导出 `setup(api, ctx)` 与 `manifest.capabilities`），通过 `package.json` 的 `cline.plugins[].paths` 声明，或由宿主 `pluginPaths` 指向。Cline Desktop 的 sidecar 已随包分发 `plugin-runtime`，用户无需额外安装运行时。
-- 钩子与工具注册：仅使用宿主的 7 个生命周期钩子（`beforeRun`、`afterRun`、`beforeModel`、`afterModel`、`beforeTool`、`afterTool`、`onEvent`）以及 `registerTool`、`registerRule`。请求改写走 `beforeModel`（见下），不注册 `messageBuilder`。
-  - 通过 `registerTool` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`。
-  - `beforeTool` 在宿主工具策略与审批之前触发，对不合规调用（如缺失 `scope` 或越权访问）直接返回 `{ skip: true, reason }` 拒绝本次调用，同时保持整个 run 继续运行。
-  - 若子代理 frontmatter 显式列出了 `tools`，宿主会在 `createSubAgentTools` 阶段按该列表收窄工具面，这发生在插件够不到的地方；万象术不能在那里覆盖，改为包住自己交给宿主的工厂：`guardedCreateDelegatedAgent` 对返回的每个 runtime 调用它自己的 `addTools` 补回 `js-worker` 面（`runtimeHandle` 自建的 runtime 同理），回执里的 `face` 说明补没补上，没有工具面就答 `NO_TOOL_SURFACE` 而不是声称防住了。`Coder` 因此照常保有 `this.call`（禁 bash 仅由 `verboseIntent` 约束）。
-- 子代理调度（`fork` / `join` / `devops`）：宿主的 `spawn_agent` 是阻塞的，而 `team_*` 系列（`team_run_task` / `team_await_runs`）带有宿主自己的一套团队账本，万象术均不复用。万象术的 `fork` 直接调用 `createDelegatedAgent({ kind: "subagent", prompt: verboseIntent, tools, configProvider, extensions })` 自建非阻塞子 runtime——必须将 `extensions` 原样转发给子代理，否则子代理拿不到万象术的钩子；`delivery` 支持 `"steer"` 与 `"queue"`。Plan 的 `devops(verboseIntent)` 同样只复用一条专用 `plan-devops` lane：第一次调用启动它，后续调用 `handle.run(verboseIntent)`，绝不开第二路；handle 被操作员中断后以 `PLAN_DEVOPS_DEAD` 拒绝，而不是另起一个。
-  - 模型：`fork` 的 worker、fission lane 与 Plan 的 `plan-devops` 都走 `resolveTaskModel` / `resolveTaskConnection`；`HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID` 两半齐全才走 task 阶梯，否则（含只设一半）走主阶梯，runtime handle 的 `modelSource` 是 `"task"` 或 `"main"`。`Manager` 与 Plan 顶层走 `resolveModel`，保留主模型 / Plan 模型。
-- 取消传播：`guard.mjs` 用 `operatorInterruptOf` 从 run status 或 `stopReason: "aborted"` 的 assistant 消息识别操作员中断；`cancelDescendants` 先排除 `this.ask` 的 park（`parkStopOwed` / `parkStopped`），再调 `session.cancelDescendants("OPERATOR_CANCELLED")` → worker table 的 `cancelAll`，对每一名 fork worker 与 fission lane 的 handle 调 `abort`。只 abort、不 dispose；被取消的 worker 会被标记，后续 `fork`/steer 拒绝（`WORKER_CANCELLED`），重载保留取消标记，未领取完成保留，欠的回合以 `finishReason: "cancelled"` 结算，`join` 如实报告取消结果。fission 的 present 替换与接力退休不经过这条路径，不传播。
-- 持久化：worker 名册只写 `.Herdchestra/<session>.workers.jsonl` 一份追加日志，建表时回放，不再另存 `.restored.json` 快照；Pair Hint 只存链摘要，不存完整消息副本；Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
-- 消息投影入口：Cline 没有独立的主代理 system prompt 替换钩子，且 Desktop 强制开启了 `compaction.enabled = true` 与 `checkpoint.enabled = true`。万象术以 `beforeModel` 作为唯一的请求级改写入口：它返回的 `messages` 只作用于当次 provider 请求，不写入宿主持久转录；角色提示词由一条 `registerRule` 提供（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不在 manifest 里申请这项能力，且不依赖“宿主不做压缩”的假设。
-
-#### 已实测的绕行方案（一种可行解，未必最优）
-
-下面几条都是在 Cline Desktop 0.0.49 与它随包的 `@cline/core` 0.2.0 上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
-
-- 装载单元是一个入口文件加根 `package.json`，不是 `localRuntime.pluginPaths`。宿主扫描 `<workspace>/.cline/plugins`、`<cline-home>/plugins` 与 `~/Documents/Cline/Plugins`；能交给装载器的是入口文件（`…/src/host-cline/index.js`），目录只有在自带 `package.json` 的 `cline.plugins[].paths` 时才解析得开，而目录里一旦出现 `plugin.json`，两条发现路径都会直接放弃。适配器因此在根 `package.json` 声明 `cline.plugins[].paths`，靠 `files: ["src"]` 把整棵树装进去（`src/host-cline` 有 17 个指向 `../core`、`../compose` 的相对导入，单独装它必死在第一次导入），并且绝不生成 `plugin.json`。何时不再需要：宿主开始接受目录或 `plugin.json` 作为装载单元，或者安装器会解析工作区成员的依赖闭包。
-- 插件拿不到 `@cline/core`，所以适配器按阶梯自己找。插件跑在 `worker_thread` 沙箱里，`argv[1]` 是沙箱引导脚本，`module.paths` 只覆盖插件自己的目录，`require.resolve("@cline/core")` 答 `MODULE_NOT_FOUND`。阶梯是：裸 `@cline/core` → `CLINE_CORE_MODULE` → 从 `argv[1]`、`argv[0]`、`execPath`、`cwd` 与插件自身目录向上走的宿主模块树（每个基点都同时探 `<base>/node_modules/@cline/core` 与 `<base>/plugin-runtime/node_modules/@cline/core`，后者才是本机答话的那一级）；结果按进程缓存，`hostModuleSource()` 说明是哪一级答的。何时不再需要：宿主把工厂注入插件，或公开一个稳定位置；那时阶梯的后两级直接删掉，而不是留三个答案。
-- `fork` 要的三样东西（SDK、连接、凭据）都在宿主自己的记录里，不在钩子里。`setup` 上下文与 `beforeModel` 的请求都不带 provider 与 model，宿主会话记录带；宿主还把每个 provider 的 key、base URL 与协议存在 `~/.cline/data/settings/providers.json`，而 `createDelegatedAgentConfigProvider(connection)` 原样返回它拿到的东西——只给 `{ providerId, modelId }` 就是一个没有凭据的连接。适配器用宿主自己的 `ProviderSettingsManager.read()` 与 `createProviderConfig(entry.settings)` 取凭据（只留凭据字段，不写日志、不进回执、不发模型），模型走「上一次请求 → setup 上下文 → 宿主会话记录 → 环境变量」的阶梯，两半都在才算一条连接；裂变组按组写一行到 `.Herdchestra/<session>.fission.jsonl`，写不进去就如实答 `ok: false` 而不是声称提交。何时不再需要：宿主把连接交给 `setup`，或公开 SDK 的稳定位置；那时模型阶梯的前几级与安装布局表都成为死重量。
-- 请求改写走 `beforeModel`，不走早期设计所说的 `prepareTurn` + `messageBuilder`。在 `@cline/core` 0.2.0 上，`beforeModel` 返回的 `messages` 就是这一次 provider 请求的副本（运行时不写回转录）；`prepareTurn` 根本不是插件 API——宿主永远用自己那份 `createCompactionStateAwarePrepareTurn` 填它；`registerMessageBuilder` 的 `build` 只在宿主 `prepareTurn` 里被调用，因此插件注册的 builder 一次都不会跑（实测 Pair Hint 只对到了 0/24 个 provider 请求）。适配器于是把整份请求副本（继任屏障、Scope、Pair Hint、CUE 渲染）放进 `beforeModel` 的 `messages`，角色提示词改成一条 `registerRule`（内容按请求从会话声明的角色读取），既不注册 `messageBuilder`，也不再在 manifest 里申请这项能力。何时不再需要：宿主把 `prepareTurn` 开放给插件，或开始采纳 `beforeModel` 返回的 `systemPrompt`；那时把投影搬过去，删掉对应的那一条。
-- 沙箱里那条「payload 不是 JSON 可序列化」的告警是宿主的载荷，不是我们的返回值。`@cline/core` 的 `callWithSerializableFallback` 包的是宿主自己送进沙箱的钩子载荷（`payload.tool` 是带 `execute` 函数的宿主对象），结构化克隆拒绝它、宿主告警、改用 `toJsonSafePayload` 重试。我们的 `beforeTool` 只回 `{ skip, reason }`，`afterTool` 只回 `{ appendContext }` 或 `undefined`。每条钩子名各告警一次只说明该钩子触发过至少一次；插件消不掉它，也不要为此给返回值加 JSON 清洗。何时不再需要：宿主不再把活对象放进钩子载荷。
-- 子代理的工具面由适配器在工厂上补，而不是信任 frontmatter。宿主用 `createSubAgentTools` 按 frontmatter 的 `tools:` 列表收窄子代理工具面，这发生在 `createDelegatedAgent` 之前，插件既看不到也包不住。适配器改为包住自己交出去的那个工厂：`guardedCreateDelegatedAgent` 对返回的每个 runtime 调用它自己的 `addTools` 补回 `js-worker` 面（`runtimeHandle` 自建的 runtime 同理），回执里的 `face` 说明补没补上，没有工具面就答 `NO_TOOL_SURFACE` 而不是声称防住了。何时不再需要：`@cline/core` 把子代理工具构建器开放给插件，那时把这个包装换成一个装饰器。
-- 同名 `fork` 的「转向」借用运行中那一回合的待处理输入通道。`SessionRuntime.run()` 在回合进行中会直接拒绝，hub 的 `send_input` 又够不到不在 `LocalRuntimeHost.sessions` 里的委派 runtime。适配器在宿主没装的时候给 runtime 装上 `consumePendingUserMessage` 这个成员：`steer(verboseIntent)` 把文本放进队列，正在跑的那一回合在自己的下一个请求边界取走它；`notifyPendingUserMessage()` 只打断模型请求，在飞的工具照常跑完。回执就是 `{ name, steered, started }`，一次结算同时交回载体与被它带上路的 `verboseIntent`。何时不再需要：宿主给委派 runtime 一条真正的转向通道（宿主的 `steer_message` 能到达它）。
-- 崩溃在「屏障」与「台账推进」之间时，以耐久屏障为准，不以台账字段为准。§2.4 第 3 步让退役、屏障与继任启动成为一条耐久记录，台账推进稍后才发生；中间崩溃会留下一个屏障已指向继任、台账字段还停在旧任期的文件，朴素回放会把已退役的前任复活，继任的第一次 review 被永久拒成 `TENURE_RETIRED`。适配器的 `restore` 先读屏障：屏障指名的继任经 `adoptSuccessor({ tenure, milestone })` 原样落到台账（正是 `openSuccessor` 产生的状态），再把文件里的义务叠加上去；屏障不可用就退回朴素回放，让拒绝在下一次 review 浮出来而不是被抹平。何时不再需要：屏障与台账推进合成同一次写入时，这条特殊回放路径就该删掉。
-
-#### 新契约依赖的宿主行为（尚未逐项复测）
-
-下面两条是当前契约依赖的宿主行为，已由适配器与单元测试固定；详细依赖点与复检步骤见 `HACK.md` 的《Cline: one Plan DevOps handle, and a cancellation that keeps the evidence》与《Cline worker sandbox: `fork` reached the host SDK without an env var》（task 模型阶梯）。live smoke 没有覆盖每一条新路径，因此仍按「尚未逐项复测」看待。
-
-- 取消不会沿委派关系自动级联，适配器必须自己走 worker 表。宿主的 run status 或 `stopReason: "aborted"` 的 assistant 消息只说明这一回合被操作员停掉，不会通知它派出的 runtime。`guard.mjs` 用 `operatorInterruptOf` 识别这个事实，先排除 `this.ask` 的 park（`parkStopOwed` / `parkStopped`），再调 `session.cancelDescendants("OPERATOR_CANCELLED")` → worker table 的 `cancelAll`，对每一名 fork worker 与 fission lane 的 handle 调 `abort`；只 abort、不 dispose，未领取结果仍可读。何时不再需要：宿主提供会话树级的取消调用时，这圈遍历直接删掉。
-- task 模型在 Cline 上不是命名角色，而是一对环境变量。`resolveTaskModel` / `resolveTaskConnection` 先读 `HERDCHESTRA_TASK_PROVIDER_ID` 与 `HERDCHESTRA_TASK_MODEL_ID`（两半齐全才算一条连接），命中时 `source: "task"`；未设置或只设置一半时退回会话自己的 `resolveModel` / `resolveConnection`，并如实标 `source: "main"`，不假装是 task 模型。`fork`、fission lane 与 Plan 的 `plan-devops` 都走这条阶梯；`Manager` 与 Plan 顶层不走。何时不再需要：宿主公开 `modelRoles.task` 一类的命名角色时，这对环境变量与阶梯一起删掉。
-
-### 7.3 Oh My Pi 适配方案（只注册一个扩展，不碰宿主内建 Vibe 模式）
-
-- 装载与隔离：发布一个标准 OMP 扩展（默认导出工厂函数 `(pi: ExtensionAPI) => void`）。宿主当前处于什么模式与万象术无关；万象术绝不调用宿主的 `/vibe` 命令、`vibe_*` 工具或 `ctx.sessionModes`。
-- 工具面与单次收窄：
-  - 用 `pi.registerTool` 注册 `js-manager`、`js-worker`、`plan`、`fork`、`join`、`js-review`。
-  - `setActiveTools` 不在扩展加载阶段调用：工厂期没有会话、没有角色，调用会抛错。首次收窄发生在会话的第一个事件（`installHooks`）里；`js-review` 的阶段切换另付一笔，在 `turn_start` 打开评估、在本轮第一条 `review` 被接受时收面。把宿主自带的 `read`、`grep`、`glob`、`write`、`edit`、`bash`、`eval`、`task` 从 `Manager` 的活动工具集里移除，并在万象术自己的 `execute` 中做越权拦截。详见下方 `setActiveTools` 绕行条目。
-  - `before_agent_start` 一次也不调 `setActiveTools`：在那里调会触发宿主重跑 policy preparation（最多达三次）；它返回的整段 `systemPrompt` 必须是角色的纯函数，重跑得到同样的字节。
-- 身份核验与子代理调度：
-  - 通过 `ctx.agent.kind === "sub"` 与 `ctx.agent.name` 区分 `Manager`、`Plan` 与 worker。
-  - 利用只在父会话触发一次的 `before_subagent_spawn` 钩子，核验每个新建子代理是否明确声明了 `Coder` 或 `DevOps` 身份（未声明则返回 `{ block: true, reason }` 拒绝，合法则返回 `{ model: "@task" }`，让子代理用宿主的 task 模型）。由于 OMP 子代理是 headless 的且审批默认为 yolo，拿到了 `js-worker` 的 `Coder` 在运行时没有宿主级 bash 拦截，其禁 bash 边界完全由任务描述（`verboseIntent`）约束。
-  - 模型：`fork` 的 coder/devops lane 与 Plan 的 `plan-devops` 都以 `modelPattern: "@task"` 启动；`sdk.ts:607` 的 `CreateAgentSessionOptions.modelPattern` 接受这个字段，`config/model-resolver.ts` 的 `settings.getModelRole("task")` 展开 `@task`（宿主自己的 task agent 也在 `task/agents.ts:56` 声明 `model: "@task"`）。`lane.mjs` 只对 coder/devops lane 传这个 pattern，Manager lane 不传；`spawn-gate.mjs` 的 `modelFor` 对同两种已声明角色答 `{ model: "@task" }`，`agents/coder.md` 与 `agents/devops.md` 的 frontmatter 也声明 `model: "@task"`。`Manager` 与 Plan 顶层不传 modelPattern，保留主模型 / Plan 模型。宿主解析不了别名时，lane 留在宿主默认模型上，回执如实报告 `modelPattern` 与 `modelSource`。
-  - `fork` 用宿主注入的 SDK 起真会话（`createAgentSession`），不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用（见下方实测）；`join` 等待第一个归来的会话。worker 之间不使用宿主的 peer messaging 作为控制面。
-  - Plan 的 `devops(verboseIntent)` 是裸顶层原语：compose 的 `SURFACE_PRIMITIVES.plan` 只列 `devops`，`ProgramSurface.surface()` 返回 members ∪ primitives，`program.mjs` 因此把它当 primitive 而不是 member（`this.devops` 是 `undefined`，声明它会 `TypeError`）。`ports.mjs` 的 `devopsPort` 拥有唯一一条专用 lane `plan-devops`（role devops），登记在会话的 `LaneTable`：第一次调用启动它，后续调用 steer 同一条 lane 并等待 `lane.ended`；同一时刻第二笔未决调查被拒为 `DEVOPS_IN_FLIGHT`。不存在按调用时间戳新建的 devops 会话，也没有 `HostBinding.runAgent/spawn/steer/progressOf` 的旧路径。
-- 取消传播：用户在 User-Facing LLM 处按 Esc 时，宿主的终态回合消息带 `stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"`；`RoleSession.operatorInterrupt` 用 `operatorInterruptOf` 识别真正的操作员中断，并排除非 user-facing 会话、S1 ask、`control.replaced` 与 `state.relayPending`。`src/host-omp/index.mjs` 的 `cancelSubtree` 从该会话广度优先遍历：经过它的 `LaneTable`、每条 lane 的 `AgentSession`、以及该会话自己的适配器/`LaneTable`；`LaneTable.cancelAll()` 标记名册，`Lane.abort(reason)` 直接调 `AgentSession.abort({ reason })`（会话由适配器创建，不需要 ctx）。会话只 abort、从不 dispose，转录与未领取结果保持可读；后续 `fork`/steer 以 `SESSION_CANCELLED` 拒绝，`join` 先交回已领取结果，再如实报告取消。fission 的 present 替换（`control.replaced`）与接力退休（`state.relayPending`）不是操作员中断，不传播。
-- 持久化：宿主转录是权威；需要与它比对时只存哈希，不存副本。接力事实直接从转录里的 `herdchestra.relay` 自定义条目读取（`getEntries` 按本适配器的 `customType` 过滤），绝不扫描目录；封存边界另存一份 `.Herdchestra/<lineage>.relay.jsonl`。`.Herdchestra/<session>.session.json` 只存台账（角色、kind、里程碑、任期、review 计数、义务、继任、屏障），另有 `<session>.scope.jsonl`、`<session>.workers.jsonl`、Pair Hint 日志与 `<session>.requests.jsonl`。请求日志只写失败与判定变化（每请求 `{length, root, firstDivergence, failure}` 加至多 64 条 dropped shape；2 MiB 分段轮转，一次 rename，不整文件重写）；`.request.json` 只在判定变化时写，回合/代理结束时刷 request-id；名册用 Map 队列，认领后剥掉答复正文并做摊销式原子压缩；Pair Hint 用 `hint.chain` 与 `messageDigest` 对比 `chain.digests[index]`。不存完整请求或完整聊天副本。Plan 的底稿在 `plans/<name>.md`，不在 `.Herdchestra/`。
-- 消息投影钩子：`before_agent_start` 返回整段替换的最终 `systemPrompt`；`context` 钩子返回 `{ messages }` 改写当次出站请求副本；`tool_call` 用于 `block` 或改写 `input`；`tool_result` 用于改写返回内容；`tool_execution_*` 仅作观察；`assistant_message` 可替换最终文本。
-
-**提问与无人值守在三家宿主上的落地（根 §2.2）。** `this.ask(question)` 就是 `this.park({ question })` + `interrupt`，三家宿主都不得以「没有提问通道」为由拒绝：
-
-| 宿主 | 挂起 | 中断（交还控制权） | 恢复 |
-|------|------|--------------------|------|
-| OpenCode | `spec/park-table.mjs` 保留续体的 promise | 回执带 `interrupt: true`，并调宿主的 `Session.interrupt({ sessionID })` | `session.hook("prompt")` 把操作员的下一则 prompt 交给 `unpark` |
-| Cline | `execution.mjs` 的 `ParkTable` | 工具回执带 `interrupt: true`，本回合没有后续动作，run 收尾即交还控制权 | `beforeModel` 的 `SessionState.resumeAsked` 消费挂起点并注入答复 |
-| Oh My Pi | `program.mjs` 的 `ParkTable` | 回执带 `interrupt: true`，并调本事件自己的 `ctx.abort()` | 同一会话的新程序 `this.unpark(name, answer)` |
-
-**自然停止的拦截（根 §2.2）。** 规则只有一份（`src/compose/nudge.mjs` 的 `evaluateTurnExit` / `buildNudgeMessage`），三家宿主各自只做「把文本送进下一次请求」：OpenCode 在 `session.execution.*` 上经 `spec/turn-nudge.mjs` 用 `sessions.prompt({ delivery: "queue" })` 投递；Cline 在 `afterModel`/`beforeModel`/`afterRun` 三处经 `guard.mjs` 用会话自己的输入通道继续；Oh My Pi 在 `agent_end` 经 `host-omp/nudge.mjs` 用 `pi.sendUserMessage(..., { deliverAs: "followUp" })` 投递。每个回合只投递一次，投递失败如实报告，不重试、不伪造。
-
-#### 已实测的绕行方案（一种可行解，未必最优）
-
-下面几条都是在 omp 18.14.2（部分条目标为 18.14.x）上实测出来的做法：它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；测量数据、宿主源码行号与复检步骤见 `HACK.md`。
-
-- 接力的耐久记录只在回合内写得进去，转录切换推迟到终态 `agent_end`。宿主在终态 `agent_end` 到达扩展之前就已 `seal()` 会话管理器（`#released = true` 并抬 `#diskEpoch`），此后一切提交守卫恒假：实测在 `agent_end` 里写 `appendEntriesAtomically` 落地为假，写普通 `appendCustomEntry` 返回了 id 却既不在内存日志也不在磁盘；而在回合进行中写同一入口两次都落地。`isStreaming` 又在整个工具调用期间为真（`agent.state.isStreaming || #promptInFlightCount > 0`），所以 `review()` 当刻切换必被 `SESSION_STREAMING` 拒绝，而 `waitForIdle()` 在那里是自死锁。适配器因此把「记录」与「切换」拆开：回合内发布一条 `herdchestra.relay` 记录（退役、屏障、继任三个字段靠 `appendEntriesAtomically` 一次改名整体可见），再写一条 `herdchestra.relay.pending` 意图，切换本身留到终态 `agent_end`、先让出事件循环再单独执行。顺序不可交换：记录先提交、转录后重置，中间崩溃留下的是一条已指名继任、仍持旧转录的日志，`context` 钩子保证旧转录不进任何请求。写不进去时如实答 `RELAY_RECORD_NOT_DURABLE`；`successor.replaced: false` 配 `ok: true` 说的是「记录已提交、任期已推进，但转录没换」。何时不再需要：宿主在 `agent_end` 之后才封存、或把记录自己抄进继任头、或提供不等待空闲的中断；三者任一成立，边界写回或同步切换就重新可用。
-- 继任切换只能走 `ctx.sessionManager`，而它比自己的类型更宽。`ExtensionContext.sessionManager` 的类型是 `ReadonlySessionManager`（`Pick` 里没有 `newSession`），但运行器传的是真实例，`newSession`、`getSessionFile`、`appendEntriesAtomically`、`appendCustomEntry`、`getEntries` 运行时都在；`session_start` 的 `ctx` 自己没有 `newSession`，也没有 `sessionFile`。适配器的 `switchTarget()` 先读会话、再读 `session.sessionManager`，从不假设类型面；因为每次 emit 都重建上下文，它也从不缓存某个事件的 `ctx`（缓存 `session_start` 那份会让 `ctx.sessionManager`、`ctx.agent`、`ctx.abort` 全是 `undefined`，推迟的切换就永远够不到）。继任头里的 `parentSession` 写被替换转录的路径（宿主的列表与清理都按路径读），旧文件保留原记录，但按 `successorSessionId` 过滤后不再治理。何时不再需要：宿主真的执行只读类型时，接力会以 `NO_SESSION_CONTROL` 诚实地失败——那时不要绕过，要承认这条路没了。
-- 封存之后内存日志会空，磁盘文件还在。实测在 `seal()` 之后 `getEntries()` 里已没有任何接力记录，而同一次运行的转录文件里那条记录清清楚楚。适配器查「记录在不在」时，日志答否就回退到转录文件，按宿主自己的条目 id 与本适配器的 `customType` 比对；否则边界会把一条明明存在的记录判成没写，跳过唯一不需要写入的那一步。何时不再需要：宿主在封存后仍可写，或自己把记录抄进继任头。
-- 宿主的 `context` 钩子会把「正在回答的那条消息」就地重写。宿主在 provider 回答之前就构造一条占位的 assistant 消息，随流增量就地改写（文本、工具调用、用量、`stopReason`），而 `context` 钩子拿到的是同一个对象；于是同一个请求在流未收时看到占位副本，下一个请求从宿主日志重建时看到定稿副本，逐字节比对就把它判成 `PREFIX_DRIFT`，工具闸随即拒掉每个调用。适配器不再维护「哪些字段不算对话」的黑名单，改由 `core/pair-hint/canonical.mjs` 用正向语义白名单定义「同一条消息」（角色，以及每个部分的类型与该类型的语义字段），宿主重算的一切字段天然被忽略。何时不再需要：宿主把定稿副本交给钩子时，这条测量的理由消失，但白名单与宿主版本无关，不要退回黑名单。
-- 宿主的侧回合也走 `context` 钩子，必须按形状识别并放行。`transformContext` 是 `context` 钩子唯一的触发点，主代理与会话代理都装了它，`runEphemeralTurn` 把每个瞬时回合都送进来（标题、输入预测、`btw-turn`、空闲维护等）；这些副本是真实前缀的延长，若不识别，它会抢走 Pair Hint 的链状态（`#chain` 的前缀链与呈现位点），几毫秒后真请求就被判成漂移。宿主给这些消息打的 symbol 标记在 `structuredClone` 时被丢掉，所以只能按两条宿主写出的形状同时识别：一条 `developer` 消息带 `attribution: "agent"`，加一条 `user` 消息带 `attribution: "agent"`。适配器把它们交给 core 当作 `REQUEST_KINDS.EPHEMERAL`：配对照常注入（侧回合本就是为了预热缓存），但不记账、不移动、不开不关闸门。何时不再需要：宿主用一个可读字段标出侧回合。
-- `setActiveTools` 在加载阶段调不了，只能让阶段切换来付这笔账。宿主交给扩展工厂的只有 `api`，加载时没有会话、没有角色、也没有可收窄的活动工具集，`setActiveTools` 在会话的扩展运行时初始化之前会抛错。适配器因此在会话的第一个事件（`installHooks`）里做首次收窄；`js-review` 的阶段切换另付一笔，且从不落在 `before_agent_start`：本轮评估在 `turn_start` 打开（`beginEvaluation()` 每轮只答一次真，`openEvaluation()` 据此收窄），在本轮第一条 review 被接受时由 `onReviewAccepted` 收面并再次收窄。`before_agent_start` 一次也不调 `setActiveTools`，它返回的整段 `systemPrompt` 是角色的纯函数，重跑得到同样的字节。这与早期设计所说的「在扩展加载阶段调用一次 `setActiveTools`」有意不同：那条要防的是宿主为每次请求重跑最多三次 policy preparation，阶段切换这一层同样防住了它。何时不再需要：宿主在工厂期就给出会话，那时把首次收窄搬过去，阶段切换规则只留给 review 面。
-- `fork` 不走宿主的 `task`，因此 `task.maxRecursionDepth` 对它不适用。扩展没有派发器（`ExtensionAPI` 没有 dispatch，`ctx.invokeTool` 只转给同名的内建工具），`fork` 根本调不到 `task`；而那个上限是在宿主为会话构造 task 工具时施加的，经 `createAgentSession` 建出来的会话根本没有 task 工具可限。适配器让 `fork` 用宿主注入的 SDK 起真会话，深度只作为事实随 lane 携带，不用来表达权限。这与早期设计里「抬高或绕过 `task.maxRecursionDepth`」的写法有意不同：那条绕行要等宿主真把扩展工作塞进 `task` 才需要，届时用 `settings.overlay({ "task.maxRecursionDepth": -1 })` 传给 `createAgentSession`（`Settings.overlay` 对未知键抛错，不会静默忽略）。何时不再需要：宿主把扩展工作路由到 `task` 时，那条绕行才登场。
-
-#### 新契约依赖的宿主行为（已离线复测，尚未逐项 live 复测）
-
-下面两条是当前契约依赖的宿主行为；两条都已在 omp 18.14.1 源码与 host-omp 275/275 测试中离线复测，live smoke 没有覆盖每一条新路径。详细依赖点与复检步骤见 `HACK.md` 的《OMP: `@task` as a model selector, one Plan lane, failure-only diagnostics》。
-
-- task 模型在 OMP 上是一个角色别名，而不是一次显式选择。`sdk.ts:607` 的 `CreateAgentSessionOptions.modelPattern` 接受这个字段；`config/model-resolver.ts` 的 `settings.getModelRole("task")` 展开 `@task`；宿主自己的 task agent 在 `task/agents.ts:56` 也声明 `model: "@task"`。`lane.mjs` 只对 coder/devops lane 传这个 pattern，Manager lane 不传；`spawn-gate.mjs` 的 `modelFor` 对同两种已声明角色答 `{ model: "@task" }`，`agents/coder.md` 与 `agents/devops.md` 的 frontmatter 也声明 `model: "@task"`。宿主解析不了别名时，lane 留在宿主默认模型上，lane 回执带 `modelPattern` 与 `modelSource`。何时不再需要：宿主把 task 角色直接作为子代理的默认模型时，这三处显式声明都可以删掉。
-- 取消不会沿会话树自动级联，适配器必须自己走注册表。宿主只把操作员中断写进终态回合消息（`stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"`），没有「整棵树被取消」的事件。`RoleSession.operatorInterrupt` 用 `operatorInterruptOf` 识别它，并排除非 user-facing 会话、S1 ask、`control.replaced` 与 `state.relayPending`；`src/host-omp/index.mjs` 的 `cancelSubtree` 从该会话广度优先遍历 `LaneTable`、每条 lane 的 `AgentSession` 与该会话自己的适配器/`LaneTable`，`LaneTable.cancelAll()` 标记名册，`Lane.abort(reason)` 直接调 `AgentSession.abort({ reason })`。只 abort、从不 dispose，转录与未领取结果保持可读；后续 `fork`/steer 以 `SESSION_CANCELLED` 拒绝，`join` 先交回已领取结果再报告取消。何时不再需要：宿主提供会话树级的取消调用时，这圈遍历直接删掉。
-
-### 7.4 与 Oh My Pi 内建 Vibe Mode 的设计取舍对照
-
-万象术受 Oh My Pi 的 Vibe Mode 启发，但做了根本性的精简与强化（且绝不引用宿主的 `/vibe`、`vibe_*`、`sessionModes`、`vibe-mode-active.md`、`vibe-mode-context` 等内部标识符）：
-
-| 维度 | Oh My Pi 内建 Vibe Mode | 万象术 Herdchestra |
-|------|-------------------------|--------------------|
-| 模式定位 | 宿主的可选模式之一，需与 plan / goal / loop 等模式做互斥管理 | 宿主的唯一工作语义，彻底取消普通单兵模式，无需模式互斥门 |
-| 顶层代理读取权 | 导演保留只读文件工具，可亲自读文件核实 | `Manager` 默认连文件读取都没有，也没有审查子代理代码的义务；仅在每轮首次评估前临时开放独立只读工具 `js-review` |
-| 子代理角色与规模 | 按“便宜快 / 强而慢”固定分两档，通常要求 2 名子代理 | 按并发安全职责分为 1 名 `DevOps` + 尽可能多的 `Coder`（大任务常驻 10+ 名 worker）；Plan 另有一条专用 `plan-devops` lane |
-| 控制原语 | `spawn`、`send`、`wait`、`list` 四件套 | 极简为 `fork(name, verboseIntent)`（新建与同名 steer 合一，由回执 `steered` 显式区分）、无参 `join()`（wait-one）与 Plan 的同步 `devops(verboseIntent)`（join） |
-| 同身并行能力 | 无 | 提供 `this.fission(prompts)`，允许同一 worker 身份裂变为多条并行泳道并按拓扑顺序收束 |
-| 保留的优秀基因 | 结果自投递、只等第一个完成、worker 不继承导演对话（任务描述必须自足）、进程重启后被打断的那一回合不自动续跑 | 全部采纳；任务描述统一叫 `verboseIntent` |
-
-### 7.5 跨宿主的绕行方案（一种可行解，未必最优）
-
-下面几条是三家一起守的做法（OpenCode 2.1.4+、Cline Desktop 0.0.49 / `@cline/core` 0.2.0、omp 18.14.2）；其中标为「契约」的两条是当前契约依赖的宿主行为：OMP 部分已在 §7.3 离线复测，OpenCode/Cline 部分尚待逐项复测；smoke 通过但没有覆盖每条新路径；其余是实测做法。它们能跑通，但不声称最优，将来的宿主版本或更好的想法可以直接替换其中任何一条；实测做法的测量数据、宿主源码行号与复检步骤见 `HACK.md`，契约条目则在 §7.1-§7.3 各自标注了依赖点。
-
-- 工具文本一律是 CUE，而 CUE 的字面量规则是承重的。根 §6.3 与 §8.2 第 7 条禁止模型读到裸 JSON，各适配器都用 `src/core/cue.mjs` 的 `toCue` 渲染模型可见的结构化数据：OpenCode 只把 `content` 转 CUE（`output` 仍是普通值，宿主按声明 schema 编码它，从不给模型看），Cline 把每份结构化 `appendContext` 载荷转 CUE，而 `scope: CODE: message` 这类拒绝串是散文、不是结构化数据，保持原样。七条容易写错的文法（围栏内唯一的转义是「反斜杠 + 同长 `#` 串」、围栏本身要压过正文里的 `\#` 串、`\r` 永不字面输出、块正文按结束符缩进且空行保持裸行、以 `"` 开头的串必须走块且块不能带尾随换行、列表元素分行要逗号、字段标签走不围栏的字符串文法）都是对 `cue` v0.11.0 实测出来的。何时不再需要：渲染器是我们自己的，这套规则不会随宿主消失；只有宿主开始把 `content` 当 JSON 预解析时，OpenCode 这一侧才需要改，而 schema 检查一直在 `output` 上，不受影响。
-- `this.ask` 就是 `this.park({ question })` 加一次中断，没有任何宿主缺这个能力。`HOST_HAS_NO_OPERATOR_CHANNEL` 已从所有路径删除：真正该问的不是「插件能否证明人读过问题」，而是「程序挂起了吗、回合结束了吗、答复恢复它了吗」，三家都能做到。回执形状统一为 `{ ok: true, asked: true, question, program, interrupt: true }`，只有中断按宿主各走各的（OpenCode 调 `Session.interrupt`，OMP 调本事件自己的 `ctx.abort()`，Cline 的回合随工具结果收尾，不需要额外的 abort 调用）；恢复则统一是一次普通的 `unpark`，core 的 `resumeValue` 把注入值交给 `ask` 站点，与显式 `park` 和 `where` 歧义完全一样。宿主程序还必须带着角色的能力集注册（`[role]`），否则同会话的两个程序不共享能力集，Plan 就无法恢复自己做的 `ask` 挂起。何时不再需要：宿主若能一次调用里既挂起又交还控制权，这套按宿主分工的中断表就塌缩成那一次调用。
-- 插件重载不是进程重启，worker 名册必须落盘。三家都会在不重启进程的情况下重载插件（OpenCode 监视文件变化、OMP 每次 emit 重建上下文并重新绑定工厂、Cline 在宿主与已启动的委派 runtime 都还跑着时重载会话插件），而谁都不会提前通知插件「你的内存表马上要作废」。实测过的失败是：四名 worker 已 fork、两名已 join，插件重载后每次 `join` 都在一毫秒内答 `{ ok: false, record: null }`，而 worker 还在同一个服务里跑。适配器因此把名册当耐久事实写在 `.Herdchestra/` 下并在建表时回放：OpenCode 读会话日志里 `worker` 类型的记录，Cline 读 `<session>.workers.jsonl` 这一份追加日志（不再有第二份快照可与它冲突），OMP 把 lane 事实放在会话状态里、与台账和屏障并列。不变量是 `join` 绝不能在有名 worker 还在跑或还握着未领取结果时答「没东西可收」。何时不再需要：宿主跨重载保留插件的模块实例时，回放变成多余但无害；真正不能发生的是「只凭内存答话的表」。
-- （契约）取消不是宿主的统一能力，三家各认各的操作员中断，再各自走一遍后代。OpenCode 在 `session.execution.interrupted` 上收到通知后按 `activation.workers` 与 `activation.lanes` 广度优先 `sessions.interrupt`；Cline 用 `operatorInterruptOf` 从 run status 或 `stopReason: "aborted"` 的 assistant 消息识别，再经 worker table 的 `cancelAll` 逐个 `abort`；OMP 从终态回合消息的 `stopReason: "aborted"` 与 `errorMessage: "Interrupted by user"` 识别，由 `cancelSubtree` 沿 `LaneTable`、`AgentSession` 与适配器递归调 `AgentSession.abort`。三家都只中断/abort、不 dispose；程序化的 `this.ask` 挂起、fission 的 present 替换与接力退休不传播。何时不再需要：宿主统一提供会话树级取消时，这三圈遍历一起删掉。
-- （契约）task 模型也不是宿主的统一概念。OMP 用宿主的角色别名 `modelPattern: "@task"`（解析 `modelRoles.task`）；OpenCode 与 Cline 都用 `HERDCHESTRA_TASK_PROVIDER_ID` / `HERDCHESTRA_TASK_MODEL_ID` 这一对变量，但缺半的处理不同：OpenCode 把半配置当作拒收（`TASK_MODEL_INCOMPLETE`），只有两半都未设置才退回父模型并标 `modelSource: "parent"`；Cline 在两半齐全时走 task 阶梯，否则（含半配置）退回主阶梯并标 `source: "main"`。三家都只让 fork worker、fission lane 与 `plan-devops` 走这条阶梯；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。何时不再需要：三家都公开 task 角色时，环境变量阶梯与 OMP 的三处显式声明一起删掉。
-- 从自己的回合内部替换现任（裂变）只能推迟中断。§4.2 第 6 步要求旧物理现任在组建成后沉默，而正常情形就是 worker 在自己的工具调用里调 `this.fission(prompts)`：这一回合正等着这次调用，调用不能等它结束。宿主没有「打断正在执行本次调用的那一轮」的办法——`AgentSession.abort` 会 `waitForIdle()` 等回自己，`ExtensionContext.abort` 只停事件所属的那一回合，在 lane 上还是同一个等待。适配器的做法分三步：把「已替换」的标记写在 SESSION 对象上（`Symbol.for("herdchestra.presentReplaced")`，因为每次 `bind`/`refreshContext` 都会重建控制包装），`stop()` 只做回合内安全的部分（丢队列、回读 `isStreaming`），`atTurnEnd(fn)` 把宿主的 abort 挂到回合边界、由 `agent_end` 排空。回执如实区分 `settled`、`deferredAbort`、`stoppedNow`，两样都做不到时答 `PRESENT_NOT_REPLACED`（Cline 侧为 `ABORT_NOT_ARMED` / `NO_ABORT_SURFACE`），让组回滚而不是谎称替换成功。何时不再需要：宿主提供真正的中断而不等待空闲，那就把第三步换成它，删掉推迟。
+| 场景类别 | 面向用户的标准说明 | 主操作入口 |
+|---|---|---|
+| 尚未选模型 / 供应商停用 / 模型被移除 | 先选择一个可用模型（或所属连接已停用 / 原模型已不可用），草稿与历史仍保留 | 选择模型 / 打开连接设置 |
+| 凭据无效 / 账号授权过期 | 服务未接受当前凭据 / 需要重新连接该账号 | 更新凭据 / 重新登录 |
+| 额度不足 / 服务限流 | 服务报告额度不足或暂时限流，已保留本轮内容 | 查看服务 / 等待重试或取消 |
+| 网络不可达 / 响应迟迟未到 | 无法连接到所选服务 / 服务尚未返回内容，可继续等待或停止 | 检查连接 / 等待或停止 |
+| 输入超出容量 / 附件不支持 / 部分不可读 | 内容超过模型窗口 / 模型不接收该类附件 / 仍有部分资料未成功处理 | 调整范围 / 换模型或转提取 / 查看缺失项 |
+| 本地空间不足 / 资料不可读 / 外部文件已移动 | 空间不足暂无法保存 / 无法打开资料（原文件未替换） / 找不到原位置文件 | 释放空间或导出 / 查看恢复选项 / 重新定位 |
+| 权限被撤销 / 工具执行失败 / 结果回执丢失 | 所需权限已关闭 / 本步未完成（已完成步骤保留） / 操作可能已执行需先核对 | 恢复权限 / 查看原因 / 检查目标状态 |
+| 定时任务错过时间 | 本次执行时间已错过，未自动补跑 | 手动运行 / 查看下次时间 |
+| 备份密码错误 / 格式不支持 / 恢复冲突 / 版本过新 / 导出取消 | 无法解锁（当前资料未变） / 格式未识别 / 新旧资料含差异需选择 / 格式版本较新 / 未生成导出文件 | 重输密码 / 查看支持范围 / 查看冲突 / 更新应用 / 重新导出 |
 
 ---
 
-## 8 工程纪律与实现规范
+## 8 工程纪律、仓库结构与验证矩阵
 
-万象术内嵌的 `repo-aware rules`（见 §5.1）既是投射给智能体的工作准则，也是万象术自身代码与开发者的最高工程准则。
+### 8.1 仓库目录布局与模块边界
 
-### 8.1 目录布局与文档同步纪律
+本项目采用扁平、职责完整的模块划分（遵循 Gall 定律与 Mise en place 备料原则，底层支持库互不依赖，由组合层显式装配）：
 
-万象术不设根目录 `LEMMA.md` 或 `README.md`，直接围绕 `src/` 展开实现与维护：
+```text
+.
+├── AGENTS.md                  # 本文件：全系统最高规格说明书
+├── HACK.md                    # 外部库/平台实测限制与绕行记录账本
+├── pixi.toml                  # Pixi 环境声明
+├── deps.edn                   # Clojure / ClojureScript 依赖与构建配置
+├── plans/                     # Plan 阶段产出的用户可见底稿 (plans/<name>.md)
+└── src/
+    ├── AGENTS.md              # 全局架构师笔记（模块划分与装配边界）
+    ├── hc/core/               # 独立核心支持库（互不依赖）
+    │   ├── ufss/              # EDN + UFSS 通用变长围栏字符串读取器与 Pretty Printer
+    │   ├── scope/             # Scope 准入、回合结算与出站副本裁剪器
+    │   ├── pair_hint/         # 双语资源、前缀链摘要与合成提示注入器
+    │   ├── relay/             # 义务台账、中心化评估窗口与原子接力屏障状态机
+    │   ├── swarm_stm/         # Swarm 看板 STM、拆分/认领/父项恢复与 take-or-die 内核
+    │   ├── workspace_gate/    # (mtime, size) 凭据、批内内存视图、Dry-Run 与写入口 W
+    │   └── steward_sphinx/    # Standing Sphinx 认识状态与 Steward 决策前沿触发器
+    ├── hc/compose/            # 组合层：Dijkstra 守卫命令调度器、Missionary 监督树、Nudge 拦截器
+    ├── hc/server/             # 服务端：存储适配器、LangChain4j 模型端口、Clojure 沙箱执行器、Sente/AG-UI 网关
+    └── hc/client/             # 浏览器端：Fulcro 状态库、AG-UI 接收适配器、Framework7 React 工作台视图
+```
 
-1. 根目录配置与核查账本：项目工程配置文件统一放在根目录；适配宿主时的随机应变与绕行方案统一记录在根目录 `HACK.md`，摘要写在本文 §7 与 §7.5，`HACK.md` 保留测量数据、宿主源码行号与复检步骤。
-2. 架构师笔记（`src/AGENTS.md`）：`src/AGENTS.md` 存放全局架构师笔记，承担传统项目中 `ARCHITECTURE.md` 的职责，阐明核心库划分、组合层装配关系与跨包边界。
-3. 包级规格说明书（`src/{core,compose,host-opencode,host-cline,host-omp}/{包名}/AGENTS.md`）：每个子包维护对应的局部规格说明书，体例参照本文，AI 可自动创建与修改。
-4. 自动追赶义务：当根目录 `AGENTS.md` 更新后，AI 有权利和义务直接同步更新 `src/AGENTS.md`、各包局部 `AGENTS.md`、`HACK.md` 以及 `src/` 下的源码实现，无需请示。
+**文档与实现同步纪律**：
+1. 本项目不设根目录 `LEMMA.md` 或 `README.md`；外部库、平台与运行时的实测限制、源码行号、测量数据与复检步骤统一记录在根目录 `HACK.md`。开发期间如需参考其他外部仓库代码，先在 `../` 寻找，若不存在则 `clone` 至 `../`。
+2. `src/AGENTS.md` 存放全局架构师笔记（承担传统 `ARCHITECTURE.md` 职责）；`src/hc/{core,compose,server,client}/<模块>/AGENTS.md` 存放各包局部规格说明书，体例参照本文，AI 可自动创建与修改。
+3. 当根目录 `AGENTS.md` 更新后，AI 有权利和义务直接同步更新 `src/AGENTS.md`、各包局部 `AGENTS.md`、`HACK.md` 以及 `src/` 下的源码实现，无需请示。
 
-### 8.2 技术栈与编程范式
+### 8.2 编程范式与属性测试驱动（Property-Based Testing）
 
-1. 纯正 ES Modules：所有逻辑一律使用 pure `.mjs` 实现，不引入编译转译链。
-2. 属性测试驱动：所有测试一律使用 `fast-check` 编写基于属性的测试（Property-Based Testing），在随机序列下验证系统不变量。
-3. 代数数据类型（ADT）：用代数数据类型建模业务境况与转换，让非法境况在结构上不可表示（Make illegal states unrepresentable）。
-4. 面向对象与自治内部状态：采用带内部可变状态的面向对象风格（受 Smalltalk 与 Actor 模型启发，通过消息传递协作），而不是纯函数式风格。
-5. 组合优于继承，Mise en place 布局：遵循 Gall 定律与备料（Mise en place）原则，先准备好职责完整、彼此独立的最小部件，再显式把它们组合起来；用可拆卸的装饰器增强功能。
-6. 结构化程序设计：遵循 Dijkstra 结构化程序设计原则，用清晰的自然控制流表达生命周期，严禁在程序中显式存储程序计数器（Program Counter）或其变种。
-7. 面向 LLM 的 CUE 格式化呈现：任何面向 LLM 的结构化数据（含 prompt 与工具返回值等）严禁输出 raw JSON，必须转为 CUE Pretty Print 格式（单行优先行内字符串，多行用 CUE 变长多行字符串 `"""` / `#"""..."""#` 并按结束符缩进对齐，彻底杜绝 escape 污染；详见 §6.3）。
-8. 最小持久化与线性恢复：`.Herdchestra/` 只存恢复工作所需的最小状态——与宿主聊天记录匹配的哈希，以及我们自己新增内容的最小充分统计量；不存完整请求或完整聊天副本。所有持久化、回放与扫描路径必须是 $O(n)$（必要时 $O(n\log n)$），严禁 $O(n^2)$ 算法。
-9. 模型归属：子代理（`fork` worker、fission lane、Plan 的 `plan-devops`）以用户指定的 task 模型启动；`Manager` 与 Plan 顶层保留主模型 / Plan 模型。OMP 端用 `@task` / `modelRoles.task`，不得退回主模型冒充 task 模型。
+1. **数据导向与显式状态机**：所有业务境况使用不可变数据与明确的代数状态标识（Keyword/Schema）建模，让非法状态在结构上不可表示；严禁在业务流中藏匿隐式程序计数器。
+2. **基于属性的测试（`test.check`）与确定性交错驱动**：
+   * 每一个 `hc/core/*` 与 `hc/compose/*` 模块必须配备 `clojure.test.check` 属性测试，在随机操作序列与故障注入下验证系统不变量：
+     * **Nudge 不变量**：除非处于 `S1` 的 `.ask` 挂起或终局 `:completed`，任何回合结束必然触发 Nudge 或守卫推进；
+     * **UFSS 双射不变量**：对任意随机生成的 Unicode 字符串 $s$（含任意引号、反斜杠、`"""`、`#` 组合、换行与缩进），恒有 `(= s (ufss/read-str (ufss/write-str s)))`；
+     * **Relay + Swarm 咬合不变量**：蜂群施工期只能通过完成看板根任务清空台账，台账清空必然原子触发上下文屏障并进入下一任中心化只读评估窗口；
+     * **父项实质不变量（V06）**：任意子任务完成序列下，父项仅从 `:waiting` 变为 `:ready`，绝不自动变为 `:done`；
+     * **令牌与生命不变量（V01–V05）**：任一时刻至多一名有效 `holder`；`:dead` 身份无法通过任何入口提交修改；`take-or-die` 只有赢或输并移交死亡两种结局；$R(\text{holder}) = \emptyset$ 与释放令牌退休在同一提交状态成立；
+     * **文件受保护提交不变量（F01–F15）**：任何普通拒绝（`stamp` 冲突、只读依赖变化、`.where` 挂起、批内路径冲突）发生时真实磁盘文件零修改；进入 `:applying` 后在正常范围内整批落盘，记账重试绝不重放文件写入。
+3. **共享路径删除纪律**：
+   * 绝不删除非本回合自己创建并逐一具名的共享路径；文件删除在工作区工具内默认进入可恢复区域，清理操作必须为独立单次调用，严禁在复合 Shell 命令中夹带 `rm -rf`。
+   * `.Herdchestra/`、`/tmp/hc-devops/` 以及任何非本进程本回合自己创建的路径均为只读；脏文件比丢失证据便宜，而“这只是噪音”正是历史事故中判断错的那句话。
 
-### 8.3 共享路径的删除纪律
+### 8.3 控制性质（V01–V08）与文件/Shell 交错验收矩阵（F01–F15）
 
-1. 绝不删除共享路径。`.Herdchestra/`、`/tmp/hc-devops/` 以及任何不是本回合自己创建的路径都是只读的；清理只删除本进程本回合创建、并逐一具名的路径，且必须是单独的一次调用——禁止把 `rm` 写进复合命令。理由与两次事故的完整记录见 `HACK.md` 的 INCIDENT 条目：脏文件比丢失证据便宜，而「这只是噪音」正是当初判断错的那句话。
+> 2026-11-03 修订：`ls` 不再是结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌；任务状态删除 `:cancelled`/`:replaced`；`fission` 已删除；多 worktree 的 fork/join、master 集成锁与 rebase 循环见 §5.3。F01–F15 的其余断言不变。
+
+#### 持续保持的控制性质（V01–V08）
+
+检查器在每次状态转换后立即断言，发现第一次违反时输出最短事件序列（最短反例可直接指向缺失的原子组合，如把死亡与移交拆成两次事务）：
+
+| 编号 | 性质 | 主要覆盖场景 |
+|---|---|---|
+| V01 | 同一时刻至多一个有效持令个体 | T01、T02 |
+| V02 | 逻辑死亡身份不能产生新的有效提交 | T03、T11 |
+| V03 | 有效竞争只有赢或输两种生命结论 | T01、T13 |
+| V04 | 失败竞争不遗留归死者的可移交责任 | T04 |
+| V05 | 退休与责任空集在同一提交状态成立 | T05、T06、T09 |
+| V06 | 子项完成只使等待满足的父项恢复 `:ready` | T07、T08 |
+| V07 | 普通任务归属不因他人持令而改变 | T08、T10 |
+| V08 | 唤醒与等待登记不会因检查间隔丢失 | F15 |
+
+#### 文件提交与 Shell 交错验收矩阵（F01–F15）
+
+共同前提：普通受保护应用的实际修改与 Shell 的受管执行会话共用写锁 $W$；读取不申请 $W$；文件判据只用 `mtime` + `size`，不用 `atime`。**L27-01**：普通可拒绝情况与硬失败注入分开测试——普通拒绝必须发生在实际修改之前，硬失败场景则检查未结记录与后续核对，不要求未承诺的自动还原。**L27-02**：每个操作结果必须明确区分四种结局（尚未写入的拒绝、已完成的应用、仍在运行或等待的动作、硬失败后的不确定现场），不能只给一个布尔 `success`。
+
+| 编号 | 交错场景 | 暂停点 / 注入 | 必须得到的结果 | 禁止出现 |
+|---|---|---|---|---|
+| F01 | A 读 `parser` 准备补丁并请求 $W$；此时 B 的 Shell 已持 $W$ 并修改了 `parser` 后结束 | 把 A 停在 $W$ 队列，让 B 在间隔内改完 | A 取得 $W$ 后再次检查 `stamp`，返回 `:FILE_CONFLICT`；真实文件维持 Shell 结果；A 不死亡，可重读再调整 | 请求 $W$ 前查一次、等锁结束后直接套旧补丁 |
+| F02 | A 读只读依赖 `api` 打算改调用方 `client`；B 在 A 提交前改了 `api`，`client` 本身 `stamp` 未变 | A 取得 $W$ 时 | 因只读依赖 `api` 的 `stamp` 改变而拒绝提交 | 只检查最终要写的 `client` |
+| F03 | A 请求同时改三个文件；前两个修改预演成功，第三个定位文本不存在 | 整批 dry-run | 返回第三个文件的具体失败位置；三个真实文件均未改变，未进入 `:applying` | 把前两个局部成功提前写入现场 |
+| F04 | 同批请求先把 `old` 重命名为 `new` 再改 `new` 内容；反向：先删某目录再向该目录未重建文件写入 | 批内内存视图预演 | 正向按批内逻辑顺序计算后一步看到的结构并成功生成最终计划；反向在预演中报 `:STRUCTURE_CONFLICT` | 只在原始真实目录找 `new` 而误拒；应用期临时自动建目录 |
+| F05 | A 已完成预演进入 `:applying` 开始落盘；用户此时取消原目标 | `:applying` 期间 | 取消立即入板并 `wake-all`，但当前已固定的最小提交继续完成并发布已应用结果，随后按新输入处理后续状态 | 让正常应用停在一半；把取消倒推为文件从未修改 |
+| F06 | A 已完成文件落盘，发布动作结果时与另一个体补充同任务非关键观察发生 STM 冲突 | `stm-finish-apply!` | 记账事务重读控制状态并重试；可计数文件模型的真实 `apply` 调用次数严格为 1 | 把文件操作放进可重试 STM 闭包导致重复落盘 |
+| F07 | Shell 正依次改接口与调用方；A 在两步之间并发读取 | Shell 持 $W$ 期间 | 读取不等待 $W$，立即返回当前内容与 `stamp`；A 后续提交取得 $W$ 时若依赖 `stamp` 已变则拒绝 | 读取被 $W$ 阻塞；断言 A 一定读到全旧或全新快照 |
+| F08 | 构造大小相同的两份不同内容，Shell 或外部操作改内容但保留相同 `mtime` 与 `size` | 后续受保护提交 | 如实展示已接受的快速判据观察等价边界；不在一般结果中宣称“已证明内容完全未动” | 偷偷加未声明的哈希或隐藏版本来让测试通过 |
+| F09 | A 已准备修改 `config`；提交前多个个体读取同一文件，`mtime` 与 `size` 未变 | A 取得 $W$ 复核 | 正常通过，不因系统 `atime` 访问记录变化而冲突 | 在通用元数据比较中把 `atime` 带回来 |
+| F10 | A 读文件后准备在看板声明“兼容分支已存在”（空文件写集）；B 随后改了该文件使结论失效 | A 提交看板结论 | 虽无文件写集仍经 $W$ 复核 `read-set` 并拒绝旧结论（对照：不依赖文件事实的纯任务拆分不需等 $W$） | 因不写文件就绕过 `stamp` 复核 |
+| F11 | Shell 持 $W$ 等待某配置文件变成指定内容；普通个体 A 已准备好该修改但在等 $W$ | 相互等待 | 如实呈现等待链（Shell 等文件条件、A 等 $W$、未结责任仍在），由其他个体或人工处理 | 因长时间等待私自释放 $W$、杀死持令者或强行轮转令牌 |
+| F12 | 最外层命令已返回，但执行器管理的子活动仍在运行；另测已脱离管理边界的后续活动 | 会话收尾检查 | 归属会话的子活动未结时 $W$ 与运行责任继续保持，普通提交继续等待；脱离边界的活动明确记入外部 best-effort | 最外层返回就把会话结清释放 $W$；把外部效果冒充仍受 $W$ 保护 |
+| F13 | 已完成整批预演，实际应用到第二个文件时进程崩溃 | 子进程硬失败注入 | 留下第一文件已变、第二不确定、第三未变的现场；恢复后保留动作标识、最后已知阶段与预期描述供后继者核对 | 自动重放同一请求覆盖崩溃后他人已作的修正；直接标整批完成 |
+| F14 | A 持有 $W$ 并已完成锁内 `stamp` 校验；不受协议约束的外部程序随后改同一文件，A 再落盘 | 锁内校验与落盘之间 | 明确标为外部 best-effort 边界内的覆盖风险，观察到外部影响时给出事实 | 把外部程序的自由写入误判为两个受保护提交互斥失效 |
+| F15 | A 观察全局无非阻塞工作准备登记 `park-slot`，用户随后追加新输入；另测 A 已阻塞在等 $W$ 的工具调用中 | 观察后、登记前 / 等 $W$ 中 | 输入先提交则拒绝 A 休眠；休眠先提交则输入的 `wake-all` 必覆盖 A。等 $W$ 的工具阻塞收到通知但不承诺立即释放 $W$ | 检查与登记分离导致漏唤醒；把工具阻塞当主动休眠任意取消 |
+
+### 8.4 三层验证模型、实施顺序与变更检查表（L28 / L29 / L32）
+
+> 2026-11-03 修订：多 worktree 的 fork/join、master 集成锁、rebase 循环与 `:FF_NOT_READY` 属于第一层控制状态与第二层文件入口的联合验收；`fission` 不再有测试；`ls` 不产生结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌。
+
+1. **三层验证对象（L28-01 / L28-02）**：
+   * **第一层（控制状态转换）**：任务责任、依赖等待、认领、令牌与个体生命。最小有限模型只需 2 个普通个体、1 个持令槽、3 个任务与 2 个文件；文件内容用离散符号，且必须允许**不同内容映射到同一个快速判据符号**（防止把状态编号当版本号偷偷获得真实协议没有的检测能力）。
+   * **第二层（文件入口）**：快速判据、整批预演、写锁 $W$、实际应用与 Shell 会话。使用测试自建的临时工作区，完成后清理，绝不触碰用户项目。
+   * **第三层（适配与消息）**：`request-id`、丢失响应、迟到调用、唤醒与新个体启动。
+   * **环境动作显式建模**：丢弃响应、延迟请求、触发进程硬失败、外部程序写文件、等待条件长期不满足均作为显式环境动作；某性质仅在无外部写入时成立，必须在谓词中写明前提。确定性驱动器在读取完成、排队取 $W$、锁内校验结束、dry-run 完成、进入 `:applying`、实际应用完成、看板发布七个边界支持暂停并指定先继续哪个参与者。随机生成器发现错误后，缩减器（Shrinker）去掉无关任务、个体与事件，将最短反例沉淀为固定确定性场景。验收不仅检查最终文件内容，还必须检查结果类别、任务归属、动作是否未结、`apply` 次数及锁持有区间。
+2. **从最小内核到真实模型的五阶段实施顺序（L29-01）**：
+   * **阶段一（控制内核与脚本化个体）**：实现任务、个体、认领、依赖与责任的短 STM 转换；文件动作先用无副作用替身，由 2–3 个脚本化个体跑通同时拆分、同时认领、父项恢复与休眠竞态。
+   * **阶段二（受保护读取与整批写入）**：在小临时工作区跑通 `stamp` 读取、$W$、四种基础操作的整批 dry-run 与 `apply`，覆盖 F01–F10。
+   * **阶段三（生命管理与令牌竞争）**：加入 `take-or-die`、请求去重、逻辑死亡与槽位补新，运行时停止接口按 `agent-id` 而非槽编号寻址，覆盖 T01–T13。
+   * **阶段四（Shell 会话适配）**：接入 `.call`、$W$ 串行与会话边界，重现 F11 相互等待与 F12 子活动边界。
+   * **阶段五（真实模型接入）**：用少量并发个体与独立模块任务观察模型是否在安全工作未做完时急抢令牌、是否把父项当计数容器、是否把无响应当未执行，通过返回结构与提示词修正。切换正式实现时先停受理新副作用调用、排空 `:applying` 与活动会话，切换后彻底删除废弃的 `atime` 校验、父项自动完成与旧分支。
+3. **维护者变更检查表（L32-01）**：
+
+| 变更对象 | 必须确认的事项 |
+|---|---|
+| 新增文件操作 | 能否完整预演；批内依赖如何表达；`apply` 是否新增普通失败分支 |
+| 调整锁粒度 | Shell 与普通写是否仍有共同准入；读取是否仍照常；原有交错是否成立 |
+| 修改任务结构 | 父项目标与剩余工作是否保留；最后子项是否仅解除等待 |
+| 修改令牌接口 | 有效竞争是否仍不可逆；新增责任与退休是否仍原子排序 |
+| 修改异常处理 | 是否准确保留不确定结果；是否把普通逻辑缺陷误归为硬失败 |
+| 修改唤醒机制 | 是否覆盖所有已登记等待者；是否把工具阻塞误当作主动休眠 |
+| 修改运行时身份 | 是否可能复用旧资格；迟到停止或响应是否影响新个体 |
+| 增加观测指标 | 是否改善具体判断；是否会诱导无价值拆分或形式化完成 |
+
+### 8.5 端到端验收剧本（E2E 01–22）与工作台放行基准
+
+以下 22 个端到端剧本覆盖从空安装到跨设备恢复的完整用户旅程（基于 Kelivo 体验基线裁剪并对齐万象术常授权无人值守、Swarm 受保护提交及 S1 唯一提问规则；合成样本统一使用短消息、多语混排、约两万字长草稿、三行表格文件、含清晰/倾斜/不可识别页的扫描材料、含自我纠正的录音、备份集合与冲突集合，绝不使用真实密钥或私人数据）：
+
+| 剧本 | 准备与核心动作 | 必须通过的检查项 |
+|---|---|---|
+| **E2E 01**<br>空安装到首条可保存回复 | 全新安装无模型无历史；首页先写短消息草稿，再进添加模型流程连接服务、测试并启用，返回原会话发送，退出重开 | 引导不要求额外注册；返回后草稿完整；服务身份可见；发送只产生一条用户消息；收到回复可复制；重开后消息、回答与模型归属均在；测试连接失败也能回原草稿修改 |
+| **E2E 02**<br>同名模型与双服务连接 | 在“个人模型服务”与“工作网关”各启用同名模型并设可辨认连接名；建两条会话各用其一；改助手默认模型；停用个人服务 | 搜索选择器能区分同名模型；旧会话保留原有效选择，新会话采用新默认；停用服务不删历史，继续发送时解释缺少连接并由用户主动选替代，绝不按模型名字符串串投服务或静默承担新费用 |
+| **E2E 03**<br>流式阅读与下一条草稿 | 模型流式输出含段落、表格与代码的长回复；滚到上方选中文字复制，同时在输入区写下一条草稿；打开来源面板再关闭，按停止；切换会话再回来发送草稿 | 新增流式内容不抢滚动与选区；收到的文字不覆盖输入区草稿；停止保留已生成内容且不自动发下一条；切回无遗留假旋转；不允许为稳定滚动而停止接收流 |
+| **E2E 04**<br>历史编辑与两条分支 | 三轮会话（第一轮含图片）；编辑第一条消息改文字并移除图片保存新版本，从此处开新分支继续两轮；切回原版本与原分支，分别导出，重开验证 | 新版本不含移除的图片但原版本仍可看原图，未删用户原始文件；各分支消息顺序不变、不混入另一分支工具结果；导出只含选定路径；分支名可改、来源位置可追溯 |
+| **E2E 05**<br>压缩后继续与撤销压缩 | 长会话含明确事实、未确认假设、附件与已取消要求；启动上下文压缩，补入遗漏事实并将假设标为未确认后继续；撤销压缩；另从摘要建新会话 | 原消息仍可读；摘要不把假设升级为事实；继续时不同时带入摘要和已被替代的全部历史；新会话辨认摘要来源且不后台带回旧消息；撤销只恢复上下文范围，不删之后已产生的回答 |
+| **E2E 06**<br>附件能力不匹配与部分读取 | 文字模型会话加入图片、含一页不可识别的扫描 PDF 与表格；系统先检查能力不立即外发；切换视觉模型并为扫描件选 OCR，移动原文件后重开历史 | 不支持附件给出可选处理方式；不可读页显式列出，绝不包装成已完整阅读；答案引用指向具体材料；已保存本地副本仍可读，外部引用准确提示重新定位 |
+| **E2E 07**<br>搜索结果与来源核查 | 搜索返回三个站点（其中两链接实为同一篇，另一无发布日期）；查看搜索阶段、回复与来源列表，点击正文引用并导出纯文本，断网重看 | 同一来源不重复计数；未知发布日期不被抓取时间替代；正文编号与来源列表一一对应；外部网页打开失败不抹去已保存引用；断网阅读不发起隐式搜索 |
+| **E2E 08**<br>角色能力边界、S1 提问与操作员中断 | 在常授权无人值守模式下：`Plan` 在 `S1` 调用 `.ask` 提问挂起并由人类回答恢复；非 `S1` 调用 `.ask` 拒为 `:ASK_FORBIDDEN_OUTSIDE_S1`；普通个体调用 `.call` 拒为 `:TOKEN_REQUIRED`；操作员按 Esc 取消在途会话树并在设置中关闭某外部连接 | 常授权模式不弹逐次工具审批窗，但在角色边界处精确拦截并返回可读回执；Esc 递归取消整棵会话树且保留已生成内容与未领取证据；关闭外部连接后不再获得未来调用许可，已保存结果仍可查 |
+| **E2E 09**<br>工作区受保护提交遇到外部修改 | 绑定含合成表格的工作区；个体读取文件准备修改，在进入写入口 $W$ 落盘前用外部编辑器修改同一文件一行；观察 `:FILE_CONFLICT`、重读最新文件并重新提交 | 旧补丁因 `stamp` 变化在写前被拒绝，真实文件保留外部编辑器新改动；冲突回执展示原 `stamp` 与当前 `stamp`；重读后生成的新修改正常落盘，文件卡指向真实结果并准确说明运行位置 |
+| **E2E 10**<br>工具中断后的未知结果（`:outcome-unknown`） | 演示外部动作已完成但故意不返回结果；等待期间断网并重启进程；查看动作卡，尝试重试入口 | 重启恢复将该动作标为 `:outcome-unknown` / 结果待确认，**绝不自动重复提交**；重试入口先引导核对目标状态，确认已成功后结清该轮，无需靠删除会话结束挂起状态 |
+| **E2E 11**<br>记忆从候选建议到归档与临时会话隔离 | 自动整理默认关闭；用户主动开启整理生成合理候选与错误概括候选；批准合理项、拒绝错误项并编辑范围；在新会话查看注入后归档；打开临时会话测试 | 未批准候选不影响未来；归档后不再注入，但旧请求详情仍保留当时用过的记录；临时会话默认不读不写记忆，一次性启用只读时明确范围且关闭后不扩展到其他会话 |
+| **E2E 12**<br>世界书与指令卡叠加 | 创建含关键词触发、始终提供与冷却规则的世界书绑定助手，另建“回答前列出假设”指令卡；连续发送命中/不命中/再命中消息，移动条目到另一本书再撤销 | 触发规则与冷却次数可解释；单次应用的指令卡不永久污染助手；另一会话不误承接当前会话计数；触发内容无权自行打开工具或扩大能力范围 |
+| **E2E 13**<br>技能安装与工作区小应用隔离 | 导入含说明与附属资料的演示技能（默认未绑定）；为当前会话启用并在工作区生成记录读书条目的小应用，输入三条记录重开；再打开另一小应用与普通浏览页 | 技能安装不自动执行命令；两个小应用与普通浏览页之间存储隔离（看不到彼此记录，清除其一不影响另一）；生成失败仍可查看已有文件 |
+| **E2E 14**<br>受管浏览器观察、人工接管与终止 | 在测试网站多步骤表单任务中观察网页步骤卡；进行到第二步时操作员主动接管并手动改字段，恢复后检查重新识别页面；在最终提交前由操作员中断 | 接管期间代理不继续点击；恢复后基于当前页面重新识别而非盲目重放旧坐标；密码等敏感输入不要求粘贴进聊天；关闭标签页不删会话说明，返回会话可定位该网页任务 |
+| **E2E 15**<br>语音转写修订、失败回退与朗读翻译 | 录制含“明天下午三点，不，是四点”的短句；本地转写为草稿并人工修订；切换到故意失败的云端识别服务测试后切回；发送后对回复朗读并翻译 | 转写结果先入草稿不直接外发；云端识别失败保留原录音不强迫重说；服务切换有明确外发说明；朗读可停止，切换消息版本时停止旧朗读；翻译作为派生结果保留原文不覆盖历史 |
+| **E2E 16**<br>定时任务、时区策略与平台诚实边界 | 创建每天 08:30 任务（一个跟随设备时区，一个固定 `Asia/Shanghai`），先暂停再立即运行；启用后改设备时区并制造一次错过；导出到另一设备导入；在受限移动平台打开 | 两种时区策略结果可区分；错过的执行记录为“已错过”而**不集中补跑**；立即运行不改变原计划；导入后默认暂停；系统不保证后台准点唤醒的平台只提供前台手动运行，不伪造准点承诺 |
+| **E2E 17**<br>加密备份、合并冲突预览与缺失附件恢复 | 建立含助手、历史、附件、任务与外部目录引用的加密备份；在已有同名不同内容助手和新增会话的设备上先输错密码再输对密码合并恢复；另测含缺失附件的备份 | 错误密码不改动现有资料；同名对象不按名称静默覆盖，提供合并预览；新增会话保留；外部路径提示重新定位；自动任务恢复后默认不直接启用；缺失附件准确列出且其余历史仍可读 |
+| **E2E 18**<br>磁盘空间不足与恢复启动 | 可用空间接近不足，保留两万字长草稿与正在生成的回答，制造无法继续保存后结束进程；重开检查恢复入口，先导出可用内容、释放空间再恢复 | **严禁把保存受阻的资料库当空库重新初始化**；用户能分清已保存与未确认保存部分；草稿尽可能恢复且不谎称完整无缺；空间释放后历史关联与附件恢复可读 |
+| **E2E 19**<br>字号放大、键盘导航、屏幕阅读器与输入法 | 字体与显示缩放调至支持上限，开启屏幕阅读器；桌面纯键盘、手机触屏+阅读器完成连接、发送、来源、备份预览与弹窗关闭；中文输入法组词期间按 Enter | 焦点顺序符合视觉顺序，弹窗关闭后焦点回到原触发点；图标有可读名称；放大后确认按钮与关键文字不被裁切；**中文输入法（IME）组词确认按 Enter 绝不误触发发送消息** |
+| **E2E 20**<br>临时会话舍弃与转存边界 | 进入临时会话加入合成敏感标记，使用搜索、只读工作区文件与录音转写；关闭并选择舍弃，检查历史、搜索、记忆候选、备份预览、已删除区与诊断列表；另开一次转存 | 舍弃后本地普通持久入口、索引、记忆候选与已删除区均不残留该会话内容；已发往外部服务的内容如实说明不受本地舍弃撤销；明确转存时已有外部动作不因转存重复执行 |
+| **E2E 21**<br>费用口径区分（服务返回 / 估算 / 未知） | 一轮含搜索、模型回复、工具执行与续答，其中一次请求未返回用量；一模型配估算单价，一模型留未知单价；查看消息详情与统计页，修改单价后再看旧历史 | **未知用量绝不计为确认的 0**；界面明确标注「服务返回 / 估算 / 未知」三种口径；多子请求不重复计数；修改当前单价不无声改写历史账面含义 |
+| **E2E 22**<br>跨设备迁移与环境降级 | 旧设备含会话、归档记忆、关闭的 MCP、已删除会话、固定模型与独立草稿；迁移到系统、路径与语音能力不同的新设备 | 无法迁移的宿主环境能力不让其余资料失效；关闭状态保持关闭；已删除会话保留在已删除区（30 天期限）不自动混回主历史；迁移是明确导入，不偷偷开启后台双向同步 |
+
+#### 性能、规模与放行硬门槛
+1. **本地交互与长文本基准**：正常负载下点击与键盘局部反馈在 100ms 量级，持续输入不掉字、不阻塞输入法；超过约 1s 的本地处理显示明确状态。规模基准需通过 **1,000 条会话**与单条含 **2,000 条可见活动**（多版本、附件、表格、代码、工具结果）的长会话测试：打开列表按需渲染，返回长会话恢复原阅读位置，向前查找不因重排跳位；**两万字中英与代码混排草稿**支持流畅编辑、选区、撤销与崩溃恢复。
+2. **阻断放行的最高优先级缺陷**：未经明确选择外发资料、重复外部副作用、不可恢复地覆盖用户内容、把损坏或满盘资料库当新库清空、错连服务或跨会话串内容、无法停止、草稿丢失、中文输入法 Enter 误发、费用未知显示为 0。
+
+---
+
+## 9 架构演进、设计决策台账、前期探索与参考索引
+
+本章汇集万象术在形成独立全栈架构过程中的关键设计取舍、被否决方案的反面教训、前期探索项目（`a0lite` 与宿主插件时期）的可复用工程事实及外部权威技术规范索引。
+
+### 9.1 架构演进脉络与合规边界
+
+1. **与 Agent Zero（A0）的干净边界及许可证隔离**：
+   * 万象术是一套从零独立设计与实现的自治多智能体工程系统（Clean-Room Implementation），与早期基于 Agent Zero（MIT License，<https://github.com/agent0ai/agent-zero>）的修改版探索属于两个独立项目。A0 仅作为理解“为何不能把所有软件塞进单一大容器、为何不能把所有工具调用退化为终端命令字符串、为何需要结构化会话与产物边界”的参照物。
+   * **第三方依赖许可证硬纪律**：不直接复制外部参考项目的业务实现、提示词或前端资产；引入任何外部库或命令行工具前必须核查许可证传染性——例如 PyMuPDF 采用 AGPL-3.0（若通过网络服务向用户提供能力会触发完整源码披露义务），在需要宽松开源/商业分发边界的模块中，必须排除未获商业授权的 AGPL 组件或将其替换为宽松许可方案。
+2. **四阶段技术栈收敛路线**：
+   * **第一阶段（容器瘦身探索 `a0lite`）**：尝试将 Agent Zero 封装为 Flatpak 应用并剥离预装巨型镜像，确立了“复用宿主机已有服务（如共享宿主机 Ollama 端点与模型存储）、按需供应运行环境”的初步认识。
+   * **第二阶段（多宿主插件时期）**：在 OpenCode / Cline / OMP 等宿主上验证了 `Plan` 四里程碑底稿、`(review {:findings ...})` 换任接力与上下文屏障、`Pair Hint` 双语前缀链、`Scope` 单世记忆修剪、程序化工具面（`where` / `park` / `unpark`，以及后来删除的 `fission`）等核心机制；同时暴露出**宿主寄生架构的根本瓶颈**（宿主内部私有 API 与压缩逻辑脆弱、单点 `Manager/Coder` 上下文汇总瓶颈、缺乏跨个体文件事务与写锁保护、插件重载易丢内存花名册）。
+   * **第三阶段（环境分离与强类型执行层评估）**：明确“环境供应与执行分离”（Pixi 托管自身 SDK 与跨平台锁定环境 + MSYS2 `UCRT64` 供应 Windows 原生工具包），并系统比较了 Python、F#/.NET（FSI）、Scala、Kotlin 与 Clojure/JVM。
+   * **第四阶段（Clojure/JVM 独立全栈与 Swarm STM 合流）**：最终确立以 **Clojure/JVM + Missionary + STM** 作为服务端控制与并发底座，将宏观中心化换任接力（`Steward` + `Plan` + `Reviewer`）与微观去中心化蜂群（`Swarm STM 看板` + `(mtime, size)` 受保护提交 + `take-or-die` 动态令牌）无缝咬合；前端统一为 **ClojureScript + Fulcro + Framework7 React**，经 **Sente + 内部 AG-UI** 同步当前态，模型层通过 **LangChain4j 低层 `ChatModel`/`StreamingChatModel`** 对接各供应商，结构化字面量全面采用 **EDN + UFSS**。
+3. **核心概念渊源对照（从 Vibe Mode / 宿主插件到独立版万象术）**：
+
+| 维度 | 早期原型（Vibe Mode / 宿主插件） | 万象术独立版终局形态 | 演进原因 |
+|---|---|---|---|
+| 运行底座 | 寄生于 OpenCode / Cline / OMP 宿主扩展 | Clojure/JVM 独立服务端 + CLJS/Fulcro/F7 瘦客户端 | 彻底摆脱宿主私有生命周期、隐式上下文压缩与工具审批弹窗干扰 |
+| 规划产物 | 阶段文件曾混入状态目录或固定名 | 唯一用户可见底稿 `plans/<name>.md`，首评前只读 | 底稿是给人类审阅的正式交付物，不是内部崩溃恢复日志 |
+| 施工期组织 | 中心化 `Manager` 派单给最多 4 名 `Coder` | 中心化 `Reviewer` 立账 $\to$ 去中心化 `Swarm` 围绕 STM 看板自治施工 | 消除单点导演同时汇总十几个子代理上下文的通信与注意力瓶颈 |
+| 文件并发写 | 靠角色职责软约束或事后 git 合并 | 批内内存视图整批 Dry-Run + `read-set` `(mtime, size)` 复核 + 写入口 $W$ 原子落盘 | 在触碰真实磁盘前拦截一切普通冲突与定位歧义，正常路径零回滚 |
+| 黑盒 Shell | 独立 `devops` 角色跑命令 | 唯一令牌持有者 `Swarm Holder`（`take-or-die` 竞争，无责即死，仅在 `.call` 期间占 $W$） | 动态承接全看板验证责任，持令等待期间不占写锁阻塞普通编辑 |
+| 工具与数据语法 | JS 函数体 + CUE 字面量 | Clojure `(defprogram ...)` + EDN + UFSS（`#"..."#` / `#"""..."""#`） | 消除 JSON 双重转义与 CUE 的 7 类文法陷阱，与 Clojure 同像（Homoiconic）底座天然合一 |
+
+### 9.2 为什么从 CUE 演进到 EDN + UFSS（反面文法教训存档）
+
+早期版本曾尝试用 CUE 替代 JSON 作为面向大模型的结构化格式，实测暴露出大模型极易踩中的 **7 类 CUE 文法陷阱**，成为万象术设计 §6.3 **EDN + UFSS（通用变长围栏字符串）** 的直接动因：
+1. **隐式字符串插值陷阱**：CUE 在普通双引号与多行 `"""` 中遇到 `\(...)` 会触发表达式插值报错，迫使带反斜杠的源码必须记复杂的井号配对，而 UFSS 的 `#^n"..."#^n` 与 `#^n"""..."""#^n` 具备**彻底零转义（True Raw Semantics）**，反斜杠永远只是字面字符 `\`。
+2. **列表元素跨行漏逗号**：CUE 映射字段换行可省逗号，但列表 `[a\n b]` 换行省逗号立即语法报错；EDN 中空白、换行与逗号完全等价，列表与向量天然无需逗号。
+3. **特殊字段名漏引号**：CUE 中含连字符、点号、斜杠或数字开头的键（如 `foo-bar`、`src/a.clj`）不加引号即被当成减法或路径表达式报错；EDN 关键字 `:foo-bar` 或字符串键无此歧义。
+4. **单行以 `"` 开头或结尾的定界冲突**：在朴素围栏中，若正文以 `"` 结尾（如 `foo"`），写成 `#"foo""#` 会看花眼甚至被错误词法器截断；UFSS 利用无真前后缀重叠定理（$\pi(\text{"}\#^n)=0$），从数学上保证首个 `"#^n` 必为唯一定界符。
+5. **保留字冲突**：CUE 中 `null`/`true`/`false` 作无引号键名会冲突；EDN 中关键字 `:null`/`:true` 与布尔值 `true`/`false`、`nil` 严格正交。
+6. **多行块缩进混用 Tab 与空格或前导空格不足**：UFSS 明确定义五步确定性缩进剥离算法，并在非空行前导空格少于结束行 `<indent>` 时显式报错 `:UFSS_INDENT_VIOLATION`，绝不静默吞字。
+7. **空值制造空洞约束**：CUE 中填 `null` 会变成类型约束而非缺省；EDN 中 `nil`、空集合 `[]`/`{}` 与缺省键语义一目了然。
+
+### 9.3 核心设计决策汇总台账（D01–D16 及全栈架构裁决）
+
+| 编号 | 决策主题 | 采纳方案 | 明确拒绝的替代方案与理由 |
+|---|---|---|---|
+| **D01** | 工作区拓扑 | 单一真实共享工作区 + 受保护提交与写入口 $W$ | 每个个体一套私有 git worktree / 分支合并（把协作延迟到事后合并，无法及时暴露接口变化且破坏单一现场） |
+| **D02** | 任务调度权 | 无全局任务选择者，个体自主观察 STM 看板拆分与认领 | 中央调度器按模型画像派单（引入单点瓶颈与隐式偏见，违背去中心化自治） |
+| **D03** | 复合任务处理 | 拆分优先于原子执行认领，拆分本身即直接贡献 | 先认领大任务再在私有上下文里慢慢做（导致长期间锁死大范围工作，转世后无法接续） |
+| **D04** | 父项完成条件 | 父项始终保留实质工作，子项全完成只使父项从 `:waiting` 恢复 `:ready` | 子项完成计数等于总数时自动将父项标为 `:done`（抹杀接口合龙、集成核验与目标复核实质） |
+| **D05** | 普通与令牌归属 | 普通任务归 `owner-id`；`:needs-token` 任务动态归当前唯一 `holder-id` | 抢到令牌时逐条扫描改写所有令牌任务的 `owner-id`（制造无谓写冲突且漏掉并发新增项） |
+| **D06** | 令牌竞争结局 | `take-or-die` 只有赢（升为 `holder`）或输（同事务公开移交剩余责任并逻辑死亡） | 抢令牌失败后退回继续当普通个体（破坏“耗尽受保护工作才参选”的严肃边界，诱发盲目轮询抢令） |
+| **D07** | 持令者退出条件 | 完整责任集合 $R(\text{holder}) = \emptyset$ 时在同一 STM 事务内立即释放令牌并逻辑死亡 | 设固定持令时长上限或允许持令者无责后降级回普通个体（制造带前世包袱的特权长寿个体） |
+| **D08** | 槽位转世记忆 | 死亡后销毁旧上下文，新 `agent-id` 仅凭公开看板与现场启动 | 向新生个体注入“你上一世刚刚抢令失败/改错代码”的私有总结（污染新视野，违背无记忆转世） |
+| **D09** | 文件变化判据 | 仅用系统元数据 `stamp = {:mtime-sec :mtime-nsec :size}`（rsync quick check） | 引入 `atime`（只读即触发假冲突）或维护全局文件内容哈希历史表（增加锁外扫描负担与第二套版本真相） |
+| **D10** | 读取锁策略 | 普通读取（`.cat`/`.stat`/`.ls`）不加锁，仅在提交时于 $W$ 内复核全部 `read-set` | 读取也申请共享锁或快照锁（让耗时 Shell 阻塞全员阅读与思考） |
+| **D11** | 普通文件写入 | 批内内存视图完成整批 Dry-Run + 持 $W$ 复核 `read-set`（含只读依赖）后原子落盘，正常路径无回滚 | 边执行脚本边直接改真实磁盘，出错再靠 git checkout 回滚（可能误伤他人已提交成果或留下半截脏文件） |
+| **D12** | Shell 与 $W$ 关系 | 令牌决定身份责任，$W$ 仅在实际运行 `.call` 会话或文件提交期间持有 | 持令者在整个持令生命期内独占 $W$（导致持令者等修复时全员无法提交文件） |
+| **D13** | 槽位主动休眠 | 只要全局非阻塞可推进集合非空，严禁任何个体 `park-slot`；检查与登记同事务 | 个体看自己暂时没活就休眠（导致需要拆分或协作的公共工作无人理睬，或检查与休眠分离漏掉唤醒） |
+| **D14** | 停电与崩溃恢复 | 控制状态走持久事务与 `:report-pending`；外部副作用未知标 `:outcome-unknown`，文件硬失败走 best-effort 核对 | 承诺断电后跨文件系统与外部进程自动回滚或自动重放未确认外部写操作（导致重复副作用或覆盖新修改） |
+| **D15** | 会话状态并发 | 单 Owner 串行状态入口 + Dijkstra 级触发守卫命令 + 外部 I/O 并行 | 多线程直接争抢会话状态配业务层 OCC 重试，或用深层嵌套 `while` 循环把模型流、工具与重试绑死在同一调用栈 |
+| **D16** | 模型与前端协议 | 仅用 LangChain4j 低层 `ChatModel`/`StreamingChatModel`；前端 Fulcro + Framework7 经 Sente 跑内部 AG-UI | 使用 `AiServices`/`ChatMemory` 托管历史（剥夺内核对 Scope、Pair Hint 与重试的精确控制）或前端无条件浅 merge 快照 |
+
+### 9.4 前期打包与 Linux 平台实测工程教训（源自 `a0lite` 档案）
+
+以下记录早期将 Agent Zero 封装为轻量 Flatpak（`a0lite`，App ID `io.github.agent0ai.a0lite`）过程中实测验证的平台构建、容器瘦身与 Linux 系统服务排障事实（作为 §7.2 环境供应与 `HACK.md` 平台限制的参考基线）：
+
+1. **运行环境分层与宿主机服务复用**：
+   * 将稳定的基础运行时（BaseApp）与频繁迭代的业务层分离，构建时开启 `keep-build-dirs` 缓存编译目录，日常改代码仅重编最上层模块。
+   * **宿主机 Ollama 零拷贝复用**：不将数十 GB 的大模型权重与推理引擎重复打包进沙盒，而是直接连接宿主机已运行的 Ollama 服务（`http://127.0.0.1:11434`，模型权重共享宿主机 `~/.ollama/models`）；当容器内预置指向本地内嵌实例的默认配置时，在启动入口将其统一重定向至宿主机服务地址。
+   * **剔除低频重型依赖**：移除默认捆绑的 SearXNG、Playwright 浏览器镜像、本地 Whisper/Kokoro 语音大模型、 torch CPU 全量包与冗余静态文档，仅保留高频核心工具（`git`、`ripgrep`、`fd`、`uv`、`node`、`ffmpeg`、OpenSSH 客户端等），使单文件分发包体积从数 GB 降至约 `367 MB`。
+2. **Flatpak / OSTree 构建与单文件打包性能实测**：
+   * `flatpak-builder` 在收尾阶段执行 debuginfo 剥离（strip）与本地 OSTree 仓库提交（commit）是固定重头耗时，但**打包产物必须保持未解压文件目录形态**供 OSTree 内容寻址，不得为省构建时间将其预先打成内部归档（否则破坏 OSTree 块级去重与增量更新）。
+   * `flatpak build-bundle` 默认使用高压缩率 XZ 单线程压缩，实测耗时高达 `1m44s`（占全流程近半）；开发调试期间应直接通过本地 OSTree repo 安装验证（`flatpak-builder --user --install`），仅在最终发布单文件 `.flatpak` 时才执行 `build-bundle`。
+3. **Linux systemd / NetworkManager `basic.target` 顺序环死锁排查备忘**：
+   * 在启用自定义 dispatcher 脚本或第三方网络服务的 Linux 宿主机上，若出现“开机偶发无网络，手动重启 NetworkManager 即恢复”，需执行 `journalctl -b -u NetworkManager.service -u basic.target -g "ordering cycle| Breaking ordering cycle"` 检查是否存在 `basic.target` 依赖环（例如某服务未设 `DefaultDependencies=no` 却声明 `Before=network-pre.target`，导致 `basic.target -> ... -> network-pre.target -> sysinit.target -> basic.target` 闭环被 systemd 随机截断并跳过 `NetworkManager.service/start`）。在诊断万象术宿主网络不可达故障时，应区分此类宿主系统服务启动环路与模型供应商端点故障。
+
+### 9.5 外部权威技术规范与参考文献索引
+
+1. **并发控制与文件系统判据**：
+   * Tim Harris, Simon Marlow, Simon Peyton Jones, Maurice Herlihy, *Composable Memory Transactions*, PPoPP 2005: <https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>
+   * Edsger W. Dijkstra, *Guarded commands, non-determinacy and formal derivation of programs* (EWD 472), Communications of the ACM, 1975.
+   * `rsync(1)` Manual Page (`--checksum` vs default quick check based on `mtime` and `size`): <https://rsync.samba.org/ftp/rsync/rsync.1>
+2. **Clojure / ClojureScript、异步流与前端工作台**：
+   * Clojure Official Reference (STM Refs, Persistent Data Structures, Reader): <https://clojure.org/reference>
+   * ClojureScript Official Documentation: <https://clojurescript.org/>
+   * Missionary (Functional effect and streaming system for Clojure/ClojureScript by Leo Noel): <https://github.com/leonoel/missionary>
+   * Javelin (Spreadsheet-like dataflow programming in Clojure/ClojureScript): <https://github.com/atabey/javelin> / <https://github.com/hoplon/javelin>
+   * Fulcro 3 Developer's Guide (Normalized Client DB, Mutations, `react-factory`): <https://book.fulcrologic.com/>
+   * Fulcro Websockets (`fulcrologic/fulcro-websockets` based on Sente): <https://github.com/fulcrologic/fulcro-websockets>
+   * Sente (Realtime web comms for Clojure/ClojureScript): <https://github.com/taoensso/sente>
+   * Framework7 React Components & Kitchen Sink: <https://framework7.io/react/>
+   * AG-UI Protocol Specification (Events, `STATE_SNAPSHOT`, `STATE_DELTA`, `MESSAGES_SNAPSHOT`): <https://docs.ag-ui.com/>
+   * Kelivo Reference Releases & User Guide (UX baseline reference): <https://github.com/Chevey339/kelivo> / <https://kelivo.psycheas.top/guide>
+3. **模型接入、嵌入式存储与环境供应**：
+   * LangChain4j Low-Level `ChatModel` / `StreamingChatModel` / `ToolSpecification`: <https://docs.langchain4j.dev/>
+   * Datalevin (Datalog database on LMDB): <https://github.com/juji-io/datalevin>
+   * Asami (`quoll/asami` Graph / Datalog store): <https://github.com/quoll/asami>
+   * Datomic Local Documentation: <https://docs.datomic.com/datomic-local.html>
+   * Datahike Documentation: <https://github.com/replikativ/datahike>
+   * XTDB v2 Documentation: <https://docs.xtdb.com/>
+   * Pixi Package Management Documentation: <https://pixi.sh/latest/>
+   * MSYS2 Environments (`UCRT64` / `CLANG64`) & Package Management: <https://www.msys2.org/docs/environments/> / <https://www.msys2.org/docs/package-management/>
+   * Java Foreign Function and Memory API (`java.lang.foreign`): <https://docs.oracle.com/en/java/javase/22/core/foreign-function-and-memory-api.html># Kelivo 体验基线（AGENTS.md 参考资料）
+
+> **定位**：本文件是 AGENTS.md §7.4 所压缩掉的章级交互细节与验收证据，不是独立产品规格，也不定义新协议。
+> **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。
+> **支持条款**：AGENTS.md §7.4（八组前端合同）、§8.5（E2E 01–22）、§7.3（瘦客户端状态边界）、§5.1（Owner 串行与运行中编辑）、§7.1（当前态持久化与恢复窗口）、§2.5（常授权无人值守）、§1.1 第 6 条（Esc 递归取消）。
+> **来源与核对**：Kelivo v1.3.4，标签提交 `4a7da9b6f5d77caccb9f8aaf656232a93ab14708`，发布 2026-11-02 23:08（Asia/Shanghai）；规格日期 2026-11-03；来源 S01–S14 见 §10。
+> **证据等级**：公开材料核对（S01–S14，仅支持能力类别、入口与版本事实）＋设计推演（字段、默认值、状态机、阈值与验收）。本文件不含本产品实测；除 S01–S14 可核对的事实外，字段、默认值与阈值均为消除工程歧义选定的目标值，不是 Kelivo 实测结论。
+
+### 9.6 本轮裁决与逻辑链（2026-11-03）
+
+本节记录本轮修订的裁决与理由，按“问题 → 裁决 → 理由 → 代价”组织。后续维护者若推翻某条，先读这里的代价，再决定是否值得改。
+
+1. **Plan 接力后的继任者**：Plan 阶段的接力产生新 Plan tenure，执行阶段产生新 Reviewer。理由：底稿写权只归 Plan；若继任者是只读 Reviewer，S2/S3 无人能写。代价：两阶段的 relay 必须区分角色。
+2. **屏障恢复**：退休、上下文屏障、继任者、里程碑复制在同一原子事务；删除“屏障已写、台账未推进”的窗口。理由：系统只承诺 best-effort 抗停电，不承诺 WAL 重放；KISS。代价：最后一次提交可能丢失，恢复后按现场重判。
+3. **初任空账**：初任在 `执行` 首次空账且工作区已满足底稿时，不记 review，转普通 `ask`；`.unpark` 后回答只作新输入；同一初任只 ask 一次。理由：把“无工作”与“请求交接”分开，避免静默晋级，保留第二眼。代价：多一次模型往返。
+4. **Plan 阶段不开蜂群**：Phase B 只属于执行阶段；Plan 的非空台账由 Plan 自己改底稿销账。理由：底稿只归 Plan；Plan 的义务是规划问题，不是施工。代价：Plan 不能并行施工，但 dedicated worker 仍可并行调查。
+5. **devops 契约**：Plan 专属、无看板、无令牌的 dedicated worker；参数 `{:verbose-intent "..."}`；返回最终报告；无 `:DEVOPS_IN_FLIGHT` / `:PLAN_DEVOPS_DEAD`；只读文件面加 `call`。理由：只有一个 worker，不需要同步；传统 harness subagent 形态；报告是工作产物。代价：worker 死亡后由 Plan 新建，跨调用上下文可能丢失。
+6. **API 形状**：所有能力为裸函数加单 map；无 `this`、无位置参数；`ls` 纯探查。理由：一种写法；模型不易记错；`ls` 只是发现，不是依赖。代价：全部示例与提示词要机械改写。
+7. **看板状态与动词**：状态只剩 `:ready` / `:waiting` / `:done`；取消与替代是 `cancel` / `replace` 动词与事件，不是状态；只允许叶子；新增 `release` / `reopen` / `comment` / `update`。理由：KISS；避免不可达状态；专用动词保留各自前置条件。代价：取消子树必须自底向上逐个调用。
+8. **令牌交接**：删除 `handoff-updates`；`take-or-die` 要求 `:confirm :i-hereby-confirm-i-die-without-regret`；交接说明用任意看板写入。理由：竞争前已要求写说明；失败事务是固定动作；确认令牌是 poka-yoke。代价：忘记写说明只能靠纪律与 Nudge。
+9. **finish 顺序**：不 drain、不延后；程序顺序就是语义；`finish` 复核真实文件系统。理由：LLM 自己排布；系统不干预；停电只 best-effort。代价：LLM 可能写出“先 finish 后落盘”的错误程序，系统不替它兜底。
+10. **编码方向**：系统到模型强制 EDN/UFSS；模型到系统自由，JSON 允许；传输层 JSON 信封不算呈现。理由：单向零转义；不强迫模型；provider 标准。代价：程序文本在传输层仍可能被 JSON 转义。
+11. **Scope**：`:me-too`-only 默认 `:keep-last` 扣 1；删除 `:SCOPE_METOO_ONLY`；retention 单位是 `:keep-last` 结算次数。理由：罚款优先于抓人；避免整批拒绝。代价：预算为 0 时仍硬拒。
+12. **前缀**：以渲染消息序列、语义白名单与 digest 链为准，不存完整请求；缓存 best-effort；新增看板写者 clean-break 边界。理由：与“不存完整请求副本”一致；digest 可验证；100% 不可承诺。代价：字节级漂移可能漏检。
+13. **看板观察**：Pair Hint 推送；读者 delta、写者 clean-break 是**整张看板全量**（所有 `Task`/`Action`/`Actor`/`TokenSlot` 当前字段，不是注入视图）；旧 delta 清空腾出空间；读者超阈值也 clean-break；无 `(board ...)`。理由：保持前缀缓存；写者需要一致全量；旧 delta 的空间足以容纳全量。代价：看板极大时全量可能仍超上下文，需要运行时截断或压缩。
+14. **多 worktree（互不相交的 fork/queue join）**：每个 swarm 一个 worktree；`$W$`、令牌、看板 per worktree；Steward 扩展为 orchestrator；按底稿 S3 拆成尽量互不相交的 N 个 slice，**不把同一个活派给多个 swarm**；disjointness 是工作分配层面，worktree 隔离就是边界，不检查路径；group 内部自治；fork N 自由、无上限；join 是队列（按完成时间 FIFO），每次取一个已完成结果，其余排队；队列空但仍有 running 时无限阻塞，队列空且无 running 时返回 `:none`；反复 join 直到 `:none`；没有 sibling 取消；每个结果 rebase 后 ff；master 集成锁；`收尾` 单任期 quiescence；worktree 在 join/abandon 后保留 7 天再 GC。理由：同一个活派给多个 swarm 是浪费；互不相交的拆分让 join 成为队列而不是竞速；master 线性。代价：拆分质量决定并行度；冲突靠 rebase 或 abandon。
+15. **fission 删除**：整体移除同身裂变、泳道、收敛组、present 替换与相关错误码。理由：holder 裂变会破坏令牌语义；普通个体并行已有多个 worker；KISS。代价：失去同身并行。
+16. **Plan 模型**：Plan 使用主模型；“Plan 模型”不是独立可配置槽位；§1.1 #8 优先。理由：铁律优先。代价：若未来要独立 Plan 模型，必须先改 #8。
+17. **全文内联**：LLM 写的报告（join 结果、Plan dedicated worker、子任期）原样全文投递，不截断、不摘要、不转 artifact；只有非 LLM 的原始工具输出才按 §7.2 有界处理。理由：coding agent harness 的传统就是返回全文；LLM 的输出上限就是天然边界，不需要替它胆小。代价：Steward/Plan 的上下文可能变长，但不会超过模型自己的输出预算。
+18. **rebase 不可解决即 abandon**：某个 slice 的 rebase 冲突不可解决时，该 slice 的 holder 调用 `(abandon {:reason ...})` 死亡，worktree 丢弃；该结果不入队，其余 slice 继续。理由：如果 rebase 都不可能，说明新版 master 已不需要这份工作；宣布 ff 失败或无限重试都不如直接放弃。代价：可能没有结果，Steward 需处理 `:no-results`。
+19. **默认上限**：单文件 2 MiB、单批 16 MiB、单批 256 个路径操作、`call` 内联 1 MiB、`call` artifact 64 MiB。理由：代码文件远小于 2 MiB；16 MiB 批次足够多文件重构；256 个操作再多应拆分；1 MiB 与 Sente 单条消息上限一致。代价：超大生成文件需要走 Shell 或拆分。
+20. **带状编辑距离**：`.where` 零匹配的 `nearest` 用 Ukkonen 带状 DP，$K=64$；长度差 $>K$ 直接跳过；先裁公共前后缀；只保留 $\le K$ 的行；无候选则 `nearest nil`。理由：不设上限会卡（2000 行 × needle × line）；$K=64$ 足够识别拼写/标点差异，差太远就是不相似。代价：超过 $K$ 的距离不精确；极端相似长行仍有 10M 单元预算上限。
+21. **底稿命名**：`Plan` 自选 `plans/<name>.md` 的文件名；系统只校验安全、唯一与 `.md` 后缀；首次成功写入固定路径。理由：Plan 最了解任务，命名是它的事；系统不该替它发明名字。代价：Plan 可能起名重复或过长，系统必须给出明确拒绝码。
+22. **不检查路径**：group 由 worktree 隔离；Steward 只保证目标不重叠，不检查 `:paths`；group 只被告知自己的 workspace，越界写入靠自觉。理由：worktree 是边界，路径检查既误报又增加 Steward 负担；系统不假装是安全沙箱。代价：越界写入不受协议保护，只按外部访问 best-effort 处理。
+23. **fork/join 细节默认**：`fork` 返回 `[{:swarm-id :slice-id :workspace}]`；`join` 返回 `{:swarm-id :slice-id :workspace :report :ff-commit :rebase-rounds}`；队列按完成时间 FIFO；fleet 状态为 `:running`/`:queued`/`:joined`/`:abandoned`/`:failed`；`:result-queued` 事件带 `:swarm-id`、`:slice-id`、`:board-version`。理由：这些是命名与呈现细节，不改变协议；按最简、最可读的默认落。代价：若未来要按优先级而非完成时间 join，需要显式改这条。
+24. **UI 呈现默认**：客户端归一化表增加 `:swarm/by-id`；fleet 面板每个 swarm 一行（`slice-id`、worktree、status、根任务计数、master 版本、join 队列），点击下钻单个 swarm；令牌槽与 `$W` 按 worktree 展示，不显示为全局单例；join 结果行带完整报告，可折叠。理由：多 worktree 下，全局单例的展示会误导；fleet 总览 + 下钻是最小可用呈现。代价：UI 多一层聚合视图。
+
+---
+
+## 0 实施用法：条款到落点的跳转表
+
+| 本文件条目 | 对应 AGENTS.md 条款 | 实现落点（模块/字段/入口） | 验收证据 |
+|---|---|---|---|
+| §1 规范效力与独立实现边界 | §7.4 前言、§1.1 第 6 条 | 会话级能力范围配置、角色工具面、Esc 递归取消入口 | AC-01-001..004；E2E 08 |
+| §2 全局默认值、状态词与保存恢复 | §7.4 第 8 组、§7.1 第 2 条 | `:ui/*`、`:session/by-id`、`:ui/command`；`read-session-view` / `commit-migration!` / `list-open-obligations` | AC-03-001..010；E2E 18/19 |
+| §2.8–2.9 首次启动、导航、供应商与模型 | §7.4 第 1/2 组 | 五顶层工作区、连接对象、模型选择器、`:session/by-id` | AC-02/04/05/06；E2E 01/02/19 |
+| §3 输入、草稿、提交与停止 | §7.4 第 3 组、§7.3、§5.1 第 3 条 | `:ui/draft`（按会话键）、`:call` / `:attempt`、`command-id` / `command-epoch` | AC-07/08；E2E 01/03/19 |
+| §4 消息、版本、分支与上下文 | §7.4 第 4/5 组、§7.3、§5.1 第 3 条 | `:message/by-id`、版本/分支实体、`STATE_SNAPSHOT` 集合替换 | AC-09/10/11；E2E 04/05/07 |
+| §5 助手、记忆、世界书、搜索、MCP、技能 | §7.4 第 6 组、§7.1 第 1 条 | 助手/记忆/世界书实体；召回回主库校验版本；工具面 | AC-12..18；E2E 11/12/13 |
+| §6 工作区、浏览器、卡片、小应用、多模态、语音、定时 | §7.4 第 7 组、§4.2、§5.3 | `stamp = {:mtime-sec :mtime-nsec :size}`、`$W$`、`:FILE_CONFLICT`、`:outcome-unknown` | AC-17..24；E2E 09/10/14/15/16 |
+| §7 备份、外观、费用、诊断与错误文案 | §7.4 第 8 组、§7.1、§8.5 性能门槛 | 恢复点/备份对象、费用三口径、脱敏诊断包 | AC-25..29；E2E 17/18/21/22 |
+| §8 E2E 剧本 | §8.5 | 22 条跨章验收路径 | E2E 01–22 |
+| §9 差异与不采纳 | §7.4 前言、§2.5、§1.1 第 6 条 | 裁决记录；不进入协议 | 设计评审与文案审查 |
+| §10 引用 | §9.5 | 来源索引与用途 | 文档核对 |
+
+按此表从 AGENTS.md 条款跳到本文件的展开细节；“实现落点”只给模块、字段与入口，不替代 AGENTS.md 的协议定义。
+
+→ 用于：AGENTS.md §7.4 八组与 §8.5 的条款跳转。
+
+## 1 规范效力与独立实现边界：哪些外观可改、哪些语义不可改
+
+### 1.1 规范等级与冲突裁决
+
+| 等级 | 含义 | 处理 |
+|---|---|---|
+| 必须 | 能力交付时不能省略的行为 | 缺失即对应 AC 失败 |
+| 默认 | 新安装、无历史偏好且用户未覆盖时的初值 | 用户覆盖后系统不得改回 |
+| 可以 | 允许存在，但不作为本版完成条件 | 未实现不判失败 |
+| 可选扩展 | 本版范围之外 | 不得做成看似可用却没有闭环的入口 |
+
+冲突裁决顺序：① 不丢失用户内容、不越过实际权限；② 第 2 章的跨功能规则；③ 相关功能章的更具体约束。已经开始的一轮保留开始时展示给用户的范围；新选择只影响后续操作。不得为了使一张状态卡变绿而覆盖尚未核实的失败、未知结果或未完成步骤。
+
+### 1.2 独立实现交付边界（UX-01）
+
+| 编号 | 规则 |
+|---|---|
+| UX-01-001 | 工程师只依据用户可观察的输入、步骤、状态与结果即可独立实现；若某需求必须阅读原实现才能解释，先改写成用户可观察合同。 |
+| UX-01-002 | 对外说明不得使用“兼容全部”“绝不丢失”“完全离线”“自动同步”等超出实际范围的词；模型兼容按服务与具体能力展示，本地保存不等于模型本地运行，后台保持不等于系统永远允许执行。 |
+| UX-01-003 | 未交付能力不放可点击的假入口；平台缺少能力时用一条说明解释原因或替代方式，不让用户反复进入空白页确认。 |
+| UX-01-004 | 独立改进只要符合行为语义，不因外观与参考产品不同而判不通过；丢失内容、混淆服务、隐藏权限或错误表示完成状态，即使与截图相似也判不通过。 |
+
+### 1.3 验收（AC-01）
+
+| 编号 | 通过条件 |
+|---|---|
+| AC-01-001 | 新安装不登录产品账号即可进入主界面、阅读引导、打开设置、创建助手；发送时才检查模型服务可用性。 |
+| AC-01-002 | 从交付清单任选一项功能，验收者只用用户说明即可找到入口并操作，不需要知道源码文件名或内部配置键。 |
+| AC-01-003 | 关闭全部增强能力后，仍能完成纯文字发送、停止、再次发送、复制回答、退出再打开的完整流程。 |
+| AC-01-004 | 在 iOS 查找定时任务，界面准确说明仅前台运行，不出现“已保证将在后台执行”的状态或暗示。 |
+
+### 1.4 可不同与不可不同
+
+| 可以不同（外观、入口形态） | 不可不同（语义、数据结果） |
+|---|---|
+| 独立名称、图标、视觉资源、逐像素布局 | 入口可发现、作用范围可识别、操作可恢复 |
+| 导航位置、合并设置入口、卡片样式、减少隐藏手势 | “移出上下文”不得改成“删除历史” |
+| 长按捷径补成可见菜单；供应商/模型/助手用更清晰分组 | “停止生成”不得改成“删除这轮” |
+| 减少默认启用的高阶功能 | “备份”不得改成没有冲突规则的双向同步 |
+| 手机与桌面采用不同入口形态 | 核心术语、授权含义、数据结果跨平台一致 |
+| 增强功能关闭后基础对话仍完整可用 | 关闭搜索不删除已保存引用；关闭技能不删除它此前创建的文件 |
+
+增强功能的已有结果在功能关闭后仍可阅读、复制和导出。首版不显示未实现的购买、协作或市场入口。
+
+### 1.5 证据等级
+
+| 等级 | 本文件用法 | 边界 |
+|---|---|---|
+| 公开材料核对 | S01–S14 支持能力类别、入口、版本与公开差异 | 截图只证明控件同时可见，不证明点击结果、请求内容、后台运行、键盘行为或故障恢复 |
+| 设计推演 | 字段、默认值、状态机、阈值、验收剧本 | 为消除工程歧义选定，不是 Kelivo 实测 |
+| 实测 | 本文件不含本产品实测 | 不得把设计值写成实测；发布验收须另记录设备、版本与条件 |
+
+→ 用于：AGENTS.md §7.4 前言与 §1.1 第 6 条的边界判定。
+
+### 1.6 术语与实现对象
+
+本表只固定实现会直接落成实体、字段或状态机的术语；与 AGENTS.md §3.7 的 Swarm 术语冲突时以 AGENTS.md 为准。
+
+| 术语 | 实现含义 | 落点 |
+|---|---|---|
+| 供应商连接 | 一组指向明确服务身份的连接设置 | 连接实体、认证字段 |
+| 模型 | 供应商连接下的一项生成或处理能力 | 模型条目、能力位 |
+| 助手 | 可重用的角色、参数、资料和工具偏好 | 助手实体、继承链 |
+| 会话 | 一段可继续工作的历史及其独立配置 | `:session/by-id` |
+| 轮次 | 一次用户提交及其后续回复与活动 | 轮次实体、`:call` 分组 |
+| 活动 | 一次模型、工具、提问或其他工作步骤 | 活动实体、时间线 |
+| 草稿 | 还未发送的文字、附件与相关选择 | `:ui/draft`（按会话键） |
+| 版本 | 同一条历史内容的一次完整修订 | 版本实体、消息版本号 |
+| 分支 | 从历史位置延伸出的另一条后续路径 | 分支实体、来源指针 |
+| 上下文 | 下一次模型请求实际使用的内容范围 | 出站请求投影 |
+| 压缩摘要 | 替代部分历史进入后续上下文的可编辑摘要 | 摘要实体、替换范围 |
+| 上下文边界 | 指定哪些旧消息不再进入未来请求的标记 | 会话边界字段 |
+| 记忆 | 独立保存并可用于后续工作的用户信息 | 记忆实体、作用域 |
+| 记忆候选 | 尚待审阅、未成为有效记忆的建议 | 待审区、来源引用 |
+| 世界书 | 根据规则为特定场景提供的设定集合 | 世界书与条目实体 |
+| 指令卡 | 用户可以明确应用的一段可复用指令 | 指令卡实体、作用范围 |
+| 工作区 | 已选择的文件范围及相关运行环境 | 工作区绑定、路径根 |
+| 技能 | 可启用的任务说明与配套资料 | 技能实体、启用状态 |
+| 工具 | 一个可以执行并有可观察结果的动作 | 工具描述、调用记录 |
+| MCP 服务器 | 向本产品提供一组外部工具的连接 | MCP 连接、工具清单 |
+| 只读操作 | 获取既有信息且不改变目标内容的动作 | 读取路径、无 `$W$` |
+| 外部副作用 | 在文件、账户、系统或远端服务产生的实际改变 | 结果分类、`:outcome-unknown` |
+| 请求批准 † | 在指定动作执行前等待用户决定 | 仅历史显示；见 §9 D-01..D-06 |
+| 完全访问 † | 对本会话已启用能力放宽常规审批的显式模式 | 不实现；见 §9 D-04 |
+| 结果待确认 | 动作可能执行但尚未取得可靠结果 | `:outcome-unknown` |
+| 派生结果 | 翻译、摘要、OCR 等由原内容生成的另一份内容 | 派生对象、来源引用 |
+| 本地副本 | 应用能独立保存和读取的一份资料 | 附件副本、存储路径 |
+| 外部引用 | 指向用户原文件或外部对象的位置关系 | 关联字段、失效提示 |
+| 备份 | 在明确时间范围内复制可恢复资料 | 备份对象、取样时间 |
+| 合并恢复 | 保留现有内容并逐项处理导入差异 | 恢复模式、冲突项 |
+| 覆盖恢复 | 在已预览影响并保留回退副本后替换目标资料 | 恢复点、替换范围 |
+| 估算费用 | 按已知或假定用量与价格计算的参考数值 | 费用口径、价格依据 |
+| 确认用量 | 外部服务或可核对记录明确返回的使用数量 | 用量来源、缓存明细 |
+| 临时会话 | 默认不进入普通持久历史和记忆的会话模式 | 临时标志、持久化边界 |
+| 已删除区 | 普通会话删除后在规定期限内可恢复的位置 | `30` 天保留、恢复入口 |
+
+→ 用于：AGENTS.md §7.4 的对象命名与 §7.3 的归一化实体表；避免同一词在实现中落到不同对象。
+
+## 2 全局默认值、状态词与保存恢复：首启初值与可恢复性
+
+### 2.1 设置作用域与生效时点
+
+| 对象 | 取值顺序 | 固定时点 | 生效时点 |
+|---|---|---|---|
+| 产品偏好 | 会话明确值 > 助手明确值 > 全局默认 | 会话创建或用户明确覆盖 | 下一轮 |
+| 生成参数 | 会话明确覆盖 > 助手明确覆盖 > 模型实例配置 > 连接适用配置 > 服务默认 | 提交瞬间 | 本轮固定；下一轮采用新值 |
+| 认证信息 | 供应商连接唯一来源 | 连接保存 | 立即；提示词与工具内容不得覆盖 |
+| 模型 | 新会话取助手当时默认；已有会话保留自己的选择 | 会话创建或明确选择 | 明确选择后的未来轮次 |
+| 集合型能力（MCP/技能/工具） | 跟随助手，或“仅为本会话自定义” | 切换时预览增减 | 下一轮 |
+| 许可收回 | 关闭工具、退出账号、取消目录范围、撤销系统权限 | 操作瞬间 | 立即阻止尚未开始的受影响动作；在途动作按可停止程度显示 |
+
+“默认”必须可解释：显示“使用助手设置”时，旁边可查看助手的实际值。修改助手默认只影响随后新建的会话；用户在已有会话明确选择“使用助手当前默认模型”时，才把当时默认值应用到该会话未来轮次。
+
+### 2.2 首启默认值全表
+
+| 项目 | 初始值 | 用户可以怎样改变 |
+|---|---|---|
+| 外观 | 跟随系统 | 选浅色或深色 |
+| 界面语言 | 跟随系统，无法匹配时使用简体中文 | 选简体、繁体或英文 |
+| 产品账号 | 不需要 | 本版不提供额外账号体系 |
+| 模型服务 | 未连接 | 添加用户自己的供应商或受支持账号 |
+| 默认助手 | 一个中性通用助手 | 重命名、修改或新建 |
+| 普通会话保存 | 保存到本设备 | 可选择临时会话 |
+| 每会话草稿 | 自动保留 | 可单独清空并提供撤销 |
+| 自动长期记忆整理 | 关闭 | 用户明确开启并选择范围 |
+| 自动联网搜索 | 关闭 | 会话或助手明确开启 |
+| MCP 与技能 | 安装后不自动用于所有会话 | 用户选择绑定范围 |
+| 工具权限 † | 请求批准 | 用户可为当前会话选择完全访问 |
+| 外部写入和不可轻易撤销动作 † | 展示对象与后果并确认 | 不能被普通内容自动授权 |
+| 生成通知内容 | 隐藏正文，仅显示状态 | 用户可启用内容预览 |
+| 云端备份 | 未连接且不自动上传 | 用户配置后主动开启 |
+| 调试详细内容日志 | 关闭 | 用户限时开启并可清除 |
+| 远程字体和外部图片 | 不为外观自动下载 | 用户主动选择后下载 |
+| 自动重试 | 关闭 | 启用后每轮最多额外两次，仍受安全重试条件约束 |
+| 工作区和外部工具 | 未绑定、未启用 | 在相关入口配置后启用 |
+| 未发送草稿 | 普通会话保存；临时会话按其规则处理 | 可单独清空，不删除历史 |
+
+† 这两行是 Kelivo 基线的审批默认值，与 AGENTS.md 常授权无人值守冲突；按 §9 D-01..D-06 执行，保留原文仅为记录基线，不构成协议义务。
+
+导入资料时，内容偏好可按用户选择恢复；权限、外部账号、自动执行和敏感记录遵循导入预览，不能因备份里曾经开启就静默恢复全部执行能力。
+
+### 2.3 统一状态词全表
+
+| 状态 | 用户应理解的含义 | 必须提供的后续路径 |
+|---|---|---|
+| 未配置 | 还没有足够信息开始 | 打开对应配置 |
+| 待处理 | 已接收用户操作，尚未开始工作 | 可取消或查看队列原因 |
+| 正在准备 | 正在检查或整理本次输入 | 看见内容仍在，可取消 |
+| 正在连接 | 已开始联系选定服务 | 查看服务身份，可停止 |
+| 等待回复 | 请求已发出，尚未收到可见输出 | 查看经过时间或停止 |
+| 正在生成 | 正在收到模型输出 | 阅读已到内容，可停止 |
+| 正在执行 | 某个工具正在工作 | 查看具体动作与范围 |
+| 等待你回答 ‡ | 需要用户补充信息 | 回答、跳过或结束 |
+| 等待批准 † | 需要授权某个动作 | 查看详情、批准或拒绝 |
+| 已完成 | 这一动作有已确认结果 | 打开结果或继续工作 |
+| 部分完成 | 有些步骤成功，有些未完成 | 分别检查，选择后续步骤 |
+| 已停止 | 用户或明确条件终止了后续执行 | 保留已有结果并允许继续 |
+| 未完成 | 动作失败，结果未达到预期 | 解释原因并提供修复动作 |
+| 结果待确认 | 请求可能已执行，但未取得可靠回执 | 先核对外部状态再决定 |
+| 已过期 | 授权、计划机会或临时资源失效 | 重新确认或重新创建 |
+| 正在重试 | 符合再次尝试条件，正在等待或重新连接 | 查看次数并取消 |
+| 已中断 | 系统或网络使原活动无法继续 | 查看保留内容与恢复路径 |
+
+“已完成”不表示模型自称做完：文件生成成功需要有可打开的文件结果，备份成功需要有已确认的备份对象，外部写入成功需要服务返回或用户可核对的结果。‡ 仅由 `Plan` 在 `S1` 的 `(ask {:question ...})` 产生；† 在 AGENTS.md 中不再由工具审批产生，保留词仅用于历史显示与 §9 所列三类显式确认。
+
+### 2.4 保存、恢复与撤销
+
+1. 用户确认发送后，消息先进入本地可恢复状态，再开始依赖外部响应；收到的文本按可见进度保留。应用崩溃或被系统结束后，重开恢复最近已确认保存的内容，并明确标记该轮是否中断；不得把恢复出的不完整回复显示成正常完成。
+2. 草稿随输入更新；历史只通过明确编辑产生新版本。编辑历史失败时原版本继续可用，修改内容仍留在编辑器；编辑页关闭前若有未保存修改，用户可保存为草稿、放弃或继续编辑。
+3. 删除、恢复、导入和清理存储必须说明影响对象：删除会话不自动删除独立工作区目录；移除附件引用不删除用户原始文件；删除供应商不删除历史回答；停用助手不让其历史失联。可能影响多个对象的动作，预览至少列数量、对象名称或范围，以及保留内容。
+4. 回退只承诺本产品能控制的范围：撤销重命名可恢复旧标题；撤销本地归档可恢复位置；外部邮件已发送、远程文件已删除或命令产生副作用时，不得用笼统“撤销”暗示全部恢复。界面把本地回退与外部补救分开。
+5. 批量动作部分失败时，成功对象保持成功状态，失败对象单列原因；批量重试只处理明确失败且可以安全再次执行的项目。结果待确认的对象先核对目标状态，再由用户明确选择新尝试。
+
+### 2.5 时间、数量与未知值
+
+1. 时间显示跟随用户设置的时区；任务编辑页同时写出任务实际使用的时区和下一次执行的完整日期。跨时区旅行、夏令时变化、系统时间被调整后重新核对下一次执行，并在有影响时提示。
+2. 计数单位稳定：“条消息”“轮对话”“个附件”“个版本”分别计数；不得在一个界面用消息数代表轮次，另一个界面把工具结果算作消息却不解释。
+3. 未知值不显示为零：服务未返回 token 数量时写“用量未知”或“估算”；外部请求未返回结果时不显示“0 费用”；没有权限读取文件时不显示“空文件夹”。
+4. 零表示确认的零，未知表示尚未知道；两者必须能被用户辨认。
+
+### 2.6 跨功能行为要求（UX-03）与验收（AC-03）
+
+| 编号 | 规则 |
+|---|---|
+| UX-03-001 | 任何用户内容的删除、覆盖、外发和范围扩大，都有与其影响相匹配的明确动作；用户可从页面文案判断作用对象，不依赖猜测或工程解释。 |
+| UX-03-002 | 任何正在执行的活动都能在所属会话或任务列表中找到；离开页面不产生第二份活动，返回时展示真实状态并保留已完成步骤。 |
+| UX-03-003 | 任何可恢复的失败都保留原输入与选择；下一次操作尽量从失败处继续，无法安全继续时解释原因并提供保留内容的新路径。 |
+| UX-03-004 | 任何费用、用量、进度和完成提示都有明确计量或状态来源；未测量、估算、服务返回和本地确认不混为一谈。 |
+| UX-03-005 | 提示文案使用具体对象和动作，例如“无法连接到工作网关，草稿已保留”，而不是“发生未知异常”；技术错误可展开查看，不代替用户说明。 |
+| UX-03-006 | 隐私和授权提示出现在实际相关操作附近；用户已明确选择并理解的普通读取不重复打断，未发生的风险不占用每次启动的主要空间。 |
+
+| 编号 | 通过条件 |
+|---|---|
+| AC-03-001 | 中文输入法组词状态按 Enter，候选确认完成但消息没有误发；之后按发送只生成一条用户消息。 |
+| AC-03-002 | 修改助手默认模型后，旧会话下一次发送仍使用该会话显示的模型，新会话采用新默认值。 |
+| AC-03-003 | 流式回复时用户选中上方一段文字，后续内容到达不清空选择、不把页面拉回底部。 |
+| AC-03-004 | 工具请求已送出但网络断开，界面标记结果待确认；重开应用后不会无提示再次提交同一外部写入。 |
+| AC-03-005 | 输入框有长文和三份附件，打开设置修改主题再返回，文字、光标、附件顺序与状态均保留。 |
+| AC-03-006 | 批量操作中只有一项失败，结果逐项可辨，重试不会重复处理已经完成的项目。 |
+| AC-03-007 | 界面字号放大到支持上限，关键标签仍完整可读，批准和拒绝均可操作，焦点没有落入不可见区域。 |
+| AC-03-008 | 恢复备份后历史可以打开，但此前机器上的外部授权和自动任务不会静默获得本机执行权。 |
+| AC-03-009 | 服务没有返回用量，统计页显示未知或估算，不把它计为确认的零费用。 |
+| AC-03-010 | 关闭正在使用的工具权限后，尚未开始的步骤暂停；已创建文件仍保留，页面准确说明停止不会撤销既有结果。 |
+
+### 2.7 焦点、布局与权限表达
+
+1. 用户输入时，后台流式更新、统计刷新、搜索结果加载和通知到达都不得抢走焦点；中文、日文等输入法正在组词时，Enter 先交给输入法确认候选，不发送半成品。文本选择、光标位置和滚动位置在局部更新中保持稳定。
+2. 表单校验在相关字段旁解释，并把焦点移到第一个确实阻止提交的问题；密码、密钥等敏感字段默认遮掩，显示与复制是两个独立动作，复制后只给简短反馈。
+3. 默认正文在常见手机上无需放大即可连续阅读；触摸热区至少 `44×44` 逻辑像素，桌面紧凑按钮至少 `32×32` 逻辑像素；浅色与深色分别检查，装饰效果不得降低文字、链接、表格线和输入边框的可辨认程度。
+4. 权限有三个独立问题：该工具是否在本次会话启用、该应用是否有系统授权、该具体动作是否已批准。三者分别可查。“完全访问” † 只能调整已启用工具的常规审批方式，不能获得系统权限、不能启用已关闭工具、不能让文件或网页中的指令替用户授权。
+5. 普通读取已授权工作区内容可依据明确任务直接进行；发送消息、购买或付款、公开共享、向新服务上传私密资料、改变账号或访问权限、不可恢复删除、超出授权范围的覆盖，始终保留具体动作确认 †。把动作包装进另一工具或命令，不改变确认要求。
+6. 输入区显示当前模型及其供应商；用户可查看本轮可能包含的历史、附件、记忆、世界书与工具。增加新数据来源时，在发生动作的位置说明影响，例如启用云端语音识别时说明录音发往哪家服务。导出默认只含用户选中的可见内容，不默认包含密钥、详细诊断、隐藏工具凭据或未选择的其他会话。
+
+### 2.8 首次启动、导航与入口（02/04）
+
+1. 首次打开直接进入可输入的空会话，不要求创建本产品账号；引导卡主操作“连接模型”，次操作“恢复已有资料”，“稍后设置”关闭。引导不阻挡查看设置、建立助手、阅读导入说明和编辑草稿；不建立演示回答，不把示例内容混入历史。示例“解释一个概念”“整理一段文字”“分析一个文件”点击只放入输入框，确认发送后才发生模型调用；没有模型时示例同样可编辑。
+2. 连接引导为三步：选择连接方式、填写连接信息、选择一个可用模型；每步有可见标题和返回入口，返回保留本次已输入内容；API Key 与第三方账号并列，账号方式不得暗示为本产品账号；任一步可退出，未保存密钥不作为有效连接。引导完成条件是“至少一个连接已保存，且至少一个聊天模型已启用”；连接测试成功是有用证据，但不代替模型选择；只有模型列表而尚未启用任何模型时，末页显示“选择一个用于聊天的模型”，不显示“准备就绪”。
+3. 手机主界面从上到下为会话标题栏、消息区、输入区；标题栏左侧打开导航抽屉，中间显示当前助手及会话标题，右侧打开会话菜单；输入区始终有附件入口、文本编辑区、模型入口和发送或停止按钮；联网、工具、工作区、推理等控制放入可展开第二行，折叠后仍能识别开启状态。抽屉提供新建会话、历史搜索、助手列表和设置；关闭抽屉恢复消息区原位置；选中当前会话时直接关闭抽屉，不重新滚动、不清空选区、不重新开始生成。
+4. 桌面宽窗口为左侧导航、中央消息区、可选右侧辅助面板；右侧按需显示文件、话题或浏览标签，属于当前会话；关闭面板后聊天区回收空间，重新打开恢复上次标签及位置；拖动面板边界只影响布局，不改变会话、附件或工具授权。窄窗口逐级折叠辅助面板和导航栏；宽度为 `360` 个逻辑像素时仍能选模型、输入、发送、停止、返回和打开设置；折叠与展开是同一页面的布局变化，不能各自维持不同草稿；拖动窗口跨显示器或旋转平板后，焦点与正在编辑内容保留。
+5. 返回先关闭最上层弹层，再退出编辑页，再回到原会话；手机系统返回、页面返回按钮和桌面退出弹层快捷键遵循同一层级。带未保存变更的编辑页退出时显示“保存并返回”“放弃修改”“继续编辑”；只有没有可保存变化时才直接返回；密钥输入、模型设置和历史编辑不能因一次误触返回而静默丢失。
+6. 打开设置、文件预览、供应商详情或搜索结果不等于切换当前会话；返回后看到原会话、原滚动位置和原草稿。由错误提示进入设置时保留“返回刚才的对话”入口；修正成功后可直接回到失败位置。打开另一条历史会话则明确切换会话身份，使用该会话自己的草稿、模型覆盖和辅助面板状态。
+7. 长按、右键和快捷键是补充，每项重要操作也出现在命名明确的菜单中；输入栏模型按钮点击打开选择器，长按或右键打开连接管理；工具按钮同理打开工具配置；长按可用时给轻微反馈，但不强制用户通过长按发现设置；图标按钮均有可读名称，桌面悬停提示与辅助技术朗读使用同一语义。
+8. 第一次启动不连续索要相机、相册、麦克风、通知、定位和文件访问权限；选择拍照时再解释相机用途，选择录音时再解释麦克风用途。拒绝某项权限后保留替代入口，如从文件选择器添加图片、直接打字或前台查看结果；用户可以继续聊天，不因非必要权限被拒而退出整个功能。权限请求失败与用户拒绝显示不同措辞；系统限制无法弹出授权时提供“打开系统设置”和“稍后处理”，用户主动取消则返回原输入状态。
+9. 启动期间先展示稳定页面骨架和“正在打开本地数据”；初始化很快时不强行停留进度；已保存会话列表尚未读完时不显示“没有会话”，也不自动创建替代数据；超过合理等待后展示当前阶段和“重新尝试”“查看恢复选项”；出错页不得以新建空白数据覆盖已有数据。没有网络时仍能浏览已保存会话、搜索本地内容、修改本地设置和写草稿；远程模型显示“当前不可连接”，不把本地内容变成只读；发送前明确离线时提示“网络尚未连接，草稿已保留”，不自动建立等待无限重发的请求；使用可到达的本地模型服务时按该连接实际可达性判断。
+10. 上次退出有未完成回复时，重开在对应会话标出“上次生成未完成”；已保存文字继续可读，可复制、重新生成或另发补充；不要把未完成回复显示成正常结束。存在未提交历史编辑时恢复为编辑草稿，让用户选择继续或放弃，不能把部分编辑直接覆盖成新历史。数据打不开时，恢复入口展示可用本地副本的时间、范围和预期影响；用户明确选择后才进入恢复，查看副本不会立即替换当前数据。
+11. 焦点路线：桌面用键盘打开主界面时，焦点按导航、当前会话标题、消息操作、输入区和发送操作推进；打开弹层后焦点进入弹层标题或首个有效字段，关闭后回到触发按钮；切换系统窗口不抢夺其他程序焦点，回到本产品恢复此前输入控件；生成新内容不反复把辅助技术读头移走。文本放大到 `200%` 时主要操作仍有可读标签；控件间留有可触达间隔；禁用状态既有外观变化也能说明原因；加载、完成、错误不只靠颜色表达。
+12. 入口清单按五顶层工作区归并：会话与分支（会话首页、历史列表、模型选择器、会话设置）、Swarm 看板与槽位（任务树、槽位、写锁 `$W$`）、助手与角色（助手列表、记忆管理）、材料与扩展（工作区、工具面板、MCP、技能、世界书、指令卡）、设置与数据中心（供应商、语音、定时任务、加密备份、用量统计与诊断）。任何入口支持搜索定位时，结果说明它属于全局、助手还是当前会话；点击后高亮相应字段，允许一步回到搜索结果；搜索不擅自改变设置，也不以搜索动作触发外部服务。
+13. UX-02-001..004：全局主要页面从设置或导航最多经过两次明确选择到达，细节字段可更深但所属页面可被设置搜索定位；每个编辑页显示正在编辑的对象名称与范围；新建会话、切换历史、展开侧栏、打开设置、从外部分享进入均不能自动丢弃草稿，确需舍弃时先让用户看见受影响对象；手机与桌面可改变入口形态，但不改变核心术语、授权含义或数据结果，桌面右键操作在触屏上有可发现菜单替代。
+14. UX-04-001..012：首屏直接可输入、引导可关闭且不建演示回答；连接引导三步可返回并保留输入，完成条件为已保存连接且已启用聊天模型；手机主界面层次与抽屉行为固定；桌面三栏与 `360` 像素窄窗可完成核心操作；返回按“弹层→编辑页→会话”层级；页面与会话身份分开；长按/右键/快捷键均有可见替代；按需请求权限；启动骨架不把加载显示为空；离线可读可写草稿；异常退出标未完成；焦点路线与 `200%` 放大可用。
+
+- AC-02-001 从首页分别找到供应商、助手、备份与工具面板，不使用隐藏手势。
+- AC-02-002 两条会话各写不同草稿，反复切换后归属正确，附件不串。
+- AC-02-003 桌面窗口缩到最小支持宽度，输入、停止与返回仍可操作；恢复宽度后侧栏选择与阅读位置恢复。
+- AC-02-004 模型无法看图时附图片，发送前指出限制，并提供保留文本继续编辑或改选模型。
+- AC-02-005 设置搜索进入某助手参数页，修改返回后只改该助手范围，没有追溯改写历史模型记录。
+- AC-02-006 关闭搜索、MCP、记忆和工作区后，首页仍可普通对话，历史来源与文件卡仍可阅读。
+- AC-04-001 全新安装直接进入可输入空会话，稍后设置收起引导，可开设置、建助手、写草稿；返回草稿仍在，明确未连接模型，无伪造成功回答。
+- AC-04-002 中断连接引导：第二步返回第一步再前进，非敏感内容仍在；取消后无可用模型；重进不把未保存配置当已连接。
+- AC-04-003 延迟本地读取时只显示加载状态，不显示“还没有会话”，不创建默认数据；完成后展示原历史。
+- AC-04-004 三行中文加未完成组合字，缩到 `360` 再放大，文字、附件与会话身份不变，不重复字符或意外发送。
+- AC-04-005 从会话打开设置、模型详情和说明弹层，依次返回先关说明、再模型列表、再会话，每步保留滚动位置与未保存选择。
+- AC-04-006 拒绝相机权限后取消拍照，原草稿完整，文件附件入口仍可用，仍能发纯文字；下次不强制展示相机授权。
+- AC-04-007 断网重启含历史设备，历史与本地搜索可读，远程发送被准确阻止或给出连接错误，草稿不消失；恢复网络不自动发送。
+- AC-04-008 回复已显示若干段但未结束时终止应用并重开，对应消息标明未完成，已保存段落可复制，重新生成是明确新动作，无重复用户消息。
+- AC-04-009 不使用鼠标完成打开导航、搜索、返回、进入输入框和连接模型；焦点可见且顺序可预测；流式更新不使读屏反复从头朗读。
+- AC-04-010 禁用长按与快捷键，仅用可见菜单进入供应商、助手、工具和会话设置；没有核心设置只能通过隐藏手势到达。
+
+### 2.9 供应商连接与模型选择（05/06）
+
+1. 供应商是用户为某个服务保存的连接配置，包含名称、服务地址、认证方式和该连接下启用的模型；相同服务可建立多份连接，例如“工作账号”“个人账号”。模型名称相同不意味着连接相同；选择模型时始终能看见所属连接。连接列表可分组、搜索、排序和停用，停用不删除历史消息。
+2. 连接列表每行显示连接名称、协议或服务类型、可用模型数量、状态及更多菜单；状态为“尚未测试、可连接、需要登录、配置不完整、最近连接失败、已停用”。最近成功时间和最近失败时间在详情页显示，避免把一次旧成功当成当前服务健康保证；余额与额度无法取得时显示“暂不可获取”，不显示数值零。
+3. 服务预设只用于填写常用配置，不证明地址由预设名称对应官方运营；自定义地址时，连接页在醒目但不干扰操作的位置显示实际主机名称。用户把名为某厂商的连接改指向中转站后，界面不能继续只显示“官方连接”；模型选择器不必展示完整网址，但连接详情和发送前信息面板可查到。
+4. 添加 API 连接的标准路径：选择预设或“兼容接口”，输入连接名称、地址和密钥，保存后停留在详情，提供“测试连接”和“获取模型”；服务不能列出模型时提供“手动添加模型”，不把列模型能力当成能否聊天的唯一判断。地址字段展示已保存真实值；示例使用“例如”并在视觉上区别于输入内容；空白字段不能因灰色示例通过必填检查；用户选择预设时预设值实际填入，清空后必须明确恢复默认或填新值；详情显示最终请求地址的可读预览。
+5. 连接字段：连接名称必填、去除首尾空格、同名提示区分；服务类型由预设给出、可改但说明影响；基础地址预设有真实默认值、自定义必填、可预览实际主机和路径；密钥默认遮挡、可按需显示、不自动放入剪贴板、只展示尾部少量字符；路径或版本采用明确默认、允许高级修改、保存前检查明显缺失；代理默认跟随适用网络设置或直连策略、展示有效策略；连接组默认未分组、仅影响组织、不改变请求权限。
+6. 保存连接本身只保存配置，不自动发出用户对话、生成标题或进行其他付费任务；获取模型和测试连接是可见动作。若某类连通性测试需要短模型请求，按钮旁提前标明“会发送测试请求，可能产生少量费用”，并说明将发送的固定测试内容；用户自己输入的草稿不被拿来测试。
+7. 测试期间显示“正在连接”，允许取消；成功时说明已验证范围，例如“地址可访问，认证通过，已取得模型列表”或“测试消息收到回复”，不能把仅地址可访问表述成所有模型可用；测试取消是中性结果，保留已填字段，不计为服务错误。失败信息同时提供可理解原因、当前操作和下一步入口：地址不存在提示检查基础地址及路径；认证被拒提示更新密钥或账号授权；额度不足引导查看服务商账户；超时说明无法在本次等待内取得结果，不推断密钥错误；可展开详细信息，但默认遮去密钥、认证头和地址敏感参数。
+8. 用户测试失败后修改地址，再次测试只使用当前表单配置；旧测试晚返回不能覆盖新测试结果，也不能把已修改字段恢复为旧值；测试过程中切换到其他连接，结果更新原连接，不在新连接页面弹出无关成功提示。
+9. 第三方账号登录页展示已支持服务及作用说明；点击后看到将打开的服务名称以及“仅连接该服务的模型和额度，不同步本产品聊天记录”；优先使用该服务授权页面或设备授权，不要求用户把第三方密码粘贴进本产品自定义文本框。等待授权时显示“等待你在浏览器完成登录”，保留返回、取消和重试；设备码可复制并显示到期提示，代码到期后重新开始，旧代码不继续显示有效；关闭浏览器不应被自动理解为拒绝授权。
+10. 登录成功后显示用户能辨认的账号标识、服务名称、最近同步时间和登录状态；账号标识遮挡程度适合公共环境，完整信息仅在展开详情时呈现；可执行“同步模型”“重新登录”“退出此账号”。退出此账号撤销本机保存的该连接凭据并停用其模型，不删除已保存对话，不退出其他服务账号；授权失效只影响需要该授权的新请求，历史、草稿和其他连接仍可用；重新登录成功后不自动重发前一条可能已被服务接受的请求。
+11. 获取模型的结果是可审阅列表，包含名称、标识和能力摘要；用户勾选后才加入常用选择器。刷新保留已存在模型的启用状态、别名和本地备注；新出现模型默认未启用，已消失模型标为“此次列表未返回”，不直接删除本地配置或历史引用。手动添加要求填写模型标识，并允许设置显示名称；标识与显示名称是两个字段，前者决定服务识别模型，后者便于阅读；手动设置能力是用户声明，第一次实际请求仍可能被服务拒绝；模型列举接口不可用时可按服务商信息手动添加。
+12. 同一连接下同一模型可建立多个参数预设，例如“快速摘要”“详细推理”；选择器显示名称与原模型标识关联，避免误以为两种独立基础模型；复制实例复制参数和能力设置，不复制会话历史；删除一个实例不删除同标识其他实例。
+13. 一个连接可保存多个密钥，每个密钥有本地别名、启用状态、可选优先级和最近错误状态；列表始终遮挡值，复制密钥要求明确点击该行操作；添加重复密钥提示已存在，允许回到原项编辑；停用密钥不清空备注，删除密钥不删除连接历史。轮询、按优先级、最少使用和随机选择以可读说明展示；错误状态不等同永久失效：临时限流显示下次可尝试时间，认证失败提示检查密钥；一个失败密钥不应使其他可用密钥从列表消失。
+14. 自定义请求头、附加请求字段、代理和版本路径放入“高级”区；进入时显示当前有效配置来源，更改后可恢复本连接默认；可见字段名、用途和有效范围，但不强制阅读接口结构才能完成普通连接；格式错误在保存前指出具体位置；未知字段可保存为高级配置，但不承诺服务支持。高级设置与助手或模型的覆盖关系由“查看有效配置”解释，用户至少能知道某个值来自连接、模型、助手还是当前会话；密钥等认证信息不属于普通提示词参数，不能通过修改助手文本悄悄改写。
+15. 导出连接时先显示将分享字段，并分别提供“仅分享连接与模型设置”和“同时包含密钥”；默认不包含密钥，需要包含时显示接收者将获得服务访问能力；二维码与可复制文本具有相同字段选择；生成分享内容不自动上传公共服务。导入前展示来源说明、连接数量、目标名称以及是否含凭据；与已有连接重名时默认新增并允许重命名，覆盖既有连接需选择具体目标并确认影响；导入不自动测试、不自动启用全部模型、不自动改变当前会话模型；无法识别字段列入导入报告，不因部分字段不支持而静默扔掉整个有效配置。
+16. 停用连接后，新选择器隐藏其模型或归入不可用分组；已引用会话显示当前模型不可用并允许替换。删除连接前列出正在使用它的助手与会话数量，说明历史仍保留、未来生成需改用其他连接；删除正在被运行请求使用的连接时，先让用户停止该请求，或保留本轮直到结束再完成删除；不能把运行中的请求悄悄改投另一个服务。
+17. 模型选择器展示已启用聊天模型，按连接分组，提供搜索与最近使用区；每行至少有显示名称、供应商连接、输入能力和当前可用状态；名称相同的模型不能合并成难以区分的一行；长标识可截短，但通过详情或辅助技术能读取完整值；选择器保留搜索词到本次关闭，下次可从空搜索开始。搜索同时匹配别名、模型标识和连接名称；不存在名称时空状态提供“管理模型”和“清除搜索”，不把字符串自动当成服务端模型标识；未启用模型不混入主列表，用户可切到“查看其他模型”管理。
+18. 图像、音频、视频、文档、工具和推理图标表示已知或已声明能力，并提供文字说明；连接失败、账号过期或已停用属于可用性状态，不能通过隐藏能力图标表达；能力未知显示“尚未确认”，不默认支持全部功能；手动修改能力后详情标明“用户设置”，并提供恢复已知信息入口。
+19. 输入栏模型选择默认仅作用于当前会话，选择后立即显示新模型；新建会话以助手当时默认模型为初始值，没有助手默认时取全局默认；已有会话保留自己的有效模型，不因别处修改助手默认而悄悄换模型；用户选择“使用助手当前默认”时，将该默认应用到本会话未来轮次。“设为助手默认”是单独且命名清楚的动作，操作后说明“用于之后创建的会话”；历史消息仍保留原生成模型和连接信息；将会话移到另一助手后，模型选择是否调整由移动确认页明确给出。
+20. 正在生成时可以浏览模型列表，但真正切换前显示“新模型用于下一次回复；当前回复继续使用原模型”；用户也可选择“停止并换模型”，先停止当前轮、保留已有输出、再更改未来选择。无论哪条路径，都不能将同一条正在生成的回复前半段归旧连接、后半段归新连接；工具执行和模型续答跨越多个步骤时仍遵循同一轮固定模型。
+21. 模型详情字段：显示名称初始取模型名称、可编辑、只改变列表称呼；模型标识建立实例时确定、可在管理页修改、决定服务识别目标；输入类型按可靠已知信息填写、未知单列、决定附件与输入路径；输出类型文本为常用、其他能力明确声明、决定输出模式；上下文容量已知值或“未知”、不可填负值、影响容量提示；最大回复长度默认交服务决定、可设有效上限、不代表必定达到；推理强度默认使用模型推荐值、在支持档位间选择；价格默认未知、单位及币种必填后才估算、提供使用前后费用参考。
+22. 未知上下文容量时不绘制精确百分比，而显示已估计输入量和“容量未知”；未知价格不显示“免费”；价格手动设置后保留更新时间与单位说明；模型能力目录更新先展示将覆盖字段，默认保留本地别名和人工修正，不在后台把精确设置改成新猜测。
+23. 普通用户只需选择模型即可发送，无须设置温度、采样或 token 上限；高级参数默认交模型或连接推荐配置；界面使用“使用默认”这一明确状态，不能以数字零同时表示未设置和真的设为零；编辑字段显示允许范围、当前有效值与来源；保存前对明显无效数值就地提示。温度等参数以用户意图解释，例如“更稳定地重复相近答案”或“增加表达变化”，不保证绝对效果；不同模型范围和支持项不同，不支持参数可保留在某实例，但切到另一模型时说明哪些暂不适用。
+24. 推理控件只提供当前模型支持的档位，采用离散选择，不提供无法映射的虚假连续精度；标签使用“默认”“较少”“中等”“较多”等可读文字，并允许在详情查看服务对应值；模型不能完全关闭推理时使用“最低可用”而不是“关闭”；自定义预算只有确实可设置时才出现，并说明它与最终回复长度不是同一概念。拖动档位只调整设置，不立即产生模型请求；正在生成的轮次不随拖动更新参数；模型切换后只有语义兼容的设置才继承，无法兼容时回到新模型默认并给一次轻提示，不悄悄选最昂贵档位。
+25. 输入区提供可展开上下文占用概览，包含系统与助手说明、长期资料、历史消息、本轮文字、附件和工具说明几个用户能理解的部分；估算值明确标记为估算，尚未完成读取的附件单列“待计算”；容量已知且明显超出时阻止直接发送，并提供缩短内容、移除附件、压缩历史或换模型入口；不得静默删除最早问题来让请求通过。容量接近上限但未超出时可温和提示，用户仍能决定继续；服务实际计量与本地估算不同时，服务拒绝后保留全部内容并解释“服务认为上下文超出限制”；单条特别大的消息不能仅因历史压缩成功就消失。
+26. 消息详情可显示输入、输出和缓存用量，缺失项使用“服务未返回”；估计与服务报告值使用不同标签；一次回复含工具步骤和多次模型请求时，可看整轮合计，也可展开每一步；合计说明包含范围，不能把最后一步用量当整轮用量，也不把工具服务独立费用混为模型 token 费用。费用估算同时显示币种、单价来源和估算性质；更改价格只影响重新计算展示，不改写服务实际账单；没有价格的部分显示“部分费用未知”，不把已知小计展示成整个任务总价；缓存折扣只在确有相应信息时计入。
+27. 首字等待表示从本轮正式发出到首次可见输出的时间，生成速度表示有足够数据时的参考速度；连接测试、等待用户审批 † 和工具运行时间可独立显示；等待审批时不应看到“模型很慢”的误导性指标；秒数不足以稳定计算时显示短横线或“数据不足”，不出现无穷大或明显错误数值。
+28. 标题、后续问题建议、翻译、OCR 和记忆整理可使用各自选择的模型；这些入口说明触发时机及可能产生额外请求；后续问题建议默认关闭，选择模型表示启用，切换为“使用当前聊天模型”不表示关闭，界面必须另有“关闭建议”；标题生成失败不影响聊天保存，自动生成标题不能覆盖用户手动标题。嵌入模型等不能直接产生聊天回复的模型不列为普通聊天候选，或以明确不可选状态说明用途；用户不能误选后只得到无法理解的空回复。
+29. 输入框已有图片时切到文字模型，草稿仍保留图片并显示“当前模型不接受图片”；提供换回合适模型、移除图片、在已配置并经用户选择时先提取文字等路径；没有执行 OCR 时不能把图片变成文字并声称模型看过原图；音频、视频、PDF 采用同样显式兼容检查。工具关闭或模型不支持工具时，已绑定工作区仍可由用户浏览，但模型不能被描述为已经可以操作它；发送前界面显示本轮可用工具范围；模型只因名称含某厂商品牌，不能自动获得该服务原生搜索或代码执行能力。
+30. UX-05-001..013 约束连接对象、服务去向、添加字段、测试修复、账号登录、模型列表、多密钥、高级设置、导入分享、停用删除；UX-06-001..012 约束选择器、能力与可用性、作用域、生成中切换、详情字段、未知信息、参数、推理档位、容量、用量、时间与不兼容输入。
+
+- AC-05-001 清空自定义地址及路径、保留示例文字后保存，必填项被指出，发送预览不采用灰色提示，不出现空地址请求。
+- AC-05-002 使用能聊天但不能列模型的服务，获取失败后手动添加有效标识，可启用并完成测试，不被迫标记连接不可用。
+- AC-05-003 对错误地址启动测试后立即改正并再次测试，两次结果按各自配置解释，最终保留新地址与新结果。
+- AC-05-004 从账号登录进入浏览器后取消，回到应用可继续编辑其他连接；无有效账号标识，不自动建立可用模型，也不清除此前 API 连接。
+- AC-05-005 对未提供额度信息的账号完成登录，账号状态已连接但用量显示“暂不可获取”，不显示零余额并禁止全部聊天。
+- AC-05-006 启用两个模型、停用一个并修改一个别名，刷新账号模型列表后原启用选择和别名保留，新模型等待选择，消失模型有解释。
+- AC-05-007 停用有历史会话引用的连接，旧消息完整可读，发送入口说明模型不可用并提供换模型，没有历史消息被删除或改署另一供应商。
+- AC-05-008 导出含多个密钥的连接，默认内容不含凭据；主动勾选包含密钥后预览明确反映并保留取消机会。
+- AC-05-009 导入与本机同名的连接但不选择覆盖，结果是可区分的新连接，原连接凭据、模型与助手引用不变，当前会话不自动切换。
+- AC-05-010 请求已可能被服务接收但本机显示授权错误时完成重新登录，系统只恢复连接状态，用户未点重试前不再次发送原问题或运行工具。
+- AC-05-011 配置一个失效和一个可用密钥，发起测试或请求时失效密钥显示原因，其他密钥仍可管理；修复或重新启用后状态可更新，不永久卡死。
+- AC-05-012 保留某厂商预设名称但把地址改为自定义主机，详情与有效配置能读出实际主机，不因名称相似继续显示“官方”。
+- AC-06-001 在两个连接中启用同名模型，选择器每项都能识别连接来源，选中后输入栏与消息详情使用一致来源，不随机归并。
+- AC-06-002 建立会话甲并发送一次，再修改助手默认模型并创建会话乙；甲保持原模型，乙采用新默认，甲只有明确选择才变更未来轮次。
+- AC-06-003 在长回复中选另一模型并选择“用于下一次回复”，当前回复完成时仍归属原模型，下一条才使用新模型，无混合署名或工具续答改投。
+- AC-06-004 删除某模型价格后发送，消息详情用量可以存在，但费用为“未知”或部分未知；统计页不记成确定的零成本。
+- AC-06-005 对只支持三个档位的模型打开推理控制，只能选三档和适用默认；切换到不能关闭推理的模型后，不出现虚假的完全关闭承诺。
+- AC-06-006 添加两张图片并写好问题，再改为文字模型，发送前出现具体说明，文字与图片仍在；切回视觉模型可继续，未产生隐藏 OCR 请求。
+- AC-06-007 构造超过已知容量的草稿与历史，发送被阻止并给出可行处理入口；返回查看历史与草稿时内容完整，未在不知情时删除早期消息。
+- AC-06-008 把支持数值零的参数设为零并保存，再恢复默认；详情对两种状态有清楚区别，重开页面后不把零误解为未设置。
+- AC-06-009 启用建议并选择“使用当前聊天模型”，确认建议仍启用；再点“关闭建议”，之后完成一轮聊天不触发建议生成，已有回复不受影响。
+- AC-06-010 完成含两次工具调用的轮次，查看用量总览与明细，两者可对上，缺失用量明确标注；等待审批时间不被计为纯生成速度。
+
+→ 用于：AGENTS.md §7.4 第 8 组与 §7.1 的默认值、状态词、恢复窗口落点。
+
+## 3 输入、草稿、提交与停止：一轮工作的边界
+
+### 3.1 会话建立与临时会话
+
+1. 点击新建进入空白工作页，默认使用当前助手与初始设置。用户尚未输入、添加附件或发送时，不在历史制造永久空记录；开始输入后形成独立草稿，历史可显示“未发送草稿”标记；首次提交成功后成为普通会话。连续点击新建且当前空白页无内容时复用该页，避免大量空会话。
+2. 新建会话不自动引用刚结束会话的历史，不继承临时开启的外部访问权限。助手默认绑定工作区可以带入，但必须在发送前可见；来自上一会话的临时模型覆盖只在用户明确选择“沿用当前配置”时带入。页面显示三项必要信息：助手是谁、模型是什么、是否绑定工作区。
+3. 临时会话从新建入口显式选择，标题栏持续展示“临时”。它不写入普通历史、不用于长期记忆整理；模型调用仍遵守所选供应商的数据处理方式。退出前若有内容，明确说明保留结果，并提供“转为普通会话”与“结束临时会话”。
+4. 临时会话的草稿与附件只为当前临时会话保留，异常退出后不承诺恢复。转为普通会话是用户明确动作，之后才进入历史与普通草稿规则；转换不自动重新调用模型，也不把此前内容立即送入记忆整理。
+5. 新建会话不因连续点击产生多条空记录；AC-07-001 与 AC-02-002 同时约束此行为。
+
+### 3.2 输入框与输入法（IME）铁律
+
+| 平台 | 默认 Enter | 发送方式 | 不可违反的例外 |
+|---|---|---|---|
+| 桌面 | 发送 | `Enter`；`Shift+Enter` 换行 | 中文/日文等输入法处于拼音组合或候选词确认态（`isComposing`）时，`Enter` 只确认候选，绝不发送或截断末尾字符 |
+| 手机 | 换行 | 独立发送按钮 | 同上；软键盘回车不因设置改变而绕过输入法组合态 |
+| 任意 | — | 用户可更改桌面发送方式 | 组合键发送也必须等输入法确认；快捷键不得截断拼音或丢失末尾字符 |
+
+1. 输入框支持多行文本、粘贴、撤销重做、系统输入法、全选和局部选择。文本较长时增高到合理上限后在内部滚动，可展开为大编辑器；展开编辑器保留原文本、选区、光标与附件，不形成第二份不同步内容；关闭大编辑器返回原输入区，不自动发送。
+2. 没有文字、没有可发送附件、没有引用补充时，发送按钮禁用并显示可读原因。只有空白字符不构成有效问题；零宽字符等不可见内容不能导致无意发送。附件可构成独立问题时允许发送，并在气泡中保留附件角色。缺模型或附件不兼容时，点击发送打开具体修复路径，不只闪烁或无反应。
+3. 桌面默认 `Enter` 发送、`Shift+Enter` 换行；手机默认回车换行、独立按钮发送。用户可在偏好中改变桌面发送方式，设置页用一段可试输入的示例解释结果。弹窗、搜索框和表格单元格中的 `Enter` 按控件语义工作，不把任意回车都当成聊天发送。
+4. 输入法候选确认优先于发送；AC-07-002、AC-03-001、AC-26-007 与 E2E 19 均以“组合态按 Enter 不误发”为放行条件。
+
+### 3.3 每会话独立草稿
+
+1. 普通会话草稿包括文本、待发送附件、引用片段、光标或合理编辑位置，以及尚未完成的附件准备状态。切换会话、打开设置、缩放窗口和正常退出应用后，重新进入恢复各自草稿。临时会话遵循 §3.1 的特殊规则。草稿不能由一份全局输入框内容代表。
+2. 保存草稿的反馈安静，正常情况不反复弹出“已保存”；用户可从输入区菜单查看草稿保存状态。空间不足或写入失败时持续显示“草稿暂未保存”，允许复制全部文字和另存外部文件，不能仍显示已保存。
+3. 用户点击发送时，草稿只在本轮提交被本机接纳后清空；清空动作与网络回复是否完成分开。清空草稿只清除本会话未发送内容，不删除已发送消息；草稿含较多文字或附件时，清空提供一次撤销机会。
+4. 附件从草稿移除不删除用户原文件，也不删除历史消息中的旧附件；清空不改变已选模型、助手或会话工具开关。用户可以立即继续写新内容，不必重新连接服务。
+5. AC-07-003、AC-07-011、AC-03-005 约束跨会话隔离、保存失败可见与设置往返后的草稿完整性。
+
+### 3.4 附件队列与粘贴
+
+1. 添加文件后，每个附件以卡片展示名称、类型、大小、准备状态与移除按钮；图片显示缩略图，非图片用文件类型图标。状态为：准备中、可发送、需要选择处理方式、不支持、准备失败。失败项可重试或移除，其他附件继续保留。
+2. 只在全部拟发送内容达到可提交状态后启用发送，或让用户明确排除失败项后发送其余内容。批量添加显示“已加入 7 个，2 个需要处理”；失败项仍占位置，输入区总数包括失败项，避免误以为全部成功。
+3. 拖拽到桌面消息区时，用明确投放层说明将添加到哪条会话；松开后加入草稿，不直接发送。多个文件维持用户选择顺序；重复添加同一文件时提示已有附件，允许保留重复副本而不是悄悄双倍上传。切换会话时，正在处理的附件归属原草稿。
+4. 粘贴纯文本直接进入光标位置；剪贴板含图片时按图片附件加入并保留已有文字；同时含文本与图片时给出一次可理解选择，或采用明确且一致的优先规则。粘贴网页内容默认保留正文文本，不自动打开网页、下载远程图片或执行页面内容；选择“作为附件粘贴”时生成有可理解名称、可预览的文件。
+5. 文件过大、类型未知或读取权限失效时，提示具体附件与原因。处理过程不把附件内容发送给未选定的外部服务；必须云端提取或转写时，先显示服务去向与作用，再由用户选择。模型是否支持原生文件与是否可本地提取文字必须在界面区分，不能只用“支持文件”概括。
+6. 单草稿初始最多 `20` 个附件，单个本地导入文件上限 `100 MiB`；若所选服务有更低的大小、时长、页数或数量限制，发送前按该限制检查并注明限制来自当前服务。超过服务限制的文件可留在草稿和本地材料列表，但不能显示成“可发送”。
+7. AC-07-004、AC-07-006 与 E2E 06 约束“移除附件不删源”“部分附件失败可继续”“能力不匹配不静默外发”。
+
+### 3.5 引用、快捷短语与预置内容
+
+1. 用户在消息中选择文字并点击“引用”，输入区出现独立引用卡片，标明来源消息并保留所选片段；卡片可点击返回来源、可单独移除。用户自己的补充问题在普通文本区编辑。引用内容不得藏在不可见提示词里；发送后的用户消息也能看见引用与补充的关系。
+2. 同一消息可引用多个片段，按添加顺序呈现；重叠片段由用户决定是否保留。来源消息后来有新版本时，已发送引用保留当时引用的文字，并可说明来源版本；来源被删除后引用仍可读，但跳转提示源消息不可用。引用卡片不能因找不到源消息就删除用户问题。
+3. 快捷短语默认插入光标位置，不覆盖现有草稿；已有选区时替换选区。含变量的短语先展开成可编辑文本，未填写的必需变量在发送前指出；用户可撤销整个插入动作。插入短语不自动开启工具、不直接发出网络请求。
+4. 助手预置首轮内容如显示，标明为“预置内容”，不伪装成用户刚发出的问题或模型刚生成的回答；用户可预览它将如何影响下一轮上下文。教学或演示模板通过“使用模板创建会话”进入，普通新建会话不无故带入他人的示例历史。
+5. 修改预置内容不回写已存在会话；预置中的附件缺失时，创建会话前提示修复或排除该条，不悄悄发送孤立说明。
+
+### 3.6 提交边界与可观察运行状态
+
+1. 用户点击发送后，系统先确认本轮有效模型、输入内容、附件准备状态与必要授权。检查失败时焦点留在可修复处，草稿仍在。检查通过后，用户消息进入时间线，本轮显示“正在准备”，输入区清出已提交内容以便写下一条。快速双击、重复按键和触屏误触只提交一次。
+2. 普通会话在用户消息进入时间线后必须有可持久保存的记录。若本机无法保存，明确暂停提交并让用户保留或复制内容，不先向远程服务发送再假装本地保存成功。临时会话按其不留历史规则建立当前活动，但仍保持一次提交的可见边界。
+3. 提交瞬间的模型、连接、当前有效指令、可用工具、所选附件和上下文范围构成本轮可查看配置。生成期间修改设置只影响之后的新轮次，除非是明确撤销尚未执行的授权或停止当前轮。本轮信息能回答“这条消息发给了谁”“带了哪些上下文”“为何调用这个工具”。
+
+| 状态 | 用户看到什么 | 可采取的操作 |
+|---|---|---|
+| 正在准备 | 用户消息已提交；附件或内容整理进度 | 取消本轮，保留消息 |
+| 正在连接 | 已确定连接名称，尚无回复 | 停止、查看连接状态 |
+| 等待回复 | 请求已发出，等待可见输出 | 停止、查看经过时间 |
+| 正在生成 | 文字或其他内容持续出现 | 停止、阅读上文、复制已完成部分 |
+| 正在执行 | 当前工具名称和步骤卡片 | 查看详情、按许可停止 |
+| 等待你回答 ‡ | 问题与回答范围清楚可见 | 回答、跳过或停止整个任务 |
+| 等待批准 † | 目标、动作与影响清楚可见 | 批准、拒绝或停止整个任务 |
+| 正在重试 | 原因、剩余次数和等待 | 立即取消，不自动换供应商 |
+| 已完成 | 完整回复及可用结果 | 复制、继续问、重试、导出 |
+| 已停止或已中断 | 保留已有内容并标注原因 | 重新生成、另发补充、检查工具结果 |
+| 未完成 | 错误说明与保留下来的内容 | 针对原因修复后再次尝试 |
+
+4. 动画可以表达活跃状态，但必须同时有文字或可读名称；等待模型不能无限显示“正在思考”掩盖网络断开。没有确切阶段信息时使用“等待回复”，不伪造内部推理过程。服务确实返回可展示的推理摘要时，放在单独区域并标明其不是最终答案。
+5. 状态变化稳定，不因收到碎片内容反复闪烁。文字流与工具调用交替时，时间线按实际先后展示，每一步保有独立身份；模型先发说明再调用工具，说明不能消失；工具返回后继续回答，先前文字不能重排到工具之后。多次模型续答仍属于同一轮的可展开过程。
+
+### 3.7 流式滚动与选区保护
+
+1. 用户处于消息区底部时，流式内容增加后保持底部可见；用户主动向上滚动后立即停止自动追随，并显示“返回最新内容”按钮。继续生成不能把用户强行拉回底部；点击返回后恢复跟随。滚动位置以用户正在阅读的内容为参照，表格、图片和代码块完成排版时不应造成大幅跳动。
+2. 文字逐步出现时，未闭合的代码围栏、表格或公式可暂用稳定的中间显示，完成后再转为最终排版；中间状态不能不断重置整段文字、覆盖选区或使复制按钮跳位。用户选择文字期间已选范围保持，新增文字不自动扩展成用户未选择的部分。
+3. 开始、结束或错误可有一次轻量提示，连续文字不逐 token 触发声音或强烈振动。用户开启触觉反馈时也应能关闭，并遵循系统减少动态效果设置。用户正在看本会话时，不另弹遮挡内容的完成通知；切到其他会话或应用时，按通知设置给出简短结果入口。
+4. AC-08-003、AC-03-003 与 E2E 03 要求：新增流式内容不抢滚动与选区；不允许为了稳定滚动而停止接收内容。
+
+### 3.8 停止语义
+
+1. 点击停止表示本产品停止继续请求和展示本轮后续活动，保留已得到的文字、图片、文件及工具记录。按钮收到点击后立即显示“正在停止”，尽快切换为“已停止”；若外部服务或已开始的工具不能立刻取消，说明仍在确认的部分。停止不保证服务取消计费，也不等于撤销已经完成的外部操作。
+2. 停止后迟到的数据不继续拼到已停止答案后面，也不把消息状态改回成功。若工具在停止前已完成但结果稍后才到，时间线用“停止前已执行，结果后来返回”说明，不再次唤起模型自动续答；用户可查看结果并决定下一步。每条停止路径都保留新草稿，与上一轮的停止状态互不覆盖。
+3. 模型正在等问题回答或工具批准时 †，停止整个任务与拒绝某个工具是不同操作：拒绝单个工具可让模型在许可范围内继续解释或选择其他方法；停止整个任务则不继续询问、不自动寻找绕过路径。关闭审批弹层只是暂时收起，任务仍在等待，主界面应有可返回标记，避免把关闭误认为批准。† 在 AGENTS.md 常授权模式下，此段仅保留“停止整个任务”的语义；“拒绝单个工具”与审批弹层不进入协议。
+4. AC-08-004 要求停止时文字、代码块与工具结果可查看复制，状态明确为已停止，迟到文字不追加，当前草稿不丢失。
+
+### 3.9 重试、重新生成与错误恢复
+
+1. “重试发送”用于本轮尚未得到有效回复的失败，保留原用户消息，不再插入同样的问题；“重新生成”用于已经有答案或部分答案的轮次，创建新的回复版本，原版本仍可切换查看。两者都显示将使用的当前模型和范围；更换模型时，新版本标明新来源。
+2. 重新生成默认使用该用户消息所在的历史位置及当时选定分支，不把之后的后续讨论倒灌进这次回答。用户希望基于现在全部讨论得到总结时，应另发新消息。正在生成时不能再启动同一轮的第二个重新生成；一个按钮的连点不能产生多个看不见的付费尝试。
+3. 连接级自动重试默认关闭；用户开启后，每次提交最多自动增加 `2` 次尝试，界面显示原因、尝试次数与等待状态，并允许取消。仅对本产品能合理确认尚未产生可见输出、没有启动外部副作用步骤的短暂连接故障自动重试。认证、配置、额度和明显不支持的输入错误不进入自动重试循环。
+4. 服务端是否接收成功不明确时，提示“结果未能确认”，不声称请求从未发生。已经发送邮件、写入文件、提交表单或执行其他有外部结果的工具后，网络中断不能靠整轮自动重放恢复；恢复入口先列已确认步骤、结果未知步骤和未开始步骤，由用户选择查看结果、重新执行指定步骤或另开新轮。
+
+| 失败类别 | 默认解释 | 保留与恢复 |
+|---|---|---|
+| 没有选择模型 | 本会话还没有可用模型 | 保留草稿，直接打开模型选择 |
+| 地址或路径错误 | 当前连接地址未被服务接受 | 保留消息，进入对应连接编辑 |
+| 认证或授权失效 | 密钥无效或账号需要重新登录 | 修正后由用户重试 |
+| 额度不足或限流 | 服务暂不接受更多请求 | 显示服务说明与稍后重试入口 |
+| 上下文超限 | 本轮内容超过服务允许范围 | 压缩、调整范围或换模型 |
+| 附件不支持 | 明确指出文件和不支持的输入类型 | 换模型、移除或选择转换 |
+| 网络中断 | 本轮连接中断，已有内容保留 | 查看部分答案并选择重新生成 |
+| 本地保存失败 | 结果已显示但尚未可靠保存 | 复制、导出、释放空间后保存 |
+| 工具结果未知 | 外部动作可能已发生 | 先核对结果，避免盲目重放 |
+
+5. 错误卡片附着在发生问题的轮次，不替代用户问题或已经出现的答案。默认说明用用户能采取行动的语言；展开后可见服务错误码、发生时间和经过处理的详细信息；技术原文可复制用于反馈，但认证信息应遮挡。多个故障不叠出难以关闭的弹窗，时间线保留一次结构清楚的失败记录。
+6. 一条回复包含多个附件时，部分生成成功而部分失败显示“部分完成”，列出已完成与未完成结果；用户可使用已生成文件，不必整轮重做。文字生成成功但标题或建议生成失败，不把主回复标为失败，辅助功能错误留在对应区域。
+7. AC-08-006、AC-08-007、AC-08-008、AC-08-012 与 E2E 10 约束：重试不重复问题、重生存留旧版、外部副作用不重放、辅助失败不污染主结果。
+
+### 3.10 会话切换、离开与生命周期
+
+1. 切换到另一会话不等于取消当前生成；原会话在列表中显示运行或等待状态，点击可返回。多个会话活动同时存在时，任务概览列出会话名称、状态和停止入口；停止甲不能结束乙。主输入区始终显示当前打开会话的发送或停止状态，不显示后台其他会话的按钮。
+2. 手机后台能力受平台规则约束，离开应用前不承诺永久持续运行。返回后依据真实活动状态展示继续、完成、中断或等待；不能仅因为进程重新出现就把旧请求重新发送。应用被系统终止后，恢复的是已保存记录与待处理状态，不是已经确认失效的运行承诺。桌面退出时提示仍有活动任务，并让用户选择继续等待或停止退出。
+3. AC-08-011 要求甲会话生成时切到乙并开始另一轮，停止乙后甲继续或按自身状态更新，列表与任务概览的名称、状态、结果入口对应正确会话。
+
+### 3.11 输入与提交验收（AC-07 / AC-08）
+
+| 编号 | 通过条件 |
+|---|---|
+| AC-07-001 | 连续新建十次且不输入，历史不出现十条永久空记录；输入后切换再返回仍能找到草稿，且不误归另一会话。 |
+| AC-07-002 | 中文输入法未确认拼音在候选态按 Enter，只完成候选确认，不发出请求；再按发送键才提交。 |
+| AC-07-003 | 甲会话写文字并加图片，乙会话写另一段文字；往返与重启后各自恢复，不串附件、不覆盖。 |
+| AC-07-004 | 本地图片加入草稿再移除，原文件与历史同图仍可读；草稿移除不提交消息、不删除源文件。 |
+| AC-07-005 | 多行、表情、混排长消息选中中间文字，展开再关闭编辑器，内容不重复、不截断，选区与滚动合理保留。 |
+| AC-07-006 | 两个正常文件加一个不可读文件，失败卡说明原因，正常文件不丢失，移除失败项后可发送其余内容。 |
+| AC-07-007 | 引用旧回答并追问，发送后从引用卡返回源消息；来源更新版本后引用仍显示原文字；删除来源后引用可读并说明无法跳转。 |
+| AC-07-008 | 生成中输入下一条问题再停止当前回复，下一条完整保留，未被自动发送，也未并入旧轮次。 |
+| AC-07-009 | 临时会话发送后进设置再返回，临时标识仍明显；结束后普通历史与长期记忆无新增，供应商处理说明可查。 |
+| AC-07-010 | 从其他应用分享文字和文件到已有草稿，前后都可取消；加入后只是草稿，不产生模型调用，旧内容按选择追加或保留。 |
+| AC-07-011 | 模拟空间不足后继续输入，页面显示草稿未保存并提供复制方式，退出前有说明；不得出现“已保存”后重启内容消失。 |
+| AC-08-001 | 连续双击发送并重复按发送快捷键，时间线只有一条新用户消息和一轮活动，无隐形重复请求。 |
+| AC-08-002 | 用不支持图片的模型发送含图草稿，错误在提交前说明具体冲突，草稿完整，时间线没有看似已发出的空消息。 |
+| AC-08-003 | 长回复持续生成时向上阅读旧段落，视口不被拉到底部，“返回最新内容”出现，点击后恢复平稳跟随。 |
+| AC-08-004 | 文字、代码块和工具结果部分出现时停止，现有内容可查看复制，状态明确为已停止，迟到文字不继续追加，当前草稿不丢失。 |
+| AC-08-005 | 模型先解释、再调用工具、再补充答案，三部分按发生顺序出现；折叠工具不重排文本；复制最终文本时可选择是否包含工具详情。 |
+| AC-08-006 | 对一次未收到回复的连接失败点击重试，仍是同一条用户问题，失败尝试信息可查，成功结果归入该轮，不新增重复问题。 |
+| AC-08-007 | 对已有答案重新生成得到第二版，第一版仍可切换阅读、复制和导出，各自保留生成来源与完成状态。 |
+| AC-08-008 | 工具已提交外部动作后断开连接，恢复页面说明结果未确认并要求先核对；自动重试开关开启也不再次提交同一动作。 |
+| AC-08-009 † | 工具审批等待时关闭弹层，任务保持等待且可再次打开；拒绝单个工具后可按规则继续；停止任务后不再自动运行下一步。 |
+| AC-08-010 | 回复显示后制造本地保存失败，用户看到未可靠保存提示，能复制或导出；界面不显示正常完成后无痕消失的成功记录。 |
+| AC-08-011 | 甲会话生成时切到乙并开始另一轮，再停止乙；甲继续或按自身状态更新，列表与任务概览的名称、状态、结果入口对应正确。 |
+| AC-08-012 | 主回复成功而自动标题请求失败，回复保持完成状态，历史使用可读临时标题，用户可手动重命名，不需重新生成正文。 |
+
+† 该条包含审批语义；按 §9 D-05/D-06 由能力范围收回与 Esc 取消替代，保留编号用于历史对照。
+
+→ 用于：AGENTS.md §7.4 第 3 组与 §5.1 第 3 条的输入、草稿、流式、停止与 `:call` 状态落点。
+
+## 4 消息、版本、分支与上下文：历史对象的身份
+
+### 4.1 消息层次与过程区
+
+1. 用户消息包含作者身份、正文、附件和必要状态；助手回复包含作者或助手名称、可选过程区、正文、结果附件、引用来源、消息操作和可展开详情。时间、模型、用量等次要信息可以收起，但查找时位置稳定；错误或停止状态与对应消息关联，不用全局横幅替代。
+2. 长用户消息默认可以折叠，但折叠摘要保留开头、总长度提示和“展开全文”，不能把附件或问题结尾中的关键状态藏到完全不可发现；展开不改变后续消息顺序。助手长正文默认可完整阅读，不能仅为页面整洁要求多次点击“继续显示”；特别大的工具输出另有摘要与完整查看入口。
+3. 模型提供的推理摘要、搜索进展与工具调用按类型呈现，不混成最终答案的一部分。过程区可以折叠，折叠标题仍说明完成、失败或等待；用户不能因为折叠过程区而错过待批准操作 †；没有服务提供的过程内容时，不编写模拟思考文字。
+
+### 4.2 正文、代码、表格、公式、图形与 HTML
+
+| 对象 | 规则 | 验收点 |
+|---|---|---|
+| 正文 | 支持段落、标题、强调、列表、引用、分隔、链接；中英文混排、长单词、网址、连续数字不撑坏宽度；浅色、深色、壁纸、高对比均可读；字体变化后重新排版并尽量保持滚动位置 | 无法解析的标记显示原文，不丢文本、不整条空白；局部失败只影响局部片段；文本中类似“按钮”“权限已批准”的词不取得真实界面操作权 |
+| 代码 | 语言标识、复制、下载；未知语言显示“代码”或“纯文本”；复制默认只复制代码内容，不带围栏、语言标签和行号；消息级“复制原文”保留标记；长行可横向滚动，换行只影响阅读 | 下载给出文件名与类型，可改名；无确定类型用普通文本，不按任意扩展名声称可执行内容安全；制表、缩进、空行、全角字符与表情完整保留；选区复制只处理选区 |
+| 表格 | 独立边界与横向滚动；表头与行内容可区分；数字列可比较；长文本合理换行；复制可选纯文本、电子表格制表内容或图片；折叠未显示行不被悄悄省略 | 多行表头、空单元格、不规则列采用可理解回退并保留原文；图片导出含全部选定范围；超长表格分段导出并显示分段数；表格图片不替代可读原始文字 |
+| 公式 | 行内公式与正文基线和行高协调；块公式窄屏可横向滚动或独立展开；不截掉上标、下标、根式；无法渲染显示原始表达式并可复制 | 复制可选可读文字或原始公式标记，默认动作含义一致；不把数学字符替换成含义不同的近似字符 |
+| 图表 | Mermaid 等声明式图表显示为可缩放区域，提供原文、放大、导出图片；过大先给视口预览，可全屏；解析错误只影响图表本身 | 导出保留可读分辨率；透明或深色背景选择在预览可见 |
+| 图片 | 缩略图、放大、保存；保留比例，不强行拉伸；失效远程图片显示替代文字、地址来源与重试；不因加载失败删除周围说明 | 默认避免自动加载未知远程图片，用户可按图片或会话允许；用户上传与模型生成图片的来源可辨认 |
+| HTML | 普通消息中的 HTML 采用受限呈现；主动内容需显式进入预览；预览有“查看原文”“关闭”和来源说明，不能遮盖本产品地址、权限或停止按钮 | 交互卡片提交与聊天发送是不同动作；复杂交互的详细规则见 §6.5–§6.6，正文始终有可读回退 |
+
+### 4.3 引用与链接
+
+1. 搜索或服务返回引用信息时，在正文对应段落放置编号或短引用入口，消息末尾提供聚合来源列表。点击编号打开来源卡，显示标题、域名、可用的发布日期或读取时间，以及访问原文入口；没有日期就不编造日期，无法对应时显示“来源信息不完整”。
+2. 引用列表按本条回复使用情况组织，去重不改变正文引用指向。用户切换回复版本时同时切换该版本对应来源，不能把另一版本搜索结果拼到当前答案下面。普通模型文本里出现一个编号，并不自动成为经验证引用；只有存在对应来源信息时才呈现为可交互引用卡。
+3. 链接按用户设置在内置或系统浏览器打开，默认保留当前会话与阅读位置；用户可复制地址、查看完整目标和选择其他打开方式。可见标题与实际主机不一致时，详情展示实际地址；应用内动作链接与外部网页链接有可辨认差异，普通网页文本不能伪装成本产品设置按钮。
+4. 来源后来失效时，已保存标题与原链接仍可见并标记无法访问；不删除来源卡后留下无法理解的编号。离线时点击来源卡可先查看已保存来源信息，再选择联网后打开。引用存在表示材料来源，不构成答案正确性的自动认证。
+5. 同一来源在同一回复重复引用复用编号；来源列表默认按正文第一次引用顺序排序；未用于正文的结果归入“其他结果”；点击引用滚动到对应项并突出，返回正文保持阅读位置。手机用底部来源面板，桌面可用侧栏；面板关闭不关闭正在进行的回复，也不改变滚动跟随状态。
+
+### 4.4 选择、复制与消息菜单
+
+1. 手机长按与拖动选择手柄，桌面鼠标或键盘选择文字，均使用可预测的文本选择行为。全选后复制、引用、翻译等菜单仍可操作；新选区建立时旧选区的动作失效，避免点击菜单后处理上一段文字；滚动或收到新内容不应无故取消选区。
+2. 消息菜单提供复制正文、复制原文、引用、朗读、翻译、编辑、重新生成、分支、导出和删除中适用于该消息的动作。不可用项说明原因或不显示，不保留可点击但无反馈的按钮；用户消息没有“重新生成用户文字”的误导操作；工具结果不能套用会导致重复执行的“重试”而不说明后果。
+3. 复制正文保留可阅读内容，复制原文保留相应标记；复制选区只处理选区，复制代码只处理代码。完成后给一次轻提示，失败可重试；剪贴板更新仅由用户明确动作触发，阅读消息或展开详情不自动把隐私内容放入剪贴板。
+
+### 4.5 导出流程
+
+1. 导出可针对单条消息、多条选中消息或整个当前分支。进入多选后显示已选数量和范围，用户能在导出前预览。默认使用当前选择的回复版本；需要包含所有版本时应有独立选项。未选中的工具详情、临时运行日志、隐藏指令和密钥不被附带导出。
+2. 导出格式包括纯文本、Markdown 和渲染图片。文本用于检索与编辑，Markdown 保留结构与代码，图片保留阅读外观。每种格式的预览说明附件如何处理：内嵌、附带文件或保留引用。不能导出只有本机可解析、接收者打不开的路径而不说明限制；文字导出中图像应有可读附件说明，避免整个问题成为空白。
+3. 图片预览允许选择明暗背景、是否含作者与时间、是否含来源信息。很长会话先显示预计尺寸和分段方式，允许输出多张图片，避免生成无法保存的超大图片。导出失败时保持选择与预览设置，用户可改为文本或缩小范围；保存成功只在确实写入目标后提示，系统文件对话框取消不视为失败，也不清除选中内容。
+4. 导出和分享不得在背后把资料发给产品自己的公开链接服务；分享动作先给用户检查结果，再交给系统分享面板。
+
+### 4.6 编辑历史、版本与附件身份
+
+1. 四种操作严格区分：编辑用于修正一条历史消息的文字或附件；重新生成用于为同一问题获得另一个回复；创建分支用于从历史位置另开可独立继续的路径；压缩用于减少发送给模型的历史负担。四者都不是删除原始内容的同义词，菜单与确认说明必须说清结果，不能统一称为“刷新”。
+2. 一次修改完成后，用户应能回答：原内容还在哪里、当前看到的是哪一版、下一次发送会使用哪条路径。版本数、分支来源和上下文边界必须有可见入口，不能藏在不可检查的后台行为中。
+3. 编辑时显示“正在编辑历史消息”，正文和附件可修改，提供“保存新版本”“取消”。编辑草稿与输入框下一条普通草稿分开保存，用户已准备的下一条问题不能被编辑内容覆盖；取消编辑返回原消息，原普通草稿仍在。保存前展示修改后的完整消息；仅删除附件但文字不变也构成有效修改；仅调整无意义末尾空白可归一处理，但不能改变用户有意保留的代码缩进。没有变化时保存可直接退出并提示未产生新版本。
+4. 编辑期间切换会话，系统先保留编辑草稿或明确询问放弃，不能静默提交半成品。保存历史编辑建立新版本并选中它，原版本保持可查看；消息原有时间位置不变，另显示编辑时间与“已编辑”标记。保存本身不自动向模型发送、不运行工具；用户随后选择继续或重新生成时才发生新请求。
+5. 编辑用户旧问题会使后续答案与新问题不再自然对应。旧问题及其后续讨论保留在原路径，新版本在当前路径的编辑点处形成新的可继续位置；界面显示“原来的后续讨论仍保留在另一版本路径”并提供返回入口。不能把旧答案直接贴到新问题下面，让用户误以为模型已针对修订内容回答。
+6. 编辑助手文本可修正已保存正文，但该版本标记为“手动编辑”，保留原生成版本入口；手动增加内容不冒充模型原始输出，对应用量、速度和来源信息不能被解释成对新增文字的计算结果。手工修订可作为后续上下文，但界面说明这是人工修改版本。
+7. 附件的历史身份：编辑可移除一张、全部图片或其他附件，也可按模型能力增加；保存后新版本呈现新附件集合，旧版本保留原集合。移除消息附件只改变该版本引用，不删除用户原文件、工作区文件或其他版本仍在使用的文件；清理无人引用副本由存储管理另行处理。从历史恢复到输入框再移除图片是草稿编辑，不立即改动历史版本；附件无法读取时显示缺失卡片与替换入口，不以“读取失败”自动移除；保存含缺失附件的版本时必须让用户知道哪些内容不可再发送。
+8. 版本选择器：同一问题多个回复版本时显示“2 / 3”及前后切换、版本列表；列表展示生成时间、模型、完成状态、是否手动编辑。切换版本只改变当前选中内容路径，不触发新模型请求；停止生成的版本也可保留并标明已停止。版本的来源引用、附件、工具记录和用量随版本切换；复制或导出默认当前选中版本；删除版本前说明是否仍有后续分支引用；最后一个版本删除后的对话含义在确认页说明。
+9. 用户在某个回复版本下继续提问，新问题归属该版本路径；切到另一版本时，不能把刚才的后续问题看似无条件接在新版本后面。界面可用“这版已有后续讨论”“切换到另一条路径”表达，用户不必看到复杂树形图，但必须能恢复每条保留路径。
+10. AC-10-001..005 与 E2E 04 约束：编辑不自动调用、删除全部图片不毁原版、草稿与历史编辑分开、手工答案有标记、版本后续关系正确。
+
+### 4.7 分支
+
+1. 用户从消息菜单选择“从这里创建分支”。新会话包含选中位置之前的当前路径及选中消息，按原顺序呈现；不包含该位置之后的讨论。新会话标题初始为原标题加可辨认分支标记，顶部显示来源会话与起点，点击可返回来源；来源会话不更名、不截断、不改变当前选中版本。
+2. 分支初始保留助手、选定模型和适用的会话设置；工作区绑定与工具启用可在分支信息中检查。一次性工具批准与“完全访问”状态 † 不随分支复制，新分支从请求批准开始 †；用户可在发送前更改设置。创建分支本身不复制外部真实世界操作，不重新执行历史工具，不重新生成过去的文件。
+3. 分支创建后，重命名、置顶、继续提问或删除其中一个会话，另一会话内容不随之改变。共享引用的附件可在两边继续读取，删除一边不应导致另一边附件失效；原会话永久删除后，分支仍保留自己的可读内容，来源入口改为“来源会话已不可用”。
+4. AC-10-006、AC-10-007、AC-10-012 约束：分支顺序与独立性、不继承一次性批准、原会话删除不毁分支。
+
+### 4.8 上下文边界、压缩与图片上下文
+
+1. 用户能阅读的全部历史不一定每次都发送给模型。上下文面板明确显示本轮纳入范围、排除原因和容量估算；被边界、轮数限制、压缩或图片限制排除的内容仍留在历史中并有标记。不能因为消息可见就误导用户模型当前一定能看见它。
+2. 上下文轮数采用“最近 N 轮”这一清楚单位；一轮包括一次用户提交及其助手回答和相关工具步骤。选择范围时不只留下孤立工具结果或没有来源的问题片段；当前用户要发出的消息始终独立加入，不计为已经完成的历史轮次。用户调整 N 后可预览范围变化，保存不改变历史内容。
+3. “从这里开始作为上下文”在时间线出现清楚分隔，说明此前消息保留但不再自动随之后请求发送；分隔不能只靠颜色表示，并在上下文面板有同样记录。设置边界不运行模型、不生成摘要；撤销边界恢复之前范围，不删除边界之后的新消息；若恢复导致超出当前模型容量，提示需要再次调整；多个历史边界保留可查看记录，当前生效边界明确。
+4. 压缩入口先展示拟压缩的历史范围、将使用的模型以及生成后如何继续；默认建议压缩较早的完整轮次并保留最近讨论，用户可修改。压缩是一次可见的模型任务，可能产生用量；它不自动改变长期记忆，不自动把摘要当作新的系统指令；失败或停止后原上下文与历史保持原状。
+5. 摘要完成后进入审阅页，显示可编辑摘要、原始范围与关键内容提醒；用户可修改事实、补回约束或取消使用。只有点击“使用摘要”后新上下文状态才生效。摘要存在压缩遗漏风险，原始记录保留可查，界面不把摘要标为无损转换；用户可选择在当前会话继续，或基于摘要创建新会话。
+6. 在当前会话使用摘要时，被压缩原消息退出自动发送范围，摘要进入相应位置，后续未压缩消息仍按原顺序保留。基于摘要新建会话时，新会话使用摘要与用户明确带入的内容，不把被替代旧消息再次附带发送；来源会话可通过链接查看，但“可打开来源”不等于“模型自动收到来源”。用户编辑摘要生成新版本，旧版本可撤销恢复；撤销压缩恢复之前上下文选择，同时保留压缩之后的聊天记录；若新容量超限，先说明再让用户选择处理。清除摘要与永久删除原历史不是同一操作。
+7. 图片上下文：历史图片是否继续发送应可在图片卡片与上下文面板中检查；用户可固定某张图片、取消固定或重新加入此前已排除图片。固定表示优先保留在后续上下文，不代表突破模型图片数量、容量或大小上限；当前轮新添加图片不能因历史自动裁减规则被静默排除。
+8. 本产品默认不自动减少历史图片；用户启用后，初始最多保留最近 `8` 张未固定历史图片，并可更改上限。固定图片与本轮附件另外列出，最终仍受模型限制；超限时显示具体数量与可调整项，不偷偷取消固定；被自动排除的图片仍可在历史中放大、保存并重新加入，不显示成文件已经丢失。
+9. AC-10-008..011 与 E2E 05 约束：边界可撤销、摘要审阅与失败、摘要新会话无重复历史、图片固定可解释。
+
+### 4.9 历史、搜索、归档、移动与删除
+
+#### 4.9.1 列表、排序与标题
+
+1. 历史行包含标题、当前助手、最近内容摘要和可读时间；运行、等待批准 †、草稿、置顶、临时不可用等状态用短标记补充。摘要以当前选中路径中最近有意义内容为准，不用隐藏工具参数或密钥作为预览；状态标记不代替标题。
+2. 置顶会话位于独立区域，普通会话按最近内容活动排序。打开、滚动和重命名不改变普通会话的内容活动时间；新消息和保存重要历史修订可以更新活动时间；仅切换回复版本不把会话顶到最近。置顶区支持用户排序，取消置顶后回到普通排序的合适位置，不强行放到首位。
+3. 全部历史确实为空时显示“还没有保存的会话”与新建入口；某个助手或关键词筛选没有结果时显示“没有符合条件的会话”和清除筛选入口，不暗示所有历史已消失。正在加载或恢复时使用加载状态，不能暂时展示空历史；长列表分段加载时保留当前位置，不使已看到条目重复或跳过。
+4. 新会话初始标题使用首条用户消息的可读摘要，避免必须等待外部模型；用户可启用自动标题并指定模型，自动标题只更新仍未被手动命名的会话。用户手动改名后，后台迟到的自动标题不能覆盖；空白、仅附件的问题使用“图片讨论”“文件讨论”等中性名称，避免把本地完整文件路径变成标题。
+5. 重命名框显示当前完整标题，允许最多 `80` 个可见字符并给出接近上限的计数；名称去除首尾空白，不能全为空；组合表情在显示与截断时保持完整。会话允许同名，列表通过助手、时间和摘要区分；重命名成功后详情、列表、搜索结果与通知入口使用同一标题。
+
+#### 4.9.2 全局搜索、页内查找与长对话导航
+
+1. 全局搜索默认查找本机普通会话与归档会话的标题和当前所选版本正文，不查临时会话、已删除会话、隐藏指令、密钥和未授权外部文件；输入框旁说明当前范围。用户可选择包括未选中的历史版本，结果明确标记来自哪个版本，不让已修订掉的内容像当前答案一样出现。
+2. 搜索至少支持按助手、时间范围、含附件和会话状态筛选；已生效条件作为可移除标记显示；切换筛选不清空关键词，清除关键词也不偷偷保留不可见条件；排序选项可见，不用不可解释的使用频率隐藏用户确实有的结果。
+3. 每项结果显示会话标题、助手、命中片段及日期；关键词突出但不只依赖颜色。点击进入对应消息并短暂标示命中位置，保留返回搜索结果入口与原搜索位置；命中隐藏版本时先明确将展示该版本，再定位，不在无提示下改变当前对话分支选择。连续打开几项再返回，保留筛选、关键词和滚动位置；来源会话已删除时及时更新或显示不可用，不打开内容相似的其他会话作为替代。
+4. 页内查找展示命中数量和前后跳转；默认范围为当前选中内容路径，包含已折叠正文和可搜索的附件文本说明，不自动读取尚未解析的所有外部文件。命中折叠区域时展开并定位，退出查找后保留合理阅读位置，不强制回到底部。
+5. 长对话可打开迷你地图或话题概览，按用户消息、回复、工具密集区域及上下文边界定位；移动到某个位置后跳到可读内容，不能只按像素猜测导致命中无关段落。缩略导航不显示难辨认的微小正文作为唯一入口，同时提供话题列表或时间标记供键盘与读屏使用。正在生成时概览可更新，但用户当前选中位置保持；新工具卡或大图加载后定位仍指向同一条消息；迷你地图、文件面板和浏览标签状态属于该会话。
+
+#### 4.9.3 置顶、归档、批量操作与跨助手移动
+
+1. 置顶是排序偏好，不复制会话、不冻结内容、不改变当前上下文；手机通过长按或更多菜单，桌面通过行菜单或右键，核心动作均有可见替代入口。可一次选择多条置顶或取消置顶，完成后说明数量并保留当前打开会话。
+2. 归档将会话从普通历史收起，在归档入口及全局搜索中仍可找到；归档不删除内容、不停止长期数据保留、不隐瞒外部服务已处理的记录。归档前若会话正在运行或等待批准 †，先提示需要停止或保持任务可见；归档会话可恢复、可打开后明确继续；继续并发送新问题时自动恢复到普通历史并给一次说明；仅打开阅读不自动取消归档。
+3. 多选模式显示选择数量、作用范围和可用操作；点击普通行切换选择，退出多选恢复正常点击。操作前可查看选中项；批量删除等明确列出数量；部分项目因正在运行不能操作时，分别说明成功与未处理项，不把整个批次笼统显示为成功。
+4. 将会话移到另一助手是改变组织归属和未来助手行为，不是重新生成历史。移动页显示目标助手、将用于未来轮次的有效提示与工具配置，以及当前会话模型是否保持；默认保留本会话选中的模型，用户可明确选择改用目标助手当前默认。历史消息原作者、模型、引用和版本保持原样。
+5. 原助手的长期记忆、快捷短语和世界书不因移动一条会话而全部搬到目标助手；未来是否使用目标助手资料在移动说明中展示；当前会话显式覆盖保留并标出，用户可逐项恢复目标助手设置。工作区绑定默认保持当前会话绑定，权限重新以请求批准起步 †；目标助手有不同默认工作区时，用户可选择是否更换，不自动移动真实文件。
+6. 会话正在生成或执行工具时，移动入口可显示但操作前要求先停止或等待完成；移动不会把正在执行的轮次突然归到新助手或新供应商。完成后用户回到会话能看到新归属，历史仍可搜索。删除助手时按 §5.2 保留会话，不能以“助手已删”为由静默删除整批会话。
+
+#### 4.9.4 删除与恢复
+
+1. 普通会话删除后进入“已删除”，默认保留 `30` 天。操作后提供立即撤销；已删除入口显示标题、删除时间和预计清理时间，可选择恢复或永久删除。临时会话不进入此区域。普通删除的确认或说明要让用户知道仍可恢复，不把移入已删除表述为即时彻底清除。
+2. 已删除会话不出现在普通历史和默认全局搜索中，也不能继续生成。恢复后回到原助手；原助手不存在时放入明确的“未分配”归属，让用户重新选择。恢复保留消息、版本、分支内容与附件引用；原置顶偏好可以恢复，但不能覆盖用户当前置顶顺序；恢复不自动重新运行旧任务。
+3. 永久删除和清空已删除区域需要独立确认，明确数量与不可恢复影响。`30` 天到期后，在本产品下一次可以执行清理时处理，不宣称应用关闭期间仍能进行本地删除。删除会话不删除独立工作区原文件，不远程删除供应商记录；应用管理的孤立附件通过单独清理预览处理；已经备份的副本是否保留由备份位置决定，界面不能承诺一次本地删除抹去所有副本。
+4. 当前打开会话被删除后，主界面进入新建或明确的剩余会话，不显示已失效输入框继续接受发送。若有未发送草稿，删除说明包括草稿将随会话移入已删除；恢复后可继续编辑。外部窗口或搜索页持有旧入口时，显示已删除状态与恢复路径，不无提示地重新建立同名空会话。
+
+### 4.10 消息与历史验收（AC-09 / AC-10 / AC-11）
+
+| 编号 | 通过条件 |
+|---|---|
+| AC-09-001 | 同一回复含中英文、嵌套列表、引用、代码、表格、公式和图片；手机窄屏与桌面均可读，一个公式故意错误时其他内容仍正常。 |
+| AC-09-002 | 复制含缩进、空行、制表和中文注释的代码块，剪贴板与代码正文一致，无语言标题或行号；切换换行显示后复制结果不变。 |
+| AC-09-003 | 二十列宽表在手机上横向查看，只有表格区域横移，正文与输入区不被推离屏幕；复制包含全部选定单元格。 |
+| AC-09-004 | Android 与桌面各自全选长消息后复制和引用，菜单没有消失或处理旧选区，引用结果对应实际选中文字。 |
+| AC-09-005 | 同一问题生成使用不同来源的两个版本，逐一切换时正文编号、来源列表和打开地址始终属于当前版本。 |
+| AC-09-006 | 来源网页不可达和离线两种状态点击引用，来源标题与原地址仍可查看，错误不清空消息，可复制地址或稍后重试。 |
+| AC-09-007 | 打开含未知远程图片链接的历史消息，未允许加载前只显示占位与来源；主动允许后失败时替代文字和正文保留。 |
+| AC-09-008 | 选择三条消息导出 Markdown，预览与实际文件只含所选范围和当前版本，工具日志及隐藏设置不附带出现。 |
+| AC-09-009 | 很长会话开始图片导出并模拟保存失败，消息和选中范围保持，可改为多张图片或文本，界面不提前报保存成功。 |
+| AC-09-010 | 读屏依次浏览正文、表格、引用与消息操作；主要内容有文字结构，图形有可读名称，折叠过程区不隐藏待批准操作。 |
+| AC-09-011 | 流式回复未结束时选取已显示段落并复制，生成继续时选区不扩展，复制结果没有空白或重复片段。 |
+| AC-10-001 | 编辑旧用户消息并保存新版本，新版本被选中、原版可查看，未自动生成回复或调用工具，原后续讨论有明确返回路径。 |
+| AC-10-002 | 编辑含三张图片的历史消息并移除全部，新版本无图片、原版本仍含三张，用户原文件、其他消息与草稿不受影响。 |
+| AC-10-003 | 普通输入框写下一问，再打开历史编辑并修改；取消后普通草稿完整，保存后也不把历史编辑文字拼进下一问。 |
+| AC-10-004 | 修改助手答案加入新结论并保存，新版本标明手动编辑，原始模型输出仍可查，用量不显示成模型生成了人工增加的文字。 |
+| AC-10-005 | 同一问题生成两版，基于第一版追问再切第二版，追问不能无提示变成第二版后续，用户可返回第一版与原追问路径。 |
+| AC-10-006 | 从第六条消息创建分支，新会话前六条按原顺序并保留选中版本，第七条之后不在新上下文；改标题与后续不改来源。 |
+| AC-10-007 | 来源会话处于完全访问 † 或已有一次性授权，创建分支后新分支回到请求批准，创建动作没有重新执行历史工具。 |
+| AC-10-008 | 设置上下文起点并继续两轮，再撤销边界；之前排除内容重新进入候选范围，后来两轮仍在；若超限有清楚处理入口。 |
+| AC-10-009 | 发起压缩后先模拟失败，原范围不变；再次成功后修改摘要并采用；只有经确认的摘要生效，取消审阅不改变历史或长期记忆。 |
+| AC-10-010 | 以已压缩摘要创建新会话，摘要替代的原始消息没有再次发送，来源链接仍能打开原记录，未把可阅读与已发送混为一谈。 |
+| AC-10-011 | 启用历史图片限制，加入超过上限的图片并固定一张早期图片；未固定旧图按规则排除，固定图保留；总量超模型限制时需用户处理。 |
+| AC-10-012 | 创建分支后永久删除来源会话，分支正文、附件和继续聊天能力仍在，来源入口说明不可用，不出现整条分支空白。 |
+| AC-11-001 | 打开很久以前的会话并滚动、切版本、改标题，再回列表；普通排序仍按内容活动规则，置顶区域与当前会话不被意外替换。 |
+| AC-11-002 | 自动标题任务未返回时先手工重命名，任务结束后列表、详情和搜索均保留手工标题。 |
+| AC-11-003 | 在有大量会话的设备上选择无匹配助手或关键词，页面说明当前条件无结果；清除条件立即恢复历史，不出现数据丢失措辞。 |
+| AC-11-004 | 用关键词加时间筛选搜索，打开靠后结果再返回；关键词、条件、结果位置保留，打开结果准确定位消息而非只跳到会话底部。 |
+| AC-11-005 | 默认搜索找不到只存在于未选中旧版的词；勾选包括历史版本后能找到且明确版本身份，打开不会无提示切换当前继续路径。 |
+| AC-11-006 | 归档一条普通会话后普通列表隐藏，全局搜索能找到并标为归档；只阅读不解除归档，明确继续发送或恢复后回到普通历史。 |
+| AC-11-007 | 选择数条会话，其中一条正在等待工具批准 †，执行批量归档或删除；结果分别说明已完成与未处理项，等待任务仍容易找到。 |
+| AC-11-008 | 将含版本、引用和附件的会话移到另一助手并保留当前模型；历史来源不变、模型仍为原选择，目标助手影响未来轮次，旧助手记忆没有整批迁入。 |
+| AC-11-009 | 删除含草稿的普通会话，先立即撤销，再删除后从已删除区域恢复；消息、版本、草稿和附件均恢复，没有重新执行历史工具。 |
+| AC-11-010 | 永久删除一个绑定工作区的会话，会话不能从已删除恢复，但工作区原文件和其他分支所需附件仍可读取，清理孤立副本需另行选择。 |
+| AC-11-011 | 搜索结果页保持某会话入口，另一处删除该会话后点击旧入口；界面展示已删除与恢复入口，不创建同名空会话，也不允许向不存在历史继续发送。 |
+| AC-11-012 | 在有长表格、大图和多次工具调用的会话使用迷你地图定位早期问题，再等待新内容加载；定位仍指向该问题，不因高度变化跳到另一轮。 |
+
+† 审批与完全访问相关条目按 §9 D-04..D-06 处理；保留编号用于历史对照。
+
+→ 用于：AGENTS.md §7.4 第 4/5 组与 §5.1 第 3 条的 `:message/by-id`、版本、分支、上下文与删除恢复落点。
+
+## 5 助手、记忆、世界书、指令卡、搜索、MCP 与技能：作用域与授权
+
+### 5.1 助手字段、继承与作用域
+
+1. 助手是可重复使用的一组工作偏好，不是模型账号，也不是历史文件夹；删除或切换助手不得让用户误认为模型服务被注销。详情在标题下同时显示默认模型和用途说明；模型未配置时显示“发送前选择模型”，不把助手标成损坏。
+2. 列表每行显示头像、名称、一行说明、标签和当前选中标记；未启用助手留在列表并显示“已停用”；默认按用户自定顺序，新增放末尾；可固定常用助手，固定组与其余助手边界清楚。搜索匹配名称、说明和标签，不搜索秘密、提示词全文或聊天内容；返回列表保留滚动位置和筛选条件。
+3. 创建页先显示名称、说明、头像和基本指令，其余设置收在独立分组。名称必填，去除首尾空白后为 `1–60` 个字符；同名允许保存，但列表附加说明帮助区分，内部身份不得靠名称判断。说明最多 `240` 个字符。头像默认名称首字，支持选图、裁剪和移除；移除图片恢复首字头像，不删除用于其他助手的原图。基本指令为空时采用产品通用行为。
+
+| 设置项 | 初始状态 | 用户看到的结果 |
+|---|---|---|
+| 默认模型 | 跟随全局默认 | 新会话显示最终选中的模型及来源 |
+| 基本指令 | 空 | 使用通用助手行为 |
+| 温度等采样设置 | 跟随模型 | 不发送用户没有明确设置的覆盖值 |
+| 联网搜索 | 关闭 | 需要时在对话中开启 |
+| 长期记忆 | 读取与自动建议分别关闭 | 摘要分别显示两个状态；旧记忆仍可管理 |
+| MCP、浏览器及设备工具 | 未选择 | 不因复制名称或导入提示词自动开启 |
+| 默认工作区 | 无 | 新会话不获得本地文件访问范围 |
+| 技能 | 未选择 | 用户逐项绑定；新安装技能不会自动加入旧助手 |
+| 快捷短语 | 空 | 不显示无用的空短语组 |
+| 聊天背景 | 跟随外观设置 | 不改变应用其他页面 |
+
+4. 每个可继承字段都有明确“跟随”选项，而不是用空输入框同时表达“未配置”“关闭”“空值”。默认模型显示“跟随全局：当前模型名”；已有会话模型按固定规则处理，只提供“使用助手当前默认模型”这一明确取值动作，不持续跟随。其他支持继承的产品偏好按会话、助手、全局取值；生成参数按 §2.1 的模型与连接层级取值。点“恢复跟随”后即时显示有效值，用户不必发收费请求验证。
+5. 会话在创建时固定初始模型，助手以后改变默认模型不会使旧会话静默换模型；用户可在旧会话主动重新选择。助手其他可跟随设置只影响此后开始的轮次，正在生成的回复保留开始时设置；保存后说明“新会话或下一轮生效”并按字段注明。已有会话显式覆盖继续保留；默认工作区变更只作用于新会话，既有会话不在后台改绑目录。用户可查看受影响会话，但没有一次点击就给所有历史会话扩大权限的快捷操作。
+6. 基本指令编辑区支持多行、查找、撤销、字数及估计上下文占用。导入文本在预览页显示编码和正文；检测失败保留原文件，提供重新选择编码或粘贴文本入口；导入不自动执行文本中的命令。变量通过“插入变量”按钮选择，列表显示中文含义、变量名和示例值；未知变量按原文保留并标记，不擅自删除大括号中的用户内容。
+7. 变量预览以即将发送的会话环境计算：日期、时间与时区同时显示；模型名和模型标识分开；设备信息、昵称等可含个人内容的变量须用户主动插入；没有电量信息的平台显示“不可用”，不伪造百分比。午夜跨日后发送使用发送时的值；已发消息保留发送时结果，不因重开历史改成今天日期。
+8. 会话专用指令默认未覆盖。用户开启后选择“在助手指令后补充”或“替换本会话指令”，默认补充；界面将最终效果分为助手部分和会话部分展示，并能查看本轮有效文本。选择替换时保留原助手文本的只读参考，不立即删除；清空补充文本回到无补充状态；清空替换文本时必须明确选择恢复跟随，避免空白表单悄悄屏蔽所有助手指令。
+9. UX-12-001..008 约束上述定义、列表、创建字段、继承、会话模型、变量与会话指令。
+
+### 5.2 预设、短语、文本替换、复制、导入与停用
+
+1. 预设消息用于给新会话提供示例上下文，编辑页按顺序展示每条角色和内容；用户可拖动排序、复制、停用或删除单条。预设不伪装成用户已发送历史；新会话在欢迎区域显示“包含 N 条预设”，展开可见；预设附件缺失时创建会话前提示修复或排除，不悄悄发送孤立说明；修改预设不回写已存在会话。
+2. 快捷短语具有名称、正文和可选分组；选择时默认插入光标位置，不立即发送；已有选区时替换选区。含变量短语先展开成可编辑文本，用户可撤销整个插入动作；短语与助手关联可移除，移除不删除在其他助手使用的原短语；空正文不能保存，名称允许相同但在选择器内显示分组。
+3. 高级文本替换单独标为“发送前替换”和“仅显示替换”，两者不共享含糊开关。每条规则含名称、匹配文本、替换文本、启用状态和测试区，默认全部停用；用户输入示例后可看变更前后差异及命中数量；无效表达式不得保存为启用；耗时过长的规则自动停止本次处理，并让用户直接发送原文或返回编辑。仅显示替换不得影响复制原文、历史导出和下一轮上下文；发送前替换必须在有效上下文预览中可见。
+4. 复制入口先让用户选择“仅复制角色”或“选择内容”。仅复制角色带走名称、说明、头像、指令和非权限类显示偏好，新名称默认“原名 副本”；选择内容可勾选短语、世界书绑定、技能选择、工具选择、助手专属记忆和默认工作区。权限项默认不选，复制后工具默认关闭；工作区只能复制关联，不能声称复制了目录文件；供应商凭据从不随助手复制。
+5. 选择性复制页为每种内容写明“复制独立副本”或“继续引用原项目”：专属记忆和快捷短语建立独立副本，世界书和技能保留引用；用户可展开查看原项目。复制完成弹出摘要，列出已复制、仅关联和未复制项；重复点击只产生一个助手；空间不足失败时原助手不变，列表不出现可选但打不开的半成品。
+6. 从文件导入助手先进入待审页，显示角色信息、未知字段、引用缺失和需要重新授权的能力。已安装同名技能不得只靠名称自动匹配，用户选择匹配后才建立关联；外部文件写着“完全访问”也不改变本地权限。导入已有身份时提供更新现有或作为新助手，默认作为新助手；更新模式先显示变更摘要，并保留本地凭据与独立会话覆盖。
+7. 停用助手将它从新会话快捷选择中隐藏，但历史仍可阅读，进行中回复允许完成；打开旧会话显示“助手已停用”，用户可临时选择其他助手继续。删除先列出关联会话数量，并提供“保留会话并移至通用助手”与“同时选择要删除的会话”，默认保留；删除不连带删除共享世界书、技能、供应商或外部工作区；删除后的会话保留消息当时使用的助手名称快照。
+8. UX-12-009..017 与 AC-12-001..010 约束上述预设、短语、替换、复制、导入、停用与失败恢复。
+
+### 5.3 长期记忆与用户画像
+
+1. 长期记忆默认关闭，自动整理也默认关闭，这是两个独立设置：“读取已保存记忆”控制未来回复是否获得相关记忆；“自动建议新记忆”控制对话后是否产生待审候选。关闭自动建议不删除已有记忆，关闭读取也不删除资料。开启时用一屏说明记忆存于本机、被选中内容会随模型请求发送、用户可查看和移除；没有开启记忆的助手不得悄悄读取其他助手的专属记忆。
+2. 管理入口为“设置 → 记忆”，助手详情另有“此助手记忆”筛选入口；页面上方分别显示有效、待审和已归档条目数量。主列表每行包括摘要、类别、适用范围、来源和最近修改时间；摘要仅作浏览，点开总能看到完整正文。筛选支持全局、某个助手、类别、手动或自动来源、状态；搜索默认只搜有效正文，用户主动打开归档筛选后才搜索归档记录。
+3. 记忆按“身份与背景、工作方式、表达偏好、长期要求”四类组织；分类帮助管理，不改变权限。正文是可独立理解的事实或偏好，例如“用户希望项目讨论优先给出可验证步骤”，而不是缺少上下文的“喜欢这样”。手动新建必须填写正文；建议上限为 `2,000` 个字符，超出时仍保留编辑稿并提示拆成多个明确条目。分类和范围在保存前可改变，不自动根据正文推断成全局。
+4. 用户直接说“记住我用简体中文”时，聊天中出现待保存卡片，正文、类别和适用范围可见；默认范围为当前助手，用户可改为所有助手；按钮为“保存”“修改”“不保存”。只有保存成功才显示“已记住”，模型的自然语言承诺不能取代产品状态；用户反悔取消记录为未保存，不在下一轮反复催促。临时会话不提供写入记忆的确认按钮，而说明“临时会话不会新增长期记忆”。
+5. 手动保存不改变“读取”与“自动建议”两个开关。关闭读取而开启自动建议时，只能从用户选定来源产生待审候选，普通模型请求仍不带有效记忆；助手摘要分别显示两个状态；过去会话全文检索保持独立设置。用户能明确选择只整理、只使用、两者都用或都不用。
+6. 自动建议开启后，整理结果先进入待审区，默认不直接影响回复。一次整理卡片给出候选数量、来源会话和简短原因，不把推理过程当作确定事实；用户可逐条接受、改写、变更范围或拒绝，也可一次接受已勾选项；批量接受前展示范围分布，例如“全局 1 条，产品评审 3 条”。被拒绝候选在相同内容未变化时不反复建议；拒绝不删除作为来源的聊天。
+7. 候选不得把临时计划、假设、引用、角色扮演设定和模型猜测直接写成用户事实。整理页用一对来源片段和候选正文帮助审阅；用户说“假设我下个月移居上海”时，候选必须保留假设属性；用户明确要求保存敏感内容时，卡片仍展示实际范围；自动整理默认排除密码、令牌、完整金融账号以及与当前任务无关的高敏感细节。
+8. 整理任务显示排队、读取相关对话、生成候选、检查重复、等待审阅、完成或失败；只呈现可解释阶段结果，不要求暴露模型内部思考。用户可停止正在整理的任务，已生成候选保留为草稿；停止后不继续后台收费调用。失败显示原因和重试入口，原有效记忆保持可用；重试同一任务更新该任务候选，不复制第二套相同记忆。
+9. 更新记忆前显示旧内容和新内容。若用户先前保存“每周一提交周报”，后来说明“改到周五”，候选应提出替换而不是并列保留两条有效要求；确认替换后旧版本进入历史，聊天来源消息不改写。多个范围冲突时，当前助手专属偏好在助手下优先于全局偏好，并在有效记忆预览中说明覆盖关系；不同人物或项目的相似文字不能仅因词句接近自动合并。
+10. 归档后条目立即退出新请求的有效记忆集合，历史仍在归档页可恢复；归档确认文案明确“以后不再用于回复”，不宣传物理擦除。用户说“忘记这件事”时，产品先显示识别出的相关条目及范围，允许一次选中多个；没有匹配项时据实说明，不能以自然语言声称已删除所有副本；原聊天仍存在，若也要删除源会话，应给独立入口和影响说明。
+11. 永久删除从归档页发起，要求二次确认并显示条目数量；删除后本产品内记忆搜索和恢复入口均不再显示该条；已导出备份、先前发给模型的请求和原始聊天不被承诺同时消失。批量清空先按全局、当前助手或全部选择范围；从“此助手记忆”进入清空时默认只选此助手，不能把全局内容悄悄扩大进去；删除失败报告成功与失败数量，允许只重试失败项。
+12. 合并旧备份或重新整理旧来源，不得把本机已明确归档或删除的记忆自动恢复为有效；可识别旧条目保持停用并列为待审冲突，用户明确选择重新保存或恢复有效后才参与未来请求。覆盖恢复整类记忆前单独列出将恢复的有效条目数量并要求明确选择。忘记只停止独立记忆使用，源聊天仍可能含相同信息；确认页提供另行处理源聊天或新建会话的入口。
+13. 用户画像是结构化个人说明，至少包含称呼、主要语言、时区、工作领域及用户自填备注；所有字段可空，首次安装不得用设备名称或系统账号自动填姓名。画像修改由用户保存，不因一次提问自动更新；选择用于某助手时可预览将发送字段。隐藏字段表示不注入未来请求但保留本地资料，删除字段清空本地值，两种操作文案分开。
+14. 每条回复的“本轮上下文”显示记忆是否启用、使用了哪些条目、范围及内容版本；默认只展示摘要，展开可看本轮实际内容。用户修改记忆后，旧回复仍能解释当时用了什么，新回复使用更新版本；界面不把“此记忆已注入”写成“模型已经遵守”；发现错用时可直接从回复跳到该记忆编辑页。
+15. 记忆预算与正文上下文共同占用模型容量；设置页以估计值显示本轮记忆占用，默认有限精选，避免全部历史记忆无限加入。用户可为少量关键条目标记“始终提供”，但超过可用容量时必须在发送前说明哪些项目仍无法纳入；不得静默截断记忆中间的否定词、条件或单位；只提供摘要时预览明确显示摘要，不把摘要当作全文已发送的证据。
+16. 过去会话检索与长期记忆分开控制；开启记忆不等于授权所有历史会话全文检索。助手请求引用旧对话时，状态卡写明搜索范围，并标出命中的会话标题和日期；引用片段能跳回来源，来源已删除时显示不可访问，不编造内容。跨助手检索默认关闭，开启时可限定助手或会话；临时会话不进入普通历史检索结果。
+17. 临时会话默认不读也不写长期记忆。用户主动允许本次临时会话只读记忆时，顶部持续显示“临时 · 已使用保存的记忆”；许可不带入下一次临时会话，关闭后不产生新候选。无论是否只读，临时内容都不能进入自动整理、画像更新或跨会话检索；转换为普通会话必须由用户显式选择，转换后是否整理此前内容另行询问，默认不回溯整理。
+18. UX-13-001..017 与 AC-13-001..011 约束上述开关、四类、候选、冲突、归档、删除、画像、预算、检索与临时会话隔离。
+
+### 5.4 世界书与指令卡
+
+1. 世界书存放某个故事、项目或术语体系的背景，条目在符合条件时提供给模型；指令卡存放用户主动选择的任务方式，例如“逐步教学”或“先检查假设”。两者在导航中分开；世界书不替代完整文件搜索，指令卡不自动授予工具权限；首次进入各给一个短例子，用户可直接创建。
+2. 世界书列表显示名称、说明、启用条目数、绑定助手数和修改时间；新建书名 `1–80` 个字符，说明最多 `300` 个字符。一本书默认未绑定助手，也不全局生效；删除前显示绑定关系，用户可先停用或解除绑定；停用只影响未来请求，已发出上下文与历史消息不改写。列表搜索匹配书名和说明，书内搜索再匹配条目正文和关键词。
+
+| 条目字段 | 默认值 | 行为 |
+|---|---|---|
+| 标题 | 必填 | `1–80` 个字符，作为管理名称 |
+| 正文 | 必填 | 完整保留条件、单位和否定表述 |
+| 启用 | 开 | 仅在书已绑定并启用时可能触发 |
+| 触发方式 | 关键词 | 可改为始终提供或表达式 |
+| 关键词关系 | 任一命中 | 可显式改为全部命中 |
+| 扫描范围 | 最近 `4` 条用户消息 | 不扫描无关助手的会话 |
+| 区分大小写 | 关 | 对有大小写的语言生效 |
+| 持续次数 | `0` | 只影响当前符合条件的一轮 |
+| 冷却次数 | `0` | 允许下一轮再次判断 |
+| 延迟次数 | `0` | 新会话立即参与判断 |
+| 同时命中顺序 | 用户排序 | 相同顺序再按创建先后稳定处理 |
+
+3. 关键词按独立标签输入，支持包含空格的短语；粘贴逗号分隔文字时先预览拆分结果，正文中的逗号不受影响。空关键词不能作为匹配所有内容的隐含条件；选择“全部命中”时，页面示例明确是扫描范围内合计包含全部词，而不是要求同一条消息连续出现。精确短语与普通关键词分别命名；测试区可验证中文无空格句子、英文大小写和标点变化。
+4. 表达式是高级选项，切换前保留原关键词草稿；无效表达式、匹配耗时过长或空匹配范围都给具体反馈；用户可保存为停用草稿，但不能启用不可执行规则。预览区显示测试文本、命中部分和未命中原因；正则内容属于条件，不是要发送的设定正文，产品不得把表达式本身默默插进模型指令；导入的未知表达式语法保持停用并显示原文。
+5. 正文放置位置用用户能理解的语言表达：基础背景、当前问题前、最近若干消息之间；高级展开后可指定角色与深度，默认“基础背景”。深度为非负整数，超过当前可用消息数量时显示实际放置位置，不让条目消失；位置预览用有顺序的文本块说明，把助手指令、世界书和本轮输入区别开。
+6. 本产品统一以用户提交的一轮作为持续、冷却和延迟计数单位；工具往返、流式片段、模型内部重复请求不增加计数。编辑历史并生成新分支时，该分支重新按自己的用户轮次判断，其他分支计数不变；界面不得只写“消息数”而不解释是否包含工具。一次发送失败且未形成有效用户轮次时不消耗持续或冷却次数。
+7. 持续为 `2` 表示当前触发轮之外，后续 `2` 个用户轮次继续提供该条；冷却为 `3` 表示本次触发后，接下来 `3` 个用户轮次不接受新的独立触发；持续期间不重复插入同一条；延迟为 `2` 表示会话已有 `2` 个有效用户轮次后才开始参与触发判断。三个字段旁始终带可切换的时间示例；修改只影响未来判断，并在当前会话状态中显示“规则已更新”。
+8. 同一轮多条命中按显示顺序加入，同一条只加入一次；一本书与另一书存在相同标题不代表同一条；正文近似重复可给编辑建议，但不自动删除或合并。上下文预算不足时，优先保留用户标记为关键的条目，再按书和条目顺序选入；未选入条目列在“命中但未提供”并附原因；不得将半截条目送出却显示完整命中成功，特别不能遗漏例外和禁用条件。
+9. 每轮生成前的上下文检查页展示启用世界书、扫描范围、命中条目、持续条目和未加入原因；聊天中的注入提示默认简洁显示“背景 3 条”，点击展开标题和来源书。用户可在发送前临时排除某条，只影响本轮，不改变全局书内容；已发送轮次保留当时条目的正文快照，之后修改世界书不改变历史解释。
+10. 条目复制生成独立新条目并在标题后加“副本”；批量移动先选条目再选目标书，确认页写出数量及源书、目标书；移动保留正文与规则，绑定范围随目标书变化，因此必须提醒可能影响的助手。移动后提供撤销；目标书已删除或无法写入时整次移动失败，源书条目仍在，不留一半在两处。
+11. 导入世界书先显示书名、条目数量、可完整导入项和需要人工检查项；未支持的宏、定时语义或规则保持原文并停用，不能静默当作普通正文执行。用户可勾选部分条目；重复标题可保留、改名或跳过；结果页列明新增、跳过和待修复数量；导入本身不给助手绑定新书。
+12. 导出默认只含选中书的内容和规则，不包含聊天、用户记忆、供应商凭据或工作区文件；导出前可看书名及条目计数；只选部分条目时文件内明确标为部分导出；分享通过系统面板或用户选择保存位置，不自动上传社区目录。
+13. 指令卡有名称、简短说明、正文和可选输入占位；选择后输入区上方显示卡片名称和“仅本轮”标签，默认只作用一次，发送后恢复未选状态。用户可改为当前会话持续应用，顶部显示持续标记并可一键关闭；指令卡正文不直接混进用户可见输入稿，用户能展开查看将附加的指令；导出本轮上下文时可区分原输入和卡片内容。
+14. 同时选择多张卡片时允许拖动排序，预览按同样顺序显示；两张卡都要求互斥输出格式时，发送前提示冲突并让用户保留一张或继续自行组合，不自行猜测胜者。“学习模式”不能在用户关闭后继续留在隐藏上下文；“简洁回答”不能永久改写助手全局指令；编辑库中卡片只影响未来使用，已发送消息保留当时版本。
+15. 带输入占位的卡片先收集必要信息，如目标读者、语气或输出长度；必填项缺失时可保存草稿，但不能显示为已应用；取消填写回到原草稿。用户填入的自由文字按内容处理，里面出现另一张卡的名字不自动选择该卡；卡片可复制或导入，但权限、工具开关和外部操作授权不随正文转移；实际调用工具仍按 §5.6 显示。
+16. UX-14-001..016 与 AC-14-001..010 约束上述条目合同、计数、命中、移动、导入导出与指令卡组合。
+
+### 5.5 联网搜索与来源
+
+1. 输入区搜索按钮显示“关闭 / 自动 / 本轮必须搜索”三种状态，默认关闭。自动表示模型可按问题决定是否搜索；本轮必须搜索表示答案形成前至少尝试一次配置好的搜索路径；尝试失败可报告失败并请求继续，不允许只靠模型知识回答却保留“已联网”外观。状态对当前会话生效，按钮旁能查看来源是助手还是此对话覆盖。
+2. 搜索选择器先分“独立搜索服务”和“模型自带搜索”，再列具体可用项；MCP 搜索工具出现在工具页，可从搜索页跳转，但不伪装为同一个凭据设置。选择模型自带搜索时，若当前模型不支持，选项不可用并显示原因；切换模型后原设置不适用时，输入区明确标记需要重新选择，不自动改用未知第三方。不同路径的费用与内容发送对象在详情中说明。
+3. 独立服务新增页包含名称、服务类型、服务地址、所需凭据和可选请求偏好；名称可自由填写，服务类型不能靠名称猜测；非必需凭据留空时说明可用条件；必需项缺失时可保存草稿但不能测试；地址显示实际目标域名，改为代理后立即更新；保存不发搜索请求；“测试连接”使用明确小型测试查询并告知可能产生一次服务调用。
+4. 服务列表显示启用状态、最近测试结果和凭据是否齐备；拖动排序只改变选择器排序，不改变当前会话已选服务；多密钥用别名区分，不在列表露出完整秘密；某密钥失效只标记该密钥，本次请求是否切换下一密钥必须属于用户已启用的策略，不为逃避限制无限重试；复制服务配置默认不复制秘密，用户明确勾选后才进入敏感配置预览。
+5. 搜索启动时，聊天时间线出现简洁任务卡，显示将要或正在查询的短语、服务名和开始时间；多个查询按发生顺序列在同一轮下，不把重复等待动画当成多个已完成搜索。查询包含附件信息时，摘要提示“查询使用了附件中的文字”，用户可展开看实际查询；搜索卡不把模型内部推测展示为已发现事实，也不显示伪造进度百分比。
+6. 搜索结果卡至少包含标题、站点或域名、链接、简短摘要和获得时间；来源提供发布日期时另列发布日期，没有提供则显示未知，不把抓取时间冒充发布日期。结果标题为空可用域名和路径生成中性标题；相同网页经不同查询返回时合并为一个来源项，并保留它被哪些查询发现的关系。
+7. 全文读取默认按需，搜索结果摘要足以完成任务时不额外抓取所有网页；读取卡显示正在打开的域名，成功后标记“已读全文”或“已读部分”，被长度限制、付费墙或动态页面阻挡时据实标记。若搜索服务已提供全文，产品不再默认让另一抓取工具重复读取；用户可在详情选择重新获取；读取失败不删除已取得标题和摘要，也不伪装成没有结果。
+8. 多语言或地区结果保留原题名并可展示翻译；搜索语言影响查询偏好，不把结果语言当成事实真伪判断；用户指定日期范围而服务不支持精确过滤时，在搜索详情明确说明采用关键词辅助，不能给出“已严格筛选”标签；时效性回答把内容日期放在结论附近。
+9. 正文引用使用连续编号或短来源标记，点选打开来源详情；每个标记必须能追到真实返回的链接，不能仅从模型输出文本认定网址已被读取。来源详情包括页面地址、标题、获取方式、日期和支持片段；支持片段可以为空，但此时不能声称产品已验证该句话；回答没有附引用时，搜索卡仍可查看全部使用过的来源。
+10. 同一来源在同一回复重复引用复用编号，不使来源列表不断增长；来源列表默认按正文第一次引用顺序排序；未用于正文的搜索结果归入“其他结果”。从正文点引用，列表滚动到对应项并突出，返回正文保持阅读位置；手机用底部来源面板，桌面可用侧栏；面板关闭不关闭正在进行的回复，也不改变滚动跟随状态。
+11. 来源链接默认先在可见浏览器页打开，地址栏持续显示完整域名；用户可选择系统浏览器，并记住此偏好；链接为下载、外部应用唤起或未知协议时，先说明动作，不把普通看来源变成静默安装或执行。已失效网页仍保留历史引用与当时摘要；再次打开失败显示当前状态，不删除旧回答。
+12. 模型从网页得出的推断和网页明确支持的描述在表达上保持区别；产品不提供“引用已核实”一类无法保证的总标章。用户可对某段回答选择“检查来源”，查看关联片段并提出新问题；此操作默认把选中句子和相关来源放入草稿，确认发送后才产生新调用；来源相互矛盾时保留各自日期和表述，不通过只显示一条来源制造一致。
+13. 没有结果、服务不可达、凭据失效、额度不足、访问受限和解析失败分别命名；没有结果允许修改关键词；凭据失效直达对应服务凭据字段；额度不足指向用户所配置服务的用量页，不引导购买本产品不存在的额度。重试前保留原查询，用户可编辑；连续失败后提供切换已配置服务，但不自动向另一个未选服务发送同一批私密查询。
+14. 停止搜索后，已返回结果保留，尚未开始的查询不再启动；正在形成的答案显示已停止，用户可选择利用已有来源继续或重新搜索；继续属于新的明确请求，时间线上分得清。用户在搜索中切换模型或供应商，当前轮仍使用开始时配置；若选择终止当前轮并切换，则停止后再开始新回复，不能把两家服务的未完成工具状态硬接成一次已完成回答。
+15. 搜索页默认不保存独立长期查询历史，查询跟随所属会话保存；临时会话查询不进入普通历史，但发送给搜索服务和模型的内容仍可能被其处理；查看已有结果不需要新的联网请求；导出回答时可勾选来源附录，纯文本导出包含可辨认编号和完整链接，不能只剩没有目标的上标数字。
+16. UX-15-001..015 与 AC-15-001..010 约束搜索模式、来源合并、日期、全文读取、失败与停止。
+
+### 5.6 MCP 连接、工具面板与执行边界
+
+1. MCP 页面将服务器解释为向模型提供工具的连接。新增服务器、连通服务器、启用工具、允许在会话中使用、批准一次动作 † 是五个不同状态；连接成功仅证明服务器可以回应，不代表全部工具已启用，更不意味着可写入任何外部系统。列表用“未连接”“已连接，未启用”“可用”“需登录”“连接失败”表达状态，避免只有绿色圆点。
+2. 统一工具面板在输入区一跳可达，按本机工具、搜索与网页、MCP、技能相关能力分组；每项显示名称、来源、简短用途、读写性质和本会话启停状态；搜索工具名称时也匹配说明。被全局停用、系统拒绝或平台不支持的项目仍可在“不可用”筛选中看到原因，但不作为可调用能力发给模型；会话不能通过自己的开关越过全局停用。
+3. 会话工具选择默认跟随助手；用户改成自定义后，面板顶部显示“此对话自定义”并提供恢复跟随。助手后来增加工具时，已自定义会话不自动增加；跟随助手的会话显示新增项，但需要明确授权的能力仍不能自动获得执行许可；恢复跟随前给出即将增加和移除的工具摘要。
+4. 连接方式四类：HTTP 流式连接（地址及可选认证；网络可达、地址格式有效）、SSE 连接（地址及可选认证；服务支持该方式）、本地进程连接（命令、参数和可选环境项；当前平台有可用运行环境）、导入配置（选中文件或粘贴文本；先预览、逐项确认）。新增页默认 HTTP 流式，但用户可切换；切换时各类表单草稿分别保留，隐藏的本地命令不参与 HTTP 测试。
+5. 地址字段显示目标域名，不接受只有空白的值；命令方式把程序和参数分开呈现，同时给完整可读预览；所有凭据字段默认遮蔽，并提供复制后短时提示。测试连接是独立操作，结果包括能否连接、是否需要登录、是否返回工具清单和耗时；获取清单不自动执行清单中的业务工具；清单为空显示“连接成功，未发现工具”，可保存并稍后刷新。
+6. 失败时显示可理解阶段，例如地址无法访问、服务拒绝认证、返回内容无法识别；原表单保留，用户不必重新填密钥；测试中关闭页面可选择继续后台测试或停止，结果回到该服务器行。OAuth 登录先显示服务名称、目标域名和将授予范围，再进入该服务登录页；取消后服务器保留为待登录草稿；回调成功后明确显示登录账号及状态，不以浏览器关闭作为成功；旧会话回调不得登录到另一服务器配置。
+7. 退出登录只清除此连接在本机保存的凭据，已有会话和工具结果保留；服务器端撤销若需额外步骤，详情给“前往服务管理授权”入口，不谎称本机退出已撤销所有远端权限。凭据过期时受影响工具显示需登录，普通聊天仍可用；重新登录后恢复原工具选择和审批策略，但服务器新增权限范围需再次说明。
+8. 手机本地进程连接需要工作区运行环境已就绪；环境缺失时新增页可保存配置，测试按钮改为“先配置运行环境”，返回后保留表单。桌面显示命令将在本机用户权限下运行；导入其他平台本地命令时不自动执行，而列为待适配，可编辑路径并再次测试；界面不把平台不兼容混作账号密码错误。
+9. 导入多个服务器时先展示候选列表、连接方式、目标地址及是否含秘密；每项默认未启用；用户选择后可批量创建，重名服务器提供重命名、更新或跳过，默认重命名为新连接；更新模式显示地址、命令、凭据和权限变化；未知字段留在导入报告，不原样执行；部分失败列出成功与失败项，允许只重试失败项。
+10. 分组仅用于管理显示，不产生权限继承；刷新工具清单时保留现有工具的用户选择，新增工具默认关闭，已删除工具标为不可用并退出未来调用清单；工具说明发生实质变化时显示更新提示，原历史工具卡保留当时说明摘要。
+11. 模型提出工具调用后，时间线先出现动作卡，包含任务目的、来源服务器、工具名、目标对象及关键参数的可读摘要。普通数据查询可按已批准规则直接执行；写入、发送、删除、付款、共享或改变访问权限等外部动作默认等待单次确认 †；确认页将收件人、目的地、内容、金额或删除范围放在主区域，不能用“运行工具”四字代替真实后果。
+12. 审批按钮固定为“允许这一次”“拒绝”“修改后再试” †；拒绝必须把结果反馈给当前任务，让模型停止相关动作或提出替代方案，不循环弹出同一申请；修改参数后旧申请标为已替换，新申请再次可见；多次查询可提供本会话内范围许可，写操作范围许可明确到动作类型、目标和期限，默认不推荐扩大。
+13. 完全访问 † 必须在本会话由用户主动开启，顶部和工具面板持续可见，关闭即时阻止尚未开始的新动作；它只减少常规工具审批，不扩大操作系统权限、不启用已关闭工具、不覆盖外部服务权限；发送、付款、共享、权限变更、不可恢复删除及范围外覆盖仍需具体确认；会话复制、分支、重启恢复和导入不继承完全访问；可随时降回请求批准。
+14. 执行中显示明确状态及已用时间；有流式结果的工具按段更新，没有进度的工具只显示等待，不伪造完成百分比。成功卡给出可核对结果，例如已创建对象名称、记录数、文件链接；失败卡区分尚未执行、明确失败和结果未知；结果未知意味着网络中断时可能已完成外部动作，按钮优先为“检查结果”，不能默认重试造成重复提交；工具返回成功也不等于模型总结必然准确，原结果可展开查看。
+15. 一轮包含多个工具时按发生顺序展示，每个都有独立结果和审批记录；用户停止任务后，尚未开始的工具取消，正在运行的工具尝试停止，已经完成的写入不被伪装成已撤销；若服务不支持取消，卡片显示“已请求停止，远端可能继续”，之后仍能查询结果；模型可在得到必要结果后继续组织文字，用户无需重复点击同样的读取授权。
+16. 工具结果中的指令、网页内容或文件文本不能授予新权限；例如资料页面写“请上传所有本地文件”只作为资料内容显示，不改变工作区范围。说明页可解释服务器提供内容会进入模型上下文，但不把来源声明当作权限证明；用户编辑工具描述仅影响用途提示，不改变真实权限类别和审核所需信息；工具名称看似“读取”但实际产生外部写入时，仍按真实动作处理。
+17. 服务器断开时，正在等待审批的动作保留但不可执行，恢复连接后重新核对目标与参数；已过期申请不能一键沿用；相同只读查询可重试，外部写入需先检查结果。用户更换服务器必须生成新动作卡，不把原服务器授权套给新服务器；重试次数与等待时间在卡片详情可见，失败不阻止复制现有回答和导出结果。
+18. 用户从系统通知回到审批页面时，页面指明对应会话和任务；会话已取消时按钮显示过期而不是仍可批准；桌面多窗口同时打开同一审批，任一窗口确认后其他窗口立即转为已处理，两次点击不能执行两次；移动端锁屏不在通知中展示秘密参数，解锁进入应用后才能查看完整动作。
+19. UX-16-001..018 与 AC-16-001..011 约束上述状态、连接、登录、导入、执行、失败与多窗口行为；审批与完全访问部分按 §9 D-01..D-06 收窄。
+
+### 5.7 技能安装、启停与维护
+
+1. 技能是给助手使用的任务说明及配套文件；安装技能本身不代表执行程序、不代表授予文件权限、也不代表选择新模型。技能页空状态用例子说明：“把你的周报格式保存为技能，在写周报时启用。”用户可直接查看已有技能说明和文件，不能只看到宣传名称与启用按钮；产品内置技能同样可检查、可关闭，不享有不可见特殊权限。
+2. 技能列表显示名称、简短用途、来源、版本或安装日期、启用状态和被多少助手引用；默认按名称排序，支持最近安装、最近使用和用户分组；搜索匹配名称、用途与标签，不自动上传查询到远端。来源可为用户编写、本地文件或公开链接；外部链接展示实际域名或仓库位置；名称相似技能保持各自身份。
+3. 技能详情分“说明”“文件”“使用范围”“版本”四部分：说明完整可读、可查找；文件列出相对位置、类型和大小，必要时预览；使用范围列出已绑定助手和独立选择的会话；版本页显示来源及更改记录，用户编辑后标为本地修改。用户不需要理解打包格式，也能知道内容是谁提供、实际要做什么、下一次会在哪里用到。
+4. 添加技能提供粘贴文本、选择文件、选择文件夹和输入公开链接；每种方式先生成预览，再让用户安装。粘贴文本自动提取可识别名称与说明，但用户能改；无法识别时让用户填写，不把整段第一行当成不可编辑名称；空正文不能安装；预览显示入口说明、配套文件数、总大小和警告项，不以“解析成功”替代内容审阅。
+5. 文件导入只接收明确支持的文本与压缩包类型；压缩包预览展示将安装的目录树摘要，拒绝越出目标目录的路径，不覆盖用户其他技能或工作区文件；过大文件、重复入口、缺少入口说明、未知编码分别给出原因，用户能保留原文件并重新打包；同一压缩包多个技能先列候选、逐项勾选，不默认把整包任何文本都装成可用技能。
+6. 链接导入显示仓库或网站、分支或版本、选中路径和即将获取的文件范围；输入目录链接时只检查该目录中的候选技能；输入项目首页时先让用户选候选，不自动下载整个项目所有文件；安装确认页保存可辨认来源版本，以便之后知道内容是否变过；链接不可访问、需登录或已删除时保留输入并提供本地文件导入，不声称安装了空壳技能。
+7. 新安装技能默认未启用、未绑定助手；安装完成后主要动作是“查看内容”和“选择使用范围”，用户可在确认范围时启用。名称与已有技能冲突时默认作为新技能并加辨认后缀；用户选择更新现有技能才进入对比；第三方提供的启用开关、完全访问声明或系统指令不自动生效；配套脚本只是技能文件，执行仍必须经过当前会话工具权限。
+8. 全局启用表示技能可供用户绑定，不表示所有助手都能使用；新助手默认未选择任何技能；用户可显式选若干技能，或选择一个固定清单；后续安装其他技能不会加入已有清单。会话默认跟随助手已选清单，也可切换为此对话自定义，切换时显示增减差异；全局停用具有最高效力，任何助手或会话覆盖都不能重新唤起。
+9. 输入区技能入口显示当前可用数量，展开后能临时选用某项并查看用途；用户主动指定技能时，当前轮显示“使用技能：名称”；模型自动选择已允许技能时也在任务记录说明使用了哪项；未选技能不应作为可执行说明进入上下文。停用某技能后，尚未开始的轮次不使用它；正在进行的轮次继续使用开始时内容，用户可停止该轮再重发。
+10. 技能要求的条件在详情中列为“需要工作区”“需要指定工具”“需要联网”或“需要用户填写资料”等；缺少条件时允许查看和安装，但使用前给出具体补齐入口；产品不能把技能文字中要求的条件当作已取得授权。例如技能要求读取项目文件，用户尚未绑定目录，则显示需要选择工作区；用户拒绝后可以只获取步骤说明，不自动扫描电脑。
+11. 多个技能同时适用时，当前轮展示选择列表和顺序；用户可排除冲突项，模型也可说明仅采用其中一项；技能对输出格式的要求不应悄悄覆盖用户本轮明确要求；冲突无法协调时提出一个具体问题，保留草稿和已选择内容；同名文件在各自详情中区分来源，不将两个技能配套文件混为一组；用户能通过本轮上下文查看实际使用说明版本。
+12. 用户可复制技能作为自己的版本，默认名称“原名 自用”，保留来源说明但建立独立身份；编辑器支持预览、撤销、查找和保存草稿；保存成功前当前正式版本仍可使用；用户改写外部技能后，不应在下次更新时被自动覆盖；更新页分别显示上游版本、本地修改和最终拟采用内容，用户可保留本地版、另存新版或逐项合并。
+13. 检查更新由用户主动发起，或在用户明确启用后按计划检查；默认不后台更新；发现新版本只显示可更新，不自动安装；更新确认页列出说明变化、配套文件增删以及新增条件，特别突出新增网络或执行需求；更新不扩大原有工具权限，不把之前停用技能重新启用；更新失败继续保留旧版本，并解释失败发生在获取、验证还是保存阶段。
+14. 删除技能前显示引用它的助手和会话数量；默认解除未来引用并删除本地安装内容，历史任务仍保留技能名称和当时使用摘要；已由技能生成的用户文件不会一并删除，用户手动放入工作区的文件也不受影响；运行中任务须先停止或等本轮完成再删除当前版本；删除失败时状态保持可解释，不出现列表消失但仍在模型上下文中的“幽灵技能”。
+15. 备份的技能类别包含必要说明及配套文件，导出前能看总大小；恢复后技能先处于已安装但需检查状态，原助手关联可重建，但网络地址、运行路径和缺失条件需要重新确认；备份不夹带服务凭据；技能文件本身含用户秘密时，导出预览提示相关文件并允许排除；普通分享只分享选中技能，不附送使用它的聊天或长期记忆。
+16. 由模型帮助创建技能时，产品先给出待安装成果，用户审阅后才加入技能库；模型不能因为完成文件写入就声称技能已经启用；创建流程允许边试用边修改，但试用范围限定当前会话；满意后选择长期绑定；试用失败的输入与输出可保留为说明中的示例，但不得自动收集其他会话来扩大示例库；删除试用版本不删除任务成果。
+17. UX-18-001..016 与 AC-18-001..010 约束上述安装、范围、条件、更新、删除与恢复。
+
+### 5.8 助手、记忆、世界书、搜索、MCP 与技能验收
+
+- AC-12-001 仅名称可保存并首次发送时选模型
+- AC-12-002 同名助手不串配置
+- AC-12-003 旧会话保留模型，主动采用助手默认只更新该会话
+- AC-12-004 生成中改指令不影响当前回复，下一轮生效
+- AC-12-005 改默认工作区旧会话不变、新会话显示新范围
+- AC-12-006 复制不选权限则新副本无本机写入权
+- AC-12-007 导入失效技能可先保存角色
+- AC-12-008 替换规则无效/超时仍可取回编辑内容
+- AC-12-009 删除助手保留会话、附件与共享资料
+- AC-12-010 手机返回/桌面关闭都能明确保存或舍弃。
+- AC-13-001 全新安装不产生记忆，开启读取不自动开启候选
+- AC-13-002 保存卡片正文/范围准确，取消后不生效
+- AC-13-003 假设误判可查看来源/改写/拒绝且不立刻重复
+- AC-13-004 周报日期改周五只有新记录生效，旧版在历史
+- AC-13-005 归档后不注入，恢复后可再纳入
+- AC-13-006 助手专属记忆不串助手，全局覆盖可解释
+- AC-13-007 临时会话不写有效记录/待审/画像
+- AC-13-008 中断整理重试不重复候选
+- AC-13-009 已删除助手的专属记忆恢复后待关联
+- AC-13-010 离线可查看/归档，候选等待网络
+- AC-13-011 旧备份不重新激活已归档/删除记忆。
+- AC-14-001 未绑定书不注入，绑定后只在符合条件会话出现
+- AC-14-002 任一/全部关键词测试符合说明
+- AC-14-003 无效表达式只能存停用草稿
+- AC-14-004 持续 2/冷却 3 按用户轮次，工具往返不消耗
+- AC-14-005 预算不足显示“命中但未提供”，不缺最后例外
+- AC-14-006 改正文历史仍看旧版，新轮用新版
+- AC-14-007 批量移动失败源完整，成功可撤销
+- AC-14-008 不支持宏的条目停用保留原文
+- AC-14-009 指令卡默认一轮，持续需显式
+- AC-14-010 互斥格式卡发送前提示冲突且不丢草稿。
+- AC-15-001 必须搜索但离线时明确失败，不挂“已联网”
+- AC-15-002 切到不支持原生搜索的模型提示重选，不自动发新服务
+- AC-15-003 只有摘要不显示已读全文，受限仍保留结果
+- AC-15-004 同一网页三次只一个来源项
+- AC-15-005 缺发布日期不填抓取日期
+- AC-15-006 停止后无新查询，已有结果可浏览
+- AC-15-007 凭据失效与无结果文案不同，修复后重试同一查询
+- AC-15-008 下载型引用先说明动作
+- AC-15-009 临时搜索不进普通查询历史，仍解释远端处理
+- AC-15-010 纯文本导出含完整编号和地址。
+- AC-16-001 连接成功后工具仍未启用
+- AC-16-002 刷新新增写工具默认关闭
+- AC-16-003 OAuth 取消保留待登录，旧回调不串号
+- AC-16-004 手机环境缺失指向环境设置且草稿仍在
+- AC-16-005 发送邮件确认页含收件人与完整内容，改内容后旧批准失效
+- AC-16-006 拒绝后不重复弹同一申请
+- AC-16-007 外部写入后断网显示未知，优先检查
+- AC-16-008 完全访问 † 不启用全局停用工具，分支/导入恢复请求批准
+- AC-16-009 停止三工具任务，已完成保留、未开始取消、远端说明
+- AC-16-010 两窗口批准只执行一次
+- AC-16-011 在完全访问 † 下，普通读取/可恢复编辑按范围执行，永久删除与外部发送仍确认，换工具包装不绕过。
+- AC-18-001 链接安装后默认未启用未绑定
+- AC-18-002 越界路径/重复入口被阻止且既有技能不变
+- AC-18-003 只有项目首页先列候选
+- AC-18-004 全局停用后会话自定义也不能用
+- AC-18-005 需要工作区但未绑定时可补齐或取消
+- AC-18-006 同名技能独立来源
+- AC-18-007 上游更新冲突可保留自用版
+- AC-18-008 删除技能后用户文件仍在，模型不再使用隐藏说明
+- AC-18-009 模型生成技能先待安装预览
+- AC-18-010 恢复备份不自动重授外部工具权限。
+
+† 审批与完全访问条目按 §9 D-01..D-06 收窄；保留编号用于历史对照。
+
+→ 用于：AGENTS.md §7.4 第 6 组与 §7.1 第 1 条的助手/记忆/世界书/搜索/MCP/技能实体与检索校验落点。
+
+## 6 工作区、浏览器、卡片、小应用、多模态、语音与定时：外部动作的边界
+
+### 6.1 工作区范围与文件身份
+
+1. 工作区是用户交给当前任务的一组文件位置及运行环境。会话顶部显示工作区名称和状态，点开可看实际目录、授权范围和当前运行平台。没有绑定工作区时，模型不能凭聊天中出现一个路径就获得本机文件读写权限；用户可以只聊天，工作区不是必经配置。绑定也不意味着立即扫描全部文件，首次实际读取或列表动作应在任务记录中出现。
+2. 新建页提供“由应用管理的工作区”和“链接现有文件夹”：桌面两种都可用；手机按系统可授予的文件夹能力提供链接或导入，无法直接链接时用明确文案说明。应用管理工作区需要名称，默认不共享给其他助手；链接现有文件夹先通过系统选择器授权，然后显示选中的完整位置和是否可写；取消选择不创建空工作区；同一目录已关联时提示复用已有项，避免两个名称掩盖同一份文件。
+3. 选择完成后明确标记“关联原位置”或“创建应用内副本”，写入预览说明影响原件还是副本。文件工具按实际目标位置判断范围，快捷链接和路径别名不能扩大授权；目标位于范围外时先显示实际目的地并请求相应许可；只读范围不能通过别名变成可写。该规则约束产品文件工具，不据此声称任意本机命令都被目录范围完全隔离。
+4. 绑定页列出可用工作区、最近使用时间和运行状态。当前会话已有绑定时，更换前显示旧工作区和新工作区，并暂停未开始的文件动作；正在运行的命令须先停止或完成，不能在命令执行中偷偷改变目录。会话已有附件不会自动移进新工作区，用户可选择复制哪些附件；解绑仅移除未来访问关系，不删除文件、不关闭用户自己打开的系统终端、不抹去历史结果。
+5. 文件面板有面包屑、返回上级、搜索、刷新和新增入口；每行显示名称、类型、大小和修改时间；目录优先，其余默认按名称排序，用户可改排序。路径显示相对于工作区根目录，涉及根外位置时用完整位置并突出授权区别；重名文件在不同目录中必须能辨认，打开结果卡中的文件时定位到准确目录，而不是用文件名搜索并随便打开第一项。
+6. 文件搜索明确分为按名称和按内容：按名称默认搜索工作区内；按内容需要用户选择文本类型和范围；图片、压缩包等不伪装成已经全文检查。搜索中可停止，已找到结果保留；大量匹配时显示总计是否完整；结果行有路径、命中片段和定位操作；修改文件后，过时结果标记需要刷新，不能把旧行号当作当前准确位置。
+7. 预览支持纯文本、Markdown、CSV、常用图片以及受限制 HTML；文本可选择、查找和复制；长文件先加载可读片段，提供继续读取和打开完整文件；CSV 允许水平滚动、查看列名并复制选区，不能把长数字自动改成科学计数而不说明；未知编码提示选择编码，不用乱码覆盖原文件；未知二进制格式显示基本信息和系统打开入口，不强行作为文本展示。
+8. 文件链接在历史消息中保留产生时的工作区及相对路径；文件被移动或删除后，点击说明当前不可找到，并提供查看原路径或在工作区搜索，不悄悄打开另一个同名文件。用户可将重要结果另存到系统位置，另存完成后显示新路径，原链接不自动更改；来自工具的图片卡可预览和保存，图片进入后续模型上下文仍遵守本会话附件范围与容量规则。
+9. UX-17-001..007 与 AC-17-001..003、AC-17-011 约束上述范围、绑定、浏览、搜索、预览与文件链接身份。
+
+### 6.2 写入、差异确认、命令与终端
+
+1. 模型准备新建或修改文件时，动作卡写明文件名、所在工作区、目的及新增或修改性质。对既有文件显示可展开差异：增加、删除和未改动上下文具有文字标记，不只靠颜色；大修改可先看摘要与受影响文件列表，再逐个查看；没有实际读取旧内容时，不声称已做精确差异；直接覆盖未知格式文件必须清楚展示覆盖后果，不能用一个普通“保存”按钮掩盖。
+2. 工作区默认请求批准写入和命令 †；用户可以为当前任务授予明确目录内的常规写权限，授权条显示范围及撤销入口；根外写入不沿用根内许可。确认写入前若文件被其他应用修改，产品暂停并提示“文件已变化”，给重新读取、比较、另存副本三种选择；默认不覆盖外部新内容；用户批准的是看到的修改内容，内容变化后必须重新形成待确认动作。
+3. 可由产品可靠追踪的编辑保存前保留可恢复版本；写入成功卡显示改了什么及“查看变更”“恢复此版本”入口；恢复时若文件后来又被改动，先比较而不是直接回退。多文件操作部分失败时按文件分别报告，用户知道哪些已经成功；不能显示整个任务失败却隐藏已发生的修改；恢复能力仅覆盖产品明确保存的版本，不承诺撤销任意命令或外部程序造成的全部副作用。
+4. 文件删除默认移入可恢复区域，确认页显示路径、数量和对关联任务的影响；无法恢复的删除明确标注永久。删除链接的外部目录与删除工作区登记是两种独立操作；用户删除工作区登记时默认保留外部文件，只有应用管理的内容可在另一步选择清理；工作区中有运行任务时先停止或等待；删除失败报告原因，文件列表不先移除再在后台悄悄失败。
+5. 命令审批卡在主区域显示要执行的命令、工作目录、运行环境以及可能触及的外部位置 †；桌面明确写“在此电脑，以当前用户权限运行”；手机写出当前应用环境，外部挂载目录另列；命令过长可以横向查看或展开，不能只显示首尾导致关键参数被遮住。用户拒绝后，任务可以改用文件工具或询问需要，不通过改写成另一条等价命令绕过拒绝。
+6. 执行时持续显示输出与已用时，输出不同时到达也应保持原有顺序；用户可以暂停跟随底部以阅读前文，新增输出提示数量，点“回到最新”后恢复跟随；标准输出与错误输出可区分但不割裂阅读；最终显示成功、非零退出、已停止或结果未知。退出成功不自动等于任务目标完成，例如命令只打印了说明，模型仍要依据实际结果解释。
+7. 停止按钮发送停止请求并立即进入“正在停止”，在得到结果前不显示已终止；命令产生子任务或远端连接时，产品说明能确认终止的范围；不能以停止聊天动画冒充所有程序已结束；用户可以查看仍在运行的任务，关闭会话前得到相关提示。重启后无法确认命令状态时标记需检查，不自动重跑，以免重复安装、删除或写入。
+8. 手机终端至少包含工作区标题、终端会话切换、可选择的输出和输入区，并提供 `Esc`、`Tab`、`Ctrl`、`Alt`、方向键、复制及粘贴辅助键；辅助键状态可见，组合键执行后按设计复位，不能长时间不明地保持 `Ctrl`；粘贴多行文本先显示将要发送的内容，用户确认后再送入终端；终端输入与聊天输入相互独立，不把未发送聊天草稿贴进命令行。
+9. 桌面可在系统终端打开工作区，打开后明确说明该终端由系统管理；产品中的停止任务不宣称关闭所有系统终端；用户在系统终端修改文件后，返回产品可刷新查看，已打开编辑器提示外部变更；终端不可用时，文件浏览与纯文件操作仍可用，界面给选择终端程序或复制路径的入口，不把整个工作区变成错误页。
+10. UX-17-008..016 与 AC-17-002、AC-17-004..006、AC-17-008..009 约束上述写入、差异、恢复、命令、停止与终端行为。
+
+### 6.3 手机环境、外部目录与秘密变量
+
+1. 环境页显示“未准备、准备中、可用、需修复、修复中、不可用”六种状态。首次准备前说明所需空间、是否下载、网络需求及大致步骤，数字来自当前安装包或检测，不能写死成不可靠承诺；准备中展示实际下载字节或当前阶段，允许取消并保留可继续部分；失败时已有聊天和文件可打开，用户可释放空间或重新选择资源后重试，不能要求清空所有应用数据。
+2. 常用工具安装页显示工具名称、用途、当前状态及安装目的地；点击安装前说明可能需要网络和额外空间；多个工具可排队，失败项独立重试；源选择可以测速，但“最快”只表示本次测试结果，显示测试时间；改变源不会自动重装已装工具；环境修复尽量保留工作区内容；重置是独立破坏性操作，先列出会清除的包、环境文件与哪些外部目录仍保留。
+3. 外部目录挂载页显示原位置、工作区内名称、只读或读写、系统授权状态；新挂载默认只读；授权被系统撤销时立即标记不可访问，模型请求该位置得到明确失败而非空目录；只读改为读写需要用户确认，变更对未来动作生效；界面说明不同平台对命令访问的限制可能不同，不能把“只读”按钮宣传为任意脚本都无法越界的绝对保障。
+4. 环境变量分为普通值和秘密值；秘密值默认遮蔽，不进入聊天摘要、普通日志、复制诊断包或审批卡完整明文；用户可给变量加说明，运行任务显示使用了哪些变量名称；变量在本产品哪些工作区生效必须写清，默认由用户显式选择共享范围，初次添加仅当前工作区；产品尽力隐藏输出中与秘密值匹配的内容，但不保证外部工具不会以变形形式泄露，重要的是不自动把秘密内容当作结果展示给模型。
+5. UX-17-017..020 与 AC-17-007、AC-17-010 约束环境状态、安装、外部挂载与秘密变量。
+
+### 6.4 内置浏览器与网页操作
+
+1. 浏览器有地址栏、后退、前进、刷新或停止、标签页、菜单和关闭；地址栏持续显示当前页面真实域名，页面自己绘制的标题不能遮盖浏览器身份区域。加载时显示进度或等待状态，连接失败显示页面内错误及重试，不用空白页表达所有失败；用户可直接输入完整地址或搜索词，搜索使用的默认服务在首次执行前可见，不因输入不完整域名就访问不明地址。
+2. 标签页显示标题、站点图标、加载状态和可辨认关闭按钮；标签页过多时可搜索标题和网址，当前页始终可找回；关闭普通标签页可撤销；包含未提交表单时先询问是否保留；重开刚关闭页尽量恢复页面位置，但不可保证恢复网站未保存状态，文案据实；用户关闭浏览器面板只是收起界面，不默认关闭所有标签页或停止其他会话。
+3. 桌面侧栏把文件、话题与浏览器页面分开为明确标签，每个会话保留自己的面板选择；手机浏览器使用独立页面，顶部能一键返回所属会话；窄窗口下侧栏转为覆盖面板，关闭后回到原聊天位置；切换会话时不会被带到另一个会话的操作网页；全局书签可共享，但会话中的网页操作记录仍各自归属。
+4. 书签只保存标题和地址，可选择文件夹和补充说明；默认不保存页面全文、表单内容或登录信息；相同地址已收藏时显示已有位置并可移动，不无声产生重复；书签搜索支持名称和域名，删除书签不关闭已打开页面；外部导入书签先预览条目数和无效地址，不立即打开所有链接；可疑或未知协议条目标为不可直接打开，保留文本供用户判断。
+5. 普通浏览历史按访问时间列出标题、域名和所属会话可选入口；用户可删除一项、一个站点或一个时间范围，确认页说明只删除本机浏览记录，不影响网站服务器记录与聊天引用；临时会话启动的浏览默认使用临时会话范围，不进入普通历史，结束时清理该范围临时状态；用户主动保存的文件或书签保留并说明；浏览历史开关和聊天历史开关分开。
+6. 下载开始前显示文件名、来源、可识别类型和保存位置；可能覆盖同名文件时默认另存新名称，不覆盖用户内容；下载列表显示等待、下载中、暂停、完成、失败和已取消；能报告真实字节时显示大小和速度，大小未知时据实；部分下载文件不作为成功成果出现在聊天里；完成后提供打开、所在位置和删除下载记录，删除记录与删除文件分开。
+7. 网站触发打开外部应用、下载可执行内容、上传文件或访问设备能力时，浏览器说明动作并遵守系统权限；网页不能通过仿造产品按钮改变会话工具权限；用户取消上传后原表单可继续编辑；上传成功只说明网页接收了请求，是否业务处理完成仍需网站反馈；产品不把文件选择器自动指向模型正在看的所有本地目录。
+8. 浏览器工具默认关闭。用户启用后，工具面板说明模型可读取选定页面内容，所读内容会发给当前模型服务；有登录态页面可能包含个人信息。允许范围为当前标签页、当前会话标签页或一次指定网站，默认当前标签页；其他已登录站点不因一个任务全部开放；手动浏览页面仍可正常使用，未给模型的页面不出现在其可操作列表。
+9. 助手打开、读取、点击、输入或滚动时，在聊天中形成按顺序的页面卡；卡片至少包括动作、站点、目标摘要、发生时间和结果，点击可回到该页面；页面卡截图是当时视图，明确标注历史，不能当作现在网页状态；工具卡与正文交错保留阅读顺序，用户可折叠连续浏览步骤，但仍能展开检查每一次有副作用的动作。
+10. 只读浏览与外部提交分开审批 †：翻页、展开内容和查看公开页面可按已选范围执行；提交表单、发消息、购买、订阅、共享、删除和更改权限必须显示具体后果并按工具章节取得单次确认 †；一个“搜索”按钮若实际提交私人资料，按真实后果处理；用户批准看一个报价不等于批准购买，批准填写草稿也不等于批准最终发送。
+11. 输入内容前，动作卡说明目标字段与待填内容；普通文本可编辑后再批准；密码、验证码或敏感凭据由用户在可见页面自行输入，产品不在聊天卡复述明文；登录过程中助手暂停并显示“请在页面完成登录”，用户完成后明确继续，不能仅凭页面消失判断登录成功；网站出现额外验证时保留当前任务与页面，提供用户接管，不试图隐蔽绕过。
+12. 每次具有外部后果的操作前重新确认目标页面和当前对象；网页跳转、弹窗覆盖或用户手动修改后，旧按钮定位不能继续使用，任务状态变为需重新读取页面；找不到目标时显示可理解原因，最多在同一页面进行有限重新读取，随后请用户接管或指出位置；不得为了完成任务点击名称相近但对象不同的按钮，也不把多次盲点当作正常进度。
+13. 浏览器与聊天都提供持续可见的“暂停助手操作”；点击后尚未执行的动作停止，用户可以手动处理页面。用户主动在助手控制页面输入或导航时，产品自动暂停可能冲突的后续操作，并说明“检测到手动操作，等待继续”；继续时先读取当前页面再决定下一步，不照暂停前旧步骤盲跑；用户也可只允许助手读取当前结果，不再继续操作。
+14. 停止任务不关闭用户全部浏览页，不清除刚填写但尚未提交的内容，也不撤销已经成功的外部动作；已提交后网络中断时，卡片标为结果未知，优先打开确认页或查询状态，不再次点击提交；用户关闭当前标签页时，相关未完成任务暂停并指明缺少页面；重开原地址可能丢失网站状态，需重新确认；关闭其他无关标签页不干扰当前任务。
+15. 网页错误至少分为无法连接、证书问题、需要登录、页面不存在、网站拒绝访问、页面内容无法读取和操作被页面阻止；每类给合适下一步，不能统一要求清空全部缓存。可在系统浏览器打开以手动完成任务，但交接后产品不能声称仍在控制该外部浏览器；用户返回提供结果时，任务以用户确认的信息继续，并保留来源说明。
+16. 站点登录状态与模型供应商账号连接分开管理：退出模型账号不会自动登出浏览器所有网站，清理浏览器数据也不删除模型配置；站点数据页按域名列出本机保存状态，允许清除某站点登录和缓存，清除前告知可能退出登录及丢失网站本地草稿；下载文件、书签和历史各有独立勾选，不用一个含糊“清空”把所有资料一起删除。
+17. 截图和页面读取结果默认只保留任务必要内容，聊天上下文中的截图数量遵守图片预算；用户可固定关键截图，也可移除不需要的截图；移除上下文引用不等于删除网站本身；含个人页面的工具结果导出前可选排除，预览能核对排除效果；页面中隐藏的表单值和不可见敏感区域不因做截图而故意展示，产品也不承诺识别所有敏感信息。
+18. 浏览器和工作区小应用采用不同身份边界：打开本地小应用不应获得普通浏览器所有站点登录状态；用户能从标题区域看出当前是网页还是工作区应用；网页页面卡链接到远端地址，本地应用卡链接到工作区路径及应用身份；对同一网址的普通打开和任务授权打开，也必须让用户能检查当前模型是否有读取权。
+19. 默认网页读取许可属于当前会话、具体标签页和已显示站点范围；同一标签页跳到未批准站点或新开标签页时，暂停模型读取并请用户扩展范围，普通手动浏览仍可继续；一次指定网站许可在当前任务结束或用户收回时失效；重启、分支和任务迁移不继承模型网页读取许可，浏览器保留登录不代表重新授权；切换模型供应商后，再读取私密页面前显示新的接收服务并由用户确认。
+20. UX-19-001..018 与 AC-19-001..010 约束上述手动浏览、书签/历史/下载、代理操作、接管、停止、错误与隐私边界。
+
+### 6.5 交互回复、表单、图表与计算卡
+
+1. 交互回复仍属于一条助手消息：消息头显示模型和时间，内容区域标明“生成的交互内容”，不借用系统设置顶栏、权限按钮或账号提示伪装成产品界面；用户可查看文字说明、切换到可读数据、复制和导出；不能呈现时给出文本替代，不让整条消息只剩空白；交互内容不能直接改变模型供应商、工具权限或用户账号。
+2. 一张交互卡必须有标题、用途说明和主要操作，避免用户不知道按钮会做什么；纯本地筛选、排序、缩放等动作即时响应且不发模型请求；会向模型提交数据的操作明确写“发送给助手”；会访问外部地址或提交业务数据的操作按外部动作处理 †；按钮文案不得统一叫“继续”来混淆三类后果；用户首次使用时能从当前卡片读懂数据去向。
+3. 交互卡默认尺寸适应消息宽度，长内容在卡内或页面内采用清楚滚动路径；同一手势不能在无法预期时同时滚动图表和聊天；手机优先单列布局，图表和表单可全屏打开；桌面可并排显示结果与输入；全屏退出保留本地选项，返回聊天不触发重新生成；旋转设备、调整窗口或切换主题不能清空已填写表单。
+4. 表单字段有可读标签、必要时的单位、默认值和校验提示；占位文字不能充当唯一标签，已有值与示例值的颜色及语义区分；必填项在提交前有明确标记，错误显示在对应字段旁并保留所有其他已填内容；金额、日期和数量不能靠模型猜测格式，选择器或帮助文字给出本表单采用的格式；日期相关内容同时说明时区或所在地。
+5. 模型请求用户决策时，问题卡包含背景、一个明确问题和可选答案，支持必要的自由补充；选项默认不预选，除非它只是无后果的界面展示偏好；多选和单选外观不同，用户能看出可选数量限制；提交前显示本次答案摘要；提交后卡片标为已回答，消息记录保留选项文字而不只有内部编号；用户跳过时明确记录跳过，并让任务按可继续或需停止的条件处理。
+6. 修改已回答的问题不直接改写模型已经看到的历史；用户选择“更改回答”时形成新的可见更新，并说明可能影响正在进行的任务，需要时先暂停任务；过期或被后续问题替代的卡片不能继续提交，按钮改为查看历史或重新提出；用户从旧通知打开问题时能看到所属会话与当前状态，避免把答案送给已经结束的任务。
+7. 表单可以有条件字段，例如选择“有附件”后才显示文件选择；隐藏字段默认不提交，界面在预览中列出实际将发送内容；一个字段从可见变隐藏时保留本地草稿以便返回，但不继续影响结果；含附件时沿用普通附件预览、大小限制与模型能力检查；秘密类输入默认不允许作为模型问答字段，需凭据时引导到明确的连接配置流程。
+8. 图表至少说明主题、横纵轴含义、单位、时间范围和数据来源；模型计算、用户提供和假设示例分别标识；缺少数值时不能用随手生成的曲线伪装真实测量，示意图标题旁直接写“示意”；比例图总体口径可见，比较图说明是否同一时间或同一单位；用户悬停或触摸后能读出精确值，颜色不是唯一编码方式。
+9. 每张数值图表有“查看数据”入口，显示用于绘图的行列及缺失值；用户筛选后，图表、汇总和数据表使用同一筛选条件，顶部保留已选条件与清除按钮；空筛选显示没有匹配数据，不保留上一组图形造成误解；排序只改变显示顺序，不改变数据记录；重置回到初始视图，不重新调用模型；数据较多时支持分页或范围缩放，但总量是否完整必须说明。
+10. 表格支持可读列名、单位、选择复制和导出；多行文本允许展开，不能通过截断隐藏关键条件；长编号和精确小数按原格式保存，显示格式变化不损坏复制和导出的原值；筛选中的数值比较使用本表已声明类型，不能把“100”排在“20”前却显示为数值升序；固定列或表头在小屏幕下不遮住全部内容，必要时提供逐条记录视图。
+11. 计算型交互卡列出用户可调输入和主要假设，结果区同步说明采用哪些值；用户拖动滑块时可以实时计算，但不得每次移动都发起收费模型请求；需要模型重新分析时显示独立按钮，并在点击前说明会发送哪些修改；超范围输入给可行动提示，不静默夹到上下限；无解或除数为零时显示不可计算，而不是用零填充；复位只重置本卡参数，不能重置整条会话。
+12. 导出图表至少支持图片或可打印呈现，旁边提供数据导出；图片包含标题、单位、图例和必要数据来源，避免离开聊天后失去含义；用户选择导出当前筛选或全部数据，确认页显示选项；默认当前视图，并在文件中注明筛选条件；截图导出不能把未选中的个人数据悄悄放进附带信息；不可导出交互本身时说明交互不会保留。
+13. UX-20-001..012 与 AC-20-001..008 约束交互边界、表单、问题卡、图表、表格、计算卡与导出。
+
+### 6.6 受限制网页预览与工作区小应用
+
+1. 模型生成的 HTML 或其他网页内容默认在受限制预览中打开，不继承普通浏览器登录、文件访问和设备权限；外部资源若需要联网，预览先显示将访问的域名并按用户设置处理；网络关闭时仍显示可以离线呈现的部分；预览内链接打开前显示目的地，下载和外部提交走正式流程；页面内写“系统授权成功”不改变真实授权状态。
+2. 预览无法识别或运行失败时提供错误摘要、查看源内容和复制入口，原消息可读文字仍保留；用户可以要求助手修复，但修复是新的明确轮次，旧版本仍能查看；产品不会为了让预览看似成功而自动扩大权限、放开全部网络或执行本机命令；更新后的预览在用户正在输入时先提示有新版本，用户选择切换后才替换，避免输入被流式更新抹掉。
+3. 流式生成中的交互卡显示“正在生成”，尚未稳定的操作控件不接受会产生外部后果的提交；已完整形成的只读部分可以先看，但卡片高度变化不能持续把用户阅读位置拉走；最终完成后状态转为可交互；生成失败则明确未完成，可保留已知数据的文字视图；恢复生成不重复提交此前表单，也不把同一个图表复制成多个看似独立成果。
+4. 工作区中的独立小应用具有名称、所属工作区、文件位置和独立数据范围；普通网页、同一工作区的其他小应用、其他工作区的小应用与本应用之间，都不共享登录状态或本地存储；同一应用被不同会话打开时可读取自身已保存数据，但会话并不因此自动得到模型读取这些数据的授权；内容相同而位置不同的应用默认是独立实例；复制文件时是否复制应用数据需明确选择，默认不复制。
+5. 小应用数据页显示本地数据大小、最近使用时间、导出和清空入口；删除应用文件不应立刻不可逆地擦除其数据，本产品先列为未关联数据，用户可以关联恢复或主动清理；重命名或移动由产品发起时保持应用身份，外部移动后无法确定对应关系则让用户选择，不只凭相同文件名合并；清空数据前说明会失去哪些本地记录，操作后不影响其他应用或普通浏览器。
+6. 更新小应用文件先保留当前数据；若新版本不能读取旧数据，提示兼容问题并允许恢复旧版或导出数据；页面重新加载不等于清空保存状态，用户可在新版本中检查自己的记录仍可读；依赖网络服务的小应用必须显示连接状态，离线时保留可读旧数据并注明时间，不能用空列表表现“没有任何记录”；同步或外部上传属于单独显式能力，不因文件扩展名默认开启。
+7. 小应用请求工作区文件时，用户选择具体文件或范围，不直接获得整个设备目录；允许一次读取与长期关联分开，更新应用版本不能自动扩大旧范围；应用试图打开外部网址、下载文件或调用模型，均通过可见产品入口并说明数据去向；小应用自身按钮无法改变会话完全访问模式 †，不能通过在文件里写一个声明来获取秘密变量。
+8. UX-20-013..019 与 AC-20-007..010 约束受限预览、生成中状态、小应用隔离、数据保留与升级。
+
+### 6.7 附件、OCR、文档、音视频与绘图
+
+1. 附件只进入当前草稿。输入区附件按钮打开来源面板，提供文件、照片、相机、录音和工作区文件；不具备某项能力的平台隐藏该来源，并在帮助页说明替代方法；桌面另支持拖放和粘贴图片。选择材料后先生成附件卡片，不立即提交给模型；用户切换对话时，材料留在原对话草稿中，另一对话输入区不出现这些材料。
+2. 每个附件卡片显示缩略图或文件类型图标、名称、大小、处理状态和移除按钮；名称最多显示两行，完整名称可通过详情或悬停查看；批量添加显示“已加入 7 个，2 个需要处理”，失败项仍占位置，便于逐个查看原因；输入区总数包括失败项，避免用户以为全部成功。
+3. 从系统选择器、分享菜单、拖放或剪贴板加入的文件默认取得应用内副本，原文件被移动或删除后，已发送消息仍能预览；通过工作区选择器加入时，用户可选“使用此刻的副本”或“关联工作区文件”，默认前者；关联项显示工作区名称和相对位置；发送前若关联文件改变，提示“文件已更新，使用最新内容或保留已预览版本”，不悄悄改变已确认材料；选择保留已预览版本时，先建立可读取副本并标为“已保存副本”，再允许发送；仅保留外部引用而未保存过旧版本时，不承诺以后仍能还原发送时完整文件。
+4. 同一次输入动作只创建一份附件：一次粘贴同时携带文件路径和图片内容时只加入一项；一次拖放收到多个平台事件时也只加入一次；同名但内容不同的文件不能因此被合并；用户再次主动加入同一文件时显示“此草稿中已有此文件”，提供定位原项和仍然添加两项操作；消息编辑时移除一张图只改变新版本，不删除原消息版本或其他对话使用的副本。
+5. 限制在动作前可见：每个草稿最多 `20` 个附件，单个本地导入文件上限 `100 MiB`；若已知所选服务有更低的大小、时长、页数或数量限制，发送前按该限制检查并注明限制来自当前服务；超过当前服务限制的文件可以留在草稿和本地材料列表，但不能显示成“可发送”；这些数值可在后续版本调整，调整不得使历史材料消失。
+
+| 状态 | 卡片应说明的内容 | 用户可以做什么 |
+|---|---|---|
+| 正在加入 | 名称与可用的字节进度 | 取消这一项，继续编辑文字 |
+| 待确认处理方式 | 当前模型不接受原格式 | 换模型、选择提取方式或移除 |
+| 已就绪 | 将发送原文件、图像或提取文本 | 预览、重排、改变方式 |
+| 处理失败 | 可理解的原因与原文件是否保留 | 重试、另存原文件、移除 |
+
+6. 每张卡片详情说明实际路线，例如“原始 PDF 交给视觉模型”“在设备上提取文本”“使用 OCR 服务识别后发送文字”；当前模型不支持某种输入时，不自动把文件扩展名当成可读文本；用户选择另一模型后重新核对兼容性，保留原文件和已完成提取结果；若原生发送和文本提取均可用，默认采用模型明确支持的原生方式，并允许改成文本提取以便检查内容。
+7. 文字和附件作为一次提交确认：有失败或待处理附件时，发送按钮旁显示问题数量；点击发送打开简短处理面板，用户可修复问题，或明确选择“仅发送文字和已就绪的 3 项”；未经这一选择，不得默默丢下某个附件继续发送；提交后消息气泡中的附件顺序与草稿一致，且显示这次实际发送方式；后来改变默认 OCR 或图片质量，不追溯改写历史记录。
+8. 离线时仍能整理材料：选择文件、改名显示标签、调整顺序、本地预览和设备内文本提取可在离线状态完成；需要云端识别的项显示“需要连接 OCR 服务”，不占用无法取消的加载状态；网络恢复不会自动发送整段草稿；用户重新点发送后，才执行未完成的远程步骤。
+9. 图像处理不改变用户原件：默认图片质量为“自动”，初始规则将发送副本长边控制在 `2048` 像素以内，并优先保留文字可辨性；用户可切换“原图”和“较小文件”，预览发送尺寸及估计体积；透明图像不得因压缩突然变成黑底，旋转方向应与系统照片预览一致；动图必须标为“发送首帧”或“发送动画”，不能把首帧悄悄当成全部内容。
+10. OCR 是用户可选择的材料处理：在图片详情选择“提取文字”，显示识别服务、发送范围和预计用途；若使用云端 OCR，第一次对该服务处理本次材料前显示“这张图片会发送给某服务”，用户可返回选择本地方式或取消；识别完成后呈现原图与可编辑文字，用户可以纠正人名、数字、单位及段落；点击“使用文字”只把确认后的文字加入草稿，原图是否同时发送由独立开关决定，默认不重复发送。
+11. OCR 结果保留来源：提取文字附带用户可见来源名称和页码或图片序号；表格、手写内容与复杂排版识别不确定时显示“请核对数字和排列”，并突出无法确认区域，不虚构精确置信度；识别为空时提供重新裁剪、调整方向或更换识别方式，不把空内容标成成功；取消识别保留原图，但不能把未确认片段直接注入下一次请求。
+12. 识图与 OCR 能分别控制：用户要求“只读出图中文字”时可用 OCR 路线；要求“描述曲线趋势”时应选择接受图像的模型，而不是只把坐标标签提取出来；界面提供简短解释，避免把两种路线包装成同一种能力；切换到纯文本模型时，已存在图片卡片不消失，而是变成待处理，列出改用 OCR 或选择视觉模型。
+13. 文档预览先于模型理解：PDF 显示页数、当前页和可选页范围；Word 显示文件名、提取预览和不能保留的版式信息；文本与代码显示编码、行数和文本片段；预览失败时仍能保存原文件，并清楚区分“本地预览不可用”与“模型无法接收”；不因预览组件失败就声称文件损坏，也不因扩展名受支持就保证模型读到内容。
+14. 大文档范围由用户控制：文档超过当前上下文可用量时，发送前展示待纳入页数或文字量、预计上下文占用以及超出部分；默认不截断；用户可选页、分段发送或先生成可审阅摘要；选页字段接受单页及范围，重复页只计一次，越界位置有明确错误；选择第 2 至第 5 页后，附件卡写“第 2–5 页，共 4 页”，答案引用不得被误标为新文件第 1–4 页。
+15. 受保护文件不把密码混进对话：遇到加密 PDF 或带打开密码文档时，在独立本地解锁框输入密码，输入框不进入草稿、历史或请求日志正文；若不能本地解锁，说明可先在其他应用解锁后重新选择；用户取消后保留文件卡为待处理；文档中的脚本、自动链接和表单提交不得仅因预览而执行。
+16. 回答应能追溯所用材料：附件消息保留显示名称、发送时版本标识和使用范围；有发送时副本时，页码、行号或片段引用打开该副本；仅关联原文件时，打开前检查它是否仍是当时版本；原件变化或丢失则明确说明，允许查看当前版本或重新定位，但不能把当前原件冒充当时材料；无法核对的服务引用以普通文本显示；用户可从来源返回原阅读位置；摘要和翻译等派生结果不替换原文件。
+17. 录音和语音输入是两种动作：附件面板“录音文件”生成可播放音频卡；输入栏“语音输入”生成可编辑文字，规则见 §6.8；开始录制前显示麦克风权限说明，录制时有持续时间、清楚停止按钮和取消按钮；录制停止后先预听，再选择加入草稿；未点发送的录音不自动变成用户消息。
+18. 媒体卡片呈现可判断信息：音频显示时长、播放进度、音量控制入口和文件大小；视频另显示封面与画面比例；播放与上传状态分别显示，下载失败不能让本地已有媒体无法播放；切换对话时默认停止尚未加入消息的预听；已发送内容播放可以保持，但全局迷你播放器必须标明来源对话。
+19. 不兼容媒体不静默变成另一种输入：所选模型不接收音频时，可先转写为文字，界面说明声音特征和背景音不会包含在转写中；不接收视频时，可选择用户指定时间点图片或另选模型；抽帧和转写均形成可检查的新材料，不声称等同于原始媒体；上传音频或视频前按服务能力检查时长、大小及格式，错误聚焦具体项。
+20. 媒体失败可局部恢复：一批材料中只有一段视频失败时，其余准备结果保留；上传断开后，卡片说明远端接收结果是否已知，未知时再次尝试是明确的新提交，不应默默形成两个用户消息；用户删除未发送媒体卡后，播放立即停止，缓存占用在存储页可解释；已被其他历史消息引用的副本不因这次移除不可用。
+21. 绘图模式让能力边界可见：输入栏模式选择器提供“对话”和“绘图”；绘图模式显示当前图像模型、尺寸、数量和质量选项，只有服务支持的选项可选，未知能力不显示虚假默认；初始数量为 `1`，画幅为服务的自动或方形默认，透明背景默认关闭；模型不可用时保留提示词，不把绘图请求改发给纯文本模型。
+22. 生成有独立状态卡：发送后在对话中显示提示词、所用参考图、任务状态与取消入口；服务没有真实百分比时用“排队中”“正在生成”“正在接收图片”，不播放假百分比；多图结果逐张呈现，部分成功时允许保存成功项和单独重试失败项，新增费用和结果归属清楚；取消后已交付图片保留，未完成部分标为已取消。
+23. 续改必须绑定明确的图：用户从图像菜单选择“继续修改”，输入区出现参考图卡并标明来源；若上一轮有多张图，用户先选择目标，不能根据滚动位置猜测；修改后新图和原图并列为不同结果，支持比较、另存和再次修改，不覆盖原件；当前服务不支持带图编辑时说明限制并可选择其他支持服务，不能假装已使用原图。
+24. 下载与长期可用性明确：生成图片收到后尽快建立本地可打开副本并显示保存状态；只有临时远端地址而本地保存失败时，卡片给出“图片已生成，但尚未保存到设备”，允许重试保存；另存到相册、下载目录或工作区均使用系统目标选择，重名时可替换或另存新名；分享前默认仅分享选中图片，提示词、账户和其他参考图不会自动随附。
+25. UX-21-001..024 与 AC-21-001..012 约束附件队列、副本/引用、容量、OCR、文档、媒体、绘图与续改。
+
+### 6.8 语音输入、朗读与翻译
+
+1. 设置中的“语音”页分为语音输入和朗读两个区域；语音输入当前服务不决定朗读服务，聊天模型也不自动代替二者。每个区域显示服务名称、处理位置、连接状态和测试按钮；“设备内”仅用于实际不需要把音频或正文发到外部的模式；系统提供但可能联网的模式写“系统服务”，不能统称为离线。
+2. 若平台已有可用系统语音输入，默认跟随系统；没有可用系统能力时，语音按钮仍可打开方式选择和设置入口，不展示无响应按钮；朗读默认使用系统可用语音；云端服务由用户主动添加，输入密钥、端点或账户等字段后先保存，再自选测试；服务列表支持重命名、排序和禁用，禁用不删除历史转写和已保存音频。
+3. 所有必填项在空白时显示清楚未填写状态，示例仅用于提示；服务特有项目、工作区、地区或方案标识需要简短说明，不能只写让用户误认为已填入的灰色示例；点击测试时，缺少字段直接定位到字段，网络错误保留全部已填内容；测试音频只使用应用提供的中性短句，不读取用户最近一段私密录音。
+4. 选择设备内识别时，先显示下载体积、语言支持、预计占用和删除入口；下载前允许限制为无线网络，初始默认开启该限制；下载暂停、取消或失败后其他语音方式仍可用；模型未准备好时，语音按钮提示下载状态，不悄悄转到云端；安装完成可使用固定短句自测，删除模型只释放模型文件，不删除用户录音和转写。
+5. 输入区麦克风按钮开始一次语音输入；首次需要麦克风时先解释用于本次输入，再调用系统授权，拒绝后保留文字输入；录音期间显示持续时间、音量反馈、识别方式与停止按钮；波形不能在没有输入时持续模拟声音，音量反馈不能成为唯一状态提示，读屏也要能读出“正在录音”。
+6. 语音输入默认结果是草稿文字；实时识别支持时，临时片段以可区分样式显示，确认片段保持稳定；停止后仍等待最后一段识别结束，再让用户修订；自动发送默认关闭；即便用户主动开启自动发送，涉及附件未就绪、工具审批或模型缺失时仍进入相应等待状态，不绕过已有条件。
+7. 输入区已有文字时，转写插入当前光标位置；录音期间用户移动光标或修改草稿，停止后提供“插入到现在的位置”，不覆盖录音开始后写入的文字；用户切到另一对话时，录音保持归属原对话并在顶部提醒，或主动停止并返回原草稿，不能把后半段识别文字放进新对话。
+8. 停止表示结束采集并完成已经录到的内容；取消表示舍弃本次未提交识别结果。取消后给出“本次语音输入已取消”，原草稿保持原样；若云端已处理部分录音，取消只保证本产品不再继续提交，不声称远端撤回；设备被来电、系统录音占用或耳机切换打断时，显示中断原因并保留已确认文字。
+9. 连续无有效声音时显示“暂未听到声音”，允许检查麦克风或停止；超过一次输入 `5` 分钟上限时自动停止采集并完成已有转写，开始前及接近上限时均说明；没有识别到文字时，不创建用户消息，也不触发模型费用；支持更长材料时，引导使用音频文件附件，以便查看进度和部分结果。
+10. 转写确认页保留语言、服务和时间信息，正文可像普通草稿一样编辑；用户可选择原语言、自动识别或指定另一语言重新处理；修改语言只重做这次录音，不改变全局设置，除非明确勾选保存为默认；标点、换行和说话人分段可以修订，不能以“模型输出不可编辑”为由锁住文本。
+11. 录制成功但识别失败时，显示录音时长与保存状态，允许重试、换服务、另存音频或删除；若录音只临时保留，在离开前明确提示；默认在当前草稿中保留，直到用户发送、删除或清理草稿；重试只针对识别步骤，不要求用户再说一遍；对无权限、额度不足、服务忙和网络不可达分别提供可执行处理入口。
+12. 语音识别调用的服务和聊天服务可能不同，状态详情分别列出；服务未提供确切费用时，只显示调用次数、处理时长或估算，不把转写费用并入聊天 token 当作精确实收；用户换服务重试前看到“将把这段录音发送给另一服务”，不因失败自动遍历所有配置好的云端服务。
+13. 消息菜单朗读按钮只处理该条选中的可见回复版本；全局自动朗读默认关闭，开启后只对新完成的助手回复生效，不从历史中突然播放；生成中可手动选择边生成边朗读，但应先说明可能出现未完成语句，默认等回复结束后开始；用户编辑回复或切换版本后，现有朗读停止并提示内容已变化。
+14. 开始朗读后显示消息内控制和全局迷你播放器，包含暂停、继续、停止、前后段落和速度；默认速度 `1.0`，调节范围初始为 `0.5–2.0`；若服务不支持某档，界面以实际可用档位显示；系统来电或音频焦点丢失时暂停，恢复后由用户继续，不在用户已换到另一播放器时自行抢回声音。
+15. 标题、段落和列表按阅读顺序朗读；默认跳过整段代码、原始网址和大表格，读出简短说明“这里有代码块”“这里有表格”，用户可选择继续朗读内容；公式可提供可读表达，但不能声称是精确数学转写，无法表达时提示存在公式；图片使用用户或服务提供的描述，没有描述时读“图片”，不伪造画面内容。
+16. 点朗读后，发送范围是所选消息版本的正文或所选片段，不自动附上整段对话、工具日志和长期记忆；若正文包含隐去敏感段落，默认不展开朗读；所用服务、音色和语言均能在播放器详情查看；下载语音和临时播放分别显示；一段音频只生成一部分时，已生成部分可播放，剩余失败不导致全部重来。
+17. 翻译以派生结果呈现：从消息菜单或选中文本选择翻译，先选择目标语言，默认跟随界面语言；原文与译文分开显示，原文不被覆盖，历史导出可选择是否附译文；用户换语言后生成另一份派生结果，已完成译文可切回查看；翻译服务或模型显示在结果详情中，不能让用户误以为一定使用当前聊天模型。
+18. 选中片段只翻译片段：片段翻译面板顶部放置用户选中的原文，可展开核对，不默认把整条消息发给翻译服务；结果完成后提供复制、插入草稿和替换当前选区三个动作，替换必须来自用户显式点击；选区已变化时不再替换旧位置，而是提供插入或复制，避免跨窗口操作损坏草稿。
+19. 独立翻译页提供源语言、目标语言、原文、译文和服务选择；源语言默认自动，目标语言默认界面语言，交换按钮只在两端语言确定时有效；用户输入时不自动远程翻译，点击翻译才调用；可选自动翻译默认关闭；长文本超过服务限制时保留原文并说明可分段，不只显示失败；清空按钮分别作用于原文和全部内容，清空全部需短期撤销入口。
+20. 翻译失败保留语言选择和原文，重试只重做翻译，不把原文作为新聊天发送；云端不可用时允许切到已安装并可用的本地或系统翻译，不自动下载大模型或改变数据去向；复制译文保留段落顺序，链接和数值默认保持原样，表格翻译后仍可辨认各字段归属。
+21. UX-22-001..020 与 AC-22-001..012 约束语音服务、输入、转写修订、朗读、翻译与失败恢复。
+
+### 6.9 定时任务、时区与后台状态
+
+1. 设置中的“定时任务”页列出名称、启停状态、助手、下一次时间和最近结果；默认按下一次运行时间排序，已暂停项单独分组；空页给出中性示例，但点击示例只填入表单，不替用户开启任务；任务列表不展示完整私密提示词，点详情后才展开。
+2. 创建时必填名称、提示词、助手、执行方式、时间和重复规则；名称初始上限 `80` 字，提示词允许多段文字，空白名称和纯空白提示词不能保存；执行方式提供新建对话、继续指定对话、重做指定问题，默认新建对话；选继续时显示目标标题、助手和最后消息预览，选重做时显示问题本身。
+3. 新建表单默认勾选“保存后启用”，主按钮写“保存并启用”；取消勾选后写“保存为暂停”；权限、模型或目标缺失时允许保存为暂停，不能伪装成已经启用；启用前摘要至少显示执行对象、下次三次时间、可使用工具范围和结果去向；保存成功返回列表，刚创建项短暂高亮。
+4. 新建对话模式默认取运行开始时的助手默认模型；继续指定对话或重做旧问题模式默认取目标会话已保存模型；用户可显式固定任务模型，但只覆盖本次任务活动，不悄悄改写会话以后手动发送的模型；任务详情显示有效模型与来源；提示词来自任务自身，助手角色提示在开始时生效；运行详情保留本次配置；首次启用时确认的工具上限不随助手后来新增工具而扩大。
+5. 重复规则初始提供单次、每天、工作日和每周自选日期，不要求输入技术表达式；时间采用 24 小时显示，但允许跟随系统编辑习惯；任务默认跟随设备时区，同时列出当前时区名称和下次实际日期；高级选项允许固定时区；修改重复规则后预览立即更新且保留未保存标记。
+6. 跟随设备任务在设备切换时区后按新时区计算未来运行，并在任务页显示“时区已变更，下次将于……运行”；固定时区任务保持原时区，并显示用户当地换算时间；不能只显示没有时区的“08:00”；已完成记录显示发生时的当地时间和可展开时区，不因旅行让历史时间跳来跳去。
+7. 本产品默认不补跑错过的计划：电脑睡眠、设备关机、应用被强制停止或网络无法开始时，运行历史注明“未运行”和原因，下次按正常计划继续；夏令时使某个本地时刻不存在时该次标为未运行，某个时刻出现两次时只运行第一次，并能在预览中看出实际时间；用户如需现在补做，可点立即运行，它是一条独立手动记录。
+8. 同一任务不重叠：上一次仍在运行时到了下一次计划，后一次记为“已跳过，上次仍在运行”，不悄悄排成长队；每次运行上限初始为 `10` 分钟，超时停止新增步骤，保留已产生内容和文件，记录为部分完成或超时；暂停任务只阻止未来开始，如果当前正在运行，界面另外提供停止当前运行。
+9. 一次运行只对应一个可追踪记录：到时先出现准备状态，再显示正在执行、等待你回答、等待批准 †、已完成、部分完成、未完成、已停止或未运行；记录包括计划时间、实际开始和结束时间、产生的对话入口以及简短结果；用户点通知、任务列表和对话中的任务标记，都到达同一条运行记录，不能因多入口生成多份相同对话。
+10. 定时任务遇到工具审批、账户登录、必答问题或材料缺失时 †，不把默认答案视作用户同意；计划记录以“需要你处理”结束本次无人值守阶段；对应聊天轮次仍为等待你回答或等待批准 †，不另开第二轮；保留现场和继续入口，通知说明类型；用户手动继续时回到原轮次，重新核对未执行动作的目标和权限，不沿用过期批准；没有得到回答时不在后台反复询问模型。† 审批部分按 §9 D-08 收窄为 S1 `.ask` 与操作员接管。
+11. 继续已有对话时保护正在编辑内容：用户未发送草稿不进入定时任务上下文，运行结束不覆盖草稿；目标对话此刻已有生成时，计划运行按同一会话排他规则跳过并说明原因，不插入两条交错回复；重做旧问题创建新的回复版本或独立分支，按创建任务时选定方式处理，原回复保留；任务详情必须能看出是哪次旧问题。
+12. 用户点立即运行后，页面先展示将使用配置和结果去向；在已确认配置未变化时可直接开始；立即运行不修改原定下次时间，也不把暂停任务重新启用；失败可从同一运行记录重试，但重试标为新的尝试；可能已完成外部写入的步骤不能自动重复，必须先核对结果。
+13. 删除任务前说明将移除未来计划和任务配置，已有对话、文件和运行结果按用户选择保留，默认保留；任务正在运行时，先选择停止并删除或等本次完成后删除；被任务引用的助手、模型、工作区或对话删除时，相关任务转为暂停并列出缺失项，不悄悄寻找名字相近的替代对象。
+14. Android 任务详情分开显示执行条件和提醒条件，检查计划权限、应用内启用状态与通知权限；拒绝通知通常只影响提醒，不普遍阻止任务执行；若某种后台模式确实依赖系统状态组件，只限制该模式并保留前台运行；缺少必要许可时解释用途，由用户进入系统页，返回后重新检查，不要求重建任务；电池或厂商限制只写为可能影响，不把未检测状态硬判故障，也不承诺开启设置后绝不漏跑。
+15. 桌面任务页清楚显示“应用运行时执行，最小化或托盘状态可运行”；退出应用前若有启用计划，退出对话框说明下一次任务在关闭期间不会运行，并提供退出和留在托盘；此说明可选择以后不再显示，但运行条件始终可查看；应用不会未经用户选择安装开机启动或系统服务，开机启动属于独立系统集成选项，默认关闭。
+16. iOS 导入包含计划的备份后，任务显示“此设备仅支持手动运行”，计划规则保留用于以后在其他平台查看，不启动提前生成；立即运行前需要应用位于前台，运行离开前台后遵守普通后台生成限制；用户复制任务到 Android 或桌面时仍为暂停，必须在新设备主动启用，避免多设备同一计划各跑一次。
+17. 偏好设置中的后台任务页解释它作用于已经启动的生成：桌面默认在最小化时继续；手机在平台许可和用户开启的前提下尽力继续；开启前不请求与功能无关权限；用户关闭后台继续时，已在前台运行的任务不立刻取消，离开前台前可以看到将暂停或可能中断的说明。
+18. 任务状态隐私默认开启，锁屏和悬浮状态仅显示“正在处理”“需要操作”“已完成”等通用文本，不显示对话标题、提示词、文件名或工具参数；用户可以选择展示标题，但正文摘要保持独立选项；通知、实时活动、托盘和悬浮窗使用同一隐私选择，不允许其中一个组件漏出更详细内容。
+19. 正在运行时，应用内任务栏可回到会话或停止；平台允许时，持续通知和悬浮状态也提供停止；停止只是阻止后续生成和工具步骤，已完成写入不会自动回滚；停止完成后状态及时更新，不能继续显示旋转图标，也不能只移除通知却保留实际运行；系统已结束进程时，下次打开将状态核对为中断，不显示永久运行。
+20. iOS 实时活动、Android 实时状态、悬浮窗和托盘不是任务本身；用户关闭这些组件不等同于取消工作；界面解释相互关系，状态组件失效时不将任务标为失败；深浅色切换、系统大字体和锁屏背景变化后文字仍需可读；悬浮窗不得挡住关键按钮，拖动位置记忆不能导致旋转后完全不可见。
+21. 当前正查看的对话完成时默认只更新页面，不再响一次通知；用户在其他页面或应用外时可以接收完成和失败通知；连续工具步骤不逐个弹系统通知，统一记录在任务内部；默认通知包含对话入口和结果状态，不包含回复正文；用户关闭任务通知不影响平台要求的运行中通知，设置页需要解释这一点。
+22. 点击通知后进入应用到达对应对话、运行记录或需要处理的审批位置；目标已删除时说明“这条结果已被删除”，提供任务列表入口，不打开另一条同名会话；通知属于旧回复版本时打开正确版本并标记它不是当前选中版本；锁屏状态下的敏感内容遵循系统解锁要求。
+23. 后台连接失去响应时，界面保留已收到文本和工具状态；若能确认服务支持恢复同一次生成，可给出恢复选项；不能确认时提供新尝试，并说明上一请求结果未知；任务统计区分一次运行的多个尝试，避免用户误以为只发生一次计费；对外写动作在未知状态下保持待核对，不能借重连重复发送、删除或提交。
+24. UX-23-001..023 与 AC-23-001..012 约束任务表单、时区、错过、重叠、运行记录、平台条件、后台状态与通知。
+
+### 6.10 系统分享、设备能力与手机控制
+
+1. 系统分享菜单选中本产品后打开接收面板，显示文本摘要、链接域名、文件数量和大小；用户选择新建对话或现有对话，再选择助手，默认新建对话；完成选择后材料进入草稿，必须由用户点发送才调用模型；除非用户事先明确建立并选中“分享后立即执行”的专用动作，不能把系统分享视作自动发送授权，首版不提供此专用动作。
+2. 文本保留换行和 Unicode 字符，链接以完整地址保存并可打开核对，文件沿用来源名称；来源应用同时给出标题与正文时，接收面板分别展示，避免同一内容重复两遍；分享多项时顺序可调整；单个无法取得权限的文件标为无法读取，其他材料仍可处理；用户取消接收后不留下空对话，不清空来源应用内容。
+3. 冷启动收到分享内容时，先完成本地启动与接收，期间显示“正在准备材料”，不让内容丢在首页；若数据需要恢复或应用尚无模型，材料进入待发送草稿，用户可先完成必要设置；应用从后台恢复收到第二次分享时，询问替换当前接收面板或追加材料，不覆盖已有手写草稿。
+4. Android 文本选择菜单可以提供发送到本产品，选中内容进入接收草稿，返回原应用不影响原选区文本；桌面全局快捷键如带入剪贴板，只在用户主动按下专用快捷键时读取一次，并在输入区展示读取结果；普通显示窗口快捷键不读取剪贴板；密码管理器等来源拒绝分享时，说明无法读取，不反复尝试绕过。
+5. 设置中的“设备能力”列出时间、计算器、剪贴板、日历、位置、朗读及平台特有能力；每项显示设备支持情况、系统许可、应用内总开关以及当前助手是否可用；三个开关层次不能混成单个绿色“已开启”，例如系统日历已授权但当前助手关闭时应写“已授权，本助手未启用”。
+6. 开启工具后，只有实际需要访问的数据或动作才请求相应系统权限；用户拒绝日历后，时间和计算器仍可用；拒绝定位后，可以手填城市查询天气；系统权限后来被撤销，下一次调用显示“需要重新授权”并停止相应步骤，不能沿用旧状态；应用重启、恢复备份、复制助手都不得自动弹出一串系统授权。
+7. 系统允许读取日历，并不等于所有日历会持续发送给模型；具体请求的工具卡显示时间范围、所选日历或数据类别，以及将提供给当前模型的摘要；默认使用满足任务所需的最小范围，用户可扩大范围；工具结果和普通聊天一样可能进入模型请求，界面不能用“设备工具”让用户误以为结果一定只在本地。
+
+| 能力 | 首版范围 | 用户替代操作 |
+|---|---|---|
+| 时间、计算器、剪贴板、朗读 | 支持的平台均提供；仍检查系统限制 | 手填时间、粘贴文本或复制答案 |
+| 日历、位置 | Android 与 iOS | 手工选择日期、输入地点 |
+| 屏幕使用时间、手机控制 | Android 的可用能力 | 上传用户选择的截图、说明当前界面 |
+| 天气、提醒事项、健康数据 | iOS 的可用能力，按类别授权 | 手动填写摘要或关闭该工具 |
+
+8. 时间工具回答当前时间、日期或日程相关问题时，结果至少含设备当前时区和数据读取时刻；用户问另一地点时间时，不能把设备时区当成该地点；计算器结果可复制，显示输入表达式及单位；无法计算的表达式返回可理解错误，不悄悄让语言模型猜数值并显示计算器成功标记。
+9. 读取剪贴板仅来自用户粘贴，或一次清楚标明内容范围的工具请求；工具请求默认先显示“将读取当前剪贴板并交给本次模型”，用户可改为自己粘贴；读取后只处理当时内容，剪贴板更新不自动继续读取；写入剪贴板时提示复制了何种内容，不为便于下次使用长期保留所有剪贴板历史。
+10. 用户问“今天的安排”时只读取当天、已选日历和必要字段；用户只想知道忙闲时，默认返回时间段而非完整备注、参加者与会议链接；用户可在工具卡展开本次读取范围，缩小日历或日期后重做；不存在事项与没有读取权限使用不同状态，不能把后者说成“今天没有安排”。
+11. 位置请求显示“本次定位”，默认不连续追踪；系统只给近似位置时按近似结果使用，不要求精确位置作为所有任务前置条件；工具卡注明读取时间和精度类型，过时位置标记为上次已知；用户可手填位置替代，不因手填结果与设备不同就自动改回；天气等联网服务会取得地点信息时，界面说明接收方。
+12. iOS 健康数据和 Android 使用情况默认关闭，首次启用时用户选择类别及时间范围，不能用一个“同意”笼统打开全部数据；工具结果先显示将使用的摘要，例如某周总时长和日期，不自动发送逐条原始记录；未授权、设备无记录、记录尚未同步和实际为零分别呈现；自动整理长期记忆不从这些结果自动建立敏感画像，除非用户另行明确选择保存。
+13. 新增日历或提醒事项的确认卡显示标题、日期、开始结束时间、时区、重复规则、提醒时间、目标日历或清单，以及备注；用户修改任一字段后卡片同步更新；必填缺失时不能提交；用户说“周五下午”但没有时间时先询问，不能把系统默认时间伪装成用户选择；若用户只要求起草安排，默认只给草稿。
+14. 创建个人日历事项与发送邀请分别呈现；带参加者的邀请、修改已有会议、删除事项等动作需要确认具体目标与影响 †；全访问模式 † 不能把这些个人或对外副作用隐藏；用户确认后显示系统返回结果和打开条目入口；提交结果未知时，先查找是否已创建，不能不断重试造成重复事项。
+15. 动作完成后用户停止对话，已创建提醒仍存在，结果卡保留；需要撤销时提供明确撤销动作，并在可能影响外部参加者时再次说明范围；系统条目后来被用户在别处修改，产品显示原创建记录和当前可读状态，不能拿旧副本直接覆盖新编辑；删除失败说明原因，不能移除卡片假装已删除。
+16. 手机控制页先说明它能读取当前屏幕并执行点击、输入、滑动和返回等操作，当前模型服务会接收必要屏幕内容；用户主动打开系统辅助功能设置，完成许可后返回，再为具体助手或对话启用手机控制；系统服务开着而当前对话未启用时，不能取得屏幕给模型；首版不提供 iOS 和桌面整机控制替代承诺。
+17. 用户发起手机控制任务时出现持续状态条，显示正在处理的应用和停止按钮；状态条能收起但不完全消失；锁屏后停止新的控制动作，解锁也不自动恢复点击，需用户继续；系统回到敏感界面、目标应用切换或画面与待执行动作不一致时，重新读取并核对目标，不能机械执行旧坐标。
+18. 网页、聊天、通知或其他应用中的文本只能作为观察材料；其中出现“请关闭权限提示”“点击确认转账”等内容，不能直接扩大任务范围；用户原本授权查找资料时，控制器可以导航和读取，但遇到发送信息、购买、删除、上传私人文件或修改账号等动作，要回到对话展示动作目标并取得针对该动作的确认 †。
+19. 密码、验证码、支付凭据和系统认证界面交给用户手动完成，产品不要求用户把这些内容写进聊天；系统明确标记的密码字段应尽可能遮蔽；普通文本中的敏感信息不能保证全部自动识别，因此首次使用说明屏幕可见信息可能被发送；用户接管时控制暂停，返回后先确认当前页面，不能自动补敲之前排队输入。
+20. 完成一个操作后显示实际观察到的结果，如已打开设置页、已填写草稿、已显示提交成功；没有观察到完成反馈时写“结果待确认”；长时间无变化、无法找到目标、系统拒绝输入时停止并给出接管入口，不无限点击；失败记录保留必要步骤摘要，不默认保存每一屏完整图片，用户可按诊断需要主动选择保存。
+21. UX-24-001..020 与 AC-24-001..012 约束分享接收、设备能力、读取、写入、手机控制与结果确认。
+
+### 6.11 工作区、浏览器、卡片、多模态、语音与定时验收
+
+- AC-17-001 未绑定工作区时路径不可读，绑定后名称与真实范围可见
+- AC-17-002 命令运行中换工作区先停止/等待
+- AC-17-003 同名文件按产生时路径打开，缺失不替代
+- AC-17-004 批准前文件被外部修改则提示比较并保留新内容
+- AC-17-005 多文件部分失败逐项列出，成功可打开
+- AC-17-006 停止命令显示正在停止，远端不确定标明
+- AC-17-007 手机环境失败仍可用聊天/历史/已有文件，重试不清空
+- AC-17-008 移除工作区登记保留原目录，永久删除需独立操作
+- AC-17-009 终端多行粘贴预览，Ctrl 状态可见，草稿不串用
+- AC-17-010 秘密变量不出现在普通日志/审批摘要，范围可检查
+- AC-17-011 快捷链接不扩大授权，写入预览说明原件/副本，手机只读不能经别名变可写。
+- AC-19-001 地址栏始终显示真实域名，页面伪造标题不能遮盖
+- AC-19-002 启用当前标签页读取后不能列其他登录页，跨站/新标签暂停读取但手动可浏览
+- AC-19-003 填表未提交时暂停，停止聊天不等于报名成功
+- AC-19-004 导航/手动输入后旧操作暂停并重读，不点过时目标
+- AC-19-005 外部提交后断网显示未知，重试先检查
+- AC-19-006 临时浏览不进普通历史，主动下载文件仍在
+- AC-19-007 同名下载默认另存，未完成文件不作为成功结果
+- AC-19-008 清除某站点数据不删其他站点/模型配置/书签/下载
+- AC-19-009 手机返回保持位置，桌面切换恢复各自面板
+- AC-19-010 小应用不能复用浏览器登录，页面类型可辨认。
+- AC-20-001 交互卡标明生成内容，不能改权限或伪装系统登录/支付
+- AC-20-002 纯筛选/滑块不发模型请求，“发送给助手”前可查看内容
+- AC-20-003 校验失败保留已填字段，条件隐藏字段不提交但可恢复
+- AC-20-004 旧问题被替代后不可再提交，更新答案形成新记录
+- AC-20-005 图表有单位/来源，缺失数据不编造为零，查看数据与图形一致
+- AC-20-006 空筛选显示无数据，导出含筛选条件，精确小数/长编号保持
+- AC-20-007 受限预览失败不影响其余消息，修复不自动扩权
+- AC-20-008 生成中卡片不抹输入，切换新版本前可保留状态
+- AC-20-009 不同小应用/浏览器不共享存储，同一应用跨会话可读自身记录但不自动授权模型，复制文件默认不复制数据
+- AC-20-010 小应用升级失败可导出/恢复旧版，清空一个不影响其他。
+- AC-21-001 4 正常 + 1 不可读产生 5 张卡，失败项单独重试，发送不静默忽略
+- AC-21-002 发送后移动原图历史仍可开，删除草稿同图不损坏历史
+- AC-21-003 一次粘贴只一张卡，同名不同照片两项
+- AC-21-004 图像草稿切纯文本模型，图片保留并显示处理入口
+- AC-21-005 OCR 改数值后发送，历史保留来源图与确认文本关系，未确认片段不进请求
+- AC-21-006 十页 PDF 选 2–5 页，引用保持原页码，范围 0–3 被拒
+- AC-21-007 解锁加密文档后导出/诊断不含密码，取消只留待处理
+- AC-21-008 不接收音频的模型必须转写或换模型，转写可改，时长/原件可查
+- AC-21-009 两图一成一败，成功可保存，单独重试失败项不重生成第一张
+- AC-21-010 三张图明确选第二张续改，其他两张不作参考
+- AC-21-011 飞行模式加材料/重排/切换，草稿完整，恢复网络不自动发送
+- AC-21-012 编辑三图旧消息移除两张，新版一张、原版三张，未触发额外生成。
+- AC-22-001 拒绝麦克风后文字草稿不变，提供系统设置入口，不反复弹窗
+- AC-22-002 停止有效录音得到可编辑文字，未发送不新增消息/不启动模型
+- AC-22-003 已有文字中间录音，过程中改末尾，转写插入明确位置且末尾修改保留
+- AC-22-004 来电中断，已确认片段可恢复，临时片段显示是否完成，不悄悄重录
+- AC-22-005 静音停止提示未识别，不生成空消息
+- AC-22-006 设备内模型未安装提示安装，不自动上云
+- AC-22-007 云端失败换服务先显示去向，用原录音重试
+- AC-22-008 两版回复朗读第二版后切第一版，播放停止并只读第一版
+- AC-22-009 另一应用播放时暂停，返回有继续按钮，不抢音频
+- AC-22-010 选中两句只发送所选，选区变化后替换不覆盖错误位置
+- AC-22-011 工作区标识为空但有示例，测试必须报未填写
+- AC-22-012 清理语音缓存后原消息/转写仍在，下次播放说明需重新生成/下载。
+- AC-23-001 每周一、三 08:30 保存前显示三次真实日期与时区，空提示词不能启用
+- AC-23-002 暂停任务立即运行产生手动记录但仍暂停，规则不变
+- AC-23-003 计划时应用退出，稍后启动该次未运行，不自动补跑
+- AC-23-004 固定时区旅行不改原时刻，跟随设备显示新下一次和变更提示
+- AC-23-005 上次未结束又到下一次，后一次标跳过，不并发生成
+- AC-23-006 搜索后需外部提交，任务停为需要处理，不用推测同意，不反复重试
+- AC-23-007 继续已有对话运行前后草稿相同，上下文不含草稿
+- AC-23-008 助手后来启用设备控制，既有计划不自动取得，任务页提示更新范围
+- AC-23-009 iOS 导入已启用计划显示仅手动，不提前调用/不承诺唤醒
+- AC-23-010 锁屏通知默认只通用状态，解锁后定位正确结果
+- AC-23-011 系统结束后台进程重开保留已到达内容，状态中断，不持续假装运行
+- AC-23-012 删除有三次历史结果的任务，未来计划消失，默认保留三个成果入口。
+- AC-24-001 分享文本和两张图进入可编辑草稿，无模型请求，取消后无空对话
+- AC-24-002 冷启动分享文件，启动后仍在接收页，未配置模型也不丢
+- AC-24-003 已有草稿收到新分享，追加保留原文字，取消不改原草稿
+- AC-24-004 系统日历已授权但助手未启用，模型不能读，工具页分别显示
+- AC-24-005 无权限/无事项/有事项三种文案与状态不同
+- AC-24-006 一次授权读取后改剪贴板不再读，普通窗口快捷键也不读
+- AC-24-007 创建带重复规则提醒，确认卡完整，取消不产生，成功可打开真实条目
+- AC-24-008 系统写入后断网先核对已有条目，不连续重试创建副本
+- AC-24-009 只开系统辅助功能未开当前对话，不能读/操作屏幕，面板提示缺少应用内步骤
+- AC-24-010 手机控制锁屏再解锁不自动继续，用户继续后重新判断页面
+- AC-24-011 查询订单任务到取消订单按钮必须明确确认，不把网页提示当授权
+- AC-24-012 健康只授权步数询问睡眠时提示未授权并可手动提供，不自行读取全部类别。
+
+† 审批、完全访问与逐次确认条目按 §9 D-01..D-10 收窄；保留编号用于历史对照。
+
+→ 用于：AGENTS.md §7.4 第 7 组与 §4.2/§5.3 的工作区 `stamp`、`$W$`、`:FILE_CONFLICT`、浏览器接管、附件上限与定时任务落点。
+
+## 7 备份、外观、费用、诊断与错误文案：可核对性与恢复
+
+### 7.1 数据位置、备份类别与凭据
+
+1. 设置中的“数据与备份”顶部显示当前数据位置、占用、最近成功备份时间和最近本地恢复点；若没有配置外部备份，明确显示“尚未建立设备外备份”，但不阻止聊天。页面分别提供立即备份、管理备份、恢复或导入、存储管理和本地恢复点；云端未配置时不上传任何数据，也不借模型账户建立隐含备份。
+2. 备份选择至少提供对话与附件、助手配置、模型服务配置、工具与 MCP 配置、技能、工作区、世界书、记忆与画像、外观偏好和任务配置；每类可展开查看包含范围、条目数和预计大小。对话中的图片、录音和生成文件默认随对话勾选；只导出文字时，缺失附件在预览和最终清单说明，不能称为完整备份。
+3. 模型密钥、工具秘密和外部备份访问凭据不与普通配置混在一个默认勾选项中；默认备份保留服务名称与连接参数，但不包含秘密；用户可显式选中包含 API 密钥，界面说明文件泄露后可能允许别人使用相应服务。登录会话和系统授权不作为可跨设备凭据导出；恢复后需要重新登录或授权。
+4. 临时会话默认不进入历史、记忆或备份；用户若想保留，先在会话中明确转为普通会话。可重建的图片缩略图、渲染缓存、浏览器临时缓存和安装包默认不备份；保存的工作区小应用数据与纯缓存分开，用户选择工作区时可看见它们是否包含；排除缓存不能误删用户实际创建的文件。
+5. 普通会话删除后默认在“已删除”保留 `30` 天，永久删除另行确认；临时会话不进入这个区域。备份默认排除已删除会话，高级范围可主动勾选并显示数量；恢复包含这些记录的备份后，它们仍在已删除区域，不自动回到主历史，原过期时间也不因恢复而静默延期；用户可在预览中明确选择恢复到历史；超过保留期的记录在预览中标为过期，默认跳过导入，用户也可明确选择恢复。
+6. 本地导出走系统保存：先确认范围和加密，再选择保存位置；默认文件名含产品名、日期、时间和设备短名，但不含对话标题或账号；保存位置不可写、空间不足或文件名冲突时回到位置选择，已准备数据不丢失；用户取消保存只取消这次导出，不修改当前数据。
+7. WebDAV 表单按职责解释：远端地址、用户名、密码或应用专用密码、目标目录为独立字段；输入地址后先显示将连接的服务器和目录；测试连接不上传完整备份，可以创建并删除一个小测试对象，操作前标明这一行为，删除失败时说明位置；地址拼写或证书错误不能用“连接失败”一词掩盖，表单保留输入，敏感值保持遮蔽。
+8. S3 表单包含端点、桶、区域、访问凭据和目录前缀，服务不需要的项可留空并有明确说明；目标预览将完整桶和前缀展示在同一处，避免写进错误路径；测试只验证必要读写能力，不列出其他桶或扩大账户范围；保存目标后仍需用户点立即备份或主动启用计划备份，不自动上传。
+9. 远端列表每个备份显示生成设备、时间、应用格式版本、大小、加密状态和完整性状态；列表加载失败不显示“没有备份”；分页或筛选状态可见；删除远端备份前明确目标和数量，多选删除支持先查看清单；修改目标地址不删除旧服务器上的备份；旧位置可保存在用户可删除的目标历史中，但秘密不暴露。
+10. UX-25-001..008 与 AC-25-001..003、AC-25-012 约束数据位置、类别、凭据、临时会话、本地导出与远端目标。
+11. 实现边界：Sente 单条消息不超过 `1MB`；Datomic Local 单值字符串硬上限 `4096` 字符；长消息、底稿、工具输出与导出包走外部 Blob 区或分块，不塞进单值字段。
+
+### 7.2 加密、备份一致性与恢复预览
+
+1. 新建备份默认开启密码加密，要求设置密码或明确关闭后才能开始；密码至少 `12` 个字符，接受中文和空格，但拒绝全空白，不自动修剪首尾空格；首次输入两遍核对，提供显示密码和复制到用户自己选择位置等明确动作，不擅自写入剪贴板；默认记住加密开关，不长期记住密码；若以后提供安全记住密码，应是独立选择。
+2. 界面说明恢复需要同一密码，应用无法找回遗失密码；用户可返回先安全保存密码再继续；修改备份密码只影响新创建的备份，旧文件不会自动改密；恢复旧备份时要求对应文件密码，不能一律使用当前设置而报文件损坏；密码错误、文件损坏和不支持加密版本分别给出状态。
+3. 用户关闭加密时，摘要显示“此备份可被获得文件的人读取”，并列出是否包含密钥；选择包含密钥且不加密时再次明确文件内容的可读性，不能把确认文字藏在长条款中；导出成功页显示真实加密状态，远端列表、文件详情和恢复预览使用相同标记；加密设置退出再返回后保持选择，不得悄悄重置。
+4. 开始备份后显示数据范围的取样时间；此后用户继续聊天或新增文件，当前备份仍使用该时间点的一致内容，新增数据留给下次备份；正在写入但未准备完成的附件必须完整纳入或明确列为未完成项，不能生成引用存在而文件缺失的“成功备份”；主界面不因备份长时间失去响应。
+5. 进度分为准备资料、打包、加密、写入目标和检查结果；能知道字节数时显示真实进度，不知道总量时显示已处理数量与阶段；取消打包或上传后当前本地资料不变，远端未完成对象被清理或标为不完整，不参与正常恢复列表；用户离开页面后任务状态可从顶部活动入口返回。
+6. 备份完成页显示位置、大小、包含数量、排除项与完成时间，提供查看和恢复检查入口；远端写入完成但结果无法确认时标为“需要验证”，不能立即覆盖最近成功备份时间；重试优先核对已有对象，避免同一份备份被无解释上传多次；平台不支持后台完成时，离开前台说明状态，不继续假报进度。
+7. 自动备份默认关闭；用户开启时选择频率、目标、数据范围、网络条件和保留份数，并预览下一次条件；手机无法保证后台准点运行时采用“下次应用可运行时尝试”，文案不承诺固定分钟；自动清理只作用于这个计划创建的副本，不能删除手工保留或其他设备产生的备份；删除最旧副本前先确认新备份成功，失败时保留旧副本。
+8. 恢复前先校验可读性、格式、完整性及密码，再显示设备、日期、类别数量和兼容情况；无法完整读取的备份不进入覆盖步骤；能部分提取时提供独立的“尝试提取可读内容”，明确它不等于成功恢复；此时本地数据保持原样。
+9. 恢复方式用准确名称：“合并选中类别”和“替换选中类别”。合并保留本地未被导入内容涉及的资料；替换先移除所选类别的本地版本，再使用备份版本；未选类别在两种方式下都不改变；“替换全部数据”是显式选择全部类别后的独立摘要，不把局部选择误称全量覆盖；关系受影响时预览必须列出，例如导入对话引用一个未选择导入的助手。
+10. 关系缺失有确定处理：对话所需助手不存在且未选择导入助手时，创建一个“待配置的导入助手”承接对话，保留原助手显示名称和来源说明，不任意归到当前助手；模型或工具配置缺失时历史仍可读，新请求前再选服务；工作区路径在新设备不存在时标为待重新关联，不创建同名系统目录，也不自动授权外部位置。
+11. 合并冲突不能靠名称猜身份：完全相同的已导入内容跳过并计数；名字相同但内容不同的助手、世界书或工作区保留两份，新增项加“来自备份 日期”的可编辑显示后缀；可以确定同一对象而两端都有更改时，冲突预览提供保留本地、使用备份和保留两份，默认保留两份；不得只因备份时间较新就静默覆盖，设备时钟可能不同。
+12. 记忆是该通用默认的明确例外：本机已归档或删除的记忆遇到旧备份中的有效版本时，保留本机停用决定，导入项作为停用的待审冲突，不能借“保留两份”重新生效；替换整类记忆时，预览单独列出将恢复有效的条目并要求明确选择；无法确定身份时也不自动启用导入记忆；§5.3 的记忆作用范围和审阅规则持续适用。
+13. 同一备份重复导入不会无限增殖：第二次合并同一份未修改备份时，已存在内容显示为跳过，结果数量可核对；用户明确选择另存副本时才重复创建；会话消息版本、分支顺序、附件归属和记忆作用域需要一起保持，不能只比较消息正文就合并两条上下文不同的记录；冲突结果报告可以定位到保留的两个版本。
+14. UX-25-009..020 与 AC-25-003..008 约束加密、密码、一致性、进度、恢复预览、关系缺失、冲突与重复导入。
+
+### 7.3 恢复执行、7+4+3 恢复点、空间不足与启动恢复
+
+1. 替换前先建立可回退的本地恢复点，显示恢复点时间及占用；空间不足而无法建立恢复点时替换操作停止，用户可先导出到其他位置、释放明确可清理缓存或改用新的空白数据位置；不能为了让导入看起来成功而跳过保护；合并操作同样需要可回退记录，至少覆盖它将改变的资料。
+2. 准备和预览阶段可随时取消且本地不变；开始替换后界面说明不能随意关闭，并显示实际进度；中途失败时回到恢复前状态，或进入明确的恢复页面让用户选择已有恢复点；不能显示空白首页并让用户误以为原数据被正常清空；已恢复多少、未恢复多少和当前使用哪个状态都能查看。
+3. 恢复完成后先检查可用性：结果页列出成功、跳过、冲突、副本缺失和待重新配置数量，并提供查看相关条目；导入的定时任务、自动备份计划、设备控制、全访问模式以及外部写入权限默认暂停或关闭，用户逐项启用；服务密钥如有导入，可由用户测试连接，不会因为恢复完成自动发测试请求、创建定时结果或读取屏幕。
+4. 应用托管工作区可以随备份复制内容；链接到用户其他目录的工作区默认只备份配置和显示标签，除非用户明确选择包括外部文件；恢复在另一设备时让用户选择新的关联位置；手机系统文件夹许可、桌面绝对路径和沙盒挂载不能作为可移植授权，必须重新核对；工作区小应用与普通浏览器数据保持分开，恢复不会把二者登录状态混在一起。
+5. 本地恢复点不是设备外备份：默认保留最近 `7` 个成功本地恢复点，另保留最近 `4` 周和最近 `3` 月的代表副本；实际空间不足时先提示并允许调整上限。它们只帮助应对误操作或应用数据故障，设备丢失时不能代替外部备份；清理界面显示每个恢复点日期和大小，当前恢复所依赖的副本不能在运行中删除。
+6. 新消息无法持久保存时，输入区显示“设备空间不足，内容尚未保存”，用户可以复制文字、另存附件或释放缓存；已经可读历史不得被改为空列表；正在生成内容即使只能暂留，也要提供复制和导出，不谎称已保存；释放空间后允许重新保存并更新状态，不要求用户重新生成全部答案。
+7. 若无法读取正常数据，页面显示发现的本地恢复点、最近备份信息、导出诊断和重新尝试入口；默认优先保留原始数据，不自动创建新空库覆盖；用户选恢复点前可查看时间与大致内容数量；恢复后提供回到旧数据检查的可能路径；连续恢复失败时可以创建新的独立数据位置开始使用，但旧位置仍保留并明确标识。
+8. 存储页列出对话附件、工作区文件、语音模型、字体、浏览器数据、缓存、备份和日志；每类显示大小、清理后影响和可检查入口；清理缓存不会删除消息；删除设备内语音模型意味着需重新下载；删除工作区文件是实际资料删除，需要逐项确认；使用中的文件不能在后台无提示清理；大小统计无法完成时写“正在计算”或“部分未知”，不显示虚假的零。
+9. 从 Cherry Studio、Chatbox 或其他产品导入时，先识别格式和版本，展示本产品实际验证过的兼容列表；版本未知时明确标为未验证，允许预览可读取部分，不能声明全面兼容；预览列出将迁入的对话、助手、附件和无法映射的设置；未知字段可作为附带原始资料保留，但不能自动变成可执行工具或系统提示。
+10. 迁移成功后给出原始数量、成功数量、跳过和失败原因，用户可按原对话标题查找；角色、时间、消息顺序、分支和附件不能映射时逐类说明，不能只说“导入完成”；不支持的第三方加密、文件格式或版本应引导先在来源应用导出受支持版本，不得让用户把无法读取的文件直接上传给聊天模型作为恢复办法。
+11. UX-25-021..030 与 AC-25-009..011 约束恢复点、提交边界、恢复后检查、外部目录、7+4+3、空间不足、启动恢复、清理与第三方迁移。
+
+### 7.4 外观、对比度、字号、快捷键与 Escape
+
+1. 偏好设置分为外观、文字、阅读、输入、声音与反馈、窗口和快捷键；每个设置展示当前值及作用范围；助手单独设置的背景位于助手页，同时在全局外观说明覆盖关系；会话明确覆盖助手，助手覆盖全局，继承值标明来源；改全局主题不改变助手头像或提示词，改当前会话背景不影响其他会话。
+2. 初次启动语言和外观均跟随系统；语言无法匹配时使用简体中文；用户手动选择后保持选择，系统之后改变不覆盖手动值。主题选项为跟随系统、浅色和深色；动态取色是额外选择，仅在支持的 Android 环境提供；不可用时回到可读内置色板并说明当前替代色板。
+3. 颜色、字号、背景强度和动画选项在当前页预览即时变化；复杂组合以“应用”提交，取消恢复进入页面时状态；保存完成后提供恢复默认，不用用户记住原来的十几个滑块值；恢复默认说明作用范围，只重置本页或所选类别，不清空模型、对话和其他资料；预览中的演示消息使用中性内容，不随机抽取用户私密聊天。
+4. 内置主题覆盖普通正文、次要文字、链接、引用、代码、表格、错误、成功和禁用状态；正文与背景对比度目标至少 `4.5:1`，大字号文本和关键图形目标至少 `3:1`；背景图和模糊效果开启后也要满足。用户自定义颜色导致不可读时，预览指出具体元素，并可一键恢复相应文字色，不能只在整页角落显示模糊警告。
+5. 背景来源可为纯色、渐变或用户选择的本地图片，默认纯色随主题；用户裁剪和设置暗化程度后可预览长文字、代码与表格；桌面多栏和手机横竖屏分别预览，背景不能让附件、错误条和选区消失；使用本地图片时取得应用副本，原相册图删除后背景仍可显示，删除背景只删除该副本。
+6. 用户可调节气泡填充、边框、圆角和透明程度，默认使用主题提供的稳定样式；透明、毛玻璃和阴影效果在不支持设备上可降级为纯色，但角色、工具结果和用户消息仍有明确区分；窄屏不能因左右气泡留白过大把正文压成几字一行；长消息宽度和内边距以阅读为先。
+7. 主题导入文件只包含外观参数与可选背景资源，不包含模型密钥、聊天、头像对应私人身份或设备路径；导入前显示主题名称、包含内容、缺少资源和兼容情况；未知字段忽略并列出，不执行文件内任何指令或远端请求；应用主题前可预览，取消后旧外观完整保留。
+8. 界面与代码字体可分别选择：默认使用系统字体，代码使用系统可用等宽字体；界面字体作用于导航、设置、弹窗和普通消息，代码字体只作用于代码及明确等宽内容；只想改聊天正文时提供单独正文大小选项；缺少字体使用可读回退字形，不显示空框，也不将回退解释为内容缺失。
+9. 全局文字缩放初始范围为 `80%–200%`，可以滑动、点选档位或输入数值，提供 `100%` 重置；用户开启系统大字体后，应用不得强行缩回固定字号；两种设置合成后的实际效果在预览展示；两行按钮可以增高，设置标签和说明允许换行，关键动作不能因放大文字被挤出屏幕；正文行距默认保持中文长文易读，代码行距另行调节。
+10. 选择需要下载的字体时显示来源、体积和下载状态，用户点击才获取；滚动字体列表不批量下载；离线时保留系统字体，下载失败不阻止对话阅读；导入本地字体先检查可用性和基本字符预览，错误文件不改变当前字体；删除已使用字体前提示将回退系统字体，历史文字内容和字号不受影响。
+11. 界面语言提供简体中文、繁体中文和英文，切换后导航、按钮、错误和帮助文本一起改变；用户写的标题、提示词和对话正文不翻译；模型默认回答语言可在助手提示中设定，界面语言切换不偷偷改写该提示；没有翻译的新功能文案可显示统一回退语言，但同一操作中的按钮和说明不混乱地各用一种语言。
+12. 数字、日期和路径可复制：显示可以遵循系统区域习惯，复制保留完整有意义内容；费用显示货币代码或符号，避免不同币种相加；时间显示含义清楚，需时区时提供可展开时区；文件路径不因视觉省略而丢失复制内容；中文标点、表情、组合字符和从右向左片段不能破坏选区、删除和光标移动；搜索与翻译使用原文。
+13. 减少动态效果默认跟随系统，用户也能单独关闭滚动动画、流式光标动效、背景动画和触觉反馈；关闭动效后仍有明确处理中状态，不靠消失动画让用户猜工作是否继续；深浅色变化、横竖屏切换和面板展开不闪烁大面积高对比画面，重要内容位置尽可能稳定。
+14. 桌面默认 `Enter` 发送、`Shift+Enter` 换行；中文等输入法正在组合或选候选词时，`Enter` 只确认输入法内容，不能同时发送；手机默认键盘回车换行，旁边独立发送按钮；用户可在输入设置切换习惯，设置页用可试输入示例解释结果；弹窗、搜索框和表格单元格中的 `Enter` 按控件语义工作，不把任意回车都当成聊天发送。
+
+| 动作 | Windows 与 Linux 默认 | macOS 默认 |
+|---|---|---|
+| 新建对话 | `Ctrl+N` | `Command+N` |
+| 查找当前对话 | `Ctrl+F` | `Command+F` |
+| 搜索全部对话 | `Ctrl+Shift+F` | `Command+Shift+F` |
+| 打开设置 | `Ctrl+,` | `Command+,` |
+
+15. 显示或隐藏主窗口、开始录音、切换侧栏及其他全局快捷键默认未分配，用户可在设置中指定；记录快捷键时先捕获按键并检查冲突，不立即触发动作；冲突提示显示占用动作与范围，用户可以换键或明确替换；系统保留键无法设置时说明原因；导入快捷键遇到平台差异时显示建议映射并等用户应用。
+16. `Escape` 有稳定层级：有弹层时先关闭最上层可关闭弹层；有输入法候选或文本选择时先交给当前输入控件；这些都不存在且当前对话在生成时，`Escape` 才作为停止生成快捷入口。涉及未保存编辑时按其退出确认处理，不把 `Escape` 当永久删除或放弃整段草稿；快捷键帮助面板展示当前有效映射，包括用户修改后的值。
+17. UX-26-001..020 与 AC-26-001..012 约束外观、对比度、字号、字体、语言、快捷键与 Escape 层级。
+
+### 7.5 统计、费用、诊断与求助
+
+1. 统计页默认展示最近 `30` 天的对话活跃天数、用户发送次数、已确认 token 用量、费用估算和模型分布；顶部可选今天、最近 `7` 天、最近 `30` 天、全部和自定义日期，另可按助手、模型及服务筛选；筛选条件在所有图表和明细中统一生效，不出现总量属于一个范围、排行属于另一个范围。
+2. 热力图每一天可点开查看发送次数和涉及助手，键盘或读屏可访问同一数据；模型分布除颜色外显示名称和数量，小分类可合并为“其他”并展开；没有数据时展示空状态与统计口径，不画看似正常的零值曲线掩盖读取失败；读取失败显示重试，已缓存统计注明最后更新时间。
+3. 统计默认按当前设备时区划分自然日，页面显示所用时区；用户切换时区可能改变日期归属，界面允许按记录发生时区查看或保持当前时区，不修改原始发生时间；自定义起止日期包含两端日期，结束日期早于开始日期时无法应用；跨设备导入记录按保留时间信息计算，没有时间的记录进入“时间未知”，不能全部塞进导入当天。
+4. 一次用户发送不等于一次模型调用：单轮可能包括模型推理、工具后续、摘要或重试；界面分别称为用户发送次数、模型请求次数和工具调用次数，不能统一叫“消息数”；点击一轮用量可展开各次请求，显示模型、用途、结果和是否重试；编辑历史但没有发送不增加模型请求次数，切换回复版本也不新增用量。
+5. token 来源要明确：优先展示服务实际返回用量并标“服务返回”；本地估算写“估算”；未知写“未提供”。输入、输出和缓存分别呈现，缓存若是输入子集不能再次加进总量。例如服务明确表示输入 `1000`、其中缓存命中 `200`、输出 `100`，则总量为 `1100`，缓存 `200` 只是明细；语义不明字段保留原始名称并标口径未确认，不能为凑总数随意相加。
+6. 请求取消、超时或失败时，已经确认的用量仍可记录；服务未给最终用量时标部分已知，不能自动计为零成本；重试产生新的请求记录，不覆盖第一次；如果确认只是恢复同一次服务请求，则在原记录注明恢复；因工具副作用待核对而暂停的轮次保留已知费用，不能在重新打开时重复计入。
+7. 临时会话可在当前窗口显示本次用量，但关闭后不保存可追溯内容或请求明细，也不写详细日志；普通会话移至已删除后，活跃历史列表不再显示它；已经发生的费用估算可以保留为不含内容的汇总，页面说明删除聊天不等于退款；永久删除时提供同时清除相关本地统计明细的选项，统计重算后解释数值下降原因。
+8. 聊天记录和统计页显示“估算费用”，除非当前服务确实返回该请求实收金额，后者单独标明来源；订阅额度、余额查询与调用估算分别展示，不能相互替代；未知价格或用量导致无法估算时显示未估算数量，不把空值当零后宣布总费用很低；用户应能看见总估算覆盖了多少请求。
+9. 模型详情可填写输入、输出及已支持的缓存价格，并明确每一项按多少 token 计价、所用币种及价格来源日期；用户粘贴单价后，预览用一个固定示例说明数量与金额，防止把每百万单价误填为每千单价；不同价格类别缺失时只估算可确定部分，不能默认缓存免费；应用不维护无法保证时效的硬编码“最新价格”作为事实。
+10. 改价格默认影响未来请求，旧记录仍保留生成时使用的价格和币种；用户选择按新价格重算历史时，先说明它将得到新的分析视图，原估算仍可查看，不伪称服务修改了历史账单；多币种默认分别汇总；如果以后提供换算，必须展示汇率日期、来源和估算性质，不能默默相加成人民币或美元。
+11. 图像、语音、搜索或其他工具服务可能按张、时长或调用次数计费，界面保留相应单位；服务未提供价格时显示使用量，不凭聊天模型价格推算；某个服务附赠额度和免费试用不作为永久规则；余额读取失败不让已有有效模型配置失效；用户可完全隐藏金额展示而保留用量记录。
+12. “首字等待”从用户提交被接受起，到本轮第一个可见正文片段为止；思考、搜索和工具等待单独显示，不能把一条空状态更新算成正文到达；总耗时含本轮实际经历的等待，模型生成时长、工具耗时可展开；服务不给足够信息时不展示看似精确的 token 每秒，只显示可判断的时间。
+13. 可以可靠取得 token 和对应生成时长时显示速度；估算 token 则标估算速度；暂停、后台系统冻结、工具执行和网络等待不应被无解释地混成模型性能；模型排行默认按使用量，不提供未经统一条件验证的“最好”“最快”结论；用户用不同网络和附件条件得到的速度，只作为自身这次体验记录。
+14. 输入区上下文指示显示当前模型可用窗口及预计使用比例，展开后区分系统与助手指令、记忆、世界书、历史、工具描述、附件和当前草稿；图片、音视频等无法精确估算时说明范围或未知，不显示百分之百准确数字；压缩、切模型、移除附件和工具配置变化后，重新计算或标明正在更新，不能延用上一模型上限。
+15. 普通会话常规状态只记录解释运行所需的非敏感元数据，如时间、服务、模型、耗时和错误类别；用户为排障主动开启详细日志时，说明可能包含提示词、回复、工具结果和文件名称，选择仅下一次请求或限定时长，默认仅下一次；临时会话仅按本次窗口状态处理，不因全局详细日志开启而自动落盘；确需导出本次材料时在该会话另行确认。
+16. 对已启用详细记录的请求，详情显示实际使用的服务地址、模型、参数来源和发送内容结构，方便核对是否带入某条记忆或附件；密钥、登录令牌、认证头和密码始终遮蔽；普通用户没有“复制全部包括秘密”的快捷按钮；内容未被记录时说明没有记录，不能根据当前设置重新拼出一份内容并冒充当时请求。
+17. 错误详情将用户能处理的类别放前面：模型未选、连接不可达、认证被拒、额度或频率限制、输入不兼容、内容超长、本地无法保存、工具等待批准 †；原始服务错误可展开查看并复制脱敏版本；不能把任何失败都翻译成“网络错误”，也不能把服务返回字符串当成可靠指导自动执行。
+18. 诊断页显示日志占用和保留时间，详细日志初始最多保留 `7` 天，可手动立即清空；清理日志不删聊天或统计汇总；用户暂停记录后不继续积累详细内容；导出文件在用户选择位置，清理应用日志不承诺删除已经交给别人的副本；后台运行状态与详细诊断分开，不要求开启详细日志才能看到任务失败原因。
+19. 错误卡提供“准备诊断资料”，生成预览而不是直接发送；默认包含应用版本、平台与系统版本、时间范围、错误类别和脱敏服务信息，不包含对话正文、附件、密钥、私有路径或完整请求；用户可逐项勾选额外材料，每项说明用途和可能内容；预览支持删去行、替换昵称和隐藏域名后再导出。
+20. 产品自动遮蔽已知凭据字段和常见秘密模式，但普通正文中的个人信息需要用户检查；导出页面明确“请确认预览中没有你不想分享的内容”，并提供全选复制或保存文件；截图默认由用户主动选择，不自动截取整个屏幕或最近会话；报告中的占位符保持前后一致，让排障者能分辨不同服务而看不到真实值。
+21. 点击问题反馈打开用户选定的浏览器或邮件草稿，预填标题、复现步骤、预期与实际结果；提交动作由用户完成；产品不自动代发公开 issue，也不把完整诊断附件上传第三方；用户离开后草稿仍可回来修改；若没有网络，资料可保存到本地，恢复网络也不自动提交。
+22. 常见问题按动作组织，如无法发送、图片不支持、账户过期、后台中断、导入失败；错误页进入帮助后保留错误和草稿，返回时继续原任务；帮助中的服务状态链接显示真实域名，用户点击才打开；升级建议注明适用当前版本与已知修复范围，无法确定时只建议检查更新，不保证更新会修复所有问题。
+23. UX-27-001..022 与 AC-27-001..012 约束统计筛选、token 口径、费用、价格、日志、诊断包与反馈。
+
+### 7.6 跨平台生命周期与视口
+
+1. 新建、发送、停止、重试、编辑、创建分支、移至已删除、永久删除和导出具有相同结果；手机长按菜单和桌面右键菜单提供同样主要动作，有些动作因当前能力不可用说明原因。不能把桌面删除解释为永久删除、手机删除却只是隐藏，也不能让桌面编辑直接覆盖旧版本而手机保留版本。
+2. 手机通常一次显示一个主页面，平板和桌面在空间允许时并列导航、对话和资料面板；窗口变窄时先折叠辅助面板，用户可从明确入口再打开，不能通过压缩字体解决全部布局问题；折叠不丢失所选文件、浏览器页签、搜索词和会话草稿；重新变宽恢复面板时不突然切到另一条对话。
+3. 桌面的面板宽度、窗口位置和显示器信息属于当前设备偏好；手机恢复桌面备份后不会套用桌面列宽；会话选择、正文、附件和有效配置可以迁移，平台独有能力保持待配置；外部键盘接到平板后可启用快捷键，但不改变触摸按钮可用性；触屏电脑上的鼠标与手势可以交替使用。
+
+| 用户目标 | 手机和平板默认入口 | 桌面默认入口 |
+|---|---|---|
+| 选助手或对话 | 导航抽屉或独立列表页 | 常驻侧栏，窄窗可折叠 |
+| 检查附件和来源 | 全屏或底部材料面板 | 资料侧栏或独立预览窗层 |
+| 查看工具执行 | 对话内卡片和任务状态栏 | 对话内卡片和可并列详情 |
+| 管理工作区 | 应用内文件页与可用终端 | 文件侧栏与系统终端入口 |
+
+4. 未连接模型时可以阅读基本说明、选择语言、查看设置和准备草稿；应用不因网络不可达卡在启动页；必要初始化失败有明确重试和诊断入口；模型账户登录是连接相应服务，不是登录一个同步所有资料的本产品账户；用户跳过可选介绍后仍可在帮助页找到说明。
+5. 正常退出后再打开，恢复最近访问的普通对话、选中回复版本、可恢复草稿和大致阅读位置；已经移至已删除的目标不能重新出现在主历史；上次停在设置或文件页时可恢复该页面，同时保留回到最近对话入口；临时会话按其退出规则处理，不为了“恢复现场”悄悄转为永久会话。
+6. 打开旧任务卡、恢复窗口或重新进入对话，只显示已有结果，不重新发送用户消息、重跑工具、生成图片或播放语音；上次正在进行的工作先核对状态，无法确认就标为中断或结果待确认；恢复对话中的空回复占位若没有实际内容，显示明确中断提示和重试入口，而不是永久闪动空气泡。
+7. 手机横竖屏切换、平板分屏调整和桌面缩放时，草稿、附件顺序、光标附近内容、选定模型和工具开关保持；正在录音、识别或生成的任务依然属于原对话，不创建第二个任务；系统因布局变化重建页面后，保存位置选择与文件接收可以继续，不能要求重新选择同一批文件。
+8. 输入区随可用空间变化，不覆盖最近一段消息和发送按钮；多行输入可滚动或展开，附件条可以折叠但显示数量；键盘关闭后回到此前阅读位置，不强制滚到最底；输入法切换、语音键盘结束和表情键盘返回时，组合中的文字不被截断或重复插入。
+9. 桌面支持至少 `360` 个逻辑像素宽的可操作窗口；窄窗可改为单栏导航和全屏选择面板，但全部核心任务仍能到达；最小高度受系统限制时，设置页和对话可纵向滚动；保存、取消和停止按钮不藏到无法滚动的位置；拖拽文件至窄窗时仍显示接收目标，不能因面板折叠默默丢弃文件。
+10. 返回列表、打开设置或切换会话，不自动终止已开始的生成；全局任务入口显示仍在运行的任务；用户可以继续查看别的对话，并在适当时机收到完成状态；只要草稿已被标为保存，返回原会话应恢复它；未能保存时需要在离开前说明并给出复制或保留选择。
+11. 桌面若用户已启用托盘，关闭主窗口可以保留后台运行，并用首次说明让用户知道如何真正退出；未启用托盘时按系统常规关闭应用；存在正在执行的任务时，关闭确认提供平台可用的保持后台、停止并退出和取消关闭；没有任务或未保存内容时，不反复弹出多余确认。
+12. 手机强制停止、系统回收进程、电脑注销或关机都可能结束运行；下次启动展示最后已确认保存的内容和状态，不声称已恢复完整服务端任务；对已经完成的外部操作保留可确认记录；未知动作先核对，不能因进程重启自动再次执行；将任务移到托盘或实时活动只能改善入口和可见性，不能替代实际运行条件。
+13. 通知和状态组件遵循默认隐藏正文规则；应用在系统任务切换器中是否遮蔽聊天可以作为隐私选项，默认开启可用遮蔽；解锁返回不绕过系统认证，也不自动打开之前手动隐藏的密钥；手机控制等依赖解锁状态的工具在锁屏时暂停，普通生成按后台规则处理。
+14. 手机使用系统文件或照片选择器，桌面使用系统打开和保存对话框；用户取消选择是普通结果，不显示红色错误；取得访问权限失效时，给出重新选择同一文件或另选位置，不把整个会话报为损坏；文件名在不同平台含不可用字符时，另存建议一个可编辑新名，原消息显示名称仍保留。
+15. 用户从消息打开浏览器、系统终端、文件管理器或其他应用后，本产品保留原会话与阅读位置；外部应用没有安装或无法打开时，提供复制链接、保存文件或选择其他应用，不让按钮无反馈；打开系统终端本身不意味着已执行模型生成的命令；命令执行遵循工作区独立审批 †。
+16. 首版以一个主窗口为基准；用户再次启动应用时聚焦已有窗口；带来的文件或分享内容作为新的待接收项展示，不重新启动计划任务；平台确实支持多个窗口时，各窗口当前会话和草稿归属要清晰，同一对话同时修改必须呈现冲突或跟随最新状态，不能让最后关闭的旧窗口覆盖新内容；首版不要求多窗口编辑。
+17. 关于页提供手动检查更新，显示当前版本、可用版本、用户可见变化与下载渠道；网络失败保留当前版本信息和重试，不影响历史阅读；下载来源清楚，用户确认后才离开应用或开始安装；自动更新或开机检查如被提供，必须是独立可关闭设置，不能把用户开启后台任务当作同意自动更新。
+18. 版本更新应保留对话所属助手、消息版本、顺序、附件、记忆作用域和用户配置；需要转换数据时，先有可回退副本并说明进度；失败进入恢复页，不能把无法识别数据当新安装覆盖；应用版本低于当前数据可读范围时，说明不兼容并给出恢复兼容备份选项，不冒险直接打开后重写。
+19. 支持自定义位置的平台先展示当前和目标路径、预计空间、访问条件及迁移范围；用户确认后停止会改变数据的新操作，完成复制与核对后才切换到新位置；失败继续使用旧位置并保留错误说明；迁移成功后让用户决定何时清理旧副本，不立即删除唯一可恢复资料；移动盘断开时说明数据位置不可用，不静默创建另一个空位置。
+20. 提供应用内清空或卸载帮助时，清楚区分程序文件、当前设备资料、外部备份及用户链接文件夹；清空应用数据不能删除用户原有外部工作区；删除应用托管工作区需要说明会删除实际文件；账户退出只清除当前设备相应登录凭据，不能删除历史对话，也不能假称同时删除服务商留存数据。
+21. 在手机登录与桌面相同模型账户，不自动出现桌面对话；帮助、首次登录成功页和备份页使用一致说明；用户需要迁移时通过备份恢复或明确导出材料；文件传输、模型账户用量同步与对话同步是三种不同能力；应用不能用“所有设备随时继续”暗示尚不存在的实时同步。
+22. 恢复数据后，当前平台无法运行的模型连接方式、语音模型、设备工具、终端配置和文件路径列为待配置，但历史内容仍可读；导入任务、设备控制和全访问配置保持暂停或关闭；用户在两台设备分别编辑同一助手，再通过备份合并时按冲突规则处理，不能只凭名称认定其中一份是最新真值。
+23. 首版至少以五类视口检查完整旅程：`360×800` 窄手机、常见大屏手机、`820×1180` 平板、`1280×800` 桌面和 `360` 像素宽桌面窄窗；每类至少重复一遍大字号、软键盘或外接键盘、浅深主题与离线进入；测试重点是状态和内容连续，不能只检查首页截图。
+24. UX-28-001..022 与 AC-28-001..012 约束跨平台同义、页面层级、布局记录、启动/重开、旋转、键盘、小窗、离开/退出、升级、迁移与多设备边界。
+
+### 7.7 24 类常见失败文案合同
+
+| 情况 | 面向用户的说明 | 主要操作 |
+|---|---|---|
+| 尚未选模型 | 先选择一个可用模型，草稿仍在这里 | 选择模型 |
+| 供应商未启用 | 当前模型所属的连接已停用 | 打开连接设置 |
+| 模型被移除 | 原模型已不可用，历史回答仍可阅读 | 选择替代模型 |
+| 凭据无效 | 服务没有接受这组凭据 | 更新凭据或改选连接 |
+| 账号授权过期 | 需要重新连接这个账号 | 重新登录 |
+| 额度不足 | 这家服务报告额度不足，本次未继续 | 查看服务或换模型 |
+| 服务限流 | 服务暂时限制请求，已保留本轮内容 | 等待后重试或取消 |
+| 网络不可达 | 无法连接到所选服务 | 检查连接或稍后重试 |
+| 响应迟迟未到 | 服务尚未返回内容，可以继续等待或停止 | 等待或停止 |
+| 输入超出容量 | 当前内容超过所选模型可接受的范围 | 查看内容范围并调整 |
+| 附件类型不支持 | 当前模型不能接收这类附件 | 换模型或改变处理方式 |
+| 部分资料不可读 | 已读入部分内容，仍有资料未成功处理 | 查看缺失部分 |
+| 本地空间不足 | 空间不足，暂时无法保存更多内容 | 释放空间或导出当前内容 |
+| 本地资料不可读 | 无法打开这份资料，原文件未被替换 | 查看恢复选项 |
+| 外部文件已移动 | 找不到原位置的文件 | 重新定位或移除链接 |
+| 权限被撤销 | 这项操作需要的权限已关闭 | 恢复权限或选择其他方式 |
+| 工具执行失败 | 这一步没有完成，已完成的步骤仍保留 | 查看原因和后续选择 |
+| 结果回执丢失 | 操作可能已执行，需要先核对结果 | 检查目标状态 |
+| 任务错过时间 | 本次执行时间已错过，没有自动补跑 | 手动运行或看下次时间 |
+| 备份密码不正确 | 无法解锁此备份，当前资料没有改变 | 重新输入密码 |
+| 导入格式不支持 | 无法识别这份资料的格式 | 查看支持范围 |
+| 恢复发生冲突 | 新旧资料包含需要你选择的差异 | 查看冲突并决定 |
+| 版本过新 | 此资料由较新的格式保存 | 更新应用或保留原文件 |
+| 导出被取消 | 没有生成最终导出文件 | 返回或重新导出 |
+
+“认证失败”“无权限”“找不到模型”不混为一谈；用户改变错误字段会浪费时间，也可能把凭据发到错误服务。诊断页优先指出可确认类别；不能确定时说“无法确定具体原因”，列出可操作检查顺序，不编造看似专业的根因。状态文案中的“已保留”只在确实完成本地保存后显示。
+
+### 7.8 性能、规模与放行硬门槛
+
+1. 正常负载下点击与键盘局部反馈在 `100ms` 量级，持续输入不掉字、不阻塞输入法；超过约 `1s` 的本地处理显示明确状态。外部模型首字时间不由客户端保证，客户端保证等待可见、能停止、已保存内容可继续阅读。
+2. 规模基准需通过 `1,000` 条会话与单条含 `2,000` 条可见活动（多版本、附件、表格、代码、工具结果）的长会话测试：打开列表按需渲染，返回长会话恢复原阅读位置，向前查找不因重排跳位；`两万字`中英与代码混排草稿支持流畅编辑、选区、撤销与崩溃恢复。
+3. 附件与备份基准按产品明确声明的容量上限附近测试，并包含取消与部分失败；较大资料要说明进度或当前阶段，可以离开不破坏任务的页面；内存或空间不足时准确告知并保留已确认内容，不承诺所有设备处理任意大小文件。
+4. 电量与后台基准按实际平台条件说明；桌面退出、设备休眠、手机系统结束进程后，应用不能继续显示虚假保证；返回后状态可核对，任务有完成、错过、中断或待处理明确结果；持续高资源活动应能被用户发现并停止。
+5. 阻断放行的最高优先级缺陷：未经明确选择外发资料、重复外部副作用、不可恢复地覆盖用户内容、把损坏或满盘资料库当新库清空、错连服务或跨会话串内容、无法停止、草稿丢失、中文输入法 `Enter` 误发、费用未知显示为 `0`。
+6. 核心旅程应能在键盘、触摸和屏幕阅读器适用平台完成；仅靠颜色表达授权或失败、图标无名称、焦点无法离开弹窗、字号放大后隐藏确认按钮，均为阻止放行问题。客户端自身生成的事实（使用哪个服务、是否执行工具、文件是否保存、是否还有未处理步骤）必须准确；模型知识错误与客户端事实错误在反馈分类中分开。
+7. UX-29-001..017 与 AC-29-001..012 约束同时发生的动作、错误恢复、保存失败、误操作撤销与无法继续时的可交付内容。
+
+### 7.9 备份、外观、费用、诊断与跨平台验收
+
+- AC-25-001 新安装不配置备份目标不产生外部备份活动，页面显示尚无设备外备份
+- AC-25-002 只勾选助手和世界书导出，预览/结果/文件一致
+- AC-25-003 开启加密退出再返回开关不丢，密码默认不长期记住
+- AC-25-004 错误密码恢复本地不变，错误指向密码/解密而非空数据成功
+- AC-25-005 备份中继续新增消息/附件，已生成备份对应明确取样时间，无悬空附件引用
+- AC-25-006 替换对话未选记忆，当前记忆不变，替换前有恢复点
+- AC-25-007 同名不同内容助手默认保留两份并标来源
+- AC-25-008 连续两次合并同一备份，第二次跳过不新增
+- AC-25-009 替换中空间不足/不可写进入明确恢复状态，原历史可找回
+- AC-25-010 恢复后计划暂停、权限收回，未确认前不发请求/不操作设备
+- AC-25-011 清缓存后消息/原始附件/工作区文件仍可用
+- AC-25-012 未验证第三方版本显示未验证与可预览范围，不改写原文件。
+- AC-26-001 系统语言可匹配则跟随，否则简体中文；主题跟随系统，手动修改不被覆盖
+- AC-26-002 改背景/圆角/颜色后取消，恢复进入时完整组合
+- AC-26-003 极浅背景配极浅文字，预览指出不可读并可修复，代码/表格/错误同样检查
+- AC-26-004 文字 `200%` 窄窗口，标签换行，发送/停止/关闭仍可达
+- AC-26-005 无效字体或下载中断，原字体继续，正文不空白
+- AC-26-006 切英文界面，按钮/系统文案改变，原中文对话/标题/提示词不变
+- AC-26-007 中文候选态 Enter 只确认，再按 Enter 才发送
+- AC-26-008 两个动作设同一按键显示冲突，不任意执行
+- AC-26-009 键盘开关模型弹窗，焦点回触发按钮，草稿仍在
+- AC-26-010 读屏生成长回复不逐字打断输入，完成状态可读
+- AC-26-011 不用长按/拖拽仍能编辑/删除/重排/查看菜单
+- AC-26-012 生成中打开设置弹层按 Escape 先关弹层，再按才停止生成。
+- AC-27-001 选最近 `7` 天和一个助手，概览/热力图/排行/明细/导出同一范围
+- AC-27-002 输入 `1000`、缓存 `200`、输出 `100` 总 token 为 `1100`，不显示 `1300`
+- AC-27-003 一次发送触发两次模型尝试，发送计数一、请求计数二
+- AC-27-004 某模型无价格、某请求无用量，总费用列出未估算数量
+- AC-27-005 两模型不同币种分别汇总，未设汇率不生成统一总额
+- AC-27-006 改输入单价后旧记录保留旧依据，主动重算才生成新视图
+- AC-27-007 临时会话结束后永久统计/详细日志无本次内容
+- AC-27-008 未启用详细日志的请求显示未记录，不生成伪造历史
+- AC-27-009 日志预览/复制遮蔽密钥密码但保留字段名
+- AC-27-010 切更小窗口模型并附图，上下文重新计算或显示未知，不沿用旧比例
+- AC-27-011 准备诊断包后取消，无上传/公开提交，原错误与草稿可返回
+- AC-27-012 清空详细日志，聊天/助手/用量汇总不变，后续未开启不继续记录。
+- AC-28-001 文字/附件/选中模型草稿旋转两次，内容/顺序/光标附近文字不丢
+- AC-28-002 桌面缩到 `360` 像素仍能选模型/发消息/停止/开文件/进设置
+- AC-28-003 生成时切会话与设置，任务仍在全局入口，返回看到正确输出
+- AC-28-004 启用托盘关闭窗口任务继续，选择退出并停止后不继续
+- AC-28-005 中途结束进程，重启保留已保存内容，未完成轮次标中断，无永久空转占位
+- AC-28-006 系统保存对话框取消，无错误告警/空文件，结果可再次保存
+- AC-28-007 已关联文件夹权限撤销，显示需重新关联，历史与其他工作区仍可读
+- AC-28-008 主窗口已开且有计划任务，再次启动聚焦原窗口，不重复启动/提交
+- AC-28-009 数据转换失败进入恢复页并保留旧数据，不带到无说明新安装首页
+- AC-28-010 自定义数据位置磁盘移除，明确提示不可用，不悄悄用空白数据
+- AC-28-011 手机备份导入桌面，历史/附件/助手可核对，设备能力/路径待配置，计划暂停
+- AC-28-012 新设备登录同一模型账户，界面准确显示本地无历史并提供恢复入口，不宣称已同步。
+- AC-29-001 甲生成中切乙编辑草稿，甲完成状态正确，乙草稿不被覆盖
+- AC-29-002 同会话生成中再按发送，用户看到明确选择，取消后下一条草稿与当前回复都保留
+- AC-29-003 审批弹出后改默认模型，审批仍显示原轮次，拒绝后不以新模型/工具执行同一动作
+- AC-29-004 外部写动作已提交但回执丢失，重启只显示待确认，未明确决定前不第二次提交
+- AC-29-005 断网自动重试等待中停止，恢复网络后原轮次不自行恢复/生成重复消息
+- AC-29-006 空间不足保存失败，界面指出未可靠保存部分，可复制已到内容，释放空间后不静默丢弃
+- AC-29-007 损坏部分本地资料后启动进入恢复而非空白初始化
+- AC-29-008 恢复中收到系统分享，文字进入待处理/可复制页，不写到恢复前后不明会话
+- AC-29-009 备份开始后新发消息，结果准确说明截止点，不宣称未包含内容已备份
+- AC-29-010 批量文件任务完成两项/失败一项/未开始一项，结束卡区分四个对象，重试只针对选择范围
+- AC-29-011 含图片草稿换文字模型，图片仍留草稿，发送前可决定换模型/转换/移除
+- AC-29-012 取消分享或外部登录返回，原会话/草稿/阅读位置/配置输入完整保留。
+
+→ 用于：AGENTS.md §7.4 第 8 组、§7.1 第 2 条的恢复点/备份对象、费用三口径与诊断脱敏落点。
+
+## 8 E2E 剧本：22 条跨章验收
+
+剧本只保留编号、覆盖条款与必须通过的检查项；叙述性准备、示例对话和演示账号描述已删除。每条剧本同时检查四类证据：用户实际看到什么、用户采取哪个明确动作、结果属于哪个对象、退出或重开后哪些内容仍存在。视觉相似不代替行为完成。
+
+| 剧本 | 覆盖 | 必须通过的检查项 |
+|---|---|---|
+| **E2E 01** 空安装到首条可保存回复 | 04/05/07/08/28 | 引导不要求额外注册；连接模型返回后草稿完整；实际服务身份可见；发送只产生一条用户消息；生成前有可理解状态；回复可复制；退出重开消息、回答与模型归属均在；测试连接失败也能回原草稿修改，不把失败当作必须重置应用的理由。 |
+| **E2E 02** 同名模型与双服务连接 | 05/06/12 | 选择器能区分同名模型的连接来源；旧会话保留原有效选择，新会话采用新助手默认；停用服务不删历史，继续发送时解释缺少连接并由用户主动选替代；不得按模型名字符串串投服务或静默承担新费用。 |
+| **E2E 03** 流式阅读与下一条草稿 | 07/08/09/29 | 新增流式内容不抢滚动与选区；收到的文字不覆盖输入区草稿；停止保留已生成内容且不自动发下一条；切回无遗留假旋转；不允许为稳定滚动而停止接收内容；新发送是一轮新工作。 |
+| **E2E 04** 历史编辑与两条分支 | 10/11/21 | 新版本不含被移除图片，原版本仍可看原图；未删用户原始文件；各分支消息顺序不变、不混入另一分支工具结果；导出只含选定路径；分支名可改、来源位置可追溯。 |
+| **E2E 05** 压缩后继续与撤销压缩 | 10/13/27 | 原消息仍可读；摘要不把假设升级为事实；继续时不同时带入摘要和已被替代的全部历史；新会话辨认摘要来源且不后台带回旧消息；撤销只恢复上下文范围，不删之后已产生的回答。 |
+| **E2E 06** 附件能力不匹配与部分读取 | 06/21/27 | 不支持附件给出可选处理方式；不可读页显式列出，不包装成已完整阅读；答案引用指向具体材料；已保存本地副本仍可读，外部引用准确提示重新定位；确定计算可核对，未读到某页不得声称已读。 |
+| **E2E 07** 搜索结果与来源核查 | 09/15/19 | 同一来源不重复计数；未知发布日期不被抓取时间替代；正文编号与来源列表一一对应；外部网页打开失败不抹去已保存引用；导出含完整链接；断网阅读不发起隐式搜索。 |
+| **E2E 08** 角色能力边界、S1 提问与操作员中断 | 01/02/16/29 | 常授权模式不弹逐次工具审批窗；`Plan` 在 `S1` 调用 `.ask` 可挂起并由人类回答恢复；非 `S1` 调用拒为 `:ASK_FORBIDDEN_OUTSIDE_S1`；普通个体调用 `.call` 拒为 `:TOKEN_REQUIRED`；Esc 递归取消整棵会话树且保留已生成内容与未领取证据；关闭外部连接后不再获得未来调用许可，已保存结果仍可查。 |
+| **E2E 09** 工作区受保护提交遇到外部修改 | 04/17/20/28 | 旧补丁因 `stamp` 变化在写前被拒绝，真实文件保留外部编辑器新改动；冲突回执展示原 `stamp` 与当前 `stamp`；重读后新修改正常落盘；文件卡指向真实结果并准确说明运行位置；手机环境与桌面本机各执行一次。 |
+| **E2E 10** 工具中断后的未知结果 | 08/16/17/29 | 重启恢复将动作标为 `:outcome-unknown` / 结果待确认，绝不自动重复提交；重试入口先引导核对目标状态；确认已成功后结清该轮，无需删除会话结束挂起；下一轮不把未知结果说成失败并再次执行。 |
+| **E2E 11** 记忆从候选建议到归档与临时会话隔离 | 12/13/27 | 未批准候选不影响未来；归档后不再注入，但旧请求详情保留当时用过的记录；临时会话默认不读不写记忆；一次性只读启用范围明确，关闭后不扩展到其他会话。 |
+| **E2E 12** 世界书与指令卡叠加 | 12/14/18 | 触发规则与冷却次数可解释；单次应用指令卡不永久污染助手；另一会话不误承接当前会话计数；触发内容无权自行打开工具或扩大能力范围；移动条目说明绑定范围变化，撤销能恢复。 |
+| **E2E 13** 技能安装与工作区小应用隔离 | 17/18/19/20 | 技能安装不自动执行命令；权限来自用户操作而非技能正文；小应用保存状态真实可见；两个小应用与普通浏览页互看不到记录，清除其一不影响另一；生成失败仍可查看已有文件。 |
+| **E2E 14** 受管浏览器观察、人工接管与终止 | 16/19/24 | 接管期间代理不继续点击；恢复后基于当前页面重新识别而非盲目重放旧坐标；密码等敏感输入不要求粘贴进聊天；最终提交前由操作员中断；关闭标签页不删会话说明，返回会话可定位该网页任务。 |
+| **E2E 15** 语音转写修订、失败回退与朗读翻译 | 21/22/26 | 转写结果先入草稿不直接外发；云端识别失败保留原录音不强迫重说；服务切换有明确外发说明；朗读可停止，切换消息版本时停止旧朗读；翻译作为派生结果保留原文不覆盖历史。 |
+| **E2E 16** 定时任务、时区策略与平台诚实边界 | 23/25/28 | 跟随设备与固定时区结果可区分；错过的执行记录为“已错过”而不集中补跑；立即运行不改变原计划；导入后默认暂停；受限平台只提供前台手动运行，不提前生成、不伪造准点承诺。 |
+| **E2E 17** 加密备份、合并冲突预览与缺失附件恢复 | 25/27/28 | 错误密码不改动现有资料；同名对象不按名称静默覆盖，提供合并预览；新增会话保留；外部路径提示重新定位；自动任务恢复后默认不直接启用；缺失附件准确列出且其余历史仍可读。 |
+| **E2E 18** 磁盘空间不足与恢复启动 | 07/08/25/29 | 严禁把保存受阻的资料库当空库重新初始化；用户能分清已保存与未确认保存部分；草稿尽可能恢复且不谎称完整无缺；空间释放后历史关联与附件恢复可读。 |
+| **E2E 19** 字号放大、键盘导航、屏幕阅读器与输入法 | 03/04/09/26 | 焦点顺序符合视觉顺序，弹窗关闭后焦点回到原触发点；图标有可读名称；放大后确认按钮与关键文字不被裁切；批准与拒绝都能到达；中文输入法组词确认按 `Enter` 绝不误触发发送。 |
+| **E2E 20** 临时会话舍弃与转存边界 | 07/13/15/21/25/27 | 舍弃后本地普通持久入口、索引、记忆候选与已删除区均不残留该会话内容；已发往外部服务的内容如实说明不受本地舍弃撤销；明确转存时范围可见，已有外部动作不因转存重复执行。 |
+| **E2E 21** 费用口径区分（服务返回 / 估算 / 未知） | 06/08/23/27 | 未知用量绝不计为确认的 `0`；界面明确标注「服务返回 / 估算 / 未知」三种口径；多子请求不重复计数；修改当前单价不无声改写历史账面含义。 |
+| **E2E 22** 跨设备迁移与环境降级 | 11/13/16/25/28 | 无法迁移的宿主环境能力不让其余资料失效；关闭状态保持关闭；已删除会话保留在已删除区（`30` 天期限），不自动混回主历史或无限延期；迁移是明确导入，不偷偷开启后台双向同步。 |
+
+AC-31-001..004 属交付清单与升级验收（发布包/功能表一致、按 AC/E2E 独立验收、升级保留资料、未执行项不写成通过），由 AGENTS.md §8.4 承担，本文件不重复。
+
+→ 用于：AGENTS.md §8.5 的 22 条端到端放行判定。
+
+## 9 差异与不采纳
+
+本节同时记录平台差异（9.1）与不采纳清单（9.2）；原文主张只作为基线证据，冲突一律以 AGENTS.md 为准。
+
+### 9.1 平台差异
+
+| 平台/场景 | 本文件基线 | AGENTS.md 裁决 | 处理 |
+|---|---|---|---|
+| iOS 定时任务 | 仅前台手动运行，不提前生成，不承诺定点唤醒（S01/S03/S06 表述有差异） | §7.4-7 与 §8.5 E2E 16 同 | 采纳；文案固定为“仅支持前台手动运行” |
+| Android/桌面定时 | 有条件计划运行；桌面依赖应用运行/托盘；Android 受系统与厂商限制 | §7.4-7 同 | 采纳；条件逐项显示，不承诺绝不漏跑 |
+| 手机本地进程 vs 桌面终端 | 手机需先准备运行环境；桌面可用系统终端 | §7.2 三类环境隔离 | 采纳；平台不兼容不混作认证错误 |
+| 多设备资料 | 默认独立状态，迁移靠备份/导出，无实时双向同步 | §7.1 当前态持久化；§5.1 多客户端同控 | 同服务器多客户端共享 Owner；跨设备不实现后台双向同步 |
+| 多窗口 | 首版一个主窗口为基准；平台支持时处理冲突 | §5.1 多客户端 `tmux` 语义与命令去重 | 服务器支持多客户端；客户端可单窗口，不冲突 |
+| 同名模型 | 按连接分组，绝不合并为一行 | §7.4-2 同 | 采纳 |
+| 临时会话 | 不读不写记忆、不入已删除区、不备份 | §7.4-5/6 | 采纳 |
+| 完全访问 | 会话内放宽常规审批，外部写入仍逐次确认 | §7.4 前言与 §2.5 无常授权审批 | 不采纳；见 §9.2 D-01..D-06 |
+
+### 9.2 不采纳与替代
+
+| 编号 | 原文主张（章节） | AGENTS.md 裁决 | 处理 |
+|---|---|---|---|
+| D-01 | 每次工具调用弹窗等待人工审批（03.3/03.9/16.4/17.3/17.4/19.3/24.4） | §7.4 前言与 §2.5：常授权无人值守；以会话级能力范围 + 角色工具面硬边界 + `stamp` 写锁 + 操作员接管/Esc 替代 | 删除逐次审批弹窗与常驻“批准/拒绝”流程；仅保留破坏性工作区登记清理、导出含密钥明文、能力越界配置变更三类显式确认 |
+| D-02 | 默认值“工具权限 = 请求批准”（03.2） | 常授权模式无逐次审批默认 | 该行不生效；默认改为按角色工具面的会话能力范围；表内标 † |
+| D-03 | “外部写入和不可轻易撤销动作展示对象与后果并确认”（03.2） | 仅三类显式确认；其余由能力范围、`stamp` 与可恢复版本承担 | 外部写入不逐次确认；删除、覆盖、外发仍须在动作卡显示对象与影响，但不等同审批弹窗 |
+| D-04 | “完全访问”模式（03.9/16.4） | AGENTS.md 无此协议概念；使用会话级能力范围 | 不实现“完全访问”状态、继承、降级与“恢复请求批准”；E2E 08 改写为角色边界/S1/Esc |
+| D-05 | 审批按钮“允许这一次 / 拒绝 / 修改后再试”（16.4） | 无逐次审批 | 删除；拒绝语义由能力范围收回与 Esc 取消承担；修改参数走新的工具调用 |
+| D-06 | “等待批准”作为轮次暂停状态（03.4/08.2/23.3） | 仅 `S1` `.ask` 与操作员接管是合法暂停 | 状态词保留用于历史/兼容显示；新实现不由工具审批产生 |
+| D-07 | 模型问题卡/表单作为任务暂停（20.2） | `S1` 唯一提问通道；非 `S1` 的 `.ask` 拒为 `:ASK_FORBIDDEN_OUTSIDE_S1` | 交互卡片保留为消息内 UI；模型主动提问只能 `S1` `.ask`；表单提交不等于代理挂起 |
+| D-08 | 定时任务遇审批/登录/必答问题停在“需要你处理”（23.3） | 常授权；`S1` 唯一提问 | 仅 `S1` `.ask` 或操作员接管时停；其余按能力范围执行并记录，不产生审批等待 |
+| D-09 | 工作区默认请求批准写入和命令（17.3/17.4） | §4.2：`stamp` + 写入口 `$W$` + 整批 dry-run；Shell 仅 holder | 不逐次批准；写入走受保护提交合同；`:FILE_CONFLICT` 与 `:TOKEN_REQUIRED` 承担拒绝 |
+| D-10 | 手机控制每次外部动作确认（24.5） | 能力范围 + 操作员接管 | 保留敏感输入人工接管与锁屏暂停；删除逐次确认；高风险动作由能力范围排除 |
+| D-11 | 浏览器提交表单单次确认（19.3） | 操作员接管/Esc；受控页面主动输入自动暂停 | 保留接管自动暂停与重新读 DOM；删除提交审批卡 |
+| D-12 | 审批拒绝后不得换工具重做（03.9） | 无审批语义；能力范围收回后由工具面硬边界承担 | 删除“拒绝”状态；能力范围外的工具调用直接不可见/不可用 |
+| D-13 | iOS 定时仅前台手动（01.5/23.4/32.4） | §7.4-7 与 §8.5 E2E 16 同 | 采纳 |
+| D-14 | 同名模型不合并（06.1） | §7.4-2 同 | 采纳 |
+| D-15 | 临时会话不读不写记忆、不入已删除区（07.1/13.4/11.7） | §7.4-5/6 同 | 采纳 |
+| D-16 | 每会话模型固定（06.2） | §7.4-2 同 | 采纳 |
+| D-17 | 记忆四类、候选审阅、单条上限 `2,000` 字（13.1） | §7.4-6 同 | 采纳 |
+| D-18 | 世界书持续/冷却按用户轮次（14.3） | §7.4-6 同 | 采纳 |
+| D-19 | 备份加密 ≥`12` 字符、`7+4+3` 恢复点、已删除 `30` 天（25.3/25.7/11.7） | §7.4-8/5 同 | 采纳 |
+| D-20 | 附件 `20` 个/`100 MiB`/长边 `2048` 像素（21.2/21.3） | §7.4-7 同 | 采纳 |
+| D-21 | 对比度 `4.5:1`/`3:1`、字号 `80%–200%`、热区 `44×44`/`32×32`（26.2/26.3/26.6） | §7.4-8 同 | 采纳 |
+| D-22 | 费用三口径、未知不为 `0`（27.2/27.3） | §7.4-8 与 §8.5 阻断缺陷同 | 采纳 |
+| D-23 | 自动重试默认关闭、每轮最多 `+2`（03.2/08.5） | §5.3 取消域与 §7.1 `:outcome-unknown` | 采纳为客户端细节；不得绕过“不重放外部副作用” |
+| D-24 | 备份不是实时同步（25.1/28.7） | §7.1 当前态持久化 | 采纳；跨设备迁移走备份，不实现后台双向同步 |
+| D-25 | 多设备独立状态（28.7） | §5.1 多客户端同控 | 同服务器多客户端共享 Owner；跨设备独立 |
+| D-26 | 首版一个主窗口（28.5） | §5.1 多客户端 `tmux` 与命令去重 | 服务器支持多客户端；客户端可单窗口；不冲突 |
+| D-27 | 产品账号不需要（01.1/03.2） | §1.1-1 独立全栈底座 | 采纳 |
+| D-28 | 禁止“兼容全部/绝不丢失/完全离线/自动同步”（UX-01-002） | §7.4 前言 | 采纳为文案审查项 |
+| D-29 | 未交付能力不放可点击假入口（UX-01-003） | §7.4-1 可选扩展不做入口 | 采纳 |
+| D-30 | 删除会话不删工作区原文件（03.5/11.7） | §7.1 三级删除语义 | 采纳；工作区文件独立清理 |
+| D-31 | 恢复后计划暂停/权限收回（25.6） | §7.1 恢复窗口与未结责任 | 采纳 |
+| D-32 | 损坏/满盘资料库不得当新库清空（25.7） | §7.1 存储损坏保护 | 采纳；必须实现恢复入口 |
+| D-33 | 搜索发布日期与抓取时间分开（15.2） | §7.4-6 同 | 采纳 |
+| D-34 | 技能安装默认未启用（18.2） | §7.4-6 同 | 采纳 |
+| D-35 | 小应用独立存储（20.5） | §7.4-7 同 | 采纳 |
+| D-36 | 操作员在受控页面主动点击/输入自动暂停代理（19.4） | §7.4-7 同 | 采纳 |
+| D-37 | 交互卡片标注“生成的交互内容”（20.1） | §7.4-7 同 | 采纳 |
+| D-38 | 语音输入默认先转写进草稿（22.2） | §7.4-7 同 | 采纳 |
+| D-39 | 定时错过不补跑（23.2） | §7.4-7 同 | 采纳 |
+| D-40 | 未知用量不显示为 `0`（27.2） | §7.4-8 与 §8.5 同 | 采纳 |
+
+→ 用于：AGENTS.md §7.4 前言与 §2.5 的冲突裁决记录。
+
+## 10 引用：S01–S14 的用途
+
+| 编号 | 来源 | 用途与边界 |
+|---|---|---|
+| S01 | https://github.com/Chevey339/kelivo/blob/v1.3.4/README_ZH_CN.md | 确认产品总体能力类别与平台范围，包括模型连接、对话、助手、工具、工作区、资料保存；只作参考产品公开声明，不证明全部平台实际运行结果。 |
+| S02 | https://github.com/Chevey339/kelivo/releases/tag/v1.3.4 | 确认基线版本及消息保存、历史编辑、选区与平台交互的维护范围；具体内部修复方法不属于本文件实现要求。 |
+| S03 | https://kelivo.psycheas.top/guide | 核对用户操作入口与功能用途，并识别 iOS 定时任务表述差异；页面持续更新，查阅日期 2026-11-03。 |
+| S04 | https://github.com/Chevey339/kelivo/releases/tag/v1.3.3 | 确认侧面板、工作区小应用、图片上下文控制、选区引用、助手复制等新增可见能力；保存稳定性与窄窗口说明转为独立验收目标。 |
+| S05 | https://github.com/Chevey339/kelivo/releases/tag/v1.3.2 | 确认浏览器、交互式回复、可逆上下文操作、会话工具权限和加密备份等公开能力；具体渲染与内部处理方法不沿用。 |
+| S06 | https://github.com/Chevey339/kelivo/releases/tag/v1.3.0 | 确认工作区、技能、背景执行及定时任务进入公开发布范围；iOS 任务描述与其他材料并列记录，不据此承诺准点后台执行。 |
+| S07 | https://github.com/Chevey339/kelivo/releases/tag/v1.3.1 | 确认统一模型能力编辑、上下文与费用展示、原生多模态输入、独立草稿以及可选择备份范围。 |
+| S08 | https://github.com/Chevey339/kelivo/blob/v1.3.4/docx/screenshot_1.png | 可见顶栏与输入栏层次、折叠推理区域、独立表格和代码容器；截图内演示文字不作为功能正确性或模型能力证据。 |
+| S09 | https://github.com/Chevey339/kelivo/blob/v1.3.4/docx/screenshot_2.png | 可见文件动作与命令卡按执行活动排列、文件入口/状态/输出节选在会话内出现；不据此推定审批和中断行为。 |
+| S10 | https://github.com/Chevey339/kelivo/blob/v1.3.4/docx/screenshot_3.png | 可见工作区标题、终端会话和辅助按键；具体运行技术不作为本产品约束。 |
+| S11 | https://github.com/Chevey339/kelivo/blob/v1.3.4/docx/screenshot_4.png | 可见段内编号、聚合来源入口及消息操作；截图内被模型回答的外部知识不在本文件核实范围。 |
+| S12 | https://github.com/Chevey339/kelivo/releases/tag/v1.2.6 | 确认会话独立模型选择曾是可选配置；本产品改为每会话明确保留有效模型，不要求复现该历史默认。 |
+| S13 | https://kelivo.psycheas.top/ | 辅助核对当前对外定位与公开能力入口；营销描述不代替权限、持久保存和平台限制的可验收规则。 |
+| S14 | https://api.github.com/repos/Chevey339/kelivo/git/ref/tags/v1.3.4 | 固定标签与提交对应关系；工程实现无需读取该提交中的实现代码。 |
+
+**来源差异记录**：iOS 定时任务在 S01 平台表、S03 使用手册与 S06 发布说明之间存在表述差异；本文件采用“仅前台手动运行、不提前生成、不承诺定点唤醒”，与 AGENTS.md §7.4-7 一致。模型选择作用范围在 S12 与 S03 之间存在版本差异；本文件采用每会话有效模型，修改助手默认只影响新会话。供应商能力、价格、额度与模型名持续变化，本文件不把任何固定模型名、价格、额度或供应商数量当作永久事实。
+
+→ 用于：AGENTS.md §8.5 与 §9.5 的来源核对。
+# 共享文件系统 Swarm 协作协议实施参考（AGENTS.md 参考资料）
+
+> **定位**：本文件把 Swarm 协议展开为字段、事务伪代码、并发场景与验收断言，供实现 AGENTS.md §3 与 §4.2–§4.4 时对照；它不是独立产品规格，也不重新定义协作协议。
+> **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。
+> **支持条款**：AGENTS.md §3.1–§3.15、§4.2–§4.4、§8.2–§8.4、§9.3（D01–D16）。
+> **来源与核对**：原始 Swarm.txt v1.0（2026-11-03，无提交号）；AGENTS.md 工作副本（2026-11-03，无提交号）；R1/R2 核对日期 2026-11-03。
+> **证据等级**：设计推演（协议、伪代码、场景）；公开材料核对（R1 rsync(1)、R2 PPoPP 2005）；无实测。T01–T13、F01–F15 是验收要求，不是已运行结果。
+
+> **2026-11-03 同步说明**：本参考中的位置参数、`.method` 写法、`:cancelled`/`:replaced` 状态、`(take-or-die request-id handoff-updates)`、`(park-slot observed-cursor)`、`ls` 结构检查、`finish` drain 与 `fission` 均已过时；以 AGENTS.md §1–§6 为准。映射：`(cat {:path ...})`、`(split {...})`、`(claim {...})`、`(finish {...})`、`(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`、`(park-slot {:observed-cursor ...})`；任务状态只剩 `:ready`/`:waiting`/`:done`；`ls` 是纯探查；`finish` 不 drain；`fission` 已删除。
+
+## 0 实施用法
+
+| 本文件条目 | 对应 AGENTS.md 条款 | 实现落点（模块/字段/入口） | 验收证据 |
+|---|---|---|---|
+| §1 协议边界与术语 | §3.7 | `hc/core/vocab`；状态关键字；工具响应字段 | 同一关键字只对应一种对象；入口拒绝原因可区分 |
+| §2 控制数据模型 | §3.2、§3.11 | `hc/core/board`；`Task`/`Action`/`Actor`/`TokenSlot` schema | schema 校验；派生索引可从权威记录重建 |
+| §3 STM 转换伪代码 | §3.3、§3.4、§3.5、§3.11 | `hc/core/commands`：`split`/`claim`/`finish`/`take-or-die`/`retire`/`park-slot`/`relay` | 事务边界断言；T01–T13 |
+| §4 责任集合与退休 | §3.2、§3.9 | `hc/core/responsibility`；`R(a)`；计数与索引 | 集合与计数一致；V05；等待项计入 |
+| §5 文件提交合同 | §4.2、§8.3 F01–F15 | `hc/file/reader`、`planner`、`gate`、`writer`、`board` | F17–F24；F01–F10 |
+| §6 Shell 会话合同 | §4.4、§8.3 | `hc/shell/session`；`hc/file/gate`；令牌任期 | F21–F23；F11–F12 |
+| §7 T01–T13 | §3.4 | `hc/core/commands` + 确定性驱动器 | 每场景 must/forbid 全部通过 |
+| §8 F01–F15 | §8.3 | `hc/file` + 临时工作区 + 故障注入 | 每场景 must/forbid 全部通过 |
+| §9 故障范围与弱保证 | §3.6、§4.2 F23 | 结果分类；`operation-id`；恢复核对 | 强/弱/外部/硬失败断言；不得外推清单 |
+| §10 验证模型与实施顺序 | §8.2、§8.4 | `test/driver`；三层模型；五阶段 | V01–V08；最短反例；阶段验收 |
+| §11 配置改造案例 | §3.15 | 端到端剧本；状态变化表 | 案例每步 must/forbid |
+| §12 变更检查表 | §8.4 L32 | 变更评审记录 | L32-01 八项检查 |
+
+按此表从 AGENTS.md 条款跳到本文件的展开细节。
+
+表中的模块名是建议落点，不是仓库现有文件清单；实现可按实际目录调整，但字段、入口与验收关系不得改变。
+
+| 编号 | 本文件展开位置 |
+|---|---|
+| A02-01…A02-24 | 见下方 A02 索引 |
+| B09-01 | §3 引言 |
+| B09-02 | §2.7 |
+| B09-03 | §3.8 |
+| B10-01 | §2.1 |
+| B10-02 | §3.3 |
+| B10-03 | §11 |
+| B11-01 | §3.1 |
+| B11-02 | §3.1 |
+| B12-01 | §3.3 |
+| B12-02 | §3.1 |
+| B13-01 | §3.2 |
+| B13-02 | §3.4 |
+| B14-01 | §3.3 |
+| B15-01 | §4.1 |
+| B15-02 | §4.3 |
+| B16-01 | §2.7 |
+| B16-02 | §3.6 |
+| F17-01…F17-04 | §5.1 |
+| F18-01…F18-04 | §5.1 |
+| F19-01…F19-04 | §5.2 |
+| F20-01…F20-04 | §5.3 |
+| F21-01…F21-04 | §6.1、§6.2 |
+| F22-01…F22-04 | §6.1、§6.2、§6.3、§6.4 |
+| F23-01…F23-04 | §6.5 |
+| F24-01…F24-04 | §5.4、§5.5 |
+| L25-01…L25-04 | §10.4 |
+| L26-01…L26-02 | §7 引言 |
+| L27-01…L27-02 | §8 引言 |
+| L28-01…L28-02 | §10.1、§10.3 |
+| L29-01 | §10.4 |
+| L30-01 | §10.5 |
+| L32-01 | §12 |
+| V01–V08 | §10.3 |
+| T01–T13 | §7 |
+| F01–F15 | §8 |
+
+| A02 | 规则速查 | 展开 |
+|---|---|---|
+| A02-01 | 真实工作区唯一；工具与 Shell 操作同一物理工作区 | §5.1、§6.2 |
+| A02-02 | 没有全局任务选择者；内核只做准入、串行化、广播与补槽 | §3 引言、§3.8 |
+| A02-03 | 公共工作必须可接续；上下文消失前公开信息已足够 | §2.1、§4.1 |
+| A02-04 | 拆分优先于执行认领；拆分者不天然获得子项优先权 | §3.1 |
+| A02-05 | 原子性由单次可发布结果决定，不由行数/文件数/调用数决定 | §3.1 |
+| A02-06 | 父项保留目标与剩余工作；子项全完成只解除等待 | §3.3、§11 |
+| A02-07 | 拆分、等待、父项状态与责任变化同一次 STM 提交 | §3.1 |
+| A02-08 | 普通责任保留原归属；令牌不夺走普通任务 | §2.1、§4.1 |
+| A02-09 | 令牌责任动态归当前 holder；新增令牌任务自动进入 | §2.4、§4.1 |
+| A02-10 | 责任解除必须有完成/取消/替代/移交事件；受阻与等待不算 | §4.2 |
+| A02-11 | 抢令牌不可逆：赢或输，无第三身份 | §3.4、§7 |
+| A02-12 | 竞争前先耗尽有价值的受保护工作；不抢空令牌 | §7、§10.4 |
+| A02-13 | 持令者完整责任集合为空时同事务释放令牌、撤销身份、死亡 | §3.5、§4.1 |
+| A02-14 | 新生不继承前世私有上下文；槽可复用，身份不复用 | §10.4 |
+| A02-15 | 文件变化只用 `mtime` 与 `size`；不用 `atime`、哈希或版本表 | §5.1 |
+| A02-16 | 读取不申请 `$W$`；可能观察中间态；提交时才校验依据 | §5.1、§6.2 |
+| A02-17 | 所有协议内实际写入共用 `$W$`；控制存储独立 | §5.3、§6.2 |
+| A02-18 | 整批 dry-run；最终预演到应用不释放 `$W$`；正常路径无回滚 | §5.2、§5.3 |
+| A02-19 | Shell 保持黑盒；`$W$` 只协调时序，不证明命令正确 | §6.5 |
+| A02-20 | 用户输入原文立即入板并 `wake-all`；解释不得替换原文 | §2.7 |
+| A02-21 | 全局有非阻塞工作时禁止主动休眠 | §3.6 |
+| A02-22 | 等待登记与条件核对同事务；空→非空与输入都唤醒 | §3.6 |
+| A02-23 | 硬失败只作 best-effort；不承诺恢复旧现场或恰好一次 | §9.1 |
+| A02-24 | 外部访问只作 best-effort；相同二元组可能漏检 | §9.3 |
+
+→ 用于：从 AGENTS.md 条款定位到本文件展开，并据此分配实现模块与验收证据。
+
+## 1 协议边界与术语
+
+完整术语表见 AGENTS.md §3.7；本节只列会改变入口检查、字段或生命周期分支的区分。
+
+| 区分 | 实现后果 | 不得合并或误用 |
+|---|---|---|
+| 目标 / 任务 / 动作 | 目标只描述期望结果；任务保存目标、剩余工作、等待与归属；动作保存一次执行的 `:kind` 与 `:phase`。完成提交针对任务，不针对工具返回值。 | 把一次 `:APPLIED` 当任务 `:done`；把动作阶段写进 `:state`。 |
+| 改变共同理解 / 受保护文件修改 / Shell | 第一类直接作用于看板 STM，不需令牌；第二类走受保护提交；第三类走令牌 + `$W$`。三类动作的入口与保证不同。 | 把拆分包装成“管理另一个任务”的任务；把 Shell 当可预演编辑；把看板评论当文件修改。 |
+| 责任 / 归属 / 认领 | 责任是“仍需有人接续”的公开事实；`:owner-id` 是普通责任归属；`:claim-id` 是当前原子动作的执行凭证。令牌责任由 `:holder-id` 推导，不逐条改写 `:owner-id`。 | 用最近评论者推断 owner；把 claim 当永久所有权；把 `:holder-id` 当 `$W$` 拥有者。 |
+| 可推进 / 可领取 / 可执行 | 可推进＝存在有价值的协议内步骤；可领取＝再加无冲突认领与候选资格；可执行＝再加依赖与准备条件满足。 | 把“可推进”当“可认领”；把“全局可推进”当“某个体可执行”；把他人已认领动作重复计入可领取集合。 |
+| 等待 / 阻塞 / 休眠（三类等待） | 等待是任务 `:waiting` 且有具体解除条件；阻塞是工具调用已发出未返回（等 `$W$`、Shell 等 I/O）；休眠是 `park-slot`，须满足全局禁睡规则并事务化登记。 | 把主动休眠改名 `yield` 或“轻量等待”；把工具阻塞当主动休眠任意取消；把 `:waiting` 当无责任。 |
+| 令牌 / `$W$` | 令牌管身份、执行资格与动态责任；`$W$` 管实际文件写入的时间区间。普通受保护提交需要 `$W$` 不需要令牌；Shell 二者都要。 | 合并成一个从获胜到死亡始终持有的互斥量；把令牌任期当文件版本；把 `$W$` 当全局任务调度器。 |
+| 预演 / 准备结果 / 应用 | 预演在真实写入前完成整批计算；`:prepared` 是锁内最终计划，绑定本次动作与校验；`:preview` 是锁外只读帮助，不是写入许可；应用只安装 `:prepared`。 | 接受旧 `:preview` 作为许可；应用阶段重新展开通配符或询问模型；把预演成功次数当贡献。 |
+| 已应用 / 已完成 / 已取消 / 已替代 | 已应用＝确定的文件结果已发生；已完成＝负责个体明确确认目标满足；已取消＝不再要求继续但不声称目标实现；已替代＝后续工作由明确的新任务/结构承接。 | 取消后自动回滚文件；子项取消当子项完成；替代不写接续位置；把完成记录改写成从未发生。 |
+| 逻辑死亡 / 物理终止 / 重生 | 逻辑死亡在 STM 中撤销身份与提交资格；物理终止由运行时销毁执行环境；重生创建全新 `:agent-id` 与空私有上下文。 | 复活旧 `:agent-id`；把槽位编号当身份；把进程存活当提交资格；把公共看板当私有记忆继承。 |
+
+→ 用于：AGENTS.md §3.7 的术语裁决，在入口校验、字段命名和生命周期分支中落地。
+
+## 2 控制数据模型
+
+字段名以 AGENTS.md 的 Clojure keyword 为准；Swarm.txt 的 snake_case 仅为来源写法，不进入新接口。控制记录只保存可检查事实；模型推理、长文本解释和文件内容不进入 STM 事务体。
+
+### 2.1 Task
+
+| 字段 | 取值 | 更新要求 | 实施检查 |
+|---|---|---|---|
+| `:task-id` | 不复用 opaque ID | 创建后稳定 | 任务归属不使用 `:slot-id` |
+| `:ledger-key` | 根任务绑定的台账键；非根为空 | 根任务创建时写入；完成时释放 | 只有根任务携带；接力屏障据此判断 |
+| `:goal` | 文本 | 目标改变必须公开说明影响 | 不能被子项计数或标题替换 |
+| `:remaining-work` | 文本 | 推进、拆分、恢复后保持可接续 | 完成前必须能指出剩余实质 |
+| `:done-when` | 文本或可检查条件 | 不得由计数隐式替换 | 完成提交逐项对照 |
+| `:state` | `:ready` / `:waiting` / `:done` / `:cancelled` / `:replaced` | 只经定义的 STM 转换修改 | 不混入动作阶段；不增加“忙”状态 |
+| `:wait-for` | 当前轮等待的子项或条件集合 | 与 `:state`、依赖结构同事务更新 | 不累积历史后代；取消项不算满足 |
+| `:needs-token` | 布尔 | 拆分或需求变化时明确调整 | 只标实际需要 Shell 的当前动作，不因祖先用过 Shell 而继承 |
+| `:owner-id` | `:agent-id` 或 `nil` | 普通责任归属；令牌任务不逐条改写 | 令牌责任由当前 `:holder-id` 推导 |
+| `:claim-id` | 当前原子认领或 `nil` | 与活身份、任务条件共同验证 | 不是永久所有权；转移后旧值失效 |
+| `:parent-id` | 父任务或 `nil` | 用于接续与呈现 | 不自动证明父项完成 |
+| `:child-ids` | 子任务集合 | 与 `:wait-for` 同事务提交 | 不因集合大小推断完成 |
+| `:result-refs` | 结果与执行事实引用 | 保留适用范围与必要 `stamp` | 不写单一 `success` 布尔 |
+| `:handoff-note` | 短文本 | 关键进展时更新；竞争前补齐 | 不复制私有推理或整段聊天 |
+
+B10-01：可执行任务至少有目标、当前剩余工作、完成含义与必要输入；缺少的输入应成为调查项或具体等待条件。B10-02：完成必须由有效个体明确提交并满足当前 `:done-when`，子项计数、退出码或字段非空不能普遍替代。
+
+| 任务类型 | 有效产物 | 常见不完整状态 |
+|---|---|---|
+| 调查 | 指定范围内的调用关系与依据 | 只列搜索词，没有结论 |
+| 修改 | 已应用的完整变更及后续条件 | 只有拟议补丁，没有应用 |
+| 验证 | 针对明确输入运行的结果 | 只写“看起来可以” |
+| 拆分 | 可独立推进的子项与父项剩余工作 | 只有更多标题，没有明确关系 |
+| 解释 | 用户要求对应的工作调整 | 原话被改写，未处理影响 |
+
+### 2.2 Action
+
+| 字段 | 取值 | 更新要求 | 实施检查 |
+|---|---|---|---|
+| `:action-id` | 不复用 opaque ID | 创建后稳定 | 与 `:request-id` 可一对一或一对多子调用 |
+| `:task-id` | 关联任务 | 创建时写入 | 动作结束不自动改任务终态 |
+| `:agent-id` | 执行身份 | 生效边界复核 | 不只用 `:slot-id` |
+| `:claim-id` | 本次认领 | 与任务当前认领一致 | 转移后拒绝旧动作的新提交 |
+| `:kind` | `:board` / `:edit` / `:shell` | 创建时确定 | 不把任意 Shell 标成 `:edit` |
+| `:phase` | `:claimed` / `:preparing` / `:waiting-gate` / `:applying` / `:running` / `:finished` / `:uncertain` | 只能按路径前进；普通拒绝创建新动作或回到可重试边界 | 文件已应用而记账未完成时仍为 `:applying`，不得提前 `:finished` |
+| `:request-id` | 稳定请求标识 | 首次接受时绑定载荷；同标识不同载荷拒收 | 响应丢失只查原结果，不重新执行 |
+| `:result-ref` | 结果引用 | 发布时写入 | 不把 `:APPLIED` 当父任务完成 |
+
+### 2.3 Actor
+
+| 字段 | 取值 | 更新要求 | 实施检查 |
+|---|---|---|---|
+| `:agent-id` | 不复用身份 | 创建后永不复用 | 逻辑死亡后不能复活 |
+| `:slot-id` | 固定容量槽 | 可复用 | 任务归属不使用槽号 |
+| `:role` | `:normal` / `:holder` | 获胜升为 `:holder`；不提供回到 `:normal` 的正常路径 | 释放令牌后旧上下文不得继续 |
+| `:life-state` | `:alive` / `:dead` / `:terminated` | 逻辑死亡与资源终止分别记录 | `:dead` 身份不能提交新动作 |
+| `:active-action-id` | 当前有副作用动作或 `nil` | 第一版同一身份同时至多一个 | 不能在 `:applying` 时发起 `take-or-die` |
+
+### 2.4 TokenSlot
+
+| 字段 | 取值 | 更新要求 | 实施检查 |
+|---|---|---|---|
+| `:holder-id` | `:agent-id` 或 `nil` | 获胜事务写入；退休事务清空 | 任一时刻至多一个有效 holder |
+| `:term-id` | 每次获胜新生成、不复用 | 与 holder 同事务写入 | Shell 入口必须匹配当前任期；旧任期只能查询，不能执行 |
+| `:state` | 至少区分空闲与持有；值域由实现固定 | 与 holder/term 同事务 | 不得出现两个有效任期同时对新调用生效 |
+
+令牌任务不在换持令者时逐条重写 `:owner-id`；责任由 `:needs-token` 与当前 holder 推导。新增令牌任务提交后立即进入当前 holder 的 `R(a)`。
+
+### 2.5 文件依据
+
+| 对象 | 字段 | 规则 |
+|---|---|---|
+| `read-set` 元素 | `{:path :stamp {:mtime-sec :mtime-nsec :size} :role}` | `:role` 区分 `:target` 与 `:dependency`；两类都参与锁内复核；`mtime` 保留秒+纳秒，`size` 用字节数 |
+| `checks` 元素 | `{:kind (one-of :absent :path-state :direct-children)}` | 结构条件必须可在锁内重做；目录列表的 `stamp` 不得解释为整个子树版本 |
+| 读取观察 | `:changed-during-read` | 读取前后 `stamp` 不同即标记；该次读取不得作为稳定提交依据 |
+| 预览 | `:preview` | 只读帮助；不占跨调用锁；不能作为写入许可 |
+| 最终计划 | `:prepared` | 锁内生成；含最终字节、操作顺序、已验证结构前提、预定看板事实；不可由模型改字段后 apply |
+| 应用资格 | `:permit` | 短 STM 固定；绑定 `:action-id`、`:claim-id`、`:agent-id` 与本次最小提交 |
+
+### 2.6 输入事件与通知
+
+| 对象 | 字段 | 更新要求 |
+|---|---|---|
+| 用户输入 | `:event-id`、`:raw-text`、`:arrival-seq`、`:source`、`:interpretation-refs` | 原文与解释分开保存；解释不得替换原文；到达顺序只用于指代与新旧判断，不当全局文件版本 |
+| 通知订阅 | `:subscription-id`、`:observed-cursor`、`:event-id` | 与休眠登记同事务；通知只促重新观察，不携带任务分配 |
+| 唤醒 | `:wake-all` | 用户输入无条件产生；全局可推进集合从空变非空也产生；可合并传输，不可合并掉“需要重新观察”的事实 |
+
+B16-01：每条用户输入以原文与唯一 `:event-id` 入板并产生 `wake-all`；原文与解释分开保存，未解释的实质输入本身就是公开可推进工作，没有总协调者独占解释权。
+
+### 2.7 派生索引
+
+| 索引 | 依据 | 更新要求 |
+|---|---|---|
+| 可推进索引 | 任务 `:state`、认领、动作阶段、依赖满足 | 与事实同事务；不把已认领且原主可继续准备的动作重复计入可领取集合 |
+| 等待者索引 | 父项 `:wait-for` 与直接等待关系 | 子项完成/取消时定位直接等待者；不沿祖先链自动传播完成 |
+| 普通归属索引 | `:owner-id` | 普通责任查询；令牌任务不因 holder 变化批量改写 |
+| 令牌未结集合 | `:needs-token` 且未终结 | 与 TokenSlot 同事务；新增任务插入可被退休判断检测 |
+| 活动动作索引 | `:phase` 为 `:applying`/`:running`/`:uncertain` | 退休与故障接续使用；任务取消不自动删除 |
+| 责任计数 | `R(a)` 的集合基数 | 必须能从权威记录重建；不得混用“全部未完成”“当前可执行”“某个体有资格”三个集合 |
+
+B09-02：任何派生索引的变化与其代表的事实变化处于同一次 STM 提交；非权威搜索缓存可以延迟，但认领、休眠与退休判断不能只依赖缓存。
+
+→ 用于：AGENTS.md §3.2 与 §3.11 的看板记录、字段约束和派生索引实现。
+
+## 3 STM 转换伪代码
+
+所有事务只做可重复的控制状态计算；模型推理、等待 `$W$`、Shell、文件写入与网络访问都在事务外。事务返回 `:ok`、`:conflict`（重读）或 `:precondition-failed`（当前状态明确不允许），并附具体条件。B09-01：事务只改变明确列出的控制记录，按当前值决定成功或冲突。
+
+### 3.1 split
+
+```clojure
+(split! parent-id expected-cond children-specs remaining-work wait-for-ids)
+;; 事务外：读取父项与相关子图；事务内：
+(stm
+  (assert (alive? caller))
+  (assert (#{:ready :waiting} (task-state parent-id)))
+  (assert (expected-cond-holds? parent-id expected-cond))
+  (doseq [c children-specs] (create-task! c))          ; 子项目标、输入、归属、needs-token
+  (set-task! parent-id
+             :remaining-work remaining-work
+             :wait-for wait-for-ids
+             :state :waiting)
+  (reindex-waiters! parent-id)
+  (reindex-ready!)
+  (settle-holder!)                                     ; 按最终状态计算 R(holder)
+  (emit! {:type :structure-changed :parent parent-id}))
+```
+
+B11-01：先判断当前剩余工作能否产生有价值的独立子项；有拆分价值就直接提交结构变更，不先建“执行拆分”任务卡。B11-02：不增加全局总拆分队列；内核只检查已记录的结构条件与认领资格。B12-02：移除或替换依赖时，被移除子项必须有明确去向（取消、独立任务、转服务其他父项），关系、责任与索引同事务发布。
+
+每次拆分回答三个问题：哪些部分可以单独完成；各部分需要什么输入；父项拿到这些结果后继续处理什么。只产生“思考第一部分”“思考第二部分”或所有子项都等待同一个未决决定的拆分无效；此时应先拆出那个可被查证或明确选择的决定。
+
+### 3.2 claim
+
+```clojure
+(claim! request-id task-id atomicity-reason)
+(if (seen? request-id)
+  (return-stored-result request-id)                     ; 同标识同载荷重放；不同载荷拒收
+  (stm
+    (assert (alive? caller))
+    (assert (= :ready (task-state task-id)))
+    (assert (nil? (task-claim task-id)))
+    (assert (owner-allows? caller task-id))             ; 已有 owner 默认原主；公开待接续可同时建立归属
+    (assert (token-eligible? caller task-id))           ; needs-token 时 holder 与 term 有效
+    (assert (task-basis-valid? task-id))                ; 本次判断依赖的任务条件仍成立
+    (let [cid (fresh-claim-id)]
+      (set-task! task-id :claim-id cid
+                         :owner-id (or (task-owner task-id) caller))
+      (create-action! {:action-id (fresh-action-id)
+                       :task-id task-id
+                       :agent-id caller
+                       :claim-id cid
+                       :kind (kind-for task-id)         ; :board / :edit / :shell
+                       :phase :claimed
+                       :request-id request-id})
+      (reindex-active!)
+      (store-result! request-id cid)
+      cid)))
+```
+
+B13-01：认领必须在建立认领的同一事务内同时检查存活、`:ready`、无有效冲突认领、普通归属允许、令牌资格与任务依据；不能把这些条件分散到多个工具调用。`atomicity-reason` 保存为公开判断，不由另一个模型审批。
+
+B13-02：认领、释放、移交与完成都支持请求标识；响应丢失后查询或重发同一标识得到原结果，工具传输失败不创造新的业务状态。未知响应只能通过同一请求定位，不能由个体猜“可能没成功”后再赌一次。
+
+### 3.3 finish
+
+```clojure
+(finish! task-id claim-id result-summary read-set)
+(let [publish (fn []
+                (stm
+                  (assert (or (alive? caller) (fixed-permit? task-id claim-id)))
+                  (assert (= claim-id (task-claim task-id)))
+                  (assert (#{:ready :waiting} (task-state task-id)))
+                  (set-task! task-id :state :done
+                                     :result-refs (conj (task-result-refs task-id) result-summary))
+                  (doseq [p (direct-waiters task-id)]
+                    (when (every? done? (task-wait-for p))  ; 只看当前轮；取消项不算 done
+                      (set-task! p :state :ready)))         ; 保留 goal/remaining-work/owner-id
+                  (when (root? task-id) (release-ledger! (task-ledger-key task-id)))
+                  (reindex-ready!)
+                  (reindex-waiters!)
+                  (settle-holder!)                          ; 子项结果先发布，再父项恢复，再退休判断
+                  (maybe-relay!)))]                         ; 根任务全完成且无在途动作
+  ;; 完成结论依赖文件事实（包括空写集）时，先在 W 内复核再发布；
+  ;; 纯任务结构变更只走看板 STM，不取得 W。
+  (if (file-dependent? result-summary read-set)
+    (with-write-gate (check-stamps! read-set) (publish))  ; 含只读依赖与写目标
+    (publish)))
+```
+
+B12-01：最后一个子项完成只解除父项 `:waiting`，绝不自动把父项设为 `:done`，也不沿祖先链级联。B10-02：完成事实必须对应任务自身 `:done-when`；文件应用成功只证明该批结果已发生。B14-01：依赖触发器只做解除等待、更新索引与通知，不隐藏模型判断，不把未明确完成的任务标为 `:done`。
+
+| 父项当前事件 | 直接变化 | 后续由谁决定 |
+|---|---|---|
+| 部分子项完成 | 仍 `:waiting`，记录可用结果 | 个体继续观察或推进其他责任 |
+| 当前 `:wait-for` 全部 `:done` | `:waiting` → `:ready`，保留目标、剩余、归属 | 原主或合法接续者重新定向 |
+| 某子项被取消/替代 | 记录依赖需要处理，不自动满足 | 个体显式改依赖、建替代项或取消父目标 |
+| 父项明确完成 | `:done`，通知其直接等待者 | 仅依赖满足者恢复，不级联完成 |
+
+依赖分三类：任务结果依赖、当前轮子项依赖、外部条件等待。三者可共用条件对象，但展示必须保留“等待哪个结果/哪个子项/哪个外部事实”，不能用一个 `blocked` 概括。
+
+### 3.4 take-or-die
+
+```clojure
+(take-or-die! request-id handoff-updates)
+(cond
+  (seen? request-id) (return-stored-result request-id)  ; 同标识同载荷重放；不同载荷拒收
+  (protocol-invalid? request-id caller) (reject! {:code :PROTOCOL_REJECT :request-id request-id})
+                                                        ; 格式/身份/在途副作用冲突，单独记录
+  :else
+  (stm
+    (assert (alive? caller))
+    (assert (no-inflight-side-effect? caller))          ; 无 :applying / :running
+    (assert (handoff-ready? caller))                    ; 交接材料已公开
+    (if (nil? (token-holder))                           ; 不在事务内用“当前无令牌任务”改判
+      (do
+        (set-token! :holder-id caller :term-id (fresh-term-id) :state :held)
+        (set-actor! caller :role :holder)
+        (settle-holder!)                                ; 若 R(caller) 已空，同一事务紧接退休
+        (store-result! request-id :attempt-won))
+      (do
+        (apply-handoff! handoff-updates)                ; 交接更新只作用于失败分支
+        (release-claims! caller)                        ; 解除可移交认领
+        (publish-ordinary-responsibility! caller)       ; owner-id 置空，保留 wait-for/remaining/progress
+        (set-actor! caller :life-state :dead)
+        (store-result! request-id :attempt-lost)))))
+```
+
+A02-11/A02-12：合法竞争只有赢或输；调用前先耗尽有价值的受保护工作；已知令牌被占用或全看板无令牌责任时不得发起。T13 的竞态由“事务只检查 holder 是否为空”处理：合法调用已发出后，即使最后令牌责任在提交前被取消，仍按同一次尝试得出赢或输；赢时 `R(a)` 为空则同一事务立即退休。
+
+### 3.5 retire
+
+```clojure
+(retire! a)
+(stm
+  (when (and (= :holder (actor-role a))
+             (empty? (R a)))                            ; U 含 :ready 与 :waiting
+    (set-token! :holder-id nil :term-id nil :state :free)
+    (set-actor! a :life-state :dead)                    ; 不把 :role 改回 :normal
+    (revoke-submissions! a)                             ; 迟到请求入口拒绝
+    (emit! {:type :actor-retired :agent-id a})))
+```
+
+A02-13：释放令牌、撤销身份与逻辑死亡在同一 STM 转换内发生；“立即”指责任归零的逻辑提交边界，不是要求同一纳秒终止进程。关键是不存在“责任已空、仍有有效持令身份、可开始新动作”的中间状态。
+
+### 3.6 park-slot
+
+```clojure
+(park-slot! observed-cursor)
+(stm
+  (if (seq (global-nonblocking-ready-set))              ; 含只有 holder 能执行的 ready Shell
+    {:error :WORK_AVAILABLE :summary (summarize-ready-set)}
+    (if (not= observed-cursor (board-cursor))
+      {:error :STALE_CURSOR}
+      (do
+        (register-waiter! caller observed-cursor)
+        :parked))))
+```
+
+A02-21/A02-22：全局存在任何非阻塞可推进工作时禁止 `park-slot`；只有全局集合为空才可在同一事务内核对游标并登记。用户输入无条件 `wake-all`；全局集合从空变非空也产生 `wake-all`。工具阻塞（等 `$W$`、Shell 等 I/O）是允许的运行事实，不因全局仍有工作而非法，也不能被改名成主动休眠。
+
+B16-02：任何把全局可推进集合从空变为非空的事务都产生唤醒全部休眠个体的事件；用户输入无论是否改变该集合都保留直接 `wake-all` 效果。检查“没有工作”与登记休眠必须在同一事务内完成，不能先检查、事务外等待、再登记。
+
+### 3.7 relay
+
+```clojure
+(relay! epoch)
+(stm
+  (assert (all-root-ledger-tasks-done?))                ; 所有带 :ledger-key 的根任务 :done
+  (assert (no-inflight-actions?))                       ; 无 :applying / :running / :uncertain
+  (assert (empty? (ledger epoch)))
+  (emit! {:type :relay-barrier :next-epoch (inc epoch)})
+  :relayed)
+```
+
+A02-06/B14-01：接力屏障只在根任务全部明确完成且无在途动作时触发；不得用子项计数或祖先链自动完成替代。台账键与任期接力的完整结构见 AGENTS.md §2.4 与 §3.3。
+
+### 3.8 事务边界
+
+| 操作 | 事务内 | 事务外 | 同事务派生更新 |
+|---|---|---|---|
+| `split` | 父子结构、等待、父项剩余、责任调整 | 读子图、模型判断 | 等待者索引、可推进索引、`R(holder)` |
+| `claim` | 认领、归属、动作创建 | 读取任务与文件依据 | 活动动作索引、可领取索引 |
+| `finish` | 任务完成、父项恢复、台账释放、退休/接力 | `$W$` 内 `stamp` 复核、文件事实判断 | 等待者索引、可推进索引、`R(holder)`、通知 |
+| `take-or-die` | 令牌、身份、责任移交、死亡 | 竞争前读取与交接准备 | TokenSlot、普通归属、活动索引、`R(a)` |
+| `retire` | 释放令牌、撤销身份、死亡 | 无 | TokenSlot、身份索引、通知 |
+| `park-slot` | 条件核对、游标校验、登记 | 无 | 等待订阅、唤醒游标 |
+| `relay` | 根任务完成、无在途、台账空、屏障事件 | 无 | 任期状态、通知 |
+
+B09-03：控制记录应能解释每次准入、冲突、等待与移交的直接原因；不另建总调度叙事。事务体内不得等待 `$W$`、运行 Shell、调用模型或写工作区文件。
+
+→ 用于：AGENTS.md §3.3、§3.4、§3.5、§3.11 的转换实现与事务边界检查。
+
+## 4 责任集合与退休判定
+
+### 4.1 公式
+
+设 $U$ 为所有 `:state` 处于 `:ready` 或 `:waiting` 的未结任务集合。对个体 $a$：
+
+$$R(a)=\{t\in U\mid \neg t.\text{needs-token}\land t.\text{owner-id}=a\}\;\cup\;(\text{if }\text{holder}=a\text{ then }\{t\in U\mid t.\text{needs-token}\}\text{ else }\emptyset)\;\cup\;\{e\in\text{Actions}\mid e.\text{agent-id}=a\land e.\text{phase}\in\{:\text{applying},:\text{running},:\text{uncertain}\}\}$$
+
+| 组成 | 来源 | 关键点 |
+|---|---|---|
+| 普通责任 | `U` 中 `:needs-token=false` 且 `:owner-id=a` | 含 `:waiting` 父项；不因暂不可执行而删除 |
+| 令牌责任 | `a` 为当前 holder 时，`U` 中全部 `:needs-token=true` | 动态推导；新增任务无须逐条改写 owner |
+| 活动责任 | `:applying`、`:running`、`:uncertain` 的动作 | 业务任务取消不自动清除；文件已应用但记账未完成仍为 `:applying` |
+
+### 4.2 计数陷阱
+
+| 陷阱 | 错误后果 | 正确做法 |
+|---|---|---|
+| 只数 `:ready`，不数 `:waiting` | 等待中的父项/令牌任务被误判无责，持令者提前死亡 | `U` 包含 `:ready` 与 `:waiting` |
+| 只看显式 `:owner-id`，不推导 `:needs-token` | 新增令牌任务被漏掉，退休条件错误成立 | holder 的令牌责任由 `:needs-token` 集合推导 |
+| 把 `:applying`/`:running` 排除在责任外 | 文件写一半或 Shell 仍运行时杀死身份 | 活动阶段计入 `R(a)`；`:uncertain` 也计入 |
+| 业务任务取消即减运行责任 | 取消目标被误当会话结束，`$W$` 提前开放 | 任务终结与活动结束分别记录；运行责任保留到会话结清 |
+| 一个任务多阶段重复减 | 计数归零但集合仍非空 | 计数按任务/动作唯一键维护，可从权威记录重建 |
+| 在事务中间状态上退休 | 先看到旧任务归零，后添加替代任务，产生死亡缝隙 | 先按事务最终状态计算 `R(holder)`，再退休/广播 |
+| 只检查已读记录，不检测并发插入 | 新增责任落在退休之后仍被算给死者 | 使用能检测集合成员插入/移除的事务条件或等价计数 |
+| 把 `:role=:holder` 当永久身份 | 持令者无责后仍能开始新动作 | 无责即在同一事务释放令牌并标记 `:dead` |
+| 退休后保留旧认领/旧令牌 | 迟到请求继续生效 | 撤销提交资格；旧 `:term-id` 只能查询不能执行 |
+
+### 4.3 同事务顺序
+
+1. 发布任务/动作的最终变化（完成、取消、替代、拆分、认领、活动阶段）。
+2. 更新 `:wait-for`、父项恢复、普通归属与派生索引。
+3. 按事务最终状态计算 `R(holder)`，包含并发新增的令牌责任与在途动作。
+4. 若 $R(\text{holder})=\emptyset$：在同一事务释放令牌、撤销身份、标记逻辑死亡。
+5. 再产生唤醒/接力事件；每个派生动作只发生一次，不在中间语句顺序上触发。
+
+B15-01：持令者未结责任集合包括全部未终结令牌任务、该个体自己的普通任务、其仍未结束的执行动作；等待不自动从集合删除。B15-02：任务终结不能自动删除活动记录；活动结束不能自动证明业务目标完成。
+
+→ 用于：AGENTS.md §3.2 的 $R(a)$ 与 §3.9 的责任不变量，在退休、计数和并发插入判断中落地。
+
+## 5 文件提交合同
+
+### 5.1 读取、`stamp` 与依据
+
+| 条款 | 规则 | 实现检查 |
+|---|---|---|
+| F17-01 | 读取不申请 `$W$`；每次读取采集系统精确 `stamp`，加入 `read-set`（含只读依赖与待修改目标）；读取前后变化标 `:changed-during-read` | `.cat`/`.stat`/`.ls` 不进入写队列；`read-set` 不得只含写目标 |
+| F17-02 | 完整与局部读取都使用整个文件 `stamp`；`mtime` 保留秒+纳秒，`size` 用字节；前后不同不标稳定快照 | 不先转低精度浮点；不用字符数替代字节数 |
+| F17-03 | 存在性/类型检查决定操作是否有定义，`stamp` 决定内容能否沿用；创建/删除/移动各有结构条件；目录 `stamp` 不是子树版本 | 普通文件变目录即使数值相同也拒绝；递归查询不得用根目录 `stamp` 代替 |
+| F17-04 | 不提供“忽略依据继续写”的普通入口；重复读取不能只更新 `stamp` 却提交旧内容补丁 | 冲突后必须重读并重建修改，或重新 dry-run 证明匹配 |
+| F18-01 | `stamp` 相等比较；`mtime` 不是单调递增计数器，变小/变大/同精度不变都按是否相等处理 | 不排序、不推断时间先后 |
+| F18-02 | 复核失败不修改任何目标；返回冲突路径、原 `stamp`、当前 `stamp`、结构变化简述 | 不自动建议“把 expected 改成当前值” |
+| F18-03 | 结构查询必须有明确边界：精确路径存在性、直接子项列表、给定路径集合 | 复杂扫描拆成明确依据或走 Shell；不在 STM 内做无界搜索 |
+| F18-04 | 冲突是尚未生效的普通结果，不是部分提交 | 所有可见文件修改仍未发生；看板可记录原因，不必升级为新任务 |
+
+### 5.2 批内视图与 dry-run
+
+| 条款 | 规则 | 实现检查 |
+|---|---|---|
+| F19-01 | `:prepared` 必须足以让 apply 在前提保持且无硬失败时完成整批；含最终字节、路径操作顺序、结构前提、预定看板事实 | 应用阶段不调模型、不重新搜索补丁、不展开通配符、不读外部模板 |
+| F19-02 | 四种基础操作：创建普通文件、替换普通文件内容、删除已观察文件、在明确源/目标条件下移动；高层文本编辑统一降为这些操作及最终字节 | 不支持的特殊对象在预演前拒绝；不表面接受任意 Shell 字符串 |
+| F19-03 | 批内按请求顺序解释；同一目标多次修改按顺序语义，后一步看前一步生成内容；两个创建同路径、移动成环、先删后改未重建均拒绝 | 真实文件在拒绝时零修改；不在 apply 阶段临时选解释 |
+| F19-04 | 锁外 `:preview` 与锁内 `:prepared` 类型不同；最终预演与实际应用持续持有同一 `$W$` | 旧 `:preview` 不能作为写入许可；释放 `$W$` 后不能携带旧 `:prepared` 直接 apply |
+
+编码：存在无法无损解码的字节时拒绝文本编辑或返回二进制表示；编码决定属于准备阶段，apply 只接受已生成字节。容量：单文件大小、单批总字节、操作数上限在工具契约中列出；超限由个体拆分或走令牌路径，不用不受保护的临时脚本绕过。
+
+### 5.3 七阶段与 `:applying`
+
+| 阶段 | 动作状态 | 可发生 | 禁止 |
+|---|---|---|---|
+| 1 输入 | `:claimed` | 解析请求、`request-id` 去重、载荷一致性检查 | 修改真实文件 |
+| 2 等待写锁 | `:waiting-gate` | 排队、查询、按边界取消 | 触碰工作区；把等待当失败 |
+| 3 最终检查 | `:waiting-gate` | 身份、认领、`stamp`、结构条件 | 先写第一个文件再发现第二个错误 |
+| 4 完整预演 | `:preparing` | 生成 `:prepared`、批内视图、普通拒绝 | 询问模型、重新解释目标 |
+| 5 固定资格 | `:applying` | 短 STM 固定本次最小提交的控制条件 | 长期租约、冻结整张看板 |
+| 6 实际应用 | `:applying` | 按计划安装字节；同目录临时文件、`flush`、`rename` | 重新决定路径/覆盖/内容；回滚分支 |
+| 7 结果发布 | `:finished` | 纯 STM 发布动作事实；冲突重试 | 重放文件写入；把 `:APPLIED` 当父任务完成 |
+
+F20-01：进入 `:applying` 前任何普通拒绝不得产生真实修改；进入后按计划完成本批，不接受中间主动取消。F20-02：固定范围只覆盖本次动作需要的控制字段与责任，无关任务、评论、其他认领、用户输入继续可变。F20-03：发布冲突只重试纯控制更新，不再次调用 apply。F20-04：逻辑死亡不能跨越未完成的应用责任；进程崩溃走硬失败路径。
+
+原子替换：临时文件与目标同目录（同一文件系统），`flush` 后 `rename`；读者只会看到完整旧内容或完整新内容。进程在 `rename` 前崩溃，最多留下同目录临时文件，目标完好。多文件应用不承诺对无锁读取者同时可见；读取者可能看到中间现场。
+
+### 5.4 结果码
+
+| 结果码 | 意义 | 真实文件可能已改变 | 调用者下一步 |
+|---|---|---|---|
+| `:OBSERVED` | 读取取得当前材料 | 否 | 分析并保存本次依据 |
+| `:FILE_CONFLICT` | `mtime` 或 `size` 不匹配 | 否 | 重读冲突依据，重新判断 |
+| `:STRUCTURE_CONFLICT` | 路径/类型/存在性条件不成立 | 否 | 检查当前结构，修正请求 |
+| `:PREPARE_REJECTED` | 批内操作不能完整预演 | 否 | 修正操作关系或补齐输入 |
+| `:UNSUPPORTED_OPERATION` | 超出受保护工具能力 | 否 | 拆分或提出令牌任务 |
+| `:ACTOR_INACTIVE` | 身份已无继续提交资格 | 否 | 运行时执行生命周期处理 |
+| `:CLAIM_CHANGED` | 认领或任务条件不符 | 否 | 读看板，不覆盖新状态 |
+| `:WAITING_FOR_WRITE_GATE` | 尚未进入真实修改 | 否 | 查询同一动作或按边界取消 |
+| `:APPLIED` | 本次计划已应用并发布结果 | 是 | 继续任务或依据结果明确完成 |
+| `:HARD_FAILURE` | 保证范围外的硬失败 | 可能部分 | 核对现场，保留接续责任 |
+| `:UNCERTAIN` | 无法确认执行结果 | 可能任意 | 先查明结果，再决定是否重做 |
+
+F24-03：错误消息可补充原因，但不能改变结果码的副作用含义；`:FILE_CONFLICT` 与 `:PREPARE_REJECTED` 都必须表示本次真实修改尚未发生；`:APPLIED` 不等同父任务完成；`:UNCERTAIN` 不等同失败后无影响。
+
+### 5.5 五组件
+
+五个组件按单向依赖组合；Shell 复用写入口与看板适配器，不调用准备器。
+
+| 组件 | 职责 | 不得做 |
+|---|---|---|
+| 读取器 | 取得当前材料与 `stamp`，返回内容/范围/观察 | 不修改任务，不申请 `$W$` |
+| 准备器 | 解析请求、批内视图、完整 dry-run、生成 `:prepared` | 不调模型，不写真实文件 |
+| 写入口 | 资源准入、`$W$` 生命周期、排队 | 不按任务标题/模型能力选人 |
+| 应用器 | 只安装 `:prepared` 的确定字节与路径操作 | 不重新解释、不读取新模板、不执行任意回调 |
+| 看板适配器 | 固定 `:applying` 资格、发布结果、触发派生转换 | 不读源码决定业务结果，不替个体选任务 |
+
+| 入口 | 作用 | 关键限制 |
+|---|---|---|
+| `read_file` | 返回内容、范围、`stamp`、`:changed-during-read` | 不申请 `$W$`；`complete` 只表示取得请求范围，不表示任务完成 |
+| `inspect_paths` | 精确路径存在性/类型、直接子项、给定路径集合 | 不做无界递归；后续提交把具体条件放入 `checks`，不只引用旧查询结果 |
+| `preview_edit` | 只读预览差异、受影响路径、预演错误 | 不占跨调用 `$W$`；不产生写入资格；与 `:prepared` 类型不同 |
+| `commit_edit` | 组合 `read-set`、`checks`、`changes`、`outcome` 的受保护提交 | 空 `changes` 仍可发布依赖文件事实的看板结论；纯结构变更走看板 STM |
+| `run_shell` | 启动受管 Shell 会话 | 仅 `Swarm Holder` 与 `plan-devops`；令牌 + `$W$`；不按命令名猜只读 |
+| `get_action` | 按 `request-id`/`action-id` 查询 queued/running/applying/finished/rejected/uncertain | 只读；找不到结果不自动执行原请求 |
+| `request_stop` | 请求停止当前会话 | 返回“已登记/已发送/已结束/未确认”；不等于回滚或已释放 `$W$` |
+
+F24-01：有副作用的请求携带 `request-id` 与 `actor-id`，关联任务另带 `task-id` 与认领；Shell 另带令牌任期；文件依据用 `stamp` 字段，不叫 `file_version`。F24-04：新增能力必须说明处于读取、准备、应用还是 Shell 路径，以及是否改变文件判据、锁范围或责任生命周期。Shell 复用写入口与看板适配器，不调用准备器假装理解任意命令。
+
+F24-02：`:preview` 与 `:prepared` 必须使用不同名称或类型；预览可以长期阅读，最终 `:prepared` 只在同一次 `$W$` 持有期内供应用器使用。工具不得接受很久以前的 `preview_id` 作为实际写入许可；预览成功也不保证稍后提交无需重新核对。
+
+→ 用于：AGENTS.md §4.2 的读取、预演、七阶段、结果码与五组件实现，覆盖 F17–F24。
+
+## 6 Shell 会话合同
+
+### 6.1 入口校验
+
+| 请求字段 | 必需 | 用途与检查 |
+|---|---|---|
+| `:request-id` | 是 | 去重与结果查询；同标识不同载荷拒收 |
+| `:actor-id` | 是 | 身份与 `:life-state` 检查；停止接口也按身份寻址 |
+| `:token-term` | 是 | 必须等于当前 `:term-id`；旧任期只能查询 |
+| `:task-id` | 是 | 关联任务；启动前仍为 `:ready` |
+| `:claim` | 是 | 当前原子认领；令牌责任不能替代执行资格 |
+| `:command` | 是 | 脚本文本或可执行文件+参数；解释方式在接受时固定 |
+| `:cwd` | 是 | 工作目录在接受时固定；不在启动后改变 |
+| `:purpose` | 是 | 说明本次运行试图推进什么结果；不用于推断完整副作用 |
+| `:output-mode` | 否 | 流式/分段/截断策略；不改变令牌责任与 `$W$` |
+
+| 检查 | 时机 | 失败处理 |
+|---|---|---|
+| `actor-id` 仍为 `:alive` | 请求接受与真实启动前 | `:ACTOR_INACTIVE`，不启动进程 |
+| `:holder-id` 与 `:term-id` 为当前有效任期 | 真实启动前 | 拒绝执行资格；旧任期只能查询 |
+| `:claim-id` 属于调用者且任务仍 `:ready` | 真实启动前 | `:CLAIM_CHANGED`，不启动 |
+| 无在途 `:applying`/`:running` 冲突 | 请求接受 | 协议拒绝，单独记录 |
+| 取得 `$W$` | 启动前 | `:WAITING_FOR_WRITE_GATE`，排队 |
+| 会话资源可创建 | 启动前 | 普通拒绝；不产生文件修改 |
+
+F21-01：持令者只在一次受管 Shell 会话或普通受保护提交流程内持有 `$W$`；在两次调用之间阅读、拆分、等待代码修改时不持有 `$W$`。F21-02：写入口按先进先出之类资源秩序处理已提出的合法请求，不按任务标题、优先级或模型能力挑人；用户消息不把 `$W$` 队列重排为任务调度队列。F21-03：持有 `$W$` 的动作可以调用纯控制状态操作；控制状态操作不得反过来在未结束的 STM 事务里等待 `$W$`。F21-04：`$W$` 不设超时自动转交；原会话仍属保护范围时，让第二个写者进入就破坏互斥。
+
+### 6.2 `$W$` 生命周期
+
+1. 请求接受并登记动作，状态 `:waiting-gate`。
+2. 按入口秩序取得 `$W$`。
+3. 短 STM 复核身份、令牌任期、认领、任务 `:ready` 与动作含义；登记 `:running` 活动责任。
+4. 启动进程；流式输出作为观察材料，不直接改看板。
+5. 会话内仍归执行器管理的活动未结束时，继续持有 `$W$` 与运行责任。
+6. 会话结束：记录退出状态、输出位置、已知子活动与结束事实。
+7. 释放 `$W$`；令牌不因一次命令结束自动释放。
+8. 持令者继续处理其他责任；下一次 Shell 或普通提交重新申请 `$W$`。
+
+F22-01：不按命令名猜“只读”；测试、查版本、生成代码、装依赖、起服务都走同一令牌校验与 `$W$`。F22-02：真实启动前资格不符可拒绝；启动后进入黑盒执行，不能把请求标记为拒绝来抹掉已发生副作用；退出码 0 只说明命令以该方式结束，非 0 也不意味着文件没变。`.call` 仅 `Swarm Holder` 与 `plan-devops` 可用；普通个体先把工作放入看板并竞争令牌。`.call` 前若程序内存视图已有未提交修改，先排空并完成受保护提交，再启动 Shell（AGENTS.md §4.4）。
+
+### 6.3 会话边界
+
+| 情况 | `$W$` | 运行责任 | 处理 |
+|---|---|---|---|
+| 最外层进程已返回，但受管子活动仍在运行 | 继续持有 | 继续计入 | 不结清会话；普通提交继续等待 |
+| 子活动明确脱离执行器管理边界 | 会话结清时释放 | 保留已知事实 | 后续访问按外部 best-effort，用 `stamp` 观察 |
+| 执行器失去会话状态 | 按实际入口状态 | 标记 `:uncertain` | 不报告确定干净退出；后继者核对 |
+
+F22-03：会话关闭只表示“执行器管理的这次会话已关闭”，不表示“系统不可能再受该命令影响”。工具应在有已知脱离活动时记录事实；对无法观察的活动不编造完整清单。F23-04：下一位持令者接续公开责任与当前现场，不继承私有上下文，不自动重跑上一条命令。
+
+### 6.4 停止语义
+
+| 返回 | 含义 | `$W$` | 责任 |
+|---|---|---|---|
+| 请求已登记 | 控制消息已接受，尚未发送信号 | 仍持有 | 仍计入 |
+| 停止信号已发送 | 已请求停止，进程未必响应 | 仍持有 | 仍计入 |
+| 会话已结束 | 受管活动已结束并记录结果 | 可释放 | 按结果结清 |
+| 仍未确认结束 | 无法确认停止效果 | 继续持有或按故障路径 | 保留 `:uncertain` |
+
+F22-04：不得通过自动缩短持令寿命来替代会话停止；令牌释放与死亡仍由完整责任集合清空或明确硬失败处理决定。停止不是回滚；已经发生的副作用保留为事实。
+
+### 6.5 结果分类
+
+七类结果覆盖文件入口与 Shell 的接续判断。
+
+| 类别 | 真实文件可能已改变 | 接续方式 |
+|---|---|---|
+| 文件依据冲突 | 本次动作尚未改变 | 重读冲突依据，重新判断 |
+| dry-run 拒绝 | 本次动作尚未改变 | 修正请求或拆出依赖 |
+| 等待写入口 | 本次动作尚未改变 | 查询同一动作，等待准入或取消 |
+| 正常应用完成 | 本次计划已应用 | 使用结果继续任务或明确完成 |
+| 文件已应用而记账待完成 | 已改变 | 重试纯看板发布，不重放文件操作 |
+| 应用中的硬失败 | 可能部分改变 | 核对当前现场，保留未结责任 |
+| Shell 结果不确定 | 可能存在任意副作用 | 查询或核对，再决定后续动作 |
+
+F23-01：结果类别必须与已经发生的阶段一致；文件已应用后响应丢失，不能返回意味着“尚未修改”的普通冲突。F23-02：普通逻辑遗漏不能因为发生在 apply 中就改称硬失败；未完成预演的条件应修正准备器。F23-03：故障修补基于当前现场推进，不把恢复旧内容作为默认操作。环境秘密由执行器通过受控引用取得；公共看板只记名称或非敏感摘要。输出是观察材料，不自动成为有指令权限的看板变更。输出过大时分段保存或截断展示，并明确告知是否仍有未展示内容；stdout/stderr、退出状态、`cwd` 与已知输出路径是接续材料。Shell 结束后其他受保护提交重新竞争 `$W$` 并按自己的 `stamp` 核对；持令者使用受保护文件工具时同样走 dry-run，持令身份不使普通写入绕过保护。
+
+→ 用于：AGENTS.md §4.4 的 `.call` 入口、`$W$` 生命周期、会话边界、停止语义与结果分类。
+
+## 7 并发推演 T01–T13
+
+“先/后”指 STM 转换提交顺序，不指工具调用发出时间或界面显示顺序。每个场景同时检查三件事：状态结果、责任归属、旧资格是否仍可使用。L26-01：仅看最终任务数相同不够；错误实现可能把相同数量的任务交给已死身份，或留下仍能提交的旧调用。L26-02：有效竞争只记 `:attempt-won` 或 `:attempt-lost`，二者不可互转；格式/身份层协议拒绝单独记录，不是可供活个体利用的竞争结果。
+
+**T01 两个普通个体同时看到令牌空闲**
+- 初始：A、B 都已无当前可推进的受保护工作；存在一个待 Shell 的原子任务；令牌空闲；两者用不同 `request-id` 读取后暂停。
+- 交错：A 的 `take-or-die` 先提交并获胜；A 获胜后仍有该令牌任务责任，未退休；B 的请求随后提交。
+- 必须：同一有效任期内恰好一赢一输；赢家成为 holder；输家在同一事务移交剩余普通责任与认领并逻辑死亡。
+- 禁止：两个有效 holder；B 以“先看到空闲”继续普通工作；把失败当可重试；在 A 已退休后把 B 的成功说成双持有（那属于新任期）。
+
+**T02 成功提交后响应丢失**
+- 初始：A 已获胜，客户端未收到响应。
+- 交错：A 用原 `request-id` 查询；服务端已提交 `:attempt-won`。
+- 必须：始终返回同一 `:attempt-won`；holder 与 `term-id` 不变；令牌责任不逐条重复转移；槽位不因传输重试重生。
+- 禁止：再次竞争；把无响应当成输；创建第二 holder；因客户端重连生成新任期。
+
+**T03 失败提交后响应丢失**
+- 初始：B 竞争失败，事务已完成责任移交并标记 `:dead`；失败响应丢失。
+- 交错：B 重发同一请求，或发送早先准备的普通提交。
+- 必须：重发得到同一 `:attempt-lost`；旧普通提交因身份已死被拒（`:ACTOR_INACTIVE`）；移交已在同一事务完成。
+- 禁止：先回“失败”再异步移交；接受旧提交；因同槽已有新个体而把旧请求改挂新身份。
+
+**T04 竞争失败时仍有等待中的普通任务**
+- 初始：B 拥有等待子项完成的普通父项 P；B 当前没有可推进的受保护动作。
+- 交错：B 参与竞争并失败。
+- 必须：P 连同 `:wait-for`、`:remaining-work`、既有进展进入公共可接续；子项完成后 P 恢复 `:ready`，由新个体 C 按规则接手。
+- 禁止：P 因“暂不可执行”从移交集合消失；P 仍归已死的 B；P 自动 `:done`。
+
+**T05 最后一项令牌责任完成前追加新责任**
+- 初始：holder A 正准备完成令牌任务 X；另一名个体先提交新令牌任务 Y。
+- 交错：Y 先提交，A 完成 X 的事务后提交。
+- 必须：Y 已动态归 A；A 完成 X 后仍存活、仍持令；Y 的提出关系保留；A 继续处理或等待 Y 的前提。
+- 禁止：只看显式 `:owner-id` 判断 A 无责；完成 X 即退休；把 Y 丢给下一 holder。
+
+**T06 退休先于新责任追加**
+- 初始：A 完成最后责任并退休的事务先提交；随后 Y 入板。
+- 交错：Y 的提交晚于 A 的死亡事务。
+- 必须：Y 成为无人持令的待接续令牌责任；新个体在安全工作耗尽后竞争；A 不复活。
+- 禁止：按“请求发出较早”把 Y 追溯到退休之前；把 Y 归死者；为 Y 恢复旧身份。
+
+**T07 最后子项完成使父项恢复**
+- 初始：A 拥有父项 P，P 仍有剩余工作；X 是 P 当前最后子项。
+- 交错：A 完成 X。
+- 必须：P 从 `:waiting` 变 `:ready`；A 的 $R(a)$ 不因子项计数归零而清空；A 继续判断 P 是否可再拆或执行。
+- 禁止：P 自动 `:done`；A 被杀；沿祖先链自动完成。
+
+**T08 父项的普通责任属于其他个体**
+- 初始：普通个体 B 拥有父项 P；P 等待需要令牌的测试子项 X；A 为 holder。
+- 交错：A 完成 X。
+- 必须：P 恢复 `:ready` 仍归 B；若 A 已无普通责任、其他令牌责任和在途动作，A 在该事务后退休。
+- 禁止：P 的普通责任转给 A；A 因完成 X 自动接管普通父项。
+
+**T09 取消最后业务任务但 Shell 仍运行**
+- 初始：A 为任务 X 运行 Shell，会话仍在 `$W$` 内。
+- 交错：用户取消 X 的业务目标。
+- 必须：看板记录取消；运行会话仍是 A 的未结责任；`$W$` 不开放给普通提交；会话结束并结清后才可能退休。
+- 禁止：A 立即死亡；把 `$W$` 开放给普通提交；把中断当回滚。中断会话是另一项须报告现场变化的动作。
+
+**T10 一项令牌工作被拆成不同种类的子项**
+- 初始：holder A 负责令牌任务 X；X 的一部分可用受保护编辑，另一部分需要 Shell。
+- 交错：A 提交一次拆分，创建普通子项 E 与令牌子项 S。
+- 必须：子项创建、`:needs-token` 调整、`:wait-for` 与父项 `:remaining-work` 在同一事务；E 按归属或公开待领；S 归 A。
+- 禁止：先移除 X 的最后责任使 A 被判死，再添加 S；先建 S 后改父项；借拆分把 E 强派给无关个体。
+
+**T11 旧个体的迟到完成消息**
+- 初始：B 已因竞争失败死亡；它早先准备的“完成 P”请求携带旧身份与旧认领。
+- 交错：请求在 P 未认领、已归 C 或已完成之后到达。
+- 必须：无论 P 当前状态如何都不改变；返回稳定的 `:ACTOR_INACTIVE` / `:CLAIM_CHANGED`；保留操作关联供运行时停止旧路径。
+- 禁止：因同槽新个体存在而接受；自动改挂新认领；把旧请求当普通观察直接完成 P。
+
+**T12 已知令牌被占用时的再次尝试**
+- 初始：新个体 C 看到 A 已持令；当前可推进令牌工作都归 A；C 暂无受保护工作。
+- 交错：C 考虑是否发起 `take-or-die`。
+- 必须：C 不发起必败调用；先区分三种无工作原因——自己的任务在等待、公开工作已被他人合法认领、确实存在待执行的令牌工作；继续寻找拆分与公共材料；是否可休眠按全局禁睡规则。
+- 禁止：为降低失败率给某个体预留令牌（等于内核选人）；把“令牌被占”当失败后继续普通工作的出口；反复调用制造死亡循环。
+
+**T13 令牌空闲但没有令牌责任**
+- 初始：所有任务已完成或处于外部等待；令牌空闲；看板无 `:needs-token` 任务。
+- 交错：A 考虑抢空令牌；另一变体是 A 已发出合法调用，最后令牌责任在提交前被取消。
+- 必须：未发出时不得发起；已发出的有效竞争仍按同一次尝试得出赢或输；赢时若 $R(a)=\emptyset$，同一事务立即无责退休。
+- 禁止：给已受理竞争增加“退回普通身份”的出口；因取消改判；抢空令牌后重复新生循环。
+
+→ 用于：AGENTS.md §3.4 的令牌竞争与生命周期表，逐场景验证状态、责任与旧资格。
+
+## 8 文件/Shell 交错 F01–F15
+
+共同前提：普通受保护应用的实际修改与 Shell 受管会话共用 `$W$`；读取不申请 `$W$`；文件判据只用 `mtime` + `size`，不用 `atime`。L27-01：普通可拒绝情况与硬失败注入分开测试；普通拒绝必须发生在实际修改之前，硬失败场景检查未结记录与后续核对，不要求未承诺的自动还原。L27-02：每个操作结果必须区分四种结局：尚未写入的拒绝、已完成的应用、仍在运行或等待的动作、硬失败后的不确定现场；不能只给布尔 `success`。
+
+**F01 等待写锁期间目标被 Shell 修改**
+- 初始：A 读取 `parser`，准备补丁并请求 `$W$`；B 的 Shell 已持 `$W$`。
+- 交错：B 在 A 排队期间修改 `parser` 后结束；A 取得 `$W$`。
+- 必须：A 再次检查 `stamp`，返回 `:FILE_CONFLICT`；真实文件维持 Shell 结果；A 不死亡，可重读调整。
+- 禁止：请求 `$W$` 前查一次、等锁结束后直接套旧补丁；把冲突当令牌竞争失败。
+
+**F02 只读依赖改变而写目标未变**
+- 初始：A 读取接口 `api`，打算修改调用方 `client`；B 在 A 提交前改了 `api`，`client` 的 `stamp` 未变。
+- 交错：A 取得 `$W$`。
+- 必须：因只读依赖 `api` 的 `stamp` 改变而拒绝提交。
+- 禁止：只检查最终要写的 `client`；把依赖集合缩减成写目标。
+
+**F03 整批预演的后一步失败**
+- 初始：A 请求同时改三个文件；前两个预演成功，第三个定位文本不存在。
+- 交错：整批 dry-run。
+- 必须：返回第三个文件的具体失败位置；三个真实文件均未改变；未进入 `:applying`。
+- 禁止：把前两个局部成功提前写入现场；用回滚掩盖预演缺陷。
+
+**F04 批内操作依赖被正确预演**
+- 初始：同批先把 `old` 重命名为 `new`，再改 `new` 内容；反向变体先删目录再向未重建文件写入。
+- 交错：批内内存视图预演。
+- 必须：正向按批内顺序让后一步看到前一步结构并成功生成计划；反向在预演中报 `:STRUCTURE_CONFLICT`。
+- 禁止：只在原始真实目录找 `new` 而误拒；应用期临时自动建目录。
+
+**F05 实际应用期间收到任务取消**
+- 初始：A 已完成预演并进入 `:applying`，开始落盘；用户取消原目标。
+- 交错：取消在 `:applying` 期间到达。
+- 必须：取消立即入板并 `wake-all`；当前已固定的最小提交继续完成并发布已应用结果；随后按新输入处理后续状态。
+- 禁止：让正常应用停在一半；把取消倒推为文件从未修改。
+
+**F06 看板记账冲突不重放文件应用**
+- 初始：A 已应用文件，在发布动作结果时与另一个体的非关键观察发生 STM 冲突。
+- 交错：`stm-finish-apply!` 重试。
+- 必须：记账事务重读控制状态并重试；可计数文件模型的真实 `apply` 调用次数严格为 1。
+- 禁止：把文件操作放进可重试 STM 闭包导致重复落盘；把记账重试当第二次应用。
+
+**F07 Shell 中途的并发读取**
+- 初始：Shell 正依次改接口与调用方；A 在两步之间读取。
+- 交错：Shell 持 `$W$`。
+- 必须：读取不等待 `$W$`，立即返回当前内容与 `stamp`；A 后续提交取得 `$W$` 时若依赖 `stamp` 已变则拒绝。
+- 禁止：读取被 `$W$` 阻塞；断言 A 一定读到全旧或全新快照。
+
+**F08 内容变化而 `mtime` 与 `size` 相同**
+- 初始：构造大小相同的两份不同内容；Shell 或外部操作改内容但保留相同 `mtime` 与 `size`。
+- 交错：后续受保护提交。
+- 必须：如实展示已接受的快速判据观察等价边界；不在一般结果中宣称“已证明内容完全未动”。
+- 禁止：偷偷加未声明的哈希或隐藏版本来让测试通过。
+
+**F09 其他个体只读取文件**
+- 初始：A 已准备修改 `config`；提交前多个个体读取同一文件，`mtime` 与 `size` 未变。
+- 交错：A 取得 `$W$` 复核。
+- 必须：正常通过；不因系统 `atime` 访问记录变化而冲突。
+- 禁止：在通用元数据比较中把 `atime` 带回来。
+
+**F10 只写看板的文件结论**
+- 初始：A 读文件后准备在看板声明“兼容分支已存在”（空文件写集）；B 随后改了该文件使结论失效。
+- 交错：A 提交看板结论。
+- 必须：虽无文件写集仍经 `$W$` 复核 `read-set` 并拒绝旧结论；对照：不依赖文件事实的纯任务拆分不需等 `$W$`。
+- 禁止：因不写文件就绕过 `stamp` 复核。
+
+**F11 Shell 等待普通写入而持锁**
+- 初始：Shell 持 `$W$` 等待某配置文件变成指定内容；普通个体 A 已准备该修改但在等 `$W$`。
+- 交错：相互等待。
+- 必须：如实呈现等待链（Shell 等文件条件、A 等 `$W$`、未结责任仍在）；由其他个体或人工处理。
+- 禁止：因长时间等待私自释放 `$W$`、杀死持令者或强行轮转令牌。
+
+**F12 最外层命令返回但会话仍有活动**
+- 初始：执行器管理的子活动仍在运行，最外层命令已返回；另一变体是后续活动已脱离管理边界。
+- 交错：会话收尾检查。
+- 必须：归属会话的子活动未结时 `$W$` 与运行责任继续保持，普通提交继续等待；脱离边界的活动明确记入外部 best-effort。
+- 禁止：最外层返回就把会话结清释放 `$W$`；把外部效果冒充仍受 `$W$` 保护。
+
+**F13 实际应用遭遇硬失败**
+- 初始：已完成整批预演，实际应用到第二个文件时进程崩溃。
+- 交错：硬失败注入。
+- 必须：留下第一文件已变、第二不确定、第三未变的现场；恢复后保留动作标识、最后已知阶段与预期描述供后继者核对。
+- 禁止：自动重放同一请求覆盖崩溃后他人已作的修正；直接标整批完成。
+
+**F14 外部写入发生在锁内校验之后**
+- 初始：A 持有 `$W$` 并已完成锁内 `stamp` 校验；不受协议约束的外部程序随后改同一文件，A 再落盘。
+- 交错：锁内校验与落盘之间。
+- 必须：明确标为外部 best-effort 边界内的覆盖风险；观察到外部影响时给出事实。
+- 禁止：把外部程序的自由写入误判为两个受保护提交互斥失效；声称 `$W$` 能封锁不参与入口的程序。
+
+**F15 用户输入与等待登记交错**
+- 初始：A 观察全局无非阻塞工作，准备登记 `park-slot`；用户随后追加新输入。另一变体是 A 已阻塞在等 `$W$` 的工具调用中。
+- 交错：观察后、登记前；等 `$W$` 中。
+- 必须：输入先提交则拒绝 A 休眠；休眠先提交则输入的 `wake-all` 必覆盖 A；等 `$W$` 的工具阻塞收到通知但不承诺立即释放 `$W$`。
+- 禁止：检查与登记分离导致漏唤醒；把工具阻塞当主动休眠任意取消。
+
+→ 用于：AGENTS.md §8.3 的 F01–F15 验收矩阵，逐场景断言文件、锁、责任与结果分类。
+
+## 9 故障范围与弱保证
+
+### 9.1 四类范围
+
+| 类别 | 覆盖 | 可以声称 | 不得声称 |
+|---|---|---|---|
+| 强保证 | 控制 STM 转换；合法认领不互相覆盖；责任转换无无主缝隙；有效竞争只有赢/输；死亡身份不能提交；父项恢复不被写成完成；普通写与 Shell 不同时越过 `$W$`；最终预演到应用不释放 `$W$`；检查为空与登记休眠不漏唤醒 | 正常路径下，普通拒绝发生在真实修改前；进入 `:applying` 后整批完成；记账重试不重放文件 | 硬失败后自动恢复旧现场；跨文件系统恰好一次；读取得到全工作区一致快照 |
+| 弱保证 | 读取可观察中间态；`(mtime,size)` 不唯一标识内容；任务拆分质量不被形式证明 | 按快速判据接受或拒绝旧依据；模型判断可通过公开结果修正 | `stamp` 相等等于内容完全相等；读取返回等于稳定快照；拆分一定正确 |
+| 外部访问 | 未经协议工具的编辑器保存、其他进程直写、脱离 Shell 会话边界的后续活动 | 下次读取/预演/提交时用 `stamp` 尽力发现；发现冲突如实返回 | 外部写入受 `$W$` 互斥；系统能监控每一次外部写；自动合并外部改动 |
+| 硬失败 | 停电、进程崩溃、实际存储硬失败；可发生在预演前、应用中、发布前 | 保留可取得的操作标识、预期动作、最后可确认阶段与错误；恢复后先读现场再决定 | 恢复旧快照；重建精确跨资源提交边界；把“记录了 operation-id”说成已解决断电恢复 |
+
+### 9.2 范围矩阵
+
+| 对象或事件 | 采用的处理 | 可以声称的结果 | 实现落点 |
+|---|---|---|---|
+| 看板短事务竞争 | STM 校验与原子提交 | 只发布一个合法的组合状态 | `hc/core/commands` |
+| 普通编辑逻辑错误 | 整批 dry-run 拒绝 | 拒绝时真实文件尚未修改 | `hc/file/planner` |
+| 普通编辑实际应用 | 持 `$W$` 应用确定结果 | 正常范围内整批完成 | `hc/file/writer` |
+| Shell 命令内部失败 | 保存执行事实并继续任务判断 | 已发生的副作用仍然存在 | `hc/shell/session` |
+| 文件依据变化 | `stamp` 检查 | 发现二元组不一致时拒绝旧依据 | `hc/file/reader` |
+| 相同二元组的内容变化 | 按快速判据接受 | 不提供额外历史识别 | `hc/file/reader` + F08 |
+| 用户新输入 | 入板与 `wake-all` | 公共目标可以及时被重新观察 | `hc/core/input` |
+| 等锁或外部条件 | 明确等待事实 | 不把等待误写成完成或无责 | `hc/file/gate`、`hc/core/board` |
+| 停电与崩溃 | best-effort 核对接续 | 不承诺恢复旧现场或自动恰好一次 | `hc/core/recovery` |
+
+### 9.3 不得外推
+
+| 观察 | 不能推出的结论 |
+|---|---|
+| `stamp` 相同 | 内容完全未变；不能据此宣称“已证明无外部修改” |
+| Shell 退出码 0 | 任务目标已满足；文件未发生其他变化 |
+| 没有收到响应 | 操作未执行；可以换新 `request-id` 重做 |
+| 记录了 `operation-id` | 断电恢复已完成；跨资源提交边界已重建 |
+| `:APPLIED` | 父任务已完成；后续验证已通过 |
+| `:UNCERTAIN` | 失败且无影响；可以安全重放 |
+| `wake-all` | 被唤醒者获得任务或令牌资格；通知等于任务分配 |
+| `:holder` | 当前 `$W$` 拥有者；整个持令期独占写锁 |
+| `:waiting` | 责任消失；可以从 $R(a)$ 删除 |
+| 读取返回 | 全工作区一致快照；读取期间没有并发提交 |
+
+允许阻塞：Shell 可以无限等待，`$W$` 因而可能长期不可用；Shell 甚至可以等某普通个体写出文件，而该个体正等 `$W$`。控制服务只需让等待原因与当前会话可见，不通过悄悄限制 Shell 宣称无死锁。无全局调度意味着选择可能不公平；观察到持续新增可拆工作挤压执行、持续令牌输入让持令者长期不退时，改进拆分或明确修订策略，不得伪造完成。
+
+→ 用于：AGENTS.md §3.6 的故障范围矩阵，约束实现、测试报告与对外表述，不得把弱保证或 best-effort 说成强保证。
+
+## 10 验证模型与实施顺序
+
+### 10.1 三层验证对象
+
+| 层 | 模型 | 证明什么 | 不能证明什么 |
+|---|---|---|---|
+| 第一层：控制状态转换 | 任务责任、依赖等待、认领、令牌、个体生命；最小有限模型 | 事务组合、退休、父项恢复、唤醒不漏 | 真实文件系统与 Shell 适配正确 |
+| 第二层：文件入口 | 快速判据、整批预演、`$W$`、实际应用、Shell 会话；临时工作区 | 普通拒绝前零修改、应用整批完成、记账不重放 | 真实模型的任务判断质量 |
+| 第三层：适配与消息 | `request-id`、丢失响应、迟到调用、唤醒、新个体启动 | 传输重试不创造新业务状态；旧资格失效 | 任意硬失败后的完整恢复 |
+
+L28-01：验证结果注明覆盖哪一层；纯状态模型通过不能证明操作系统适配正确，单次真实 Shell 成功也不能证明所有竞争路径正确。
+
+### 10.2 最小有限模型
+
+- 2 个普通个体、1 个持令槽、3 个任务、2 个文件。
+- 个体：最小模型可简化为 `:normal` / `:holder` / `:dead`；正式模型仍按 §2.3 的 `:role` + `:life-state` 拆分。任务：`:ready` / `:waiting` / `:done` / `:cancelled` / `:replaced`；认领、责任、动作阶段分别保存。
+- 文件内容用离散符号；允许不同内容映射到同一个快速判据符号（例如内容 A、B 都标 S1），防止把状态编号当版本号偷偷获得真实协议没有的检测能力。
+- `$W$` 状态：空闲、受保护操作持有、Shell 会话持有。受保护动作：准备、已具备应用资格、应用中、已发布、拒绝；Shell 动作：等待锁、运行、会话仍有活动、结束、不确定。
+- 任务不增加 `:running`/`:applying` 状态；动作阶段独立。
+
+### 10.3 确定性驱动器与性质
+
+驱动器在七个边界支持暂停并指定先继续哪个参与者：读取完成、排队取 `$W$`、锁内校验结束、dry-run 完成、进入 `:applying`、实际应用完成、看板发布。环境动作显式建模：丢弃响应、延迟请求、触发进程硬失败、外部程序写文件、等待条件长期不满足。某性质仅在无外部写入时成立，必须在谓词中写明前提。
+
+| 编号 | 性质 | 主要覆盖 | 断言点 |
+|---|---|---|---|
+| V01 | 同一时刻至多一个有效持令个体 | T01、T02 | `TokenSlot` 的 holder/term 唯一；并发获胜只一个 |
+| V02 | 逻辑死亡身份不能产生新的有效提交 | T03、T11 | 每个副作用入口复核 `:life-state`；迟到请求拒绝 |
+| V03 | 有效竞争只有赢或输两种生命结论 | T01、T13 | `take-or-die` 结果集合只含 `:attempt-won`/`:attempt-lost` |
+| V04 | 失败竞争不遗留归死者的可移交责任 | T04 | 失败事务后 `owner-id` 无死者；等待条件保留 |
+| V05 | 退休与责任空集在同一提交状态成立 | T05、T06、T09 | `retire` 与 `R(a)=∅` 同一事务；无中间可执行状态 |
+| V06 | 子项完成只使等待满足的父项恢复 `:ready` | T07、T08 | `finish` 只改 `:wait-for` 全部满足的直接父项 |
+| V07 | 普通任务归属不因他人持令而改变 | T08、T10 | 令牌获胜/完成不重写普通 `owner-id` |
+| V08 | 唤醒与等待登记不会因检查间隔丢失 | F15 | `park-slot` 同事务核对游标；空→非空与输入均 `wake-all` |
+
+随机生成器发现错误后，缩减器去掉无关任务、个体与事件，保留最短仍能触发错误的序列；最短反例加入固定确定性场景，而不是只保留随机种子。验收还检查结果类别、任务归属、动作是否未结、`apply` 次数及锁持有区间。L28-02：不能只检查最终文件内容。
+
+### 10.4 五阶段实施顺序
+
+第一版以单主机共享工作区 + 一个逻辑控制服务为基础；跨主机、分布式领导选举、任意数据库兼容与可插拔全局规划器不在第一版范围。
+
+| 阶段 | 建立什么 | 验收 | 暂不接入 |
+|---|---|---|---|
+| 一：控制内核与脚本化个体 | 任务、个体、认领、依赖、责任的内存状态与短 STM；文件动作用无副作用替身；Shell 只表示未完成令牌责任 | 2–3 个脚本个体跑通同时拆分、同时认领、父项恢复、休眠竞态；每个任务能解释为何可做/在等 | 真实文件、真实 Shell、模型 |
+| 二：受保护读取与整批写入 | 读取内容与 `stamp`；同一 `$W$` 下的校验、dry-run、apply；固定 `:prepared` 结构 | 多文件后一步失败、结构先后、只读依赖变化、空写集看板结论、发布重试不重放；覆盖 F01–F10 | 真实模型、大项目 |
+| 三：生命管理与令牌竞争 | `take-or-die`、请求去重、逻辑死亡、槽位补新；停止接口按 `:agent-id` 寻址 | T01–T13；同槽新个体不继承旧上下文；迟到提交被拒 | 复杂 Shell 会话 |
+| 四：Shell 会话适配 | `.call`、`$W$` 串行、会话边界、输出与停止 | F11 相互等待、F12 子活动边界；命令失败/意外修改不套用受保护预演保证 | 大规模构建/测试 |
+| 五：真实模型接入 | 少量并发个体、范围明确任务；返回结构与提示词修正 | 观察急抢令牌、父项当计数容器、工具失败当任务失败、无响应当未执行；切换时排空 `:applying` 与会话并删除旧路径 | 跨主机、分布式恢复 |
+
+L25-01：槽提供执行资源、可复用；`:agent-id` 不复用；槽补充器只让槽可用，不派任务。L25-02：持令者不能回到普通个体；释放令牌后不得保留旧上下文；工具入口每次用当前身份检查。L25-03：个体不得同时保有 `:applying` 提交或受管 Shell 会话又发起生死竞争；第一版同一身份同时只有一个有副作用调用。L25-04：退休使用完整 $R(a)$，不是“当前可执行令牌任务数”。L29-01：阶段验收以协议行为为单位，不以实现行数或模块数量为单位。
+
+### 10.5 运行观察
+
+| 条款 | 要求 |
+|---|---|
+| L30-01 | 观察层不根据活跃度自动改变任务归属或令牌持有者；持令者长时间无新输出不证明责任结束，也不授权强行轮换 |
+| 等待链 | 显示“父项等测试 → 测试等编辑 → 编辑等 `$W$` → `$W$` 由某 Shell 持有”，而不是只显示任务数量 |
+| 最小事件 | 用户输入到达、任务结构变化、认领变化、普通责任移交、竞争结果、死亡与启动、`$W$` 取得/释放、进入 `:applying`、应用结果发布、Shell 状态、等待登记/唤醒 |
+| 视图区分 | “等待已满足”与“任务已完成”分开；`:holder` 与 `$W$` 拥有者分开；正常死亡不一律标故障 |
+| 指标边界 | `$W$` 等待、锁内预演、应用时长、冲突类别用于找机制成本；任务数、拆分数、消息数、调用数、存活时长不作个体价值评分 |
+
+→ 用于：AGENTS.md §8.2、§8.4 的验证矩阵与实施顺序，以及 §3.13–§3.14 的生命周期与观察约束。
+
+## 11 配置改造案例
+
+用户目标：“服务启动时读取新的配置格式，旧配置继续可用，空配置使用已有默认值。”共享工作区；三个普通个体 A、B、C；令牌空闲。
+
+| 步骤 | 状态变化 | 必须 | 禁止 |
+|---|---|---|---|
+| 1 输入与父项 | 用户原文入板并 `wake-all`；形成父项 P，保留启动接入、新旧兼容、默认值三项要求 | 原文与解释分开；P 的 `:goal` 覆盖三项；A/B/C 均为普通个体 | 用摘要替换原文；把 P 自动派给某个体 |
+| 2 首次拆分 | A 建 E1“实现新格式解析”、E2“实现旧格式转换”、T1“运行相关测试”（依赖 E1/E2，`:needs-token`）；P 等待 E1/E2/T1，`:remaining-work` 写“组件结果可用后接入启动；按实际错误行为决定后续验证” | 一次事务完成子项、等待、父项剩余与索引；T1 只因实际 Shell 需要令牌；B 认领 E1，C 认领 E2 | 父项写成“汇总并关闭”；因祖先用过 Shell 给所有子项加令牌；拆分者天然获得子项优先权 |
+| 3 持令等待 | A 无受保护工作，竞争成功；T1 尚不能运行，A 不取 `$W$`；B、C 依次提交 | 令牌寿命与 `$W$` 寿命分开；B/C 各自锁内复核；C 发现公共类型被 B 修改时拒绝旧依据、重读再提交，C 不死，E2 不转给 A | A 从获胜起一直占 `$W$`；C 的普通冲突被当死亡；E2 因冲突转给 holder |
+| 4 测试运行 | E1/E2 完成使 T1 `:ready`；A 取 `$W$` 运行 Shell；读取照常，新写入等待 | `$W$` 只在会话期间持有；T1 的 `:running` 计入 A 的责任 | 持令即持锁；读取被 `$W$` 阻塞 |
+| 5 追加约束 | 用户补充“空字符串也按空配置处理，不要抛解析异常”；输入入板并 `wake-all`；B 建普通 E3 与令牌 T2（依赖 E3），同一 STM 更新 P 的 `:wait-for` 与剩余说明；T2 动态归 A | E1 已完成范围不被改成“从未完成”；T1 结果不能作为空字符串行为已通过的证据；T2 进入 A 的 $R(a)$ | 把旧测试结果直接扩充为新要求已通过；只在评论保存新要求而不改任务/依赖；把 E1 回滚成未完成 |
+| 6 普通写等待 | B 准备 E3 并请求 `$W$`，T1 仍在运行，B 等待；T1 结束，A 发布结果并释放 `$W$`，但因 T2 不退休；B 取得 `$W$` 后重新核对、预演、应用 | 等待前 `stamp` 不能直接用于实写；若 T1 改变了 E3 依据，B 在锁内发现冲突并重判；A 不因一次测试结束释放令牌 | B 用等待前校验直接写入；A 因 T1 结束退休；把“测试通常只读”当跳过复核的理由 |
+| 7 T2 完成与 A 退休 | E3 完成使 T2 `:ready`；A 运行 T2；T2 完成使 P 的全部当前依赖满足，P `:waiting`→`:ready`；A 无普通责任、无其他令牌责任、无在途动作，同一事务退休；新个体 D 在原槽启动 | 子项结果先发布，再父项恢复，再按最终 $R(A)$ 退休；P 保留目标、剩余与归属（公开待接续）；D 只读公共材料 | 自动完成 P；把 P 指派给 D；A 在 P 恢复前或 T2 记账前死亡；D 继承 A 的私有上下文 |
+| 8 D 接入与再拆分 | D 认领 P 的启动接入（必须一起发布的小改动），受保护提交完成；P 仍需真实启动行为，D 拆 T3“取得并发布启动核验报告”，P 回 `:waiting`，剩余写“依据真实启动结果处理差异，确认原目标是否满足”；D 与 C 竞争，C 赢，D 输；D 的 P 连同等待与进展公开，D 死亡；新个体 E 启动 | T3 的 `:done-when` 是“取得并发布报告”，不是“业务已符合预期”；D 的失败事务移交 P，不把 P 转给 C；C 只承担动态令牌责任 T3 | 把 T3 写成“验证一切正常”，使报告成功自动完成 P；D 失败后 P 仍归 D；C 因赢令牌接管 P 的普通责任 |
+| 9 报告揭示问题 | T3 报告显示旧格式转换后的默认超时值被启动层再次覆盖；C 完成 T3（报告目标满足），同一 STM 创建普通 E4“修正配置合并顺序”与令牌 T4“取得并发布修正后的启动核验报告”（依赖 E4），并把 P 的 `:wait-for` 中 T3 替换为 E4/T4；T4 归 C；E4 由 B 或 E 接续修正；T4 报告符合预期后 P 恢复 `:ready`，C 若无其他责任退休 | 报告任务完成与业务目标满足分开；替换依赖、创建 E4/T4、更新 P 等待在同一事务，避免 P 瞬间恢复又无事可做；T4 的完成条件仍是报告 | T3 报告成功即宣称 P 满足；先让 P 恢复再补建 E4/T4，产生空窗；T4 无依赖 E4 就执行；用子项计数代替 P 的内容判断 |
+| 10 明确完成父项 | E 按普通认领接续 P，核对新格式可解析、旧格式可转换、空配置与空字符串使用默认值、启动路径已接入、真实启动验证覆盖这些行为；提交 P `:done`，指出依据的结果与当前文件条件 | 完成提交逐项对照 `:done-when`；依赖文件的结论经 `$W$` 复核 `stamp`；祖先只因依赖满足而恢复 | 制造额外代码修改或“批准父项完成”角色；子项数量归零直接关闭；沿祖先链级联完成 |
+
+案例断言：A 持令等待时不占 `$W$`；C 的只读依赖冲突是普通拒绝；用户追加要求不追溯改写 E1；T2 进入 A 的动态责任；T2 完成与 A 退休同事务；D 的 P 是公开任务而非槽位继承；D 失败只移交 P；T3 报告完成不等于 P 完成；E4/T4 与 P 的等待替换同事务；E 以实质目标完成 P。
+
+B10-03：新个体不得因没有经历前文就把任务重新解释成更容易的版本；可接续程度以继任者能否据公开材料选择合理下一步为准，不以记录字数、评论条数或历史长度衡量。发现公共状态不足时，补齐状态或拆出调查本身就是有效工作。
+
+→ 用于：AGENTS.md §3.15 的端到端案例，按步骤检查状态变化与禁止行为。
+
+## 12 变更检查表
+
+L32-01：任何改变都应指出影响哪项用户语义、哪组接口合同和哪些验证场景；只改实现不改行为说明，会使模型个体、运行时与维护者依据不同规则工作。检查表不是独立审批层，由负责该原子修改的个体完成并用具体测试与结果支撑。
+
+| 变更对象 | 必须确认的事项 | 验收证据 |
+|---|---|---|
+| 新增文件操作 | 能否完整预演；批内依赖如何表达；apply 是否新增普通失败分支 | F19、F20 对应场景；普通拒绝前文件零修改 |
+| 调整锁粒度 | Shell 与普通写是否仍有共同准入；读取是否仍照常；原有交错是否成立 | F01、F07、F11、F12；`$W$` 互斥断言 |
+| 修改任务结构 | 父项目标与剩余工作是否保留；最后子项是否仅解除等待 | T07、T08；V06；父项 `:remaining-work` 非空 |
+| 修改令牌接口 | 有效竞争是否仍不可逆；新增责任与退休是否仍原子排序 | T01–T06、T13；V01–V05 |
+| 修改异常处理 | 是否准确保留不确定结果；是否把普通逻辑缺陷误归为硬失败 | F13、F23；`:UNCERTAIN` 与 `:HARD_FAILURE` 分类 |
+| 修改唤醒机制 | 是否覆盖所有已登记等待者；是否把工具阻塞误当作主动休眠 | F15；V08；`park-slot` 同事务检查 |
+| 修改运行时身份 | 是否可能复用旧资格；迟到停止或响应是否影响新个体 | T11；L25；`:ACTOR_INACTIVE` 入口检查 |
+| 增加观测指标 | 是否改善具体判断；是否会诱导无价值拆分或形式化完成 | L30-01；指标与任务价值分离的评审记录 |
+
+变更完成后删除已被替代的当前执行路径，保留足够简短的决策理由；旧接口在所有调用点迁移后才删除；被替代任务从当前可推进视图移出，但不删除仍有未结动作的记录。
+
+→ 用于：AGENTS.md §8.4 的 L32 变更检查，约束接口、锁、任务、令牌、异常、唤醒与身份的修改。
+
+## 13 差异与不采纳
+
+| 原文主张或写法 | AGENTS.md 的裁决 | 处理 |
+|---|---|---|
+| 字段用 snake_case：`task_id`、`claim_id`、`needs_token`、`owner_id`、`wait_for`、`mtime_seconds` 等 | AGENTS.md 统一用 Clojure keyword：`:task-id`、`:claim-id`、`:needs-token`、`:owner-id`、`:wait-for`、`:mtime-sec` 等 | 采用 AGENTS.md；本文件 §2 给出字段表，旧写法只作为来源记录，不进入新接口 |
+| `stamp` 用 `mtime_seconds` + `mtime_fraction` | AGENTS.md 用 `{:mtime-sec :mtime-nsec :size}` | 采用 AGENTS.md；两者都保留完整精度，禁止转低精度浮点 |
+| 读取状态用 `read_state`、`changed_during_read` | AGENTS.md 用 `:changed-during-read`，读取结果以 `:OBSERVED` 等结果码表达 | 采用 AGENTS.md；不新增并行的读取状态字段 |
+| 个体状态写成 `normal`、`holder`、`dead` 单一枚举 | AGENTS.md 拆为 `:role`（`:normal`/`:holder`）与 `:life-state`（`:alive`/`:dead`/`:terminated`） | 采用 AGENTS.md；`holder` 是角色不是生命状态，避免“释放令牌后回到 normal”的歧义 |
+| 第 1–8 章先读、第 9–16 章看板、第 17–24 章文件、第 25–32 章运行时 | 本文件是 AGENTS.md 参考资料，不承担独立教程的章节阅读顺序 | 删除该阅读指南；改由 §0 映射表按 AGENTS.md 条款定位 |
+| 第 2 章 A02 条款、第 3.7 节范围矩阵在原文中重复展开 | AGENTS.md §3.1 与 §3.6 已压缩收录 | 本文件不逐段复述 A02 与范围矩阵；§0 给出条款索引，§9 只补强/弱/外部/硬失败的实施边界 |
+| 原文未覆盖 `.where`/`.park`/`.unpark` 的精确切片与四道核验 | AGENTS.md §4.3 增补 | 不在本文件展开；实现按 AGENTS.md §4.3 执行 |
+| 原文未覆盖 `.fission` 同身裂变 | AGENTS.md §4.4 增补 | 不在本文件展开；裂变准入、泳道与终态幂等按 AGENTS.md §4.4 执行 |
+| 原文说“系统不要求使用 git”，未讨论私有 worktree | AGENTS.md D01 明确拒绝每个体私有 worktree/分支合并 | 一致；保留单一共享工作区，不把 git 合并作为协作主路径 |
+| 原文把“全看板有任何可拆项则暂停所有原子执行”列为可切换策略 | AGENTS.md 默认只对准备接手的工作先拆分，不设全局严格优先 | 不作为默认；仅作为显式策略变更，需重新评估执行饥饿与验证场景 |
+| 原文 `Task` 用 `result_refs`，`Action` 只写“结果引用” | AGENTS.md `Task` 用 `:result-refs`，`Action` 用 `:result-ref` | 采用 AGENTS.md；动作只保留本次结果引用，任务保留结果集合 |
+| 原文父项恢复写“所有直接等待者”，未提根任务台账 | AGENTS.md 增加根任务 `:ledger-key` 与接力屏障 | 采用 AGENTS.md；`finish` 伪代码同时释放台账并检查 `relay`，不改变父项恢复规则 |
+
+Swarm.txt 原文未出现 `UX-xx`、`AC-xx`、`E2E xx`、`S01–S14` 编号；本文件不虚构这些条目。相关端到端与体验验收按 AGENTS.md §8.5 执行；本文件只保留 Swarm 协议自身的编号。
+
+→ 用于：AGENTS.md 全文的冲突裁决与实现取舍核对；未采纳项不得以“原文如此”绕过 AGENTS.md。
+
+## 14 引用
+
+**R1 rsync 官方手册**
+Rsync Project，rsync(1)。官方地址：<https://rsync.samba.org/ftp/rsync/rsync.1>。核对日期：2026-11-03。
+用途：默认 quick check 使用文件大小与最后修改时间；dry-run 与实跑变更清单一致性所说明的外部变化和系统调用失败边界。其他协作规则、责任模型、预演合同与生命周期由本项目设计给出，不由 rsync 手册代为保证。
+
+**R2 Composable Memory Transactions**
+Tim Harris、Simon Marlow、Simon Peyton Jones、Maurice Herlihy，*Composable Memory Transactions*，PPoPP 2005；所核对文件为 2006-08-18 的发表后版本。官方研究机构存档：<https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>。核对日期：2026-11-03。
+用途：STM 对内存状态的组合原子操作与条件等待思想。普通文件实际应用与 Shell 行为仍按本文件与 AGENTS.md 独立规定的合同处理，不把论文性质直接扩展为文件系统或任意外部程序的性质。
+
+→ 用于：AGENTS.md §3.10 与 §4.2 的判据来源核对；引用只支持所述工程取舍，不扩大保证范围。
+# a0lite 打包实测与平台教训（AGENTS.md 参考资料）
+
+> **定位**：本文件是 AGENTS.md §7.2、§9.4 的实测证据与实现参考，不是万象术的架构方案。它记录一个已构建、已部署的 Flatpak 打包层，用来说明环境供应与执行分离、宿主服务复用、可复现 pin 与 Linux 服务启动顺序的具体做法。
+> **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。
+> **支持条款**：AGENTS.md §7.2（环境供应）、§9.4（a0lite 工程教训）、§8.1（HACK.md 记录纪律）。
+> **来源与核对**：a0lite 打包层 README（本文件原文）；上游 Agent Zero；核对日期 2026-11-03。
+> **证据等级**：构建与运行结果由 a0lite 的构建记录在 Manjaro / flatpak 1.18.4 上实测；本仓库未复测，只转述。文中未标注“实测”的条目均为打包设计说明。
+
+## 0 实施用法
+
+| 本文件条目 | 对应 AGENTS.md | 实现落点 | 验收证据 |
+|---|---|---|---|
+| §1 定位与边界 | §9.1、§9.4 | 判断哪些经验可复用 | 不把 a0lite 当协作架构 |
+| §2 环境分层 | §7.2 三类环境隔离 | Pixi 运行时 / 可写数据根 / 宿主服务 | 只读运行时内无写入 |
+| §3 依赖裁剪 | §7.2 四类工具接口 | 模型、语音、OCR、浏览器接入 | 每项有明确 HTTP 或进程边界 |
+| §4 pin 纪律 | §7.2、§8.1 | 依赖锁定与 HACK.md | 远端输入有 sha256/commit；两个例外单列 |
+| §5 打包传输 | §9.4 | 发布包与模型仓库传输 | 实测耗时表 |
+| §6 服务化 | §9.4 | systemd 单元与健康检查 | 无 ordering cycle |
+| §7 验证记录 | §8.4 | 端到端冒烟 | 每项有可复现检查 |
+
+按此表从 AGENTS.md 条款跳到本文件的展开细节。
+
+## 1 定位与可复用边界
+
+a0lite 只包含打包层：Flatpak 清单、启动器、运行时补丁与构建/部署脚本。Agent Zero 源码由 `scripts/build.sh` 从上游复制进来，不在仓库内 vendored。目标机器不需要 VM、Docker 或 Python 工具链。
+
+**可复用的事实**：
+
+- 一个带模型能力的 Python 应用可以不打包推理栈，改为调用宿主 Ollama 的 HTTP 接口。
+- 只读运行时与可写数据目录可以严格分离：启动器把框架写根重定向到 `$XDG_DATA_HOME`，首次启动用 `uv` 把 CPython 3.14 装进可写目录。
+- 上游代码与第三方归档通过 `sha256` 或 commit 固定；模型权重不进入构建，由本地 Ollama 暂存后再打包。
+
+**不可外推的边界**：
+
+- a0lite 是单用户桌面打包，不包含多智能体协作、STM 看板、受保护文件提交或令牌生命周期。这些由 AGENTS.md §3、§4 独立规定。
+- a0lite 只验证 Linux/Flatpak；不证明 Windows/MSYS2 路径。
+- a0lite 的验证是传输级冒烟（HTTP 200、WAV 字节数、转写字符串、工具计数），不证明模型质量或业务正确性。
+
+**许可证**：a0lite 与 Agent Zero 均为 MIT。WPS 技能与依赖归档来自第三方仓库；打包前必须单独核查其许可证，不能因为主项目是 MIT 就默认整包可再分发。
+
+→ 用于：AGENTS.md §9.4 的“可复用/不可复用”判断，以及 §9.1 的许可证隔离纪律。
+
+## 2 环境分层与宿主服务复用
+
+### 2.1 三层运行边界
+
+| 层 | 内容 | 生命周期 | 对 AGENTS.md 的约束 |
+|---|---|---|---|
+| 只读运行时 | Flatpak 运行时、应用文件、预编译的 Xpra Debian 载荷 | 由打包与安装决定 | 运行期间不得写入；升级不热替换 |
+| 可写数据根 | `$XDG_DATA_HOME` 下的框架写根、venv、模型仓库 | 首次启动播种，跨升级保留 | 所有可变状态必须落在声明的数据根 |
+| 宿主服务 | Ollama、宿主 Chrome、Xpra 显示 | 由宿主管辖，不随应用退出 | 只连接，不拥有，不擅自关闭 |
+
+启动器的职责：播种可写树、供应 venv、启动 Ollama 与 Web UI。`agent-zero.service` 启动应用，应用自身也启动 Ollama。
+
+### 2.2 运行时补丁：单一预导入边界
+
+`a0flatpak.apply()` 在框架导入前运行。每个模块独立、幂等：
+
+| 模块 | 替换或补充的对象 |
+|---|---|
+| `provider_urls` | 模型供应商端点改为本地 Ollama URL |
+| `embeddings` | 嵌入工厂改为 Ollama 客户端 |
+| `vector_store` | faiss 改为 numpy 索引 |
+| `speech` | TTS/STT 运行时改为 Ollama 音频端点 |
+| `ocr` | OCR 流水线改为视觉请求 |
+| `parsers` | `unstructured` 兜底改为三步链 |
+| `browser` | Patchright 改为 `stealth-browser` 驱动宿主 Chrome |
+| `desktop` | 内置桌面改为宿主显示或 Xvfb |
+| `packages` | 包管理器安装（只读沙箱内不可执行） |
+| `rfc_loop` | 远程函数调用循环（否则永久轮询） |
+| `base_dir` | 框架写根重定向到 `$XDG_DATA_HOME` |
+| `compat` | 保持 `asyncio` 与 `sniffio` 在嵌套事件循环下可用 |
+| `auth` | 增加 `A0_AUTH_KEY` 启用的请求鉴权 |
+| `health` | 增加启动探针轮询的 `/api/health` 路由 |
+| `serve` | 包装 uvicorn 的 callable，挂接鉴权与健康路由 |
+
+**实现约束**：
+
+- 适配只在一个边界发生；不 fork 上游业务代码。
+- 每个模块只承担一个替换；模块之间不共享可变状态。
+- 幂等：重复 apply 不叠加副作用。
+- 上游缺失的能力（鉴权、健康检查）由包装层补，不能假定上游已有。
+
+→ 用于：AGENTS.md §7.2 的“环境与执行分离”，以及 §5.4 的窄接口适配纪律。
+
+## 3 依赖裁剪与能力替换
+
+上游镜像自带推理栈；a0lite 全部移除，改为 HTTP 或宿主能力：
+
+| 移除 | 替换 |
+|---|---|
+| `torch`、`triton`、`nvidia-*` | `POST /api/chat`、`POST /api/embed` |
+| `onnxruntime`、`kokoro`、`misaki`、`spacy` | `POST /v1/audio/speech` |
+| `openai-whisper` | `POST /v1/audio/transcriptions` |
+| `faiss-cpu`、`sentence-transformers` | `POST /api/embed` 加 numpy 索引 |
+| `unstructured[all-docs]` | `unstructured` → `soffice` → `ollama` 三步链 |
+| Patchright Chromium 下载 | 宿主 Chrome，经 `nodriver` 驱动 |
+
+**实现约束**：
+
+- 每个替换都有明确的端点或可执行文件；不得保留隐式本地兜底。
+- 解析链的每一步都可观察失败；不得把三步压成一个“解析成功/失败”布尔值。
+- 浏览器使用宿主已有 Chrome；不下载第二套浏览器。
+- Python 本身不打包；`uv` 首次启动供应 CPython 3.14。Xpra 的预编译 Debian 载荷按 3.14 编译，改变 Python 版本必须同时重建载荷。代价是首次启动需要网络；离线场景必须显式失败并说明，不能假装已就绪。
+- 鉴权由 `A0_AUTH_KEY` 启用；未设置时的行为必须明确，不能默认暴露管理接口。
+
+→ 用于：AGENTS.md §7.2 的“四类工具各走自然接口”，以及 §7.2 的“外部服务连接不等于拥有其生命周期”。
+
+## 4 构建可复现性与 pin 纪律
+
+**规则**：每个远端输入用 `sha256` 或 commit 固定。
+
+**两个例外**：
+
+| 输入 | 为什么不能按内容固定 | 构建时的处理 |
+|---|---|---|
+| Agent Zero 检出 | 主清单以 `path: ..` 消费本地检出 | 由调用者提供检出路径；版本由调用者负责 |
+| `wps-office-mcp-deps.tar.gz` | 字节依赖 `bun` 版本与构建时间戳 | 与清单 pin 比较；不同则重建；在构建副本中重新 pin 并报告新校验和 |
+
+**结论**：仓库中的 pin 描述“实际发布的工件”，不是任何重建都能复现的值。必须区分两类输入：
+
+- **可复现输入**：同一 pin 在任何机器上得到相同字节。
+- **工件 pin**：pin 只证明“这次发布用了这个工件”，不证明可重建。
+
+HACK.md 必须逐项记录属于哪一类；不得对第二类宣称位级可复现。
+
+**构建顺序**：主包必须先构建；扩展包填充主包声明的 extension points。构建顺序是合同，不是建议。
+
+→ 用于：AGENTS.md §7.2 的环境锁定与 §8.1 的 HACK.md 记录纪律。
+
+## 5 打包与传输实测
+
+### 5.1 构建
+
+```bash
+git clone https://github.com/agent0ai/agent-zero
+A0_SRC=$PWD/agent-zero scripts/build.sh
+```
+
+产物：`bundles/agent-zero.flatpak`、`agent-zero-cuda.flatpak`、`agent-zero-wps.flatpak`。
+
+依赖：`flatpak-builder`、`org.freedesktop.Sdk` 25.08、网络。不需要 C 编译器，不需要 Python。
+
+### 5.2 模型仓库
+
+模型权重不在构建期下载。先用本地 Ollama 暂存，再打包：
+
+```bash
+scripts/package-models.sh /path/to/staged/ollama
+```
+
+产物 `models-repo.tar` 是未压缩的 ostree 仓库。
+
+**不要用 `flatpak build-bundle` 打包模型**：它逐个对象 gzip，而 GGUF 权重本身已压缩，压缩过程耗时数小时且不减小体积。
+
+| 传输方式 | 命令 | 4.7 GB 仓库耗时 |
+|---|---|---|
+| 纯 tar | `tar -cf models-repo.tar repo` | 3 s |
+| OCI + zstd | `build-bundle --oci --oci-layer-compress=zstd` | 70 s |
+| 默认 bundle | `build-bundle` | 约 3.7 h |
+
+`--oci-layer-compress` 只接受 `gzip` 或 `zstd`；没有未压缩的 OCI 层。仓库本身按构造未压缩，`flatpak install` 可直接从 `file://` 远端或解压后的 `oci:` 目录读取。
+
+**实现约束**：
+
+- 传输格式按载荷可压缩性选择；不对已压缩载荷再做压缩。
+- 测得的耗时是主机相关值；换机器先复测，不把 3 s / 70 s / 3.7 h 当固定预算。
+- 以上数字进入 HACK.md，注明环境与测量日期。
+
+→ 用于：AGENTS.md §9.4 的打包性能条目，以及 §7.1 的“外部大对象区”传输选择。
+
+## 6 部署与服务化
+
+### 6.1 部署
+
+```bash
+scripts/deploy.sh user@host
+```
+
+步骤：复制 bundles；按用户安装；解包模型仓库；注册为本地远端；后台启动应用；等待 UI。
+
+### 6.2 systemd 单元
+
+两个系统单元从 `graphical.target` 开机启动，位于 `/etc/systemd/system`，以桌面用户身份运行，因此是普通系统服务，不是 user unit：
+
+| 单元 | 启动对象 |
+|---|---|
+| `agent-zero.service` | 应用（应用自身启动 Ollama） |
+| `agent-zero-desktop.service` | 宿主显示上的 Xpra 会话 |
+
+安装：`sudo scripts/install-services.sh kunweiz`。
+
+### 6.3 ordering cycle：真实故障与修法
+
+`agent-zero.service` 等待 display manager 与网络，但**不**把自己排到 `graphical.target` 之后。
+
+原因：一个 unit 既被某个 target `WantedBy`，又 `After` 该 target，会形成 ordering cycle；systemd 打破环的方式是停止该 unit。结果是开机偶发不启动。
+
+`agent-zero-desktop.service` 在启动 Xpra 前等待 UI 的 health endpoint，因为两个 unit 同时启动，不能靠启动顺序保证 UI 已就绪。
+
+**实现约束**：
+
+- 就绪判断用健康端点或明确资源条件，不用 target 顺序代替。
+- 服务启动失败必须留下可诊断的单元状态，不能静默重试。
+- 系统服务与 user unit 的选择影响权限、显示访问与开机时机；在 HACK.md 记录选择理由。
+
+→ 用于：AGENTS.md §9.4 的 Linux 服务排障条目，以及 §5.1 的“状态串行、I/O 并行”部署边界。
+
+## 7 验证记录
+
+环境：Manjaro 主机，`flatpak` 1.18.4，`org.freedesktop.Platform` 25.08；安装到第二台无 X server 的机器（4 核，RTX 3070 Ti，仅 tty）。
+
+| 检查 | 结果 |
+|---|---|
+| Web UI | HTTP 200 |
+| 沙箱内 Ollama | `lfm3-omni:2b-q4_K_M`、`qwen3-embedding:4b-q4_K_M`、`xiaomi-ocr:latest` |
+| 经框架工厂的嵌入 | 2560 维 |
+| 经插件运行时的语音合成 | 84 524 字节 RIFF WAV |
+| 语音识别 | 转写回 `Deployment verified.` |
+| OCR | `Agent Zero OCR 2026` |
+| 桌面 | Xpra 监听 `127.0.0.1:14500`，HTML5 可达 |
+| CUDA 扩展 | `cuda_v12` 挂载，`libcublas.so.12` 可解析 |
+| WPS MCP | `initialize` 加 250 个工具 |
+
+**解释边界**：
+
+- 这些是传输与进程级冒烟，不是模型质量或业务验收。
+- “250 个工具”来自一次 `initialize` 响应，不保证每个工具都可执行。
+- 第二台机器无 X server 仍能跑 Web UI 与 Xpra HTML5，证明无本地显示依赖；不证明远程桌面体验。
+
+→ 用于：AGENTS.md §8.4 的“端到端冒烟”证据格式：环境、动作、可观察结果、解释边界。
+
+## 8 对 AGENTS.md 与 HACK.md 的落实清单
+
+| AGENTS.md 条款 | 落实动作 | a0lite 证据 | 记录位置 |
+|---|---|---|---|
+| §7.2(1) Pixi 自身环境 | 只读运行时与可写数据根分离；`pixi.toml` / `pixi.lock` 锁定 | 启动器播种、`base_dir` 重定向、`uv` 供应 | HACK.md 环境条目 |
+| §7.2(2) MSYS2 | 不采用；a0lite 只覆盖 Linux | 无 | HACK.md 标注“未覆盖 Windows” |
+| §7.2(3) 宿主服务 | 显式地址连接 Ollama；不打包权重；不关闭宿主服务 | 端点替换表、模型仓库外置 | HACK.md 服务条目 |
+| §7.2(4) 工具接口 | HTTP、宿主 Chrome、Xpra 各走自然接口 | 15 个运行时补丁 | HACK.md 适配条目 |
+| §8.1 HACK.md | 记录构建耗时、GGUF 传输、ordering cycle | §5、§6 | HACK.md |
+| §8.4 验证 | 冒烟表含环境、结果、解释边界 | §7 | 测试报告 |
+| §9.4 工程教训 | 保留“复用宿主、剔除重依赖、pin 分类、健康探针”四条 | 全文 | AGENTS.md §9.4 |
+
+**最小落实顺序**：
+
+1. 先写 HACK.md 的四个条目：Flatpak 构建耗时、GGUF 传输、systemd ordering cycle、Xpra 健康探针。
+2. 再把“只读运行时 / 可写数据根”落成 Pixi 与运行目录约定。
+3. 最后接入宿主 Ollama 的显式端点与失败提示；不在产品环境内打包推理栈。
+
+→ 用于：AGENTS.md §9.4 的落地，不改变 §7.2 的三类环境隔离。
+
+## 9 差异与不采纳：不适用与外推边界
+
+| 主张 | 裁决 |
+|---|---|
+| “a0lite 证明多智能体可以这样跑” | 不成立。a0lite 没有协作协议、看板或写锁。 |
+| “Flatpak 沙箱可以替代工作区写入口 W” | 不成立。沙箱是进程隔离，W 是协议内写入互斥；二者对象不同。 |
+| “宿主 Ollama 总是可用” | 不成立。连接失败必须显式报错；不得静默切换到内置推理。 |
+| “首次启动离线也能用” | 不成立。`uv` 供应 CPython 需要网络；离线必须说明缺什么。 |
+| “250 个工具全部可用” | 不成立。只证明一次 `initialize` 返回了 250 个工具声明。 |
+| “3 s / 70 s / 3.7 h 是通用预算” | 不成立。主机相关；换机器复测。 |
+| “可以复制 Agent Zero 的提示词或业务代码” | 不成立。AGENTS.md §9.1 要求 clean-room；只复用打包与接口事实。 |
+
+→ 用于：防止把打包经验误写成协作协议保证。
+
+## 10 引用
+
+- Agent Zero 上游：`https://github.com/agent0ai/agent-zero`（MIT）。本文件只引用其打包与运行事实，不引用业务实现。
+- a0lite 打包层：本文件原文即其 README；原文未给出独立公开 URL，不补造。
+- Flatpak 工具：`flatpak-builder`、`flatpak build-bundle`、`--oci-layer-compress`；具体版本行为以本机 `--help` 与实测为准。
+# AgentZero 运行与实例基线（AGENTS.md 参考资料）
+
+> **定位**：本文件把 `AgentZero.txt`（Agent Zero v2.15 用户侧体验复现手册，36 章）改写成 AGENTS.md 的实施参考。它不重复 Kelivo 已覆盖的工作台交互；只保留 AGENTS.md 尚未展开、但落地时必须决定的运行层语义：实例/项目/会话边界、队列与提交去重、暂停/停止/接管、配置快照与生效时点、多客户端单一控制、连接与模型角色、子代理/目标与蜂群的分界、环境与文件身份、计划任务、恢复与未知结果、外部连接与凭据。每条保留项给出 AGENTS.md 条款、实现落点与验收证据；与 AGENTS.md 冲突的逐次审批、多租户、原生移动端、A2A 等进入 §13。
+> **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。原文 UX/AC/E2E 编号只作来源定位，不是本仓库验收编号。
+> **支持条款**：AGENTS.md §1.1（第 5、6 条）、§2.1、§2.5、§3.2–§3.6、§3.13、§4.2、§4.4、§5.1–§5.4、§7.1–§7.4、§8.4、§8.5。
+> **来源与核对**：AgentZero.txt（手册 1.0，规格日期 2026-11-03）；Agent Zero v2.15，提交 `ba9b67df0f54ac78106ae85c552ef5d2458f7c9a`，发布 2026-11-02 07:52（Asia/Shanghai）；核对日期 2026-11-03。
+> **证据等级**：公开材料核对（S01–S33，仅支持能力类别、入口与版本事实）＋设计推演（字段、默认值、状态机、阈值）。本文件不含本产品实测；除 S01–S33 可核对的事实外，字段、默认值与阈值均为消除工程歧义选定的目标值。
+
+## 0 实施用法
+
+| 本文件条目 | 对应 AGENTS.md 条款 | 实现落点（模块/字段/入口） | 验收证据 |
+|---|---|---|---|
+| §1 对象模型：实例/项目/会话/轮次 | §5.1 四层生命周期；§7.1 当前态存储 | `:instance/id`、`:project/id`、`:session/by-id`、`:run/id`、`:call/id`、`:attempt/id`；`hc/server/bootstrap`、`hc/server/storage` | E2E 01/22；§1 断言 1–5 |
+| §2 运行状态机、队列与提交去重 | §5.1 `command-id`/`command-epoch`；§5.2 判断→领取→提交→派发 | `:run/state`、`:queue/item`、`:command/receipt`；`hc/compose/guards` | E2E 03；§2 断言 1–8 |
+| §3 暂停/停止/接管/目标暂停 | §1.1-6 Esc 递归取消；§2.5 Nudge；§5.3 取消域 | `:run/cancel`、`:action/outcome`、`:session/controller-id`；`hc/compose/cancel` | E2E 08/14；§3 断言 1–7 |
+| §4 配置作用域、快照与生效时点 | §2.1 模型归属；§7.4-2 模型选择 | `:session/config-snapshot`、`:profile/revision`、`:capability/decision` | E2E 02；§4 断言 1–6 |
+| §5 多客户端单一操作会话 | §5.1 多客户端 tmux 语义；§7.3 连接恢复 | `:session/controller-id`、`:session/sync-epoch`、`:ui/command` | E2E 08；§5 断言 1–6 |
+| §6 连接、模型角色与测试分层 | §2.1 主/任务模型；§5.4 模型端口与重试 | `:connection`、`:model-role`、`:model-snapshot`、`:test-result` | E2E 01/02；§6 断言 1–7 |
+| §7 子代理、目标与蜂群边界 | §2.5 Nudge；§3.1–§3.4 Swarm；§4.4 `.fission` | `hc/core/swarm_stm`；`Task`/`Action`/`Actor`/`TokenSlot`；Nudge 事件 | §7 断言 1–8 |
+| §8 执行环境、文件身份与成果交付 | §4.2 `stamp`+$W$；§7.1 Blob/产物；§7.2 环境分层 | `hc/core/workspace_gate`、`hc/server/blob-store`、`:artifact` | E2E 09；§8 断言 1–8 |
+| §9 计划任务与时区 | §7.4-7 定时任务；§7.1 当前态 | `:schedule`、`:snapshot`、`:next-run`；`hc/compose/scheduler` | E2E 16；§9 断言 1–7 |
+| §10 恢复、备份、Time Travel 与未知结果 | §7.1 故障窗口；§7.4-8 备份；§5.3 `:outcome-unknown` | `:recovery-point`、`:backup`、`:outcome-unknown`；`hc/server/recovery` | E2E 10/17/18；§10 断言 1–8 |
+| §11 外部连接、渠道、API 与凭据 | §7.2 外部服务；§5.3 报告交付 | `:connection`、`:credential`、`:channel`；`hc/server/adapters` | E2E 08；§11 断言 1–6 |
+| §12 默认值与放行门槛 | §8.4 验证矩阵；§8.5 E2E | 配置默认值表；阻断缺陷清单 | §12 表；§8.5 阻断缺陷 |
+| §13 章节处置与差异 | §7.4 前言；§2.5；§9.3 决策台账 | 不采纳清单；Kelivo 分工 | 设计评审 |
+
+按此表从 AGENTS.md 条款跳到本文件的展开细节；原手册 36 章的逐章处置见 §13.1。模块名是建议落点，不是仓库现有文件清单；实现可按实际目录调整，但字段、入口与验收关系不得改变。
+
+→ 用于：从 AGENTS.md 条款定位到本文件的运行层展开，并据此分配实现模块与验收证据。
+
+## 1 对象模型：实例、项目、会话、轮次
+
+源手册把用户面前的对象分成实例、项目、会话、一轮运行、目标、档案、模型预设、计划任务、工作文件。AGENTS.md 只规定了 `session`/`run`/`call`/`attempt` 四层生命周期；产品层对象若不显式建模，实现会把“浏览器页面”“服务进程”“工作区”“一次任务”混成同一个东西。本节把两者对齐。
+
+| 对象 | 权威标识/字段 | 生命周期 | 不得混淆 |
+|---|---|---|---|
+| 实例 | `:instance/id`、`:version`、`:data-root`、`:workspace-root`、`:access-scope` | 跨进程重启；停止实例不等于删除工作区 | 浏览器标签页、桌面窗口 |
+| 项目 | `:project/id`、`:name`、`:workspace-binding`、`:instructions`、`:memory-scope` | 组织范围；归档不删文件 | 不是租户隔离；不自动搬文件 |
+| 会话 | `:session/by-id`、`:project-id`、`:config-snapshot`、`:message-seq`、`:draft`、`:queue` | 跨浏览器关闭；删除进 30 天保留区 | 不等于一次运行 |
+| 运行/轮次 | `:run/id`、`:call/id`、`:attempt/id` | 一次用户提交到终态 | 不等于会话；子代理/蜂群是独立 actor |
+| 目标 | `:goal/id`、`:done-when`、`:checkpoint` | 会话内；暂停/删除不删成果 | 不是计划任务；不是协议状态 |
+| 档案/预设 | `:profile/id`+`:revision`、`:preset/id`+`:revision` | 新会话取快照；旧会话不追溯 | 名称不是权限 |
+| 计划任务 | `:schedule/id`、`:snapshot`、`:timezone`、`:next-run` | 独立于目标；导入默认暂停 | 不是“一直运行的目标” |
+| 工作文件 | `:path`+`stamp` | 实例内副本或外部原件引用 | 同名不等于同一对象 |
+
+**1.1 稳定身份先于显示名称。** 每个对象有不复用的 opaque ID；名称允许重复。选择器、确认页、活动详情、诊断包必须同时显示足以区分的范围：项目、连接、设备、路径或创建时间。禁止仅凭名称匹配对象，也禁止在移动/复制后把历史记录改写成新归属。源手册的 AC-02-001、AC-05-001、AC-06-001、AC-24-002 都落在这一条。
+
+**1.2 会话快照。** 会话创建时写入 `:session/config-snapshot`：预设 `{:id :revision :roles {...}}`、档案 `{:id :revision}`、有效能力范围、模型来源。之后修改全局默认、项目默认或同名预设，不追溯改写快照；界面只提示“有新修订”，用户明确“采用当前范围默认”才重新解析并生成新快照。旧消息保留当时的 `:model-source` 与 `:profile-name`。对应 AGENTS.md §7.4-2 的“每会话明确保留有效模型”。
+
+**1.3 项目切换只影响未来轮次。** 项目是同一实例内的资料组织，不是权限隔离，也不是租户边界。会话换项目时：旧 `:call`/`:action` 保留原 `:project-id`；历史附件与输出不迁移；运行中的文件/终端动作必须先停止或等待，不能中途替换工作目录；只影响未来轮次的默认说明、记忆范围与工作目录。项目归档只从日常选择器隐藏，文件、记忆、历史保留；删除项目按“项目登记、实例内工作副本、外部原目录、记忆、会话历史”分别预览，默认保留关联会话与外部原件。
+
+**1.4 目标不是计划任务。** 目标属于当前会话，描述“什么结果算完成”；计划任务描述“何时触发什么工作”。源手册明确“下周再做”“每天检查”必须进入调度流程，不能用无限目标冒充。AGENTS.md 没有独立目标对象：目标的 `:done-when` 应落到 `review` 台账或 `Task/:done-when`，目标的自动续轮应落到 Nudge/守卫，而不是新增协议状态（详见 §7.3）。
+
+**1.5 删除分层。** 普通会话删除进入 30 天保留区，可立即撤销；永久删除与清空保留区分别确认；删除会话不删除项目工作区文件、外部原件或其他会话共享的附件副本。恢复会话保留原身份与历史，但不自动恢复已撤销的连接、权限、一次性许可或运行中队列。项目删除、工作区删除、实例删除是三个独立动作，不能用一个“全部清理”按钮合并。
+
+→ 用于：`hc/server/storage` 的对象表、`hc/compose/owner` 的会话解析、前端选择器的消歧字段；验收用 §1 断言 1–5。
+
+**§1 断言**
+
+1. 两个同名项目、两个同名模型预设、两台同名设备同时存在时，选择器与活动详情能指出实际对象；确认页不出现仅名称的选项。
+2. 会话创建后修改全局默认模型/档案，旧会话下一轮仍使用原快照；只有明确“采用当前范围默认”才改变，且历史消息来源不变。
+3. 会话换项目后，旧工具记录仍显示原项目范围；新轮次显示新项目路径与说明；文件未被移动。
+4. 删除一个共享文件的引用会话时，确认清单说明文件仍被其他会话使用，默认不删除该文件。
+5. 删除会话后恢复，消息、版本、草稿与附件引用恢复；已撤销的连接、权限与一次性许可不恢复；未发送队列保持待确认，不自动运行。
+
+## 2 运行状态机、队列与提交去重
+
+源手册的十二个 UI 状态（待提交、排队、准备、运行、等待用户、暂停、停止中、已停止、部分完成、已完成、失败、结果未知）不是第二套状态机。它们是 AGENTS.md §5.1 四层状态（`session`/`run`/`call`/`attempt`）与 §5.2 守卫命令的投影。实现只保留一份权威状态；UI 文案由 `:run/state`、`:call/state`、`:queue/state` 派生。
+
+| UI 状态 | 权威字段 | 允许迁移 | 用户可见动作 |
+|---|---|---|---|
+| 待提交 | `:command/state :draft` | → 已接收 / 结果未知 | 取消、重试 |
+| 排队 | `:queue/state :queued` | → 准备 / 移除 | 编辑、移除、调序、立即送入 |
+| 准备 | `:run/state :preparing` | → 运行 / 失败 / 取消 | 补配置、取消 |
+| 运行 | `:run/state :running`、`:call/state :running` | → 等待 / 完成 / 失败 / 停止中 | 排队、暂停、停止、查看 |
+| 等待用户 | `:call/state :waiting-user` | → 运行 / 取消 | 回答、停止 |
+| 暂停 | `:run/state :paused`（投影） | → 运行 / 停止 | 查看、恢复 |
+| 停止中 | `:run/state :cancelling` | → 已停止 / 结果未知 | 等待、查看 |
+| 已停止 | `:run/state :cancelled` | 终态 | 新运行、核对 |
+| 部分完成 | `:run/outcome :partial`（投影） | 终态 | 处理失败项、导出 |
+| 已完成 | `:run/state :succeeded` | 终态 | 打开、继续 |
+| 失败 | `:run/state :failed` | 终态 | 修复、重试 |
+| 结果未知 | `:call/state :outcome-unknown` | 需核对 | 检查外部状态 |
+
+`:paused` 与 `:partial` 是投影，不是新增的协议状态。`partial` 必须能从 `:run/calls` 派生：至少一个 call 成功、至少一个失败/取消；若需要持久化，只存 `:run/outcome {:status :partial :failed-calls [...]}`，不把 `:partial` 塞进 `:run/state` 的合法枚举。
+
+**2.1 单前台执行序列。** 每个会话最多一个 `:session/active-run-id`。空闲时普通发送启动下一轮；运行中默认进入 `:session/queue`，不暗中启动第二个同级运行。子代理/蜂群是独立 actor，不消费同一份主会话队列。对应 AGENTS.md §5.1 的单 Owner 串行状态与 §5.2 的“判断→领取→提交→派发”。
+
+**2.2 草稿、已接收、已排队是三件事。** 草稿只在当前浏览器/客户端，含文字、附件引用、光标位置与未完成上传；服务端确认接收后生成稳定 `:command-id`，草稿才清空对应版本；网络失败保留草稿可恢复。已接收的队列持久保存，刷新、换页、短暂断线不丢；未确认内容不得显示成“已发送”。队列项字段至少 `{:queue-id :command-id :raw-text :attachments :created-at :state}`。
+
+**2.3 队列顺序与编辑锁。** 默认 FIFO；当前运行结束后按可见顺序取下一项。条目在 `:state :queued` 时可编辑、移除、调序；进入 `:state :claimed` 后锁定原内容，想纠正必须新增消息。移除等待项只取消该项，不撤销先前已发生的工作。队列项开始执行后转入消息时间线并保留 `:queue-id` 来源，不复制成两条用户问题。
+
+**2.4 立即送入与合并发送。** “立即送入”把选中项标为 `:priority :interrupt-at-boundary`，在下一个可介入边界（模型步骤返回、工具结果已固定、文件上传已提交）传给当前工作；不承诺按下按钮即打断已提交外部动作，不重复已提交步骤。界面必须能显示三种结果：等待当前步骤返回、已接入本次工作、尚未接入可取消。“发送全部”把尚未开始的项按顺序合并为一个 `command-id`，预览分段文字与全部附件；同名附件不自动认定同一文件，原条目标 `:merged-into` 并保留可追溯关系。
+
+**2.5 提交幂等。** 每次提交携带 `command-id` 与服务器签发的 `command-epoch`。同一 `command-id` 同载荷重放返回原回执；不同载荷立即拒收；`command-epoch` 退休后旧命令返回 `:COMMAND_EPOCH_RETIRED`，要求客户端先重读当前状态，绝不自动当新工作执行。双击、连按 Enter、刷新、重连只产生一次已接收请求。提交结果未知时显示“已提交，暂时无法确认”，提供核对入口，不显示失败后默默重发。
+
+**2.6 停止后的队列。** 停止当前运行后，未开始队列转为 `:pending-confirmation`；刷新、重连、重新打开页面都不自动消费。用户必须明确“继续队列”或逐项恢复。已生成正文、文件、工具结果、未提交草稿保留；未开始的批准/许可失效；在途动作标已完成、已取消或结果未确认。停止不回滚外部写入，也不保证撤销供应商计费。
+
+**2.7 重试边界。** 可安全重复的连接/读取失败最多在初次尝试后额外 2 次，显示次数与取消入口；每次重试生成新 `attempt-id`，保留原失败日志与 `:retry-at`。认证、额度、权限、无效模型、内容拒绝不进入自动重试。外部写入、付款、发送、删除的结果未知时先核对，不自动重放整轮。用户明确“再试”建立新的可见尝试记录，仍先处理外部结果是否已发生。对应 AGENTS.md §5.3 的错误分类与 §5.4 的分层重试预算。
+
+**2.8 状态文案。** 状态必须说明“在等什么”：等待模型、执行工具、等待用户、等待外部服务、正在重试、正在暂停、已暂停、已停止、结果未确认。不得把所有耗时写成“正在思考”。停止按钮在已有草稿时仍可见；切换会话时停止按钮不得作用到后台另一条会话。对应 AGENTS.md §7.4-3 的停止语义与 §7.4-4 的过程区。
+
+→ 用于：`hc/compose/guards` 的领取守卫、`hc/compose/owner` 的队列状态、`hc/client/session-view` 的状态文案；验收用 §2 断言 1–8。
+
+**§2 断言**
+
+1. 运行中发送两条跟进：两条进入可见队列，主任务只有一个执行序列；刷新后数量、顺序、附件与编辑结果恢复，无重复提交。
+2. 第一条提交未确认时写第二条：回执只清第一条，第二条草稿完整；双击发送只产生一条已接收请求。
+3. 外部上传已开始时“立即送入”更正：界面说明等待，上传结果保留，更正在下一可介入边界采用，不重复上传。
+4. 合并含同名不同附件的两项：预览含两份材料，确认后只生成一次合并输入，原项可追溯。
+5. 停止含两项队列的任务：部分结果保存，队列标待确认；重开页面不自动发送。
+6. 外部写入可能完成后断网：恢复入口先展示核对选择，自动重试不重复写入。
+7. 同一可重试错误初次 +2 次后停止，计数准确；认证/额度/权限错误不进入重试。
+8. 中文输入法候选态按 Enter 只确认候选，不发送；手机回车换行，独立按钮提交。
+
+## 3 暂停、停止、接管与目标暂停
+
+源手册把“暂停代理”“恢复代理”“停止”“推动继续”“暂停目标”“人工接管”写成六个不同动作。AGENTS.md 只有两个合法停止出口（`Plan` 在 S1 的 `.ask`、终局结案）与一个取消入口（操作员 Esc）；其余动作必须映射到守卫、取消域或 UI 投影，不能各自新增协议状态。
+
+| 控制 | 作用域 | 立即阻止 | 保留 | 不承诺 |
+|---|---|---|---|---|
+| 暂停会话 | 当前 run 的新守卫领取 | 新模型/工具步骤 | 在途 call 结果、队列、草稿 | 撤销已提交外部动作 |
+| 恢复会话 | 解除暂停 | — | 原队列顺序 | 自动恢复独立暂停的目标 |
+| 停止 | 当前 run 及其 call/attempt | 新步骤、未开始队列 | 已完成结果、文件、工具记录 | 回滚文件、撤销计费 |
+| 推动继续 | 当前 run | — | 原消息 | 代替批准、复制问题 |
+| 目标暂停 | 目标自动续轮 | 新目标续轮 | 会话手动输入 | 暂停整个会话 |
+| 人工接管 | 具体对象（浏览器/桌面/编辑器/终端） | 代理对该对象的输入 | 用户输入、当前页面 | 关闭页面=停止 |
+
+**3.1 暂停是守卫门，不是取消。** “暂停会话”只让 `:claim-model-request`、`:claim-tool-call` 等领取守卫停止领取新工作；已进入 `:running`/`:applying` 的 attempt 继续到可暂停边界。UI 的 `:paused` 由 `:run/pause-requested` 与 `:run/active-attempts` 派生。重复点击不翻转状态；服务端迟到状态不能让按钮短暂显示已恢复。恢复只解除这一层暂停，保留原队列顺序与目标状态。
+
+**3.2 停止是操作员取消。** “停止”走 AGENTS.md §1.1-6 与 §5.3：关闭新工作领取入口，沿 `session → run → call/attempt → 工具子进程/受管 Shell` 传播取消；已产生副作用的外部动作如实标 `:cancelled` 或 `:outcome-unknown`；只终止执行资源，不销毁未领取证据。已生成正文、文件、工具结果、草稿保留；队列转待确认；未开始的许可失效。停止不是回滚，也不能承诺撤销外部服务已接受的请求或计费。
+
+**3.3 推动继续是手动 Nudge。** 源手册的“推动继续”按钮与 AGENTS.md §2.5 的 Nudge 是同一事件：产生一次可见的继续请求，不重发最后一条原问题，不代替批准，不解除暂停。内核在非合法出口自然停止时自动注入 Nudge；手动按钮只能注入同一类 `:nudge` 事件，不能另造一条用户消息。连续点击不累积隐藏循环；缺少授权、模型未配置、结果未知时先处理原因。
+
+**3.4 目标暂停与检查点：冲突与改写。** 源手册允许“暂停目标”只停自动续轮，以及“30 分钟/50 个动作检查点”停下来等用户继续。这与 AGENTS.md §2.5 的常授权无人值守冲突：除 S1 `.ask` 与操作员 Esc 外，代理不得自然停止等待人工。实现若保留目标概念，只能：把目标的 `:done-when` 落到 `review` 台账或 `Task/:done-when`；把自动续轮落到 Nudge/守卫；把检查点落成 `:blocked` 诊断或向 Review 交回，不能变成第三个合法停止出口。检查点数值可作为产品级预算（见 §12），但不是协议不变量。
+
+**3.5 人工接管是对象级互斥。** 浏览器、桌面、编辑器、终端各自维护 `:object/controller-id` 与 `:takeover/state`。用户点击“我来操作”后：立即阻断代理对该对象的新鼠标、键盘、滚动、提交、写入；已发出的外部动作保留实际状态；代理可以读取用户明确允许共享的最新结果，但不能经另一工具通道继续操作同一对象。交回必须显式；页面失焦、关闭浮层、短时无输入都不算交回。交回后代理先重读当前地址、活动标签、打开文件、待处理表单，不能按旧坐标或旧缓存继续。关闭面板只是收起视图，不等于停止对象或任务。
+
+**3.6 接管与 Esc 的分工。** 人工接管处理“同一对象谁来输入”；Esc 处理“整个 run 是否取消”。两者可同时存在：用户接管浏览器时，Esc 仍取消当前 run 的其他工作；取消不自动关闭用户已打开的页面，也不清除用户刚填写但未提交的内容。停止后已提交的外部动作不撤销；未提交的表单保留为可继续编辑的现场。
+
+**3.7 两层暂停的可观察性。** 若同时存在“会话暂停”与“目标暂停”，界面必须同时显示两层状态与各自入口；恢复一层不改变另一层。AGENTS.md 没有目标对象时，只保留会话暂停/恢复的投影，目标状态由 `review` 台账与 `:blocked` 诊断表达。
+
+→ 用于：`hc/compose/cancel` 的取消树、`hc/compose/guards` 的暂停门、`hc/client/controls` 的接管条；验收用 §3 断言 1–7。
+
+**§3 断言**
+
+1. 运行中暂停：新步骤不开始，在途步骤结果仍显示，草稿与队列保留；重复点击不翻转状态。
+2. 同时暂停会话与目标，仅恢复会话：手动输入可处理，目标不自动续轮；反向操作同样成立。
+3. 停止含在途工具的任务：已完成结果保留，未开始队列待确认，在途动作标已完成/已取消/结果未确认；重开不自动继续。
+4. 停止后收到子代理迟到报告：报告可查，父任务与队列不自动重启。
+5. 外部写入可能完成后断网：显示结果未知，提供核对入口，不自动重试。
+6. 用户接管浏览器后持续输入：代理不抢焦点；关闭再打开画布仍显示接管状态；交回后代理先重读页面再继续。
+7. Esc 取消整棵会话树时，保留已生成内容与未领取证据；已提交外部动作不标成“已撤销”。
+
+## 4 配置作用域、快照与生效时点
+
+源手册把“偏好”和“授权”分成两种关系：偏好可按范围覆盖；授权是实例、设备、连接、账号实际许可的交集，低层设置不能创造上层尚未授予的访问。AGENTS.md 的角色工具面与会话级能力范围需要这一区分，否则“档案允许”会被误当成“实例已授权”。
+
+| 层 | 示例 | 能否放宽上层 | 生效 |
+|---|---|---|---|
+| 实例授权上限 | 主机连接、外部账号、可写目录 | — | 即时撤销 |
+| 连接可用范围 | 模型服务、能力、端点 | 否 | 连接状态变化 |
+| 项目限制 | 工作区、记忆范围、项目指令 | 否 | 下一轮 |
+| 档案动作策略 | 工具/MCP/技能三态 | 否 | 保存修订；收回即时 |
+| 会话临时收窄 | 当前会话 | 否 | 下一轮 |
+
+**4.1 解析顺序。** 模型/档案的取值顺序为：会话显式选择 → 项目与档案组合默认 → 项目默认 → 档案默认 → 全局默认。找到明确值后形成会话快照并显示来源；只有实际存在的覆盖项参与。用户选择“采用当前范围默认”是重新解析一次并生成新快照，不是打开永久跟随。未选择不得解释为用户明确选择了“默认”预设。
+
+**4.2 有效值三列。** 配置页逐项显示“有效值、来源、被谁限制”。能力范围必须同时满足：实例授权上限、连接可用范围、项目限制、档案动作策略、会话临时收窄。任一上层禁止时，下层勾选只显示“所选偏好被上层限制”，不得显示绿色已允许。未填写覆盖表示继承；清空文字表示主动清空，两者分别表达。
+
+**4.3 三态与父子动作。** 工具、MCP、技能各有独立默认，不能由一个总开关一起打开。每项 `:allow`/`:follow-default`/`:deny`；跟随默认时写出当前结果（“跟随默认：禁止”）。父工具禁止时其全部动作禁止；子动作允许不能反向打开父工具；父工具允许仍受子动作禁止与上层限制。搜索只过滤显示，不改变隐藏动作；“全部允许”先显示将影响的工具与动作数量，只应用于当前已审阅清单。
+
+**4.4 新能力默认拒绝。** 新安装工具、新发现 MCP 工具、插件更新新增动作先进入 `:pending-review`，默认禁止；既有决策不自动扩展。空的本地例外列表不能取消继承来的禁止。档案复制只复制能力决策，不复制一次性批准、宿主机开放状态、账号登录、秘密值与会话临时放宽。对应 AGENTS.md §7.4-6 的 MCP 四段状态与 §3.10 的“可配置项与不可静默改变项”。
+
+**4.5 生效时点。** 修改全局/项目/档案默认只影响新建会话或明确重新取值的会话；当前会话换模型或档案在下一轮边界生效；权限撤销立即阻止尚未开始的受影响动作，不等下一轮；在途动作按实际停止能力处理并如实显示。计划任务保存配置快照，但每次运行仍检查当前凭据、权限与文件；快照保存意图，当前授权决定是否还能执行。
+
+**4.6 并发编辑冲突。** 两个窗口修改同一档案/预设时，保存前展示版本冲突：重新加载、逐项保留自己的内容、另存新档案；默认不覆盖较新版本。保存失败保留全部草稿并指明失败阶段，不以成功提示掩盖部分字段失败。使用中的档案仍可编辑，审阅页分别说明新会话与已明确选用更新的会话范围。
+
+→ 用于：`hc/server/config` 的解析器、`hc/client/settings` 的有效值展示、`hc/core/swarm_stm` 的能力门；验收用 §4 断言 1–6。
+
+**§4 断言**
+
+1. 上层禁止终端时，项目与会话勾选允许后有效结果仍为禁止，并能定位禁止来源。
+2. 父工具禁止、子动作允许时不能执行；搜索隐藏部分子动作后，批量修改前仍显示完整影响数量。
+3. 工具更新新增删除动作：既有读取许可保留，新动作处于待审阅禁止。
+4. 生成中保存档案新修订：当前轮与未选用更新的会话保持快照；明确应用后下一轮采用新值；收回未开始的写入许可立即生效。
+5. 复制有主机与账号授权的档案：副本显示相同角色与能力偏好，但不带入临时授权、登录与秘密值。
+6. 两个窗口保存同一档案不同版本：后保存者必须处理冲突，不静默覆盖先保存结果。
+
+## 5 多客户端单一操作会话
+
+AGENTS.md §5.1 已规定多客户端 `tmux` 语义与 `command-id`/`command-epoch` 去重。源手册补充了“控制/观察/接管”的产品层行为，可直接落成前端状态，不需要新的后端协议。
+
+**5.1 单一控制者。** 每个会话维护 `:session/controller-id` 与 `:session/observer-ids`。第一个客户端默认控制；后续客户端以观察模式打开，能读状态、草稿、结果，但不能提交有副作用命令。用户明确“接管”后，控制权转移；原控制者收到 `:control-transferred`，其后续命令被拒为 `:NOT_CONTROLLER`，界面显示“控制已转移”。不能出现两个窗口同时批准/停止同一动作。
+
+**5.2 命令去重。** 客户端命令携带 `command-id` 与服务器签发的 `command-epoch`。同一 `command-id` 同载荷返回原回执；不同载荷拒收；epoch 退休后旧命令返回 `:COMMAND_EPOCH_RETIRED`，客户端先重读 `STATE_SNAPSHOT`，绝不自动执行。多窗口的“停止/继续/接管”按钮重复点击只产生一次决定；后到窗口显示“已处理”并定位原任务。
+
+**5.3 断线重连。** 连接状态按 `:disconnected → :connecting → :connected-awaiting-sync → :synced → :interrupted` 表达，不压成单一 `online?`。重连先取服务器 `STATE_SNAPSHOT` 与同步 epoch，再按原 `command-id` 查询未决命令；旧连接或旧 epoch 的增量直接丢弃。断线只改变连接说明，不把本地缓存当当前服务端状态；服务端任务可能仍在运行或已完成。
+
+**5.4 关闭页面不等于停止。** 关闭标签页、卸载组件、浏览器崩溃只释放观察订阅，不取消服务器正在运行的 run。重新打开时同步真实状态；若另一窗口已停止，本窗口显示停止结果，不用旧状态重新启动。实例停止/重启另按 §10 处理，不能与浏览器断线混为一谈。
+
+**5.5 观察者不得越权。** 观察模式可以展开工具卡、查看文件与来源，但不能触发提交、停止、接管、批准、发送。观察者发出的命令返回明确拒绝，不静默丢弃。共享实例中的“项目”不构成多人权限隔离；若未来提供多租户，必须另行建立身份、配额、存储隔离与验收，不能只把项目列表改名。
+
+**5.6 同步顺序。** 重连后先同步实例/会话/看板状态，再允许依赖最新状态的操作；未同步完成前，发送、停止、接管按钮显示等待。同步失败保留最后确认状态与时间，不显示绿色实时标记；用户可重试或查看诊断。对应 AGENTS.md §7.3 的五阶段连接状态与快照替换规则。
+
+→ 用于：`hc/server/sente-gateway` 的 epoch 校验、`hc/client/agui-adapter` 的快照替换、`hc/client/controls` 的控制者状态；验收用 §5 断言 1–6。
+
+**§5 断言**
+
+1. 两个窗口打开同一会话：只有一个控制者；观察者提交被拒并说明原因；接管后原控制者命令被拒。
+2. 同一 `command-id` 重发返回原回执；同 id 不同载荷拒收；epoch 退休后旧命令要求重读，不执行。
+3. 断线 30 秒后恢复：先同步快照，再查询未决命令；不自动重发，不把本地缓存当服务端状态。
+4. 浏览器离线期间服务端完成任务：重连显示完成结果，不显示已取消，不重发原请求。
+5. 两窗口同时点击停止：只产生一次停止决定，后到窗口显示已处理。
+6. 观察者打开工具卡、文件、来源不改变会话状态；观察者不能触发停止或发送。
+
+## 6 连接、模型角色与测试分层
+
+源手册的连接与模型预设章节解决了 AGENTS.md §7.4-2 尚未展开的两个问题：一个“模型选择”背后是多层连接与角色；一次“测试成功”到底证明了什么。实现必须把连接身份、角色、能力与可用性分开，不能只存一个模型名字符串。
+
+**6.1 连接实体。** `:connection` 至少包含 `{:connection-id :name :base-url :actual-host :auth-ref :enabled-models :capabilities :status :last-tested-at}`。显示名可重复，但详情必须显示实际主机、协议/服务类型、账号标识或地址；自定义网关即使沿用熟悉的显示名，也不能继续标成“官方”。保存连接只保存配置，不自动发聊天、生成标题或产生其他付费任务；测试连接是独立动作。
+
+**6.2 三条连接路径。** 云服务（服务密钥）、账号登录（OAuth/设备码）、本地模型（已运行的模型服务）三条路径只更换当前配置草稿，不删除已保存的其他连接，也不注销别的服务账号。本地路径必须显示模型服务运行在哪里：实例自身环境、实例所在电脑、另一台局域网设备；远程服务器上的模型不能仅凭用户命名宣称“不出本机”。本产品不要求额外产品账号；实例登录与模型服务登录分开。
+
+**6.3 四种模型角色。** `:main` 负责普通回答与主要任务；`:utility` 负责摘要、会话标题等轻任务，可由主模型兼任但需确认；`:embedding` 负责检索向量，未就绪时明确显示“检索不可用”，不影响纯文本聊天；`:vision` 默认使用主模型已确认的图片能力，单独指定时必须显示数据去向。角色故障局部说明：辅助模型失败不判主任务失败，嵌入失败不暗示全部资料损坏，视觉不可用不自动调用未配置的云服务。
+
+**6.4 测试分层。** 测试结果分四层：`:reachable`（地址可达）、`:auth-ok`（身份可用）、`:models-listed`（模型可列出）、`:minimal-request-ok`（所选模型完成最小请求）。前三项成功不冒充第四项；只有第四项证明该模型能生成。真实模型测试必须说明会发送固定简短测试内容、可能产生用量，不携带待发私人附件，不执行工具。服务无无副作用测试时直接说明，允许只保存并保持“未测试”。
+
+**6.5 测试只认当前配置。** 测试中修改地址、密钥、模型时，旧结果标为对应旧配置（`config-digest`），不覆盖新选择；迟到结果不能把已修改字段恢复为旧值。取消测试不删除表单；服务临时离线不永久禁用模型。测试成功不等于保存成功；保存后刷新只接回状态，不重复测试。
+
+**6.6 选择器与轮次归属。** 同名模型按连接分组，每行显示显示名、完整标识、连接来源、能力图标与可用性；同名不合并。能力图标只表示“已知/已声明”，不表示当前会话已有执行许可。生成中切换模型显示“用于下一轮”或“停止并切换”，绝不把同一条回复前半段归旧连接、后半段归新连接。每轮固定 `:model-snapshot`，历史消息保留原 `:model-source`。
+
+**6.7 容量与超限。** 上下文容量显示已知值或“未知”，人工修正标“用户设置”；估算面板分列当前消息、附件、历史、项目说明与检索资料，数字标“估算”。切换到更小容量模型后，发送前说明超限范围，提供压缩历史、减少附件、调整范围或换模型；历史仍完整可读，不静默删除早期消息；等待队列保留原内容。
+
+→ 用于：`hc/server/model-port` 的连接与测试、`hc/client/model-selector` 的消歧、`hc/server/config` 的角色快照；验收用 §6 断言 1–7。
+
+**§6 断言**
+
+1. 两个连接各提供同名模型：选择器、确认页、历史详情都能识别连接来源；不随机归并。
+2. 修改全局默认模型后，旧会话保持原快照；新会话采用新默认；只有明确“采用当前范围默认”才改变旧会话未来轮次。
+3. 运行中切换模型：当前回复完成时仍归属原模型，下一轮才使用新模型；无混合署名。
+4. 辅助模型不可用：主回复与文件保留，标题使用可辨认临时名称；不发生隐藏的跨服务调用。
+5. 本地服务可达但无模型：显示空目录与刷新入口，不显示“连接已完全就绪”；不自动拉取大型模型。
+6. 测试中修改地址后迟到结果返回：旧结果标对应旧配置，不覆盖新地址与新状态。
+7. 切换到更小容量模型：发送前阻止并给出处理入口；历史与队列原文完整保留。
+
+## 7 子代理、目标与蜂群边界
+
+源手册的“主代理 + 子代理 + 目标检查点”与 AGENTS.md 的“固定槽位 Swarm + STM 看板 + `take-or-die`”是两套组织方式。直接照搬会破坏 AGENTS.md 的核心不变量；但源手册的任务卡字段、父任务责任、暂停传播、部分完成与冲突保留可以直接借用。
+
+| 源手册机制 | 处置 | AGENTS.md 落点 |
+|---|---|---|
+| 主代理私有子代理树 | 不作为主路径 | 固定槽位 + 公共 STM 看板；任务对所有人可见 |
+| 每会话最多 3 个子代理、深度 1 | 产品默认参数，不是协议上限 | 槽位数由配置决定；不得写进 STM 不变量 |
+| 任务卡目标/输入/范围/依赖 | 借用 | `Task` 的 `:goal`、`:remaining-work`、`:done-when`、`:wait-for` |
+| 父任务保持责任、子项完成不自动完成父项 | 直接采用 | A02-06、B12-01；父项 `:waiting` → `:ready` |
+| 暂停传播、停止保留部分结果 | 借用 | 取消域沿 run/call/attempt 传播；`:cancelled`/`:outcome-unknown` |
+| 共享检查点预算 | 改写 | 产品级预算；不能成为第三个人工停止出口 |
+| 目标暂停/等待用户继续 | 冲突 | 只能映射为 `:blocked` 诊断；人工介入只能 Esc 或 S1 `.ask` |
+| 子代理冲突报告保留 | 借用 | `:result-refs`、`:handoff-note`；不隐藏相反结论 |
+
+**7.1 蜂群看板是唯一任务权威。** Swarm 的任务记录至少含 `:task-id`、`:goal`、`:remaining-work`、`:done-when`、`:state`（`:ready`/`:waiting`/`:done`/`:cancelled`/`:replaced`）、`:wait-for`、`:needs-token`、`:owner-id`、`:claim-id`、`:parent-id`、`:child-ids`、`:result-refs`、`:handoff-note`。父项拆出子项后进入 `:waiting`；子项全部完成只解除等待使父项回到 `:ready`，绝不自动 `:done`，也不沿祖先链级联。对应 AGENTS.md §3.2、§3.3、A02-06、B12-01。
+
+**7.2 子代理不是蜂群。** 源手册的子代理是主代理的私有委派，有独立对话与报告；AGENTS.md 的普通个体是固定槽位上的公共参与者，围绕看板自主拆分、认领、提交。实现不得把“主代理私有子代理”作为默认执行层，也不得把 3/1 的限制写进 `TokenSlot` 或槽位容量。若产品需要“子代理”视图，它只能是看板任务树的另一种呈现，不能拥有独立的私有任务状态。
+
+**7.3 目标与 Nudge 的改写。** 源手册的目标模式有 `:done-when`、完成证据、检查点与暂停；AGENTS.md 的对应物是 `review` 台账、`Task/:done-when` 与 Nudge。实现映射：
+
+- 目标文本 → `review` 台账的 `:value` 或根任务 `:goal`；完成证据 → `finish` 的 `result-summary` 与 `read-set` 复核。
+- 自动续轮 → 守卫/Nudge；目标完成 → 根任务 `:done` 与台账解除；目标暂停 → AGENTS.md 无对应物，不得实现为关闭 Nudge 或让代理自然停止；需要停止时只能由操作员 Esc 取消当前 run，或在 S1 通过 `.ask` 挂起。
+- 30 分钟/50 动作检查点 → 产品级预算与非阻塞状态事件；到点只停止启动新步骤、汇总已完成/未完成/在途/未知，不能等待人工“继续”。需要人工介入时只能走 Esc 或 S1 `.ask`；若产品坚持“到点等待用户”，必须显式修订 §2.5，不能把它伪装成实现细节。
+
+**7.4 部分完成与冲突保留。** 一个 run 可同时有成功文件、失败子任务、结果未知的外部写入。`finish` 只对任务自身 `:done-when` 负责；子项失败不自动完成父项，父项可继续拆分、修复或明确接受部分成果。两个报告冲突时保留双方结论、来源与解决结果，不能随机选择较早返回者。迟到报告可保存供阅读，不自动重启已停止的父任务。
+
+**7.5 看板视图。** 前端必须能显示：任务树与 `:wait-for` 链；每个任务的 `:state`、`:owner-id`、`:claim-id`、`:needs-token`；槽位上的 `:agent-id`、`:role`、`:life-state`；唯一 holder 与 `:term-id`；$W$ 当前持有动作与排队。明确区分“等待已满足回到 `:ready`”与“父项 `:done`”；正常竞争落败死亡与无责退休显示为生命周期流转，不误报为崩溃。对应 AGENTS.md §7.4-4。
+
+**7.6 资源上限。** 源手册的 3 个子代理/1 层深度可作为产品默认值写入配置，但不能进入协议不变量；槽位容量、fission 泳道数与任务并发由实际配置决定。用户可显式调整产品默认，模型不得自行提高；超过上限的任务进入可见等待队列，不隐形创建执行者。
+
+→ 用于：`hc/core/swarm_stm` 的任务转换、`hc/compose` 的 Nudge 注入、`hc/client/board-view` 的任务树；验收用 §7 断言 1–8。
+
+**§7 断言**
+
+1. 父项拆出两个子项后，完成一个：父项仍 `:waiting`；完成第二个：父项回 `:ready`，不自动 `:done`。
+2. 子项全部完成但父项仍有集成工作时，父项保留 `:remaining-work` 与 `:owner-id`；不得因计数归零关闭。
+3. 主会话禁止写文件时，子任务/泳道尝试写入同样被拒；不能通过委派绕过父权限。
+4. 两个任务修改同一文件：后写者进入冲突/合并，保留双方内容；不静默最后保存胜出。
+5. 停止一个子任务：父任务显示缺项与待决定，不显示全部完成；迟到报告不自动重启父任务。
+6. 目标检查点到点：停止启动新步骤，汇总完成/未完成/在途/未知；不进入等待人工批准的第三态。
+7. 持令者无责：释放令牌与逻辑死亡在同一 STM 事务；新个体不继承前世私有上下文。
+8. 看板视图能区分 `:waiting`、`:ready`、`:done`，以及 holder 与 $W$ 拥有者；不把持令者显示成 $W$ 长期占用者。
+
+## 8 执行环境、文件身份与成果交付
+
+AGENTS.md §7.2 已规定“环境供应与执行分离”，§4.2 已规定 `stamp` + $W$ 的受保护提交。源手册补充了用户视角的环境归属与文件身份：同一句“本地”“下载”“保存”在不同环境里含义不同；同名文件不等于同一对象。实现必须在每个动作卡上写清环境与目标，不能靠界面位置猜测。
+
+| 环境 | 标识 | 文件含义 | 不得混用 |
+|---|---|---|---|
+| 实例 | `:instance` + 设备名 | 实例工作区中的副本或生成物 | 用户电脑、浏览器下载目录 |
+| 实例内浏览器 | `:instance-browser` | 浏览器会话中的站点数据 | 主机浏览器登录 |
+| 主机浏览器/桌面 | `:host-browser`/`:host-desktop` + 设备名 | 主机原件、主机应用 | 实例内环境 |
+| 用户本地浏览器 | `:client-browser` | 下载到用户设备、系统文件选择 | 实例工作区 |
+
+**8.1 环境标识先于动作。** 命令卡、文件卡、浏览器卡、桌面卡必须显示环境类型与设备名；远程实例的“本机”指实例所在机器，不是当前浏览器设备。切换终端视图不迁移运行中任务；每条命令卡固化当时的 `:environment`、`:cwd`、`:device`。主机连接缺失时给连接入口，不静默切回实例内环境。
+
+**8.2 主机连接默认关闭，能力分项。** 新实例、新设备、未授权连接不开放主机文件、终端、浏览器、桌面控制。启用前列出：目录与读取、创建与修改、删除、终端执行、浏览器、电脑控制；读不隐含写；终端输入依赖终端执行许可，输入工具不能绕过。每项标明作用设备、路径或会话、当前任务是否启用。权限撤销立即阻断未开始动作；断开连接后不能再用排队命令访问主机；重连另一台同名设备不自动套用旧许可。
+
+**8.3 原件引用与保存副本。** 上传附件默认复制到实例，形成“保存副本”；挂载/连接目录指向“主机原件”，编辑会影响原件；只读挂载的写入必须转存到明确可写位置。两者在文件卡、编辑页、删除确认中使用不同标记与文案。持久挂载不是备份；外部目录的起始路径不是命令隔离边界；若终端实际可达更广，必须直说，不能把“起始文件夹”包装成限制。
+
+**8.4 文件身份用 `stamp`。** 读取返回 `{:mtime-sec :mtime-nsec :size}`，不比较 `atime`；提交前复核全部 `read-set`（含只读依赖与写目标）与结构条件。文件被外部修改时返回冲突路径、原 `stamp`、当前 `stamp` 与结构变化简述；真实文件保持外部结果，代理不死亡，可重读再提交。用户编辑与代理写入冲突时默认保留双方：查看差异、另存副本、重新载入或明确替换；禁止“最后保存胜出”。对应 AGENTS.md §4.2 与 §8.3 的 F01–F10。
+
+**8.5 成果卡。** 文件卡至少含：名称、类型、所属项目/工作区、完整路径、大小、修改时间、保存状态、版本/来源任务。预览成功不等于可编辑文件保存成功；下载失败不删除实例内原件；只有建议文件名而没有真实文件时，不生成可下载空链接。部分成功时分别列出可用成果与失败项，可单独重试失败项。文件移动/删除/访问范围变化后，原消息保留说明，卡片显示不可访问及原因，可重新定位或请求重新生成，但不自动重跑原任务。
+
+**8.6 产物提交流程。** 生成文件 → 完整性与可打开检查 → 登记产物元数据（名称、类型、内容 ID、来源任务与输入引用、保存位置、检查结果、状态）→ 向用户宣告可用。长输出、大附件、二进制产物先写受管 Blob 区临时位置，完成后生成稳定内容 ID，再进数据库建立引用；清理器只回收超过安全窗口且无当前引用的孤立对象。对应 AGENTS.md §7.1 的外部大对象区。
+
+**8.7 项目移动与共享文件。** 会话换项目不移动文件；分支/复制会话共享同一工作区文件，不自动复制文件；删除一个引用会话不删除仍被其他会话使用的文件。项目归档只隐藏入口；删除项目分别预览登记、实例内副本、外部原件、记忆、会话历史，默认保留会话与外部原件。共享文件被多个会话引用时，文件卡说明“打开当前版本”还是“查看当时保存副本”。
+
+**8.8 下载、导出与发布分离。** 下载到用户设备、导出交付包、上传/发送到外部服务是三个动作。导出前列所有文件、格式、版本、大小、目录结构，可逐项取消；默认只选最终成果与必要说明，源数据、聊天记录、历史版本另行勾选。发布/发送必须另显目的地、受众、文件版本、内容与权限；只确认服务返回结果，回执不明先核对不重发。对应 AGENTS.md §7.4-8 的导出流程与 §5.3 的 `:outcome-unknown`。
+
+→ 用于：`hc/core/workspace_gate` 的 stamp 校验、`hc/server/blob-store` 的产物元数据、`hc/client/file-card` 的环境标记；验收用 §8 断言 1–8。
+
+**§8 断言**
+
+1. 远程实例的文件卡显示实例名与实例路径；浏览器下载目录不被描述成实例工作区。
+2. 主机连接只授权一个目录读取：目录外读取被拒；若另授终端，界面说明终端实际可达范围，不把起始目录当隔离边界。
+3. 读取文件后外部编辑器修改同一文件：提交在写前拒绝，真实文件保留外部新内容；重读后可正常提交。
+4. 用户编辑文档未保存时代理尝试写入：代理停止并进入冲突/接管等待；双方内容可比较，默认不覆盖。
+5. 生成文件后断开下载：实例内原件仍可打开；下载重试不重新运行整项分析。
+6. 三个文件成功两个失败：成功文件可打开，失败项单独解释；不显示整批成功。
+7. 只有建议文件名时：界面不出现可成功下载的虚假卡片；文件卡显示“尚未生成”。
+8. 导出三条选中消息：预览与文件只含选中范围与当前版本，不夹带工具日志、隐藏设置或密钥。
+
+## 9 计划任务与时区
+
+AGENTS.md §7.4-7 要求定时任务区分“跟随设备时区/固定时区”、错过不补跑、导入后默认暂停。源手册补充了计划快照、运行前检查、不重叠与运行记录的具体字段。
+
+**9.1 计划对象。** `:schedule` 至少含：名称、任务正文、项目、档案、模型预设及修订、能力范围、时区、重复规则、首次时间、输出位置、状态、下一次运行。新建是草稿；只有“保存并启用”或独立“启用”使自动触发生效；查看、导入、复制、恢复都不启用。首次启用摘要显示执行对象、下三次实际时刻、可用工具范围、结果去向。
+
+**9.2 快照与运行前检查。** 保存时固定项目、档案、模型服务与型号、预设修订、任务正文与必要上下文；密钥值不入快照，只记凭据名称与使用范围。每次运行前检查：实例可用、模型/凭据可用、文件存在、权限仍有效。缺项进入“需处理”并给具体入口；不循环请求无效密钥，不静默切到另一付费服务，不猜同名路径。快照保存意图，当前授权决定是否还能执行。
+
+**9.3 不重叠与错过。** 上一轮仍在运行、等待人工或结果待确认时，新周期记“已跳过”并写原因，不积压队列。离线、关机、暂停导致的错过，恢复后列缺口与原因，不自动补跑；手动“补跑一次”须核对用旧时点还是当前数据，并作为独立运行记录。多个错过不默认为多次付费请求，先选范围再建补跑记录。
+
+**9.4 时区。** 保存时固定创建时区，不随查看设备旅行改变；预览显示可读规则（如“每周一 08:00，Asia/Shanghai”）与下三次实际时刻；修改时区前预览新旧时间。夏令时不存在时刻标“未运行”，重复时刻只执行第一次；服务器时间或时区变化时重算下一次实际时刻，不改既有记录。
+
+**9.5 运行记录与通知。** 每次运行独立记录：计划时间、实际开始/结束、任务修订、关联聊天、结果文件、状态。默认建任务专用结果聊天，不向用户正在编辑的会话插入无人值守消息；选既有聊天须显示目标与竞争，繁忙则等待或跳过。任务页分列生成、保存、通知三个结果；通知失败只重试通知，不重做已保存工作；通知送达不等于任务完成。
+
+**9.6 暂停与停止。** 暂停只停未来触发，运行中项继续显示；“同时停止当前运行”是独立选择。停止本轮阻断未开始步骤，保留已写文件与外部回执，不撤销已执行动作。删除任务前说明停未来触发、列当前运行与已保存成果，默认保留历史聊天与文件；复制任务默认暂停、名称加后缀、不继承启用状态。
+
+**9.7 超时与失败。** 普通命令/任务默认上限 10 分钟，执行前可提至最多 30 分钟；超时发停止请求并记录原因，不假定子进程全部结束。模型临时连接失败最多额外 2 次并显示次数；外部写回执未知先核对；文件已生成而通知失败只重试通知。失败保留已完成项与未完成项，不用单一“失败”掩盖部分成果。
+
+→ 用于：`hc/compose/scheduler` 的触发与快照、`hc/server/storage` 的运行记录、`hc/client/schedule-view` 的时区预览；验收用 §9 断言 1–7。
+
+**§9 断言**
+
+1. 创建每周一/三 08:30 任务：保存前显示下三次真实日期与时区；空正文不能启用。
+2. 修改项目默认模型后，原计划仍使用保存快照；只有用户明确更新任务才采用新配置。
+3. 推进时钟错过两个执行时刻：默认跳过并记录原因，不连续补跑；手动运行产生独立记录，不改下一次计划。
+4. 固定时区任务在设备换时区后仍按原时区；跟随设备任务显示新下一次与变更提示。
+5. 上一轮未结束时又到下一次：后一次标“已跳过，上次仍在运行”，不并发生成。
+6. 凭据失效时下一次触发显示“需处理”，不无限重试，不静默换服务。
+7. 通知失败但文件已保存：任务显示“已保存，通知失败”，只补发通知，不重跑任务。
+
+## 10 恢复、备份、Time Travel 与未知结果
+
+AGENTS.md §7.1 只保存当前权威状态与未结责任，不保存可重放的历史；源手册的备份、恢复、Time Travel 是产品层的数据保护能力，必须建立在这条边界之上，不能把“恢复文件”说成“撤销外部动作”。
+
+**10.1 未知结果先核对。** 外部写入、发送、付款、删除、提交表单在断线/超时/进程崩溃后标 `:outcome-unknown`。界面显示“已提交，暂时无法确认”，提供原目标、动作摘要、已知回执与核对入口；不自动重放，不显示成失败后无影响。核对确认成功则结清该轮；确认未发生才允许新的明确尝试；无法确认时保留未结责任，不靠删除会话结束挂起。对应 AGENTS.md §5.3 与 F13/F23。
+
+**10.2 实例停止与重启。** 停止实例前列出正在执行、等待用户、排队与结果未知的数量；确认后阻止新步骤，尽力结束可取消活动，保留已生成文字、文件与结果。已提交到外部系统的操作不承诺撤回；重启后恢复历史与待处理提示，不自动重放未完成的外部写入。恢复页把步骤分为已完成、未开始、结果未确认三类，用户核对后再继续。
+
+**10.3 备份范围与快照。** 备份类别至少含：聊天与附件、项目文件、知识资料、记忆、档案与模型预设、插件配置、任务、界面偏好。开始备份时显示取样时间；之后新增内容留给下次。正在写入的附件必须完整纳入或明确列为未完成项，不能生成引用存在而文件缺失的“成功备份”。聊天提到的文件不在备份内时列缺失，不把文件名或远程地址当作已打包内容。
+
+**10.4 秘密与外部原件默认排除。** API 密钥、会话令牌、浏览器登录数据、主机授权默认不进入备份；显式包含时另列类别、敏感性与加密选项。主机连接目录与独立挂载原件默认不备份；复制前核对设备、路径、范围与读取许可；只复制已选内容，不删原件。外部目录不可用时给不完整说明或等待决定，不静默跳过却标“完整备份”。
+
+**10.5 恢复预览与冲突。** 恢复前校验格式、版本、完整性、密码；无法完整读取的备份不进入覆盖步骤。恢复方式明确区分“合并选中类别”与“替换选中类别”；未选类别不变；全量替换是显式选择全部类别后的独立摘要。同名但内容/来源不同的对象默认保留两份并加来源后缀；能确定同一对象且两端都有改动时给差异选择，不以较新时间静默覆盖。恢复前建立可回退的本地恢复点；空间不足或不可写时停止替换，不跳过保护。
+
+**10.6 恢复后不复活外部许可。** 任务、渠道自动运行、外部写入默认暂停；插件恢复为停用待检查；主机设备、路径、浏览器登录、系统授权需重新核对；模型配置恢复为待验证，密钥即使包含也不自动测试。已删除/停用的记忆遇旧备份有效副本时保持当前决定并列为待审冲突，不静默重新启用。对应 AGENTS.md §7.4-8 与 Kelivo §5.3 的记忆防复活规则。
+
+**10.7 Time Travel 只覆盖工作文件。** Time Travel 的快照只包含明确纳入的实例工作区文件；外部网站提交、主机连接目录、独立挂载原件、已发送消息、远程 API 动作不因文件恢复而撤销。快照项显示时间、关联聊天/任务、变更摘要、是否完整；查看历史是只读，不改当前 Agent 上下文，不重放历史工具。恢复前列出将创建/替换/移除的对象；恢复前保存当前状态回退点；相关文件正被编辑时默认等待或另存，不覆盖未保存内容。默认保留最近 30 天可用历史，标记保留的快照不自动清理。
+
+**10.8 更新失败保留旧版本。** 更新分准备、下载、检查、应用、重启、验证六阶段；提交后断线显示重连状态，不自动再发更新。更新前检查运行中任务、未保存文档、备份与本地修改；创建并验证可恢复副本，空间不足或副本失败则停止。新版本无法正常打开时回到上一可用版本，显示实际回退版本、数据状态、失败原因；版本回退不等于外部操作回滚。跨主版本先备份旧实例，在新实例恢复并核对代表聊天、文件、配置，再由用户决定旧实例处理。
+
+→ 用于：`hc/server/recovery` 的六个故障窗口、`hc/server/backup` 的范围与冲突、`hc/client/recovery-view` 的预览；验收用 §10 断言 1–8。
+
+**§10 断言**
+
+1. 外部写入已提交但回执丢失：重启后标 `:outcome-unknown`，不自动重发；核对确认成功后才结清。
+2. 停止实例后重开：已完成保持完成，未开始可继续，结果未知需核对；不因存过“运行”状态自动重放。
+3. 备份开始后新增消息：备份对应明确取样时间，不宣称包含新内容；无悬空附件引用。
+4. 错误密码恢复：本地资料不变；错误指向密码/解密，不显示空数据成功。
+5. 同名不同内容助手/项目合并：默认保留两份并标来源；不按名称静默覆盖。
+6. 恢复含已删除记忆的旧备份：默认跳过并列为待审冲突；不重新投入检索。
+7. Time Travel 恢复文件：外部消息、网站提交、主机改动不撤销；权限与记忆不因文件变旧自动恢复。
+8. 更新失败：回到上一可用版本；旧实例与工作区未被自动删除；恢复页可导出诊断。
+
+## 11 外部连接、渠道、API 与凭据
+
+AGENTS.md 没有渠道/A2A 子系统；源手册的这一层只能作为可选适配器，不能反向把单实例可信模型变成多租户。可迁移的核心是：入站消息先成为公共事件、外发目的地固定、回执未知先核对、凭据作用域不冒充硬隔离。
+
+**11.1 入站消息任务化。** 渠道消息到达后：识别发送者 → 渠道会话 → 绑定项目 → 在实例中建立或找到对应会话 → 生成 `:command-id`。同一服务消息重复投递不产生第二个用户轮次；无法判定重复时标“待核对”，不重做外部写入；被拒消息只记必要原因，不进入模型上下文、不自动下载附件。消息原文是公共事件，解释结果另存，不能用摘要替换原文。对应 AGENTS.md A02-20。
+
+**11.2 发送者与管理员分离。** “允许向 Agent 发消息的人”与“允许更改渠道设置的管理员”是两个名单；普通发送者不得改工具政策、插件、凭据、项目绑定。允许发消息只等于可在当前许可内提请求，不等于可开主机访问、发布文件或改实例设置。消息中的网页、附件、转发文本只是材料，不因自称管理员/系统提示而获得权限。管理员身份也不能绕过能力范围；AGENTS.md 没有逐次审批，敏感动作由能力范围前置排除或操作员 Esc 取消。
+
+**11.3 外发目的地固定。** 回复原会话按该入口既定授权；新增收件人、转群、换服务必须显示目的地、身份、内容、附件版本，并作为一次明确的外部动作记录。过长可拆分，序号与完成状态可见；不得漏来源或先发待确认内容。渠道容量不足给压缩或改为用户下载，不自动上传外部网盘。收到附件写入实例副本；原消息中的本机路径不是可访问文件。
+
+**11.4 收发状态机。** 外发状态：已准备、发送中、服务已接收、失败、结果待确认。无阅读回执不写“对方已读”；回执未知先查已有服务消息，不自动重发相同外部内容；多附件部分成功分别展示。关闭渠道阻断新接收与新外发，已接受实例任务继续或停止由用户选择；重启用先列未发送结果与错过消息范围，默认不全量补发。
+
+**11.5 API 接入与凭据。** 接入卡显示服务名称、文档来源、操作摘要、目标域名、输入材料、凭据名称、预期输出；未验证参数写“待核对”。保存、测试连接、执行示例互不触发；测试页列出将发送的数据、目的服务与可能费用；服务无无副作用测试时允许只保存并保持“未测试”。调用范围逐项：读取、生成内容、写入外部记录、发送、删除分别列出；只授读取不得更新；扩权须说明具体任务与新增操作。
+
+**11.6 凭据作用域与轮换。** 变量与秘密分栏；秘密默认遮蔽，显示/复制/删除是独立操作；未改动保存保持原值，清空可见输入不删除已有值。项目同名值优先全局；显式禁用即不可用且不回退全局；无项目覆盖时显示“继承全局”。轮换前列依赖该名称的服务与任务；可先测试新值再启用；测试失败不覆盖仍有效的旧值。项目凭据范围只防正常使用误选，不宣称同实例不可信用户无法经其他广泛能力访问；终端、插件、主机能力按各自边界。
+
+**11.7 秘密不进入公共面。** 秘密值不进入聊天正文、普通日志、错误提示、诊断包、审批/动作卡明文、导出模板；只记名称、来源、最近修改时间、是否已配置。诊断包默认含版本、实例类型、时间、错误类别、脱敏配置；不含完整聊天、文件、秘密、登录数据；逐类加入，预览可删行与隐藏个人路径；只生成本地可下载资料，不自动上传第三方。对应 AGENTS.md §7.4-8 的脱敏诊断包。
+
+→ 用于：`hc/server/adapters` 的可选渠道、`hc/server/config` 的凭据解析、`hc/client/settings` 的秘密编辑；验收用 §11 断言 1–6。
+
+**§11 断言**
+
+1. 同一渠道消息重复投递：只生成一个用户轮次；无法判定重复时标待核对，不重做外部写入。
+2. 普通发送者尝试修改工具/凭据：被拒；管理员身份不自动获得所有项目资料。
+3. 外发新增收件人：显示目的地、身份、附件版本；确认后只发送一次；回执未知不自动重发。
+4. 保存 API 配置不产生调用；测试只发送声明的固定内容；执行示例是独立动作。
+5. 项目同名凭据优先；显式禁用不回退全局；轮换失败保留旧值。
+6. 诊断包预览不含密钥、完整聊天与文件；导出前可删行；取消不自动上传。
+
+## 12 默认值与放行门槛
+
+源手册第 35 章集中列出了产品默认值。下表只保留会改变 AGENTS.md 实现或验收的项，并区分“协议不变量”与“产品默认参数”：前者不能静默修改，后者可调整但必须同步测试与界面说明。
+
+| 项目 | 默认 | 性质 | 落点 |
+|---|---|---|---|
+| 会话执行 | 每会话一个前台执行序列 | 协议（§5.1） | `:session/active-run-id` |
+| 运行中发送 | 进入可见队列 | 产品 | `:session/queue` |
+| 停止后的队列 | 保留并等待确认 | 协议投影（§5.3） | `:queue/state :pending-confirmation` |
+| 同时运行子代理 | 每会话最多 3 个，主代理不计入 | 产品参数，非协议 | 配置；不得写进 `TokenSlot` |
+| 自动委派深度 | 1 层 | 产品参数，非协议 | 配置 |
+| 目标检查点 | 30 分钟或 50 个动作，先到为准 | 产品参数，与 §2.5 冲突时按 §7.3 改写 | `:blocked` 诊断；不得作为人工等待出口 |
+| 自动重试 | 安全失败最多额外 2 次 | 产品（§5.4 有界重试） | `:retry-at`、`:attempt-id` |
+| 会话删除 | 已删除区保留 30 天 | 产品 | `:session/deleted-at` |
+| 网页上传 | 单文件 100 MiB、每批 20 项、总计 500 MiB | 产品 | 上传入口校验 |
+| 插件安装 | 安装后未启用；自动更新/检查关闭 | 产品 | `:plugin/state :installed-disabled` |
+| 新空白档案 | 工具/MCP/技能默认关闭 | 产品（§7.4-6 能力范围） | `:capability/decision :deny` |
+| 标准档案 | 实例专用工作目录内普通文件与代码任务 | 产品 | 能力范围模板 |
+| 自动保存记忆 | 关闭 | 产品（Kelivo §5.3） | `:memory/auto-save false` |
+| 记忆检索范围 | 当前项目；无项目用独立区 | 产品 | `:memory/scope` |
+| 已删除记忆 | 30 天可恢复 | 产品（Kelivo） | `:memory/deleted-at` |
+| 会话固定技能 | 默认无；最多 8 项 | 产品 | `:session/skills` |
+| 普通命令超时 | 10 分钟；执行前可提至 30 分钟 | 产品 | `:command/timeout-ms` |
+| 命令输出 | 内联最近 200 行；单次日志至 20 MiB | 产品 | `:output/preview-lines` |
+| 新宿主机连接 | 默认关闭 | 产品（§7.2 环境分层） | `:host/enabled false` |
+| A2A 接收 | 默认关闭 | 不采纳为协议；可选适配 | §13.2 |
+| 导入计划任务 | 暂停 | 产品（§7.4-7） | `:schedule/state :paused` |
+| 错过的周期运行 | 跳过并记录 | 产品（§7.4-7） | `:schedule/missed` |
+| 备份中的密钥 | 默认不包含 | 产品（§7.4-8） | `:backup/include-secrets false` |
+| Time Travel 历史 | 最近 30 天 | 产品 | `:snapshot/retention-days 30` |
+| 自动朗读 | 关闭 | 产品（Kelivo） | `:tts/auto false` |
+| 系统通知正文 | 默认隐藏 | 产品（Kelivo） | `:notification/preview false` |
+| 详细请求日志 | 默认关闭；开启后最多 7 天 | 产品（Kelivo） | `:log/detail-retention-days 7` |
+| 语言/外观 | 跟随系统；语言无匹配用简体中文 | 产品（Kelivo） | `:ui/locale`、`:ui/theme` |
+| 桌面输入 | Enter 发送，Shift+Enter 换行 | 产品（Kelivo） | 输入区 |
+| 触屏窄屏 | Enter 换行，按钮发送 | 产品（Kelivo） | 输入区 |
+
+**12.1 阻断放行的缺陷。** 以下问题不因概率低、界面美观或“大多数场景正常”而降级：用户资料丢失；重复外部写入；越过授权；错误归属设备/原件；把失败或未知说成成功；无法停止；草稿丢失；中文输入法 Enter 误发；未知用量显示为 0；把损坏或满盘资料库当新库清空。对应 AGENTS.md §8.5 的阻断缺陷清单。
+
+**12.2 性能与规模目标。** 普通输入/按钮反馈通常在 100ms 内，不等待模型调用；200 个会话、单会话 10000 条活动时先显示可读部分，滚动不冻结输入区；单目录 1000 项逐步显示；连续 10 分钟流式输出仍可滚动、复制、暂停、展开；3 个子代理 + 主会话状态归属稳定；断线 30 秒恢复后先同步，5 秒内显示本地测试实例确认结果；200% 字号下关键内容不裁切。数值是独立实现目标，不是对参考产品的测量；慢设备可分页/延迟加载，但不能静默丢弃活动、历史或草稿。
+
+**12.3 验证分层。** 源手册的 E2E 是产品级旅程，不替代 AGENTS.md §8.4 的三层验证：控制状态转换、文件入口、适配与消息。每条实现至少覆盖一条正常路径、一条可恢复错误、一条用户取消；文件交付必须实际打开最终文件检查，不以缩略图、后缀或模型自述代替。对应 AGENTS.md §8.4 与 §8.5。
+
+**12.4 最小实施顺序。** 源手册第 34 章按能力依赖分六阶段；对 AGENTS.md 的落地顺序如下。阶段划分只控制依赖，不改变最终范围；未交付能力明确隐藏或说明不可用，不用可点击假入口占位。
+
+| 阶段 | 交付 | 进入下一阶段前必须通过 |
+|---|---|---|
+| A 基础工作 | 实例启动、模型连接、会话、队列、暂停/停止、文件交付 | 首次输入到重访成果；断线、提交去重、停止保留现场 |
+| B 工作范围 | 项目、模型预设、档案、记忆/知识范围 | 范围可见、权限撤销、配置快照、资料不串用 |
+| C 复杂任务 | Swarm 看板、Nudge、技能、插件/MCP、终端 | 父项不自动完成、部分失败恢复、检查点不成为人工等待 |
+| D 视觉协作 | 浏览器、桌面、文档共同编辑 | 接管互斥、环境身份、版本冲突、可编辑成果 |
+| E 持续连接 | 宿主机、计划任务、渠道/API | 连接范围、重复投递、计划快照、错过不补跑 |
+| F 长期使用 | 备份、迁移、Time Travel、更新、诊断 | 恢复演练、失败回退、历史继续可用、秘密不泄露 |
+
+→ 用于：配置默认值表、发布验收清单、性能测试脚本；验收用 §12 表与 AGENTS.md §8.5。
+
+## 13 原手册章节处置与差异
+
+### 13.1 36 章逐章处置
+
+| 章 | 内容 | 处置 | 落点/理由 |
+|---|---|---|---|
+| 01 | 产品目标与规格范围 | 压缩 | §1、§12；删除营销语与重复的用户故事 |
+| 02 | 用户任务与信息结构 | 部分吸收 | §1；其余与 Kelivo §4.9 重复 |
+| 03 | 全局状态与交互约定 | 吸收 | §2、§3、§4 |
+| 04 | 安装实例与访问 | 吸收 | §1、§10；实例身份、端口、远程访问 |
+| 05 | 首次使用与模型连接 | 吸收 | §6；首条消息保留、三条路径、测试分层 |
+| 06 | 模型预设与模型职责 | 吸收 | §6；四种角色、快照、容量 |
+| 07 | 欢迎页导航与会话整理 | 不重复 | Kelivo §4.9；仅保留会话身份/删除规则 |
+| 08 | 输入队列、暂停、停止与继续 | 吸收 | §2、§3 |
+| 09 | 回答过程与工具结果阅读 | 不重复 | Kelivo §4.1–4.2；仅保留活动身份与结果归属 |
+| 10 | 历史分支与上下文 | 不重复 | Kelivo §4.6–4.8；仅保留快照/压缩边界 |
+| 11 | 子代理委派与并行任务 | 改写 | §7；私有子代理改为公共看板任务 |
+| 12 | 目标模式与长任务 | 冲突改写 | §7.3；检查点不得成为第三停止出口 |
+| 13 | Agent Profile 与动作权限 | 部分吸收 | §4；保留作用域/三态/新能力默认拒绝，删除逐次审批 |
+| 14 | 项目范围与 Git 工作区 | 吸收 | §1、§8；项目组织非隔离、保存/提交/推送分离 |
+| 15 | 文件与知识资料查询 | 不重复 | Kelivo §5、§6.1；仅保留副本/原件与版本 |
+| 16 | 记忆检索与维护 | 不重复 | Kelivo §5.3；仅保留 scope/防复活 |
+| 17 | 技能与斜杠命令 | 不重复 | Kelivo §5.7；仅保留安装默认/可见性 |
+| 18 | 插件目录、安装、更新与范围 | 可选 | §4；AGENTS.md 无插件子系统，按环境扩展处理 |
+| 19 | MCP 与 A2A 连接 | 部分吸收 | §11；MCP 工具增删/新能力待审阅；A2A 不采纳 |
+| 20 | 执行环境、终端与代码任务 | 吸收 | §8；环境标识、命令卡、超时、日志 |
+| 21 | 内置浏览器与网页标注 | 部分吸收 | §3、§8；Kelivo §6.4 已覆盖交互，保留环境/接管 |
+| 22 | Linux 桌面与人工接管 | 部分吸收 | §3、§8；接管互斥、交回重读 |
+| 23 | 文档编辑协作与成果交付 | 部分吸收 | §8；文件卡、版本、冲突、导出 |
+| 24 | 宿主机连接与本地文件 | 吸收 | §8；原件/副本、能力分项、断线 |
+| 25 | 计划任务与后台执行 | 吸收 | §9 |
+| 26 | 消息渠道与通知 | 可选 | §11；渠道适配器，不引入多租户 |
+| 27 | 外部 API 与凭据管理 | 吸收 | §11；保存/测试/执行分离、作用域、轮换 |
+| 28 | 用量、费用、诊断与配置检查 | 不重复 | Kelivo §7；仅保留实例级资源/诊断 |
+| 29 | 备份恢复与聊天迁移 | 吸收 | §10；范围、秘密排除、冲突、防复活 |
+| 30 | Time Travel 与应用更新 | 吸收 | §10；工作文件边界、回退旧版本 |
+| 31 | 外观、语音、移动端与无障碍 | 不重复 | Kelivo §7；仅保留语音处理位置/移动 Web |
+| 32 | 跨功能错误与恢复 | 吸收 | §2、§3、§10；错误分类、未知结果、重试上限 |
+| 33 | 端到端验收旅程 | 不复制 | §12；AGENTS.md §8.5 E2E 01–22 优先 |
+| 34 | 实现顺序与发布验收 | 参考 | §12；阶段交付、实际文件检查、性能目标 |
+| 35 | 默认值与范围对照 | 吸收 | §12 |
+| 36 | 参考依据与独立设计决定 | 吸收 | §14；固定版本、来源索引、独立决定 |
+
+### 13.2 与 AGENTS.md 冲突、不采纳
+
+| 源手册主张 | 冲突点 | 裁决 |
+|---|---|---|
+| 每次工具调用等待人工审批；“允许这一次/拒绝/修改后重试” | §1.1-5 常授权无人值守；§2.5 只有 S1 `.ask` 与 Esc | 不实现逐次审批；能力范围前置 + 角色工具面 + `stamp`/W + Esc |
+| “完全访问”模式与会话级放宽 | AGENTS.md 无此协议概念 | 不实现；使用会话级能力范围，敏感动作由范围排除 |
+| “等待批准”作为常规轮次/会话状态 | 无审批出口 | 仅保留历史/兼容显示；新实现不产生该状态 |
+| 多租户、项目隔离、实例间 A2A、产品账号、原生移动端 | §1.1-1 独立全栈单实例；§7.3 Web 瘦客户端 | 不进入协议；渠道/A2A 仅可选适配，需另行验收 |
+| 每会话最多 3 个子代理、深度 1 | AGENTS.md 固定槽位与公共看板 | 仅作产品默认参数；不得写进 `TokenSlot`/槽位容量 |
+| 目标暂停/检查点等待用户继续 | §2.5 禁止自然停止等待人工 | 改写为 `:blocked` 诊断；人工介入只能 Esc 或 S1 `.ask`；不新增第三出口 |
+| Time Travel 可撤销外部动作 | §7.1 只保存当前态；外部副作用不可回滚 | 只覆盖工作文件；外部动作另做核对/补救 |
+| 把项目/浏览器实现成“私有隔离” | 共享登录、单一共享工作区 | 不宣称隔离；显示共享身份与环境边界 |
+| 记忆单条 8000 字、四类枚举 | Kelivo §5.3：单条建议 2000 字、四类为身份/工作方式/表达偏好/长期要求 | 取 Kelivo/AGENTS.md；源手册数值仅作参考 |
+| 备份加密可选 | AGENTS.md §7.4：默认开启密码加密，至少 12 字符 | 取 AGENTS.md；源手册的“可选”不采纳 |
+| 把渠道管理员/接受者双名单升级为实例权限 | 单实例可信 + 角色工具面 | 仅作渠道适配器的入口名单，不转化为实例权限 |
+
+### 13.3 与 Kelivo 的分工
+
+| 主题 | 已有覆盖 | 本文件处理 |
+|---|---|---|
+| 草稿、IME、流式、停止、队列 UI | Kelivo §3 | 只补队列状态机、提交幂等、停止后队列 |
+| 消息渲染、历史、版本、分支、压缩、导出 | Kelivo §4 | 只补会话快照、活动归属、删除分层 |
+| 助手、记忆、世界书、搜索、MCP、技能 | Kelivo §5 | 只补作用域解析、新能力默认拒绝、防复活 |
+| 工作区、浏览器、交互卡、小应用、附件、语音、定时 | Kelivo §6 | 只补环境标识、原件/副本、接管互斥、计划快照 |
+| 备份、外观、费用、诊断、错误文案 | Kelivo §7 | 只补实例/项目/Time Travel 边界与恢复窗口 |
+| E2E 01–22 | Kelivo §8 | 不复制；本文件只给运行层断言 |
+
+→ 用于：评审“哪些源手册内容被吸收、哪些被拒绝、哪些已由 Kelivo 覆盖”，避免重复实现或静默丢项。
+
+## 14 引用
+
+源手册以 Agent Zero v2.15 的公开用户材料为能力基线；标签最终指向提交 `ba9b67df0f54ac78106ae85c552ef5d2458f7c9a`，发布时刻为北京时间 2026-11-02 07:52。版本元数据用于固定引用，不要求本产品采用相同版本号。官方网页文档可能继续更新；发生差异时先回到固定标签的用户文档，再结合对应发布说明判断参考范围。
+
+| 编号 | 公开材料 | 使用范围 |
+|---|---|---|
+| S01 | v2.15 README `https://github.com/agent0ai/agent-zero/blob/v2.15/README.md` | 产品能力与主要用户旅程 |
+| S02 | v2.15 发布说明 `https://github.com/agent0ai/agent-zero/releases/tag/v2.15` | 当前版本范围与明确变化 |
+| S03 | Quick Start `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/quickstart.md` | 首次请求与模型配置后的继续 |
+| S04 | Usage Guide `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/usage.md` | 队列、暂停、目标、文件、任务、备份等日常入口 |
+| S05 | Installation `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/setup/installation.md` | 安装路径、持久工作区与访问 |
+| S06 | Onboarding `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/onboarding.md` | 初次模型设置流程 |
+| S07 | Model Presets `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/model-presets.md` | 模型职责与预设选择 |
+| S08 | Agent Profiles `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/agent-profiles.md` | 档案编辑、范围与动作许可 |
+| S09 | Projects `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/projects.md` | 项目说明、工作区与关联资料 |
+| S10 | Memory `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/memory.md` | 记忆搜索、审阅、编辑与清理 |
+| S11 | Skills `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/skills.md` | 技能安装、发现与固定 |
+| S12 | Browser `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/browser.md` | 浏览器画布、标注、环境与宿主浏览器 |
+| S13 | Desktop `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/desktop.md` | Linux 桌面与办公文档协作 |
+| S14 | Launcher `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/launcher.md` | 实例管理、主机访问与存储选择 |
+| S15 | A0 CLI Connector `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/a0-cli-connector.md` | 终端连接、主机能力与访问说明 |
+| S16 | Local Folders `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/local-folders.md` | 持久目录与共享原件 |
+| S17 | MCP Setup `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/mcp-setup.md` | MCP 连接及外部工具入口 |
+| S18 | A2A Setup `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/a2a-setup.md` | 实例间通信与接收设置 |
+| S19 | API Integration `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/api-integration.md` | 外部集成用户可见能力与凭据 |
+| S20 | Migrate Agents `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/migrate-agents.md` | 导入预览、历史与工作文件的区别 |
+| S21 | Self Update `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/self-update.md` | 用户发起更新和恢复流程 |
+| S22 | Troubleshooting `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/troubleshooting.md` | 常见配置与运行阻碍 |
+| S23 | Codex Account Setup `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/guides/codex.md` | 账号连接的公开使用入口 |
+| S24 | v2.14 发布说明 `https://github.com/agent0ai/agent-zero/releases/tag/v2.14` | 子代理状态、配置恢复与交互改进 |
+| S25 | v2.13 发布说明 `https://github.com/agent0ai/agent-zero/releases/tag/v2.13` | 文件导航、项目侧栏和渠道交互 |
+| S26 | 官方插件指南 `https://www.agent-zero.ai/p/docs/plugins/#plugin-hub` | 插件发现、安装和使用说明 |
+| S27 | v2.10 发布说明 `https://github.com/agent0ai/agent-zero/releases/tag/v2.10` | 共享浏览器会话、草稿与恢复边界 |
+| S28 | v2.9 发布说明 `https://github.com/agent0ai/agent-zero/releases/tag/v2.9` | 档案编辑、范围策略及快照维护 |
+| S30 | 欢迎页演示截图 `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/res/usage/webui/welcome-start.png` | 输入区、快捷入口和渠道卡片的可见层次 |
+| S31 | 首项任务演示截图 `https://github.com/agent0ai/agent-zero/blob/v2.15/docs/res/usage/webui/first-task-current.png` | 活动分组、成果链接、模型档案和输入区 |
+| S32 | v2.15 标签引用 `https://api.github.com/repos/agent0ai/agent-zero/git/ref/tags/v2.15` | 固定标签元数据 |
+| S33 | v2.15 标签对象 `https://api.github.com/repos/agent0ai/agent-zero/git/tags/3b4d32cbf403f3692bb050eb6944660eada94c93` | 最终提交标识 |
+
+原文来源索引从 S28 直接跳到 S30，没有 S29；本文件按原编号保留，不补造。
+
+**来源使用边界**：截图只支持画面中可见的入口与信息层次，不能证明点击后的结果、执行顺序、费用、保存范围或异常恢复；发布说明只支持“某项能力已被公开介绍”，不能代替本产品验收。源手册中更细的状态、默认值、恢复要求与交互规则属于独立设计决定，不是对参考产品的实测结论。本文件进一步把这些决定压缩为 AGENTS.md 的实施约束；与 AGENTS.md 冲突处已在 §13.2 裁决。
+
+**维护规则**：AGENTS.md 的条款或默认值改变时，先更新对应 §0 行与本文件相关断言，再检查 §13.1 的处置是否仍成立。源手册的 UX/AC/E2E 编号只作来源定位；本仓库的验收以 AGENTS.md §8.5 的 E2E 01–22 与本文件各节断言为准。新增产品对象（如独立目标、插件、渠道）时，必须同时说明它落在 `session`/`run`/`call`/`attempt` 的哪一层、是否改变责任集合或停止出口；不能只增加一个 UI 状态。
+
+→ 用于：核对来源版本、区分公开事实与独立设计、维护本文件与 AGENTS.md 的同步。
