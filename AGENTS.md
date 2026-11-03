@@ -45,7 +45,7 @@ Orchestration for agents that don't like being orchestrated.
 
 万象术遵守四条顶层架构边界：
 
-1. **独立全栈底座（零宿主寄生）**：服务端运行于 Clojure/JVM，持有会话、看板、任务与运行资源的唯一当前态权威（Current-State SSOT）；使用 Missionary 管理结构化异步流与取消域，使用 LangChain4j 低层接口对接各模型供应商，使用嵌入式数据库持久化当前状态与未结责任。浏览器端采用 ClojureScript + Fulcro + Framework7 React 构建薄客户端工作台，经 Sente 通道承载内部 AG-UI 协议，支持类似 `tmux` 的多客户端同控。
+1. **独立全栈底座与单机单例（零宿主寄生）**：服务端运行于 Clojure/JVM，采用**每台机器单一常驻进程（Per-Machine Singleton）**架构，持有所有会话、看板、任务与运行资源的唯一当前态权威（Current-State SSOT）；第二个万象术命令启动时，只向已运行的单例进程发消息（如新建或聚焦会话、投递指令），绝不拉起第二个真实服务进程。单机单例支持多个用户可见的根会话（Root Sessions）同时在工作台左栏展示并并发运行。服务端使用 Missionary 管理结构化异步流与取消域，使用 LangChain4j 低层接口对接各模型供应商，使用嵌入式数据库持久化当前状态与未结责任。浏览器端采用 ClojureScript + Fulcro + Framework7 React 构建薄客户端工作台，经 Sente 通道承载内部 AG-UI 协议，支持类似 `tmux` 的多客户端同控。
 2. **环境供应与执行分离**：运行环境与工具供应由成熟包管理器承担——Pixi 负责供应并锁定系统自身的 SDK 与受管运行时环境，Windows 下的广泛原生工具包由 MSYS2（如 `UCRT64`）供应。智能体不拼凑脆弱的 Bash 字符串，而是直接向受管执行器提交结构化 Clojure 程序。
 3. **宏观中心化把关、微观去中心化蜂群**：「规划（Plan）」与每一任期的「独立评审窗口（Review Window）」是中心化的，由主模型在无前任路径依赖的干净视野中完成底稿打磨或独立验收；一旦 `review` 立下非空义务台账，立即转入去中心化的「蜂群施工期（Swarm Construction）」，由固定槽位的任务模型围绕 STM 看板自主拆分、认领、受保护写文件与竞争 Shell 令牌，消除单点导演的上下文瓶颈。
 4. **当前态持久化（无事件重放负担）**：系统只持久化当前权威状态、内容引用与未结责任（如在途动作、待交付报告、待审台账），允许永久折叠与修剪历史，不保存冗余聊天副本，严禁 $O(n^2)$ 扫描或全量历史回放。Plan 的底稿是用户可见交付物，固定保存在工作区根目录 `plans/<name>.md`。
@@ -60,8 +60,8 @@ Orchestration for agents that don't like being orchestrated.
 4. **抢令牌（`take-or-die`）不可逆，持令者无责即死，新生无记忆。** 个体仅在耗尽有价值的受保护工作且存在待处理令牌任务时参与竞争：赢者成为唯一 `holder`，动态承担全部 `needs-token` 责任（含后续新增项），但仅在实际运行 Shell 会话或提交文件时占用写锁 $W$；输者在同一 STM 事务内公开移交剩余责任与认领并逻辑死亡；`holder` 在完整责任集合（动态令牌责任 + 自身普通责任 + 在途动作）为空时，在同一 STM 事务内释放令牌并逻辑死亡。死亡后槽位拉起全新 `agent-id`，绝不继承前世私有上下文。（见 §3.4）
 5. **常授权无人值守（Nudge 胜出）。** 系统处于常授权无人值守模式。合法停止出口只有三个：`Plan` 在 `S1` 阶段调用 `(ask {:question ...})` 挂起等待人类回答；执行层初任在 `执行` 首次提交空账且工作区已满足底稿时，转为 `(ask ...)` 询问用户接下来做什么；验收合格后的终局结案。除此以外，任何代理在任何阶段均不弹窗等待人类审批工具，也绝不可能自然停止。未达合法出口而结束回合时，内核自动拦截并注入 Nudge 督促继续。（见 §2.5）
 6. **Esc 取消必须沿责任树递归传播，且保留可核对现场。** 操作员发起取消时，取消信号沿当前会话、在途模型请求、STM 看板活动动作与受管工作进程递归传播；已产生副作用的外部动作如实标记 `:cancelled` 或 `:outcome-unknown`，只终止执行资源、不销毁未领取证据。程序化的 `park` / `ask` 挂起、接力退休与槽位转世不是操作员取消。（见 §3.4、§5.3）
-7. **Plan 的 `devops` 是唯一调查原语，底稿唯一定位 `plans/<name>.md`。** `Plan` 全程除底稿与操作员附件外只读；调查仓库事实只能调用 `(devops {:verbose-intent "..."})`，同步等待一个 Plan 专属、无看板、无令牌的 dedicated worker 完成并原样返回其最终报告；同一 Plan tenure 复用/steer 同一 worker，不新建第二路。（见 §2.3、§4.1）
-8. **模型归属铁律。** `Steward`（含 fork/join 编排）、`Plan` 顶层与执行阶段的中心化 `Reviewer` 使用主模型（Main Model）；Plan 的 dedicated worker、微观蜂群中的所有普通个体与持令者（`holder`）一律使用用户指定的任务模型（`@task` 模型）。`fission` 已删除，不再有裂变泳道。（见 §2.1、§5.4）
+7. **Plan 的 `devops` 是唯一调查原语，底稿唯一定位 `plans/<name>.md`。** `Plan` 顶层代理除底稿与操作员附件外只读；调查仓库事实只能调用 `(devops {:verbose-intent "..."})`，同步等待一个 Plan 专属、无看板、无令牌的 dedicated worker 完成并原样返回其最终报告；同一 Plan tenure 复用/steer 同一 worker，不新建第二路。Plan dedicated worker 的文件工具只读，其 `call` 是 best-effort 只读；worker 的非只读副作用不记为事故，但若改变了调查依据，Plan 必须重新核对现场。（见 §2.3、§4.1）
+8. **模型归属铁律。** `Steward`（含 fork/join 编排）、`Plan` 顶层与执行阶段的中心化 `Reviewer` 使用主模型（Main Model）；Plan 的 dedicated worker、微观蜂群中的所有普通个体与持令者（`holder`）一律使用用户指定的任务模型（`@task` 模型）。并行只靠多个独立 worker；不存在同身并行通道。（见 §2.1、§5.4）
 9. **Scope 机制只在系统提示词讲一次，且与跨世转世正交。** 个体单世存活期内的上下文修剪通过每次非豁免工具调用附带的 `:scope` 参数（`:reset-scope`、`:keep-last`、`:remove-last`、`:me-too`）完成。一个模型回合只有一条真注解；全为 `:me-too` 的回合默认按 `:keep-last` 结算并扣 1 点 retention，不再拒收 `:SCOPE_METOO_ONLY`；retention 为 0 时仍拒 `:SCOPE_BUDGET_SPENT`。完整规则只在系统提示词 `COMMON` 讲一次（`PLAN_PROMPT` 设紧凑版），工具 schema 只留一句指针与字段形状。（见 §6.2）
 10. **系统呈现一律 EDN + UFSS；模型提交格式自由。** 凡系统面向大模型的结构化数据呈现（提示词注入、工具回执、看板快照、错误详情），一律采用支持 **UFSS（Universal Fence-Scaled String，`#"..."#` 与 `#"""..."""#`）** 的 EDN/Clojure 语法，严禁向大模型投喂含 `\"`、`\\`、`\n` 转义噪音的裸 JSON。大模型向系统提交的内容不强制格式：JSON、标准 Clojure 转义字符串与 UFSS 都接受；解析器归一化后执行，解析失败返回具体位置与期望格式。（见 §6.3）
 
@@ -78,10 +78,10 @@ Orchestration for agents that don't like being orchestrated.
 | `Steward` | 仓库守望层（常驻跨越任务） | 保管仓库的未来（Docket）。在决策前沿权衡人类意图与 `Standing Sphinx` 的洞察，决定将哪些目标准入执行。准入后按底稿 S3 把 Mission 拆成尽量互不相交的 slice，每个 slice 一个 worktree swarm；反复 join，每次取一个已完成结果，其余排队；运行时机械 ff 到 master 并返回报告；不亲自写代码，也不排个体施工细节。 | 主模型（Main） |
 | `Meditator` (`Standing Sphinx`) | 仓库守望层（后台持续认识） | 围绕永久母题 *"How can this be better?"* 紧跟 Git 演进持续思考，维护 `Current Best Answer`。只提供认识与幕僚建议，无权主动打断或号令世界。 | 主模型 / 推理模型 |
 | `Plan` | 规划层（顶层任期） | 将准入需求打磨为用户可见底稿 `plans/<name>.md`（S1→S2→S3→待执行）。除底稿与附件外只读，靠 `(devops {:verbose-intent "..."})` 调查仓库，仅在 S1 可调用 `(ask {:question ...})`；底稿只由 Plan 写，Plan 阶段的非空台账由 Plan 自己销账，不开蜂群。 | 主模型（Main，§1.1 #8） |
-| Plan dedicated worker | 规划辅助层（Plan 专属） | 每个 Plan tenure 一个，无看板、无令牌、不参与 Swarm；服务于 `(devops {:verbose-intent "..."})`，执行只读调查与命令探测，返回自己的最终报告；同一 tenure 复用/steer，死亡后由 Plan 新建。 | 任务模型（`@task`） |
+| Plan dedicated worker | 规划辅助层（Plan 专属） | 每个 Plan tenure 一个，无看板、无令牌、不参与 Swarm；服务于 `(devops {:verbose-intent "..."})`，执行只读文件调查与 best-effort 只读命令探测，返回自己的最终报告；同一 tenure 复用/steer，死亡后由 Plan 新建。 | 任务模型（`@task`） |
 | `Reviewer`（中心化主审） | 执行层-评估窗口（顶层任期） | 每任期开启时的唯一中心化大脑。利用只读工具 `clj-review` 对照底稿独立核验工作区现场，提交本任期首次 `(review {:findings ...})`：或空账确认晋级/结案，或立下待办台账并唤醒蜂群；初任在 `执行` 首次空账且工作区已满足底稿时，转为普通 `(ask ...)`，不记 review，`.unpark` 后回答只作为新需求进入上下文。 | 主模型（Main） |
 | `Swarm Worker`（普通个体） | 执行层-蜂群施工（固定槽位池） | 无中心自治个体。围绕 STM 看板阅读、优先拆分复合任务、认领原子任务、通过 `clj-worker` 在写锁 $W$ 保护下提交完整预演的文件修改；用 `cancel`/`replace`/`release`/`reopen`/`comment`/`update` 维护看板。禁止执行黑盒 Shell。 | 任务模型（`@task`） |
-| `Swarm Holder`（持令个体） | 执行层-蜂群施工（至多 1 名） | 通过不可逆 `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` 竞争获胜的唯一持令者。动态承担全看板所有 `needs-token` 责任（测试、构建、进程、Git 等黑盒 Shell），无责时立即在同一事务内退休死亡；禁止 `fission`。 | 任务模型（`@task`） |
+| `Swarm Holder`（持令个体） | 执行层-蜂群施工（至多 1 名） | 通过不可逆 `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` 竞争获胜的唯一持令者。动态承担全看板所有 `needs-token` 责任（测试、构建、进程、Git 等黑盒 Shell），无责时立即在同一事务内退休死亡；不引入同身并行通道。 | 任务模型（`@task`） |
 
 ### 2.2 仓库守望层：`Steward` 与 `Standing Sphinx`
 
@@ -299,7 +299,7 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 
 `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})` 是个体生命状态的单向闸门：
 * **调用前提**：个体在发起前必须已将手头普通责任的必要接续说明写入看板（`comment` / `update` / 任何看板写入均可，协议不规定写法）；`:confirm` 必须是固定令牌 `:i-hereby-confirm-i-die-without-regret`，缺失或值不符拒 `:CONFIRMATION_REQUIRED`，不执行竞争；当前无在途 `:applying` 或 `:running` 动作。已知令牌被占用或全看板无 `:needs-token` 任务时，不得发起必败或抢空令牌调用。
-* **数据参数**：`handoff-updates` 已删除；失败分支只做内核固定移交（解除认领、清 `:owner-id`、发布责任、标记死亡）。`fission` 已删除，holder 不能裂变。
+* **数据参数**：失败分支只做内核固定移交（解除认领、清 `:owner-id`、发布责任、标记死亡）；holder 不引入同身并行通道。
 * **主动放弃（`abandon`）**：`(abandon {:reason ...})` 是 holder 在确认自身工作已因 master 演进而过时时使用的单向出口。调用后该 tenure 标 `:abandoned`、其任务从当前态移除、worktree 丢弃、agent 逻辑死亡；它不是 `take-or-die` 的失败分支，也不把任务转给他人。普通 worker 的工作过时用 `cancel` / `release`，不用 `abandon`。
 * **原子裁决**：
   * **获胜（`:attempt-won`）**：当 `TokenSlot.holder-id` 为空时，在同一 STM 事务中将调用者 `:role` 升为 `:holder`，写入 `holder-id` 与新 `term-id`（若竞态下此时 $R(a)$ 已为空，同一事务立即紧接执行无责退休）。
@@ -438,14 +438,14 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 2. **令牌不变量**：任一时刻至多一个有效持令者；每个合法 Shell 入口必须关联当前 `:holder-id` 与 `:term-id`；旧调用可以继续查询结果，但查询能力不等于执行能力。同一 `request-id` 只有一个已决定结果，携带不同内容复用同一标识拒为协议错误。持令者的正常生命路径只有“继续承担责任”或“无责死亡”；禁止“令牌忙太久主动降级为普通个体”之类隐含路径。
 3. **责任集合不变量**：见 §3.2 的 $R(a)$。采用计数优化时，必须说明每个计数对应的事实、何时增减，避免把一个任务的多个阶段重复减掉。业务任务取消与 Shell 会话结束是两个事件，不能共用一条“关闭任务”路径清掉全部责任。
 4. **父项内容不变量**：每个未结父项都保有自己的目标与剩余工作；子项集合可以变，不能替换父项目标；规则同样适用于只有一个子项的父项与多层树。多父依赖下，一个子项完成可解除多个等待，但每个父项分别推进；“通知依赖者”与“完成依赖者”必须是不同操作。
-5. **写入口不变量**：协议内任一时刻至多一个操作处于 $W$ 保护阶段（普通应用与 Shell 都计入）；多服务进程部署时 $W$ 仍代表同一个逻辑资源。应用阶段只使用准备结果；应用器若重读未列入依据的文件并据此决定写入内容，就是实现错误。`stamp` 检查覆盖本次实际推理依赖，不只检查写目标。
+5. **写入口不变量**：协议内同一 worktree 任一时刻至多一个操作处于 $W$ 保护阶段（普通应用与 Shell 都计入），由单机单例进程在进程内统一互斥。应用阶段只使用准备结果；应用器若重读未列入依据的文件并据此决定写入内容，就是实现错误。`stamp` 检查覆盖本次实际推理依赖，不只检查写目标。
 6. **应用与看板不变量**：进入 `:applying` 前，任务条件与认领资格已确认；正常应用完成后能发布预先确定的动作事实，不会因普通竞争要求撤销文件。结果记账重试必须是纯控制更新，“已完成的副作用引用”作为记账输入，使重试体无法意外调用副作用函数。
 7. **等待与通知不变量**：任何被允许 `park-slot` 的个体，都已在一致的 STM 观察中确认全局条件允许并登记了等待。可推进集合不能只按请求者资格计算。被唤醒后发现工作已被别人处理，可以再次核对并登记等待，这是合法竞争；不能为避免往返而忽略某类输入通知，也不能要求用户为叫醒系统再发一次。
 8. **保证的组合方式**：控制层原子性来自 STM；普通文件应用完整性来自完整预演与持续持 $W$；接续性来自公共责任与必要记录；新生独立性来自身份撤销与上下文清空。任何单个字段或单把锁都不能替代全部四项：只有 $W$ 而无认领检查，已移交的旧工作会在排队结束后继续写；只有身份检查而无 $W$，两个合法个体会互相覆盖；只有文件校验而无父项内容，工程目标会被卡片计数替代；只有任务记录而无取令请求去重，响应丢失会变成新的生死赌博。
 
 ### 3.10 第一版采用的实现决策
 
-1. **基础运行形态**：单主机共享工作区 + 一个逻辑控制服务（内部可含多个独立对象，跨记录变化由短 STM 组合）。先把语义跑通再考虑跨主机。不能因为底层恰好用了数据库，就把长模型推理或任意外部 I/O 包进可重试事务。STM 提供组合原子状态操作与基于读条件的等待（Harris、Marlow、Peyton Jones、Herlihy，*Composable Memory Transactions*，PPoPP 2005，<https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>），本规范用它组织控制状态，但不把该研究的性质自动推广到 Shell 或普通文件系统。
+1. **基础运行形态**：每台机器单一常驻控制服务进程（支持左栏多个用户可见 root session 同时运行；二次启动命令只向已运行单例发消息，不启动第二真进程）。进程内跨记录状态变化由短 STM 组合，嵌入式数据库由单例独占读写，不存在多服务进程争抢同一状态库。不能因为底层用了数据库，就把长模型推理或任意外部 I/O 包进可重试事务。STM 提供组合原子状态操作与基于读条件的等待（Harris、Marlow、Peyton Jones、Herlihy，*Composable Memory Transactions*，PPoPP 2005，<https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>），本规范用它组织控制状态，但不把该研究的性质自动推广到 Shell 或普通文件系统。
 2. **独立配置与任务内容**：工作区根、槽位数、允许的受保护操作集、请求大小上限、输出保留方式与工具连接配置属于运行配置，独立于任务正文；一条普通代码注释不会被工具当成新的全局运行参数。默认视图提供当前责任、最近输入、已解除等待的父项与公开可推进任务的分组；排序只是呈现顺序。
 3. **默认拆分策略**：认领前写一句原子性理由（为何继续拆分不再带来独立价值，或哪些修改必须一起发布），不需长篇论证，也不由别的个体审批。新普通子项进入公共可接续集合，已有普通父项保留原归属；不能借拆分命令把任务强派给无关个体。同时改接口定义与其唯一调用方，可以保留为一个原子应用。
 4. **默认文件操作集**：明确读取、整文件替换、带精确匹配条件的文本修改、可完整预演的创建、删除与重命名。未支持的复杂对象在预演前明确拒绝，由后续任务决定是否改用 Shell 或扩展工具。文件判据采用 rsync 默认 quick check 的“修改时间 + 大小”（rsync(1)，<https://rsync.samba.org/ftp/rsync/rsync.1>），直接使用本地接口精度，不为模仿命令行显示格式而截断。
@@ -682,7 +682,7 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 | `(park {:payload ...})` | 显式挂起当前 Clojure 程序续体（未落盘），立即返回带行号源码与诊断的挂起回执 | 有 | - | 有 | 有 |
 | `(unpark {:name ... :value ...})` | 在新命名程序中恢复已挂起程序 `name`，将 `value` 注入挂起点继续执行 | 有 | 有 | 有 | 有 |
 | `(ask {:question ...})` | 仅 `Plan` 的 `S1` 可用：等价于 `(park {:payload {:question ...}})` + 中断回合交还人类 | 仅 S1 | - | - | - |
-| `(call {:command ...})` | 执行黑盒 Shell 会话（先排空内存批操作并提交）；`clj-worker` 仅 `holder` 可执行，普通个体调用拒 `:TOKEN_REQUIRED`；Plan dedicated worker 无令牌限制 | - | - | 仅 `holder` | 有 |
+| `(call {:command ...})` | 执行黑盒 Shell 会话（先排空内存批操作并提交）；`clj-worker` 仅 `holder` 可执行，普通个体调用拒 `:TOKEN_REQUIRED`；Plan dedicated worker 无令牌限制，`call` 为 best-effort 只读 | - | - | 仅 `holder` | 有 |
 | `(devops {:verbose-intent "..."})` | 顶层同步原语：等待 Plan dedicated worker 完成调查并原样返回其最终报告 | 有 | - | - | - |
 | `(review {:findings [...]})` | 顶层原语：提交义务台账，启动蜂群施工或触发换任接力；初任空账转 `ask` | 有 | 有 | - | - |
 | `(split {...})` / `(claim {...})` / `(finish {...})` | 顶层原语：操作 Swarm STM 看板（拆分、认领原子任务、提交任务完成） | - | - | 有 | - |
@@ -787,7 +787,7 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 
        硬失败修补基于当前现场推进，不把恢复旧内容作为默认操作；不确定结果转成可推进的具体核对事项（如“检查上次命令是否仍有会话内活动”“核对第二个文件的当前函数内容”），不用固定“重试三次”代替判断。
      * **统一结果码与内部五组件（F24-01 / F24-03 / F24-04）**：除上表外，稳定结果码还包括 `:OBSERVED`（读取成功）、`:STRUCTURE_CONFLICT`（路径或类型条件不成立）、`:UNSUPPORTED_OPERATION`（超出受保护工具能力，应拆分或提令牌任务）、`:ACTOR_INACTIVE`（身份已无提交资格）、`:CLAIM_CHANGED`（认领或任务条件不符）。文件入口内部由读取器、准备器、写入口、应用器、看板适配器五个单向依赖组件组合；Shell 复用写入口与看板适配器，不调用准备器假装理解任意命令。任何新增能力都必须说明处于读取、准备、应用还是 Shell 路径，以及是否改变文件判据、锁范围或责任生命周期。
-2. **同身裂变已删除。** 并行只靠多个 worker，不靠同身裂变；不存在泳道、收敛组、present 替换或相关拒绝码。
+2. **并行只靠多个 worker。** 每个 worker 是独立身份；并行度由槽位与任务拆分决定，不引入同身并行通道。
 
 ### 4.5 标准 Clojure 程序用法样例
 
@@ -971,8 +971,9 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 
 ### 5.1 单 Owner 状态迁移与 I/O 并行分离
 
-1. **会话与看板的单写者模型**：
-   * 每个独立会话（以及微观蜂群共享的看板协调域）拥有唯一的串行状态入口（Owner Mailbox）。
+1. **单机单例、多根会话与单写者模型**：
+   * 万象术在每台机器上只运行唯一一个常驻服务端进程（Singleton）。工作台左栏展示多个用户可见的根会话（Root Sessions），这些根会话由同一个单例进程托管并可同时运行；当用户或 CLI 发起第二个万象术启动请求时，只向现有单例发送消息，绝不额外启动第二个真实服务进程。
+   * 单例内的每个独立根会话（以及各 worktree 微观蜂群共享的看板协调域）拥有各自唯一的串行状态入口（Owner Mailbox）。
    * 浏览器命令、模型流片段、工具执行结果、计时器到期、子任期报告与取消信号可以来自任意并发线程，但**只有 Owner 能将它们转化为权威状态迁移**。
    * 因此，系统内部**不需要业务层乐观并发控制（OCC）**来让多个写者争抢会话状态；外部文件冲突由 §4.2 的 `stamp` 判据独立承担，异步回包归属由 `call-id` 与 `attempt-id` 精确识别。
 2. **状态串行，I/O 并行**：
@@ -1050,7 +1051,7 @@ $$R(a) = \{t \in U \mid \neg t.\text{needs-token} \land t.\text{owner-id} = a\} 
 
 ### 5.4 LangChain4j 低层模型适配与分层重试预算
 
-**模型归属**：`Steward`（含 fork/join）与执行阶段的中心化 `Reviewer` 使用主模型；Plan 顶层使用主模型；Plan dedicated worker 与各 swarm 的普通 worker/holder 使用 `@task` 模型。`fission` 已删除，不再有裂变泳道。
+**模型归属**：`Steward`（含 fork/join）与执行阶段的中心化 `Reviewer` 使用主模型；Plan 顶层使用主模型；Plan dedicated worker 与各 swarm 的普通 worker/holder 使用 `@task` 模型。并行只靠多个独立 worker；不存在同身并行通道。
 
 1. **窄接口适配（`ModelPort`）**：
    * 仅使用 LangChain4j 的低层 `ChatModel` / `StreamingChatModel` 与 `ToolSpecification` 接口，**严禁启用其高层 `AiServices` 自动工具循环或 `ChatMemory` 替内核管理历史**。
@@ -1146,7 +1147,7 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 # Swarm STM Protocol (`clj-worker`)
 - Every capability is a bare function with one EDN map; there is no `this` and no positional argument.
-- File/text/continuation: `(cat {:path ...})`, `(stat {:path ...})`, `(ls {:path ...})` (pure probe: no read-set, no structure check, no dependency), `(write {:path ... :content ...})`, `(mkdir {:path ...})`, `(rm {:path ...})`, `(mv {:source ... :target ...})`, `(where {:content ... :needle ...})`, `(whereAll {:content ... :needle ...})`, `(park {:payload ...})`, `(unpark {:name ... :value ...})`, and `(call {:command ...})` (Holder only; normal workers receive `:TOKEN_REQUIRED`). `fission` does not exist.
+- File/text/continuation: `(cat {:path ...})`, `(stat {:path ...})`, `(ls {:path ...})` (pure probe: no read-set, no structure check, no dependency), `(write {:path ... :content ...})`, `(mkdir {:path ...})`, `(rm {:path ...})`, `(mv {:source ... :target ...})`, `(where {:content ... :needle ...})`, `(whereAll {:content ... :needle ...})`, `(park {:payload ...})`, `(unpark {:name ... :value ...})`, and `(call {:command ...})` (Holder only; normal workers receive `:TOKEN_REQUIRED`). Parallelism comes from multiple independent workers.
 - Board: `(split {:parent-id ... :expected-cond ... :children [...] :remaining-work "..." :wait-for #{...}})`, `(claim {:task-id ... :atomicity-reason "..."})`, `(finish {:task-id ... :claim-id ... :result-summary ... :read-set [...]})`, `(cancel {:task-id ... :reason ...})`, `(replace {:task-id ... :replacement {...} :reason ...})`, `(release {:task-id ... :claim-id ...})`, `(reopen {:task-id ... :reason ...})`, `(comment {:task-id ... :text ...})`, `(update {:task-id ... ...})`, `(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`, `(park-slot {:observed-cursor ...})`.
 - Task states are only `:ready`, `:waiting`, `:done`. `cancel`/`replace` work on leaves only (no unfinished children); they remove the task and record an event, not a state. A parent whose wait-for becomes empty returns to `:ready`; it never auto-completes.
 - Split before claim (A02-04 / A02-06): Decompose compound work first; parent tasks retain substantive `:remaining-work`, and child completion only restores the parent from `:waiting` to `:ready`, never auto-completing it.
@@ -1251,6 +1252,8 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 ### 7.1 当前态持久化与故障恢复窗口
 
 **多 worktree 边界**：每个 worktree 有自己的看板、令牌槽与 `$W$`；master worktree 保存 `plans/<name>.md` 与集成状态；领域当前态仍由控制服务统一持久化，按 worktree 分区。停电只作 best-effort：不承诺恢复旧现场，只承诺不暴露半提交状态。
+
+**1.0.0 前的数据政策**：1.0.0 前不承诺当前态数据的跨版本兼容；升级可丢弃旧状态，不视为故障；1.0.0 后另行规定。
 
 1. **存储分层**：
    * **领域当前态（嵌入式数据库）**：保存会话配置、当前消息序列、活动任期与 `review` 台账、Swarm STM 看板（`Task`、`Action`、`Actor`、`TokenSlot`）、以及未结交付责任（`:report-pending`）。候选引擎（Asami / Datalevin / Datomic Local）统一封装在窄存储接口后：提交一次领域迁移，返回可用于后续守卫判断的一致状态视图。
@@ -1404,6 +1407,8 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 2. `src/AGENTS.md` 存放全局架构师笔记（承担传统 `ARCHITECTURE.md` 职责）；`src/hc/{core,compose,server,client}/<模块>/AGENTS.md` 存放各包局部规格说明书，体例参照本文，AI 可自动创建与修改。
 3. 当根目录 `AGENTS.md` 更新后，AI 有权利和义务直接同步更新 `src/AGENTS.md`、各包局部 `AGENTS.md`、`HACK.md` 以及 `src/` 下的源码实现，无需请示。
 
+**当前规格与历史分离**：`AGENTS.md` 只写当前规格——当前不变量、协议、默认值、验收标准。历史取舍、被拒方案、演进叙事、带日期裁决写入 `HISTORY.md`；当前规格不引用历史编号，也不以“不再是 XXX”定义新行为。每次修改若删除或替换了旧规则、旧理由、旧替代方案，作者必须在同一次修改中把丢失的信息写入 `HISTORY.md`。判断标准：一句话若假设系统一直如此仍然成立、仍然有用，它属于当前规格；若它只有和过去对比才成立，它属于 `HISTORY.md`。
+
 ### 8.2 编程范式与属性测试驱动（Property-Based Testing）
 
 1. **数据导向与显式状态机**：所有业务境况使用不可变数据与明确的代数状态标识（Keyword/Schema）建模，让非法状态在结构上不可表示；严禁在业务流中藏匿隐式程序计数器。
@@ -1421,7 +1426,7 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 ### 8.3 控制性质（V01–V08）与文件/Shell 交错验收矩阵（F01–F15）
 
-> 2026-11-03 修订：`ls` 不再是结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌；任务状态删除 `:cancelled`/`:replaced`；`fission` 已删除；多 worktree 的 fork/join、master 集成锁与 rebase 循环见 §5.3。F01–F15 的其余断言不变。
+共同前提：`ls` 不产生结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌；任务状态只有 `:ready`/`:waiting`/`:done`；多 worktree 的 fork/join、master 集成锁与 rebase 循环见 §5.3。
 
 #### 持续保持的控制性质（V01–V08）
 
@@ -1462,7 +1467,7 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 ### 8.4 三层验证模型、实施顺序与变更检查表（L28 / L29 / L32）
 
-> 2026-11-03 修订：多 worktree 的 fork/join、master 集成锁、rebase 循环与 `:FF_NOT_READY` 属于第一层控制状态与第二层文件入口的联合验收；`fission` 不再有测试；`ls` 不产生结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌。
+多 worktree 的 fork/join、master 集成锁、rebase 循环与 `:FF_NOT_READY` 属于第一层控制状态与第二层文件入口的联合验收；`ls` 不产生结构依赖；`finish` 不 drain；`take-or-die` 使用 `:confirm` 令牌。
 
 1. **三层验证对象（L28-01 / L28-02）**：
    * **第一层（控制状态转换）**：任务责任、依赖等待、认领、令牌与个体生命。最小有限模型只需 2 个普通个体、1 个持令槽、3 个任务与 2 个文件；文件内容用离散符号，且必须允许**不同内容映射到同一个快速判据符号**（防止把状态编号当版本号偷偷获得真实协议没有的检测能力）。
@@ -1523,78 +1528,18 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 
 ---
 
-## 9 架构演进、设计决策台账、前期探索与参考索引
+### 8.6 重构、验证与交付纪律
 
-本章汇集万象术在形成独立全栈架构过程中的关键设计取舍、被否决方案的反面教训、前期探索项目（`a0lite` 与宿主插件时期）的可复用工程事实及外部权威技术规范索引。
+1. **重构必须 clean-break。** 先定义新接口并迁移所有调用方，再删除旧本体，最后实现新本体；旧本体在删除前不得被新代码依赖，也不得作为新本体的委托目标。重构父任务在看板上以 `:waiting` 显示为 blocked（派生显示，不新增任务状态），`remaining-work` 写明“故意红；新本体待实现；禁止恢复旧路径”；新本体子任务保持可认领。残留调用由编译/测试自然暴露，不额外加静态证明，也不保留“旧行为已消失”的幽灵测试。
+2. **启动身份防呆。** 主要程序启动时打印 git hash 与 dirty 标志；这是唯一的交付身份校验，不再增加版本清单、安装产物检查或依赖候选核对。
+3. **临时约束。** 临时开关、临时兼容层、临时锁或临时重试必须写明它保护的故障、适用范围和复查/退出条件；故障消失或到期后删除，不得沉淀为永久规则。
+4. **实际行为 vs 目标行为。** 当说明、代码与测试不一致时，先分别记录实际行为与目标行为，再决定改哪一方；文档主张、测试存在或类型通过都不等于运行效果。
 
-### 9.1 架构演进脉络与合规边界
+## 9 参考索引
 
-1. **与 Agent Zero（A0）的干净边界及许可证隔离**：
-   * 万象术是一套从零独立设计与实现的自治多智能体工程系统（Clean-Room Implementation），与早期基于 Agent Zero（MIT License，<https://github.com/agent0ai/agent-zero>）的修改版探索属于两个独立项目。A0 仅作为理解“为何不能把所有软件塞进单一大容器、为何不能把所有工具调用退化为终端命令字符串、为何需要结构化会话与产物边界”的参照物。
-   * **第三方依赖许可证硬纪律**：不直接复制外部参考项目的业务实现、提示词或前端资产；引入任何外部库或命令行工具前必须核查许可证传染性——例如 PyMuPDF 采用 AGPL-3.0（若通过网络服务向用户提供能力会触发完整源码披露义务），在需要宽松开源/商业分发边界的模块中，必须排除未获商业授权的 AGPL 组件或将其替换为宽松许可方案。
-2. **四阶段技术栈收敛路线**：
-   * **第一阶段（容器瘦身探索 `a0lite`）**：尝试将 Agent Zero 封装为 Flatpak 应用并剥离预装巨型镜像，确立了“复用宿主机已有服务（如共享宿主机 Ollama 端点与模型存储）、按需供应运行环境”的初步认识。
-   * **第二阶段（多宿主插件时期）**：在 OpenCode / Cline / OMP 等宿主上验证了 `Plan` 四里程碑底稿、`(review {:findings ...})` 换任接力与上下文屏障、`Pair Hint` 双语前缀链、`Scope` 单世记忆修剪、程序化工具面（`where` / `park` / `unpark`，以及后来删除的 `fission`）等核心机制；同时暴露出**宿主寄生架构的根本瓶颈**（宿主内部私有 API 与压缩逻辑脆弱、单点 `Manager/Coder` 上下文汇总瓶颈、缺乏跨个体文件事务与写锁保护、插件重载易丢内存花名册）。
-   * **第三阶段（环境分离与强类型执行层评估）**：明确“环境供应与执行分离”（Pixi 托管自身 SDK 与跨平台锁定环境 + MSYS2 `UCRT64` 供应 Windows 原生工具包），并系统比较了 Python、F#/.NET（FSI）、Scala、Kotlin 与 Clojure/JVM。
-   * **第四阶段（Clojure/JVM 独立全栈与 Swarm STM 合流）**：最终确立以 **Clojure/JVM + Missionary + STM** 作为服务端控制与并发底座，将宏观中心化换任接力（`Steward` + `Plan` + `Reviewer`）与微观去中心化蜂群（`Swarm STM 看板` + `(mtime, size)` 受保护提交 + `take-or-die` 动态令牌）无缝咬合；前端统一为 **ClojureScript + Fulcro + Framework7 React**，经 **Sente + 内部 AG-UI** 同步当前态，模型层通过 **LangChain4j 低层 `ChatModel`/`StreamingChatModel`** 对接各供应商，结构化字面量全面采用 **EDN + UFSS**。
-3. **核心概念渊源对照（从 Vibe Mode / 宿主插件到独立版万象术）**：
+历史取舍、被拒方案、演进叙事、带日期裁决见 `HISTORY.md`；当前规格不依赖它。
 
-| 维度 | 早期原型（Vibe Mode / 宿主插件） | 万象术独立版终局形态 | 演进原因 |
-|---|---|---|---|
-| 运行底座 | 寄生于 OpenCode / Cline / OMP 宿主扩展 | Clojure/JVM 独立服务端 + CLJS/Fulcro/F7 瘦客户端 | 彻底摆脱宿主私有生命周期、隐式上下文压缩与工具审批弹窗干扰 |
-| 规划产物 | 阶段文件曾混入状态目录或固定名 | 唯一用户可见底稿 `plans/<name>.md`，首评前只读 | 底稿是给人类审阅的正式交付物，不是内部崩溃恢复日志 |
-| 施工期组织 | 中心化 `Manager` 派单给最多 4 名 `Coder` | 中心化 `Reviewer` 立账 $\to$ 去中心化 `Swarm` 围绕 STM 看板自治施工 | 消除单点导演同时汇总十几个子代理上下文的通信与注意力瓶颈 |
-| 文件并发写 | 靠角色职责软约束或事后 git 合并 | 批内内存视图整批 Dry-Run + `read-set` `(mtime, size)` 复核 + 写入口 $W$ 原子落盘 | 在触碰真实磁盘前拦截一切普通冲突与定位歧义，正常路径零回滚 |
-| 黑盒 Shell | 独立 `devops` 角色跑命令 | 唯一令牌持有者 `Swarm Holder`（`take-or-die` 竞争，无责即死，仅在 `.call` 期间占 $W$） | 动态承接全看板验证责任，持令等待期间不占写锁阻塞普通编辑 |
-| 工具与数据语法 | JS 函数体 + CUE 字面量 | Clojure `(defprogram ...)` + EDN + UFSS（`#"..."#` / `#"""..."""#`） | 消除 JSON 双重转义与 CUE 的 7 类文法陷阱，与 Clojure 同像（Homoiconic）底座天然合一 |
-
-### 9.2 为什么从 CUE 演进到 EDN + UFSS（反面文法教训存档）
-
-早期版本曾尝试用 CUE 替代 JSON 作为面向大模型的结构化格式，实测暴露出大模型极易踩中的 **7 类 CUE 文法陷阱**，成为万象术设计 §6.3 **EDN + UFSS（通用变长围栏字符串）** 的直接动因：
-1. **隐式字符串插值陷阱**：CUE 在普通双引号与多行 `"""` 中遇到 `\(...)` 会触发表达式插值报错，迫使带反斜杠的源码必须记复杂的井号配对，而 UFSS 的 `#^n"..."#^n` 与 `#^n"""..."""#^n` 具备**彻底零转义（True Raw Semantics）**，反斜杠永远只是字面字符 `\`。
-2. **列表元素跨行漏逗号**：CUE 映射字段换行可省逗号，但列表 `[a\n b]` 换行省逗号立即语法报错；EDN 中空白、换行与逗号完全等价，列表与向量天然无需逗号。
-3. **特殊字段名漏引号**：CUE 中含连字符、点号、斜杠或数字开头的键（如 `foo-bar`、`src/a.clj`）不加引号即被当成减法或路径表达式报错；EDN 关键字 `:foo-bar` 或字符串键无此歧义。
-4. **单行以 `"` 开头或结尾的定界冲突**：在朴素围栏中，若正文以 `"` 结尾（如 `foo"`），写成 `#"foo""#` 会看花眼甚至被错误词法器截断；UFSS 利用无真前后缀重叠定理（$\pi(\text{"}\#^n)=0$），从数学上保证首个 `"#^n` 必为唯一定界符。
-5. **保留字冲突**：CUE 中 `null`/`true`/`false` 作无引号键名会冲突；EDN 中关键字 `:null`/`:true` 与布尔值 `true`/`false`、`nil` 严格正交。
-6. **多行块缩进混用 Tab 与空格或前导空格不足**：UFSS 明确定义五步确定性缩进剥离算法，并在非空行前导空格少于结束行 `<indent>` 时显式报错 `:UFSS_INDENT_VIOLATION`，绝不静默吞字。
-7. **空值制造空洞约束**：CUE 中填 `null` 会变成类型约束而非缺省；EDN 中 `nil`、空集合 `[]`/`{}` 与缺省键语义一目了然。
-
-### 9.3 核心设计决策汇总台账（D01–D16 及全栈架构裁决）
-
-| 编号 | 决策主题 | 采纳方案 | 明确拒绝的替代方案与理由 |
-|---|---|---|---|
-| **D01** | 工作区拓扑 | 单一真实共享工作区 + 受保护提交与写入口 $W$ | 每个个体一套私有 git worktree / 分支合并（把协作延迟到事后合并，无法及时暴露接口变化且破坏单一现场） |
-| **D02** | 任务调度权 | 无全局任务选择者，个体自主观察 STM 看板拆分与认领 | 中央调度器按模型画像派单（引入单点瓶颈与隐式偏见，违背去中心化自治） |
-| **D03** | 复合任务处理 | 拆分优先于原子执行认领，拆分本身即直接贡献 | 先认领大任务再在私有上下文里慢慢做（导致长期间锁死大范围工作，转世后无法接续） |
-| **D04** | 父项完成条件 | 父项始终保留实质工作，子项全完成只使父项从 `:waiting` 恢复 `:ready` | 子项完成计数等于总数时自动将父项标为 `:done`（抹杀接口合龙、集成核验与目标复核实质） |
-| **D05** | 普通与令牌归属 | 普通任务归 `owner-id`；`:needs-token` 任务动态归当前唯一 `holder-id` | 抢到令牌时逐条扫描改写所有令牌任务的 `owner-id`（制造无谓写冲突且漏掉并发新增项） |
-| **D06** | 令牌竞争结局 | `take-or-die` 只有赢（升为 `holder`）或输（同事务公开移交剩余责任并逻辑死亡） | 抢令牌失败后退回继续当普通个体（破坏“耗尽受保护工作才参选”的严肃边界，诱发盲目轮询抢令） |
-| **D07** | 持令者退出条件 | 完整责任集合 $R(\text{holder}) = \emptyset$ 时在同一 STM 事务内立即释放令牌并逻辑死亡 | 设固定持令时长上限或允许持令者无责后降级回普通个体（制造带前世包袱的特权长寿个体） |
-| **D08** | 槽位转世记忆 | 死亡后销毁旧上下文，新 `agent-id` 仅凭公开看板与现场启动 | 向新生个体注入“你上一世刚刚抢令失败/改错代码”的私有总结（污染新视野，违背无记忆转世） |
-| **D09** | 文件变化判据 | 仅用系统元数据 `stamp = {:mtime-sec :mtime-nsec :size}`（rsync quick check） | 引入 `atime`（只读即触发假冲突）或维护全局文件内容哈希历史表（增加锁外扫描负担与第二套版本真相） |
-| **D10** | 读取锁策略 | 普通读取（`.cat`/`.stat`/`.ls`）不加锁，仅在提交时于 $W$ 内复核全部 `read-set` | 读取也申请共享锁或快照锁（让耗时 Shell 阻塞全员阅读与思考） |
-| **D11** | 普通文件写入 | 批内内存视图完成整批 Dry-Run + 持 $W$ 复核 `read-set`（含只读依赖）后原子落盘，正常路径无回滚 | 边执行脚本边直接改真实磁盘，出错再靠 git checkout 回滚（可能误伤他人已提交成果或留下半截脏文件） |
-| **D12** | Shell 与 $W$ 关系 | 令牌决定身份责任，$W$ 仅在实际运行 `.call` 会话或文件提交期间持有 | 持令者在整个持令生命期内独占 $W$（导致持令者等修复时全员无法提交文件） |
-| **D13** | 槽位主动休眠 | 只要全局非阻塞可推进集合非空，严禁任何个体 `park-slot`；检查与登记同事务 | 个体看自己暂时没活就休眠（导致需要拆分或协作的公共工作无人理睬，或检查与休眠分离漏掉唤醒） |
-| **D14** | 停电与崩溃恢复 | 控制状态走持久事务与 `:report-pending`；外部副作用未知标 `:outcome-unknown`，文件硬失败走 best-effort 核对 | 承诺断电后跨文件系统与外部进程自动回滚或自动重放未确认外部写操作（导致重复副作用或覆盖新修改） |
-| **D15** | 会话状态并发 | 单 Owner 串行状态入口 + Dijkstra 级触发守卫命令 + 外部 I/O 并行 | 多线程直接争抢会话状态配业务层 OCC 重试，或用深层嵌套 `while` 循环把模型流、工具与重试绑死在同一调用栈 |
-| **D16** | 模型与前端协议 | 仅用 LangChain4j 低层 `ChatModel`/`StreamingChatModel`；前端 Fulcro + Framework7 经 Sente 跑内部 AG-UI | 使用 `AiServices`/`ChatMemory` 托管历史（剥夺内核对 Scope、Pair Hint 与重试的精确控制）或前端无条件浅 merge 快照 |
-
-### 9.4 前期打包与 Linux 平台实测工程教训（源自 `a0lite` 档案）
-
-以下记录早期将 Agent Zero 封装为轻量 Flatpak（`a0lite`，App ID `io.github.agent0ai.a0lite`）过程中实测验证的平台构建、容器瘦身与 Linux 系统服务排障事实（作为 §7.2 环境供应与 `HACK.md` 平台限制的参考基线）：
-
-1. **运行环境分层与宿主机服务复用**：
-   * 将稳定的基础运行时（BaseApp）与频繁迭代的业务层分离，构建时开启 `keep-build-dirs` 缓存编译目录，日常改代码仅重编最上层模块。
-   * **宿主机 Ollama 零拷贝复用**：不将数十 GB 的大模型权重与推理引擎重复打包进沙盒，而是直接连接宿主机已运行的 Ollama 服务（`http://127.0.0.1:11434`，模型权重共享宿主机 `~/.ollama/models`）；当容器内预置指向本地内嵌实例的默认配置时，在启动入口将其统一重定向至宿主机服务地址。
-   * **剔除低频重型依赖**：移除默认捆绑的 SearXNG、Playwright 浏览器镜像、本地 Whisper/Kokoro 语音大模型、 torch CPU 全量包与冗余静态文档，仅保留高频核心工具（`git`、`ripgrep`、`fd`、`uv`、`node`、`ffmpeg`、OpenSSH 客户端等），使单文件分发包体积从数 GB 降至约 `367 MB`。
-2. **Flatpak / OSTree 构建与单文件打包性能实测**：
-   * `flatpak-builder` 在收尾阶段执行 debuginfo 剥离（strip）与本地 OSTree 仓库提交（commit）是固定重头耗时，但**打包产物必须保持未解压文件目录形态**供 OSTree 内容寻址，不得为省构建时间将其预先打成内部归档（否则破坏 OSTree 块级去重与增量更新）。
-   * `flatpak build-bundle` 默认使用高压缩率 XZ 单线程压缩，实测耗时高达 `1m44s`（占全流程近半）；开发调试期间应直接通过本地 OSTree repo 安装验证（`flatpak-builder --user --install`），仅在最终发布单文件 `.flatpak` 时才执行 `build-bundle`。
-3. **Linux systemd / NetworkManager `basic.target` 顺序环死锁排查备忘**：
-   * 在启用自定义 dispatcher 脚本或第三方网络服务的 Linux 宿主机上，若出现“开机偶发无网络，手动重启 NetworkManager 即恢复”，需执行 `journalctl -b -u NetworkManager.service -u basic.target -g "ordering cycle| Breaking ordering cycle"` 检查是否存在 `basic.target` 依赖环（例如某服务未设 `DefaultDependencies=no` 却声明 `Before=network-pre.target`，导致 `basic.target -> ... -> network-pre.target -> sysinit.target -> basic.target` 闭环被 systemd 随机截断并跳过 `NetworkManager.service/start`）。在诊断万象术宿主网络不可达故障时，应区分此类宿主系统服务启动环路与模型供应商端点故障。
-
-### 9.5 外部权威技术规范与参考文献索引
+### 9.1 外部权威技术规范与参考文献索引
 
 1. **并发控制与文件系统判据**：
    * Tim Harris, Simon Marlow, Simon Peyton Jones, Maurice Herlihy, *Composable Memory Transactions*, PPoPP 2005: <https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/2005-ppopp-composable.pdf>
@@ -1628,37 +1573,6 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 > **来源与核对**：Kelivo v1.3.4，标签提交 `4a7da9b6f5d77caccb9f8aaf656232a93ab14708`，发布 2026-11-02 23:08（Asia/Shanghai）；规格日期 2026-11-03；来源 S01–S14 见 §10。
 > **证据等级**：公开材料核对（S01–S14，仅支持能力类别、入口与版本事实）＋设计推演（字段、默认值、状态机、阈值与验收）。本文件不含本产品实测；除 S01–S14 可核对的事实外，字段、默认值与阈值均为消除工程歧义选定的目标值，不是 Kelivo 实测结论。
 
-### 9.6 本轮裁决与逻辑链（2026-11-03）
-
-本节记录本轮修订的裁决与理由，按“问题 → 裁决 → 理由 → 代价”组织。后续维护者若推翻某条，先读这里的代价，再决定是否值得改。
-
-1. **Plan 接力后的继任者**：Plan 阶段的接力产生新 Plan tenure，执行阶段产生新 Reviewer。理由：底稿写权只归 Plan；若继任者是只读 Reviewer，S2/S3 无人能写。代价：两阶段的 relay 必须区分角色。
-2. **屏障恢复**：退休、上下文屏障、继任者、里程碑复制在同一原子事务；删除“屏障已写、台账未推进”的窗口。理由：系统只承诺 best-effort 抗停电，不承诺 WAL 重放；KISS。代价：最后一次提交可能丢失，恢复后按现场重判。
-3. **初任空账**：初任在 `执行` 首次空账且工作区已满足底稿时，不记 review，转普通 `ask`；`.unpark` 后回答只作新输入；同一初任只 ask 一次。理由：把“无工作”与“请求交接”分开，避免静默晋级，保留第二眼。代价：多一次模型往返。
-4. **Plan 阶段不开蜂群**：Phase B 只属于执行阶段；Plan 的非空台账由 Plan 自己改底稿销账。理由：底稿只归 Plan；Plan 的义务是规划问题，不是施工。代价：Plan 不能并行施工，但 dedicated worker 仍可并行调查。
-5. **devops 契约**：Plan 专属、无看板、无令牌的 dedicated worker；参数 `{:verbose-intent "..."}`；返回最终报告；无 `:DEVOPS_IN_FLIGHT` / `:PLAN_DEVOPS_DEAD`；只读文件面加 `call`。理由：只有一个 worker，不需要同步；传统 harness subagent 形态；报告是工作产物。代价：worker 死亡后由 Plan 新建，跨调用上下文可能丢失。
-6. **API 形状**：所有能力为裸函数加单 map；无 `this`、无位置参数；`ls` 纯探查。理由：一种写法；模型不易记错；`ls` 只是发现，不是依赖。代价：全部示例与提示词要机械改写。
-7. **看板状态与动词**：状态只剩 `:ready` / `:waiting` / `:done`；取消与替代是 `cancel` / `replace` 动词与事件，不是状态；只允许叶子；新增 `release` / `reopen` / `comment` / `update`。理由：KISS；避免不可达状态；专用动词保留各自前置条件。代价：取消子树必须自底向上逐个调用。
-8. **令牌交接**：删除 `handoff-updates`；`take-or-die` 要求 `:confirm :i-hereby-confirm-i-die-without-regret`；交接说明用任意看板写入。理由：竞争前已要求写说明；失败事务是固定动作；确认令牌是 poka-yoke。代价：忘记写说明只能靠纪律与 Nudge。
-9. **finish 顺序**：不 drain、不延后；程序顺序就是语义；`finish` 复核真实文件系统。理由：LLM 自己排布；系统不干预；停电只 best-effort。代价：LLM 可能写出“先 finish 后落盘”的错误程序，系统不替它兜底。
-10. **编码方向**：系统到模型强制 EDN/UFSS；模型到系统自由，JSON 允许；传输层 JSON 信封不算呈现。理由：单向零转义；不强迫模型；provider 标准。代价：程序文本在传输层仍可能被 JSON 转义。
-11. **Scope**：`:me-too`-only 默认 `:keep-last` 扣 1；删除 `:SCOPE_METOO_ONLY`；retention 单位是 `:keep-last` 结算次数。理由：罚款优先于抓人；避免整批拒绝。代价：预算为 0 时仍硬拒。
-12. **前缀**：以渲染消息序列、语义白名单与 digest 链为准，不存完整请求；缓存 best-effort；新增看板写者 clean-break 边界。理由：与“不存完整请求副本”一致；digest 可验证；100% 不可承诺。代价：字节级漂移可能漏检。
-13. **看板观察**：Pair Hint 推送；读者 delta、写者 clean-break 是**整张看板全量**（所有 `Task`/`Action`/`Actor`/`TokenSlot` 当前字段，不是注入视图）；旧 delta 清空腾出空间；读者超阈值也 clean-break；无 `(board ...)`。理由：保持前缀缓存；写者需要一致全量；旧 delta 的空间足以容纳全量。代价：看板极大时全量可能仍超上下文，需要运行时截断或压缩。
-14. **多 worktree（互不相交的 fork/queue join）**：每个 swarm 一个 worktree；`$W$`、令牌、看板 per worktree；Steward 扩展为 orchestrator；按底稿 S3 拆成尽量互不相交的 N 个 slice，**不把同一个活派给多个 swarm**；disjointness 是工作分配层面，worktree 隔离就是边界，不检查路径；group 内部自治；fork N 自由、无上限；join 是队列（按完成时间 FIFO），每次取一个已完成结果，其余排队；队列空但仍有 running 时无限阻塞，队列空且无 running 时返回 `:none`；反复 join 直到 `:none`；没有 sibling 取消；每个结果 rebase 后 ff；master 集成锁；`收尾` 单任期 quiescence；worktree 在 join/abandon 后保留 7 天再 GC。理由：同一个活派给多个 swarm 是浪费；互不相交的拆分让 join 成为队列而不是竞速；master 线性。代价：拆分质量决定并行度；冲突靠 rebase 或 abandon。
-15. **fission 删除**：整体移除同身裂变、泳道、收敛组、present 替换与相关错误码。理由：holder 裂变会破坏令牌语义；普通个体并行已有多个 worker；KISS。代价：失去同身并行。
-16. **Plan 模型**：Plan 使用主模型；“Plan 模型”不是独立可配置槽位；§1.1 #8 优先。理由：铁律优先。代价：若未来要独立 Plan 模型，必须先改 #8。
-17. **全文内联**：LLM 写的报告（join 结果、Plan dedicated worker、子任期）原样全文投递，不截断、不摘要、不转 artifact；只有非 LLM 的原始工具输出才按 §7.2 有界处理。理由：coding agent harness 的传统就是返回全文；LLM 的输出上限就是天然边界，不需要替它胆小。代价：Steward/Plan 的上下文可能变长，但不会超过模型自己的输出预算。
-18. **rebase 不可解决即 abandon**：某个 slice 的 rebase 冲突不可解决时，该 slice 的 holder 调用 `(abandon {:reason ...})` 死亡，worktree 丢弃；该结果不入队，其余 slice 继续。理由：如果 rebase 都不可能，说明新版 master 已不需要这份工作；宣布 ff 失败或无限重试都不如直接放弃。代价：可能没有结果，Steward 需处理 `:no-results`。
-19. **默认上限**：单文件 2 MiB、单批 16 MiB、单批 256 个路径操作、`call` 内联 1 MiB、`call` artifact 64 MiB。理由：代码文件远小于 2 MiB；16 MiB 批次足够多文件重构；256 个操作再多应拆分；1 MiB 与 Sente 单条消息上限一致。代价：超大生成文件需要走 Shell 或拆分。
-20. **带状编辑距离**：`.where` 零匹配的 `nearest` 用 Ukkonen 带状 DP，$K=64$；长度差 $>K$ 直接跳过；先裁公共前后缀；只保留 $\le K$ 的行；无候选则 `nearest nil`。理由：不设上限会卡（2000 行 × needle × line）；$K=64$ 足够识别拼写/标点差异，差太远就是不相似。代价：超过 $K$ 的距离不精确；极端相似长行仍有 10M 单元预算上限。
-21. **底稿命名**：`Plan` 自选 `plans/<name>.md` 的文件名；系统只校验安全、唯一与 `.md` 后缀；首次成功写入固定路径。理由：Plan 最了解任务，命名是它的事；系统不该替它发明名字。代价：Plan 可能起名重复或过长，系统必须给出明确拒绝码。
-22. **不检查路径**：group 由 worktree 隔离；Steward 只保证目标不重叠，不检查 `:paths`；group 只被告知自己的 workspace，越界写入靠自觉。理由：worktree 是边界，路径检查既误报又增加 Steward 负担；系统不假装是安全沙箱。代价：越界写入不受协议保护，只按外部访问 best-effort 处理。
-23. **fork/join 细节默认**：`fork` 返回 `[{:swarm-id :slice-id :workspace}]`；`join` 返回 `{:swarm-id :slice-id :workspace :report :ff-commit :rebase-rounds}`；队列按完成时间 FIFO；fleet 状态为 `:running`/`:queued`/`:joined`/`:abandoned`/`:failed`；`:result-queued` 事件带 `:swarm-id`、`:slice-id`、`:board-version`。理由：这些是命名与呈现细节，不改变协议；按最简、最可读的默认落。代价：若未来要按优先级而非完成时间 join，需要显式改这条。
-24. **UI 呈现默认**：客户端归一化表增加 `:swarm/by-id`；fleet 面板每个 swarm 一行（`slice-id`、worktree、status、根任务计数、master 版本、join 队列），点击下钻单个 swarm；令牌槽与 `$W` 按 worktree 展示，不显示为全局单例；join 结果行带完整报告，可折叠。理由：多 worktree 下，全局单例的展示会误导；fleet 总览 + 下钻是最小可用呈现。代价：UI 多一层聚合视图。
-
----
-
 ## 0 实施用法：条款到落点的跳转表
 
 | 本文件条目 | 对应 AGENTS.md 条款 | 实现落点（模块/字段/入口） | 验收证据 |
@@ -1673,7 +1587,7 @@ Read generously whenever context permits. Do not let head, tail, narrow grep pat
 | §7 备份、外观、费用、诊断与错误文案 | §7.4 第 8 组、§7.1、§8.5 性能门槛 | 恢复点/备份对象、费用三口径、脱敏诊断包 | AC-25..29；E2E 17/18/21/22 |
 | §8 E2E 剧本 | §8.5 | 22 条跨章验收路径 | E2E 01–22 |
 | §9 差异与不采纳 | §7.4 前言、§2.5、§1.1 第 6 条 | 裁决记录；不进入协议 | 设计评审与文案审查 |
-| §10 引用 | §9.5 | 来源索引与用途 | 文档核对 |
+| §10 引用 | §9.1 | 来源索引与用途 | 文档核对 |
 
 按此表从 AGENTS.md 条款跳到本文件的展开细节；“实现落点”只给模块、字段与入口，不替代 AGENTS.md 的协议定义。
 
@@ -3156,16 +3070,16 @@ AC-31-001..004 属交付清单与升级验收（发布包/功能表一致、按 
 
 **来源差异记录**：iOS 定时任务在 S01 平台表、S03 使用手册与 S06 发布说明之间存在表述差异；本文件采用“仅前台手动运行、不提前生成、不承诺定点唤醒”，与 AGENTS.md §7.4-7 一致。模型选择作用范围在 S12 与 S03 之间存在版本差异；本文件采用每会话有效模型，修改助手默认只影响新会话。供应商能力、价格、额度与模型名持续变化，本文件不把任何固定模型名、价格、额度或供应商数量当作永久事实。
 
-→ 用于：AGENTS.md §8.5 与 §9.5 的来源核对。
+→ 用于：AGENTS.md §8.5 与 §9.1 的来源核对。
 # 共享文件系统 Swarm 协作协议实施参考（AGENTS.md 参考资料）
 
 > **定位**：本文件把 Swarm 协议展开为字段、事务伪代码、并发场景与验收断言，供实现 AGENTS.md §3 与 §4.2–§4.4 时对照；它不是独立产品规格，也不重新定义协作协议。
 > **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。
-> **支持条款**：AGENTS.md §3.1–§3.15、§4.2–§4.4、§8.2–§8.4、§9.3（D01–D16）。
+> **支持条款**：AGENTS.md §3.1–§3.15、§4.2–§4.4、§8.2–§8.4；历史决策见 HISTORY.md。
 > **来源与核对**：原始 Swarm.txt v1.0（2026-11-03，无提交号）；AGENTS.md 工作副本（2026-11-03，无提交号）；R1/R2 核对日期 2026-11-03。
 > **证据等级**：设计推演（协议、伪代码、场景）；公开材料核对（R1 rsync(1)、R2 PPoPP 2005）；无实测。T01–T13、F01–F15 是验收要求，不是已运行结果。
 
-> **2026-11-03 同步说明**：本参考中的位置参数、`.method` 写法、`:cancelled`/`:replaced` 状态、`(take-or-die request-id handoff-updates)`、`(park-slot observed-cursor)`、`ls` 结构检查、`finish` drain 与 `fission` 均已过时；以 AGENTS.md §1–§6 为准。映射：`(cat {:path ...})`、`(split {...})`、`(claim {...})`、`(finish {...})`、`(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`、`(park-slot {:observed-cursor ...})`；任务状态只剩 `:ready`/`:waiting`/`:done`；`ls` 是纯探查；`finish` 不 drain；`fission` 已删除。
+> **当前能力映射**：以 AGENTS.md §1–§6 为准——`(cat {:path ...})`、`(split {...})`、`(claim {...})`、`(finish {...})`、`(take-or-die {:request-id ... :confirm :i-hereby-confirm-i-die-without-regret})`、`(park-slot {:observed-cursor ...})`；任务状态为 `:ready`/`:waiting`/`:done`；`ls` 是纯探查；`finish` 不 drain；并行靠多个独立 worker。
 
 ## 0 实施用法
 
@@ -4112,8 +4026,7 @@ L32-01：任何改变都应指出影响哪项用户语义、哪组接口合同�
 | 第 1–8 章先读、第 9–16 章看板、第 17–24 章文件、第 25–32 章运行时 | 本文件是 AGENTS.md 参考资料，不承担独立教程的章节阅读顺序 | 删除该阅读指南；改由 §0 映射表按 AGENTS.md 条款定位 |
 | 第 2 章 A02 条款、第 3.7 节范围矩阵在原文中重复展开 | AGENTS.md §3.1 与 §3.6 已压缩收录 | 本文件不逐段复述 A02 与范围矩阵；§0 给出条款索引，§9 只补强/弱/外部/硬失败的实施边界 |
 | 原文未覆盖 `.where`/`.park`/`.unpark` 的精确切片与四道核验 | AGENTS.md §4.3 增补 | 不在本文件展开；实现按 AGENTS.md §4.3 执行 |
-| 原文未覆盖 `.fission` 同身裂变 | AGENTS.md §4.4 增补 | 不在本文件展开；裂变准入、泳道与终态幂等按 AGENTS.md §4.4 执行 |
-| 原文说“系统不要求使用 git”，未讨论私有 worktree | AGENTS.md D01 明确拒绝每个体私有 worktree/分支合并 | 一致；保留单一共享工作区，不把 git 合并作为协作主路径 |
+| 原文说“系统不要求使用 git”，未讨论私有 worktree | Swarm 内单一共享工作区（见 HISTORY.md D01） | 一致；保留单一共享工作区，不把 git 合并作为协作主路径 |
 | 原文把“全看板有任何可拆项则暂停所有原子执行”列为可切换策略 | AGENTS.md 默认只对准备接手的工作先拆分，不设全局严格优先 | 不作为默认；仅作为显式策略变更，需重新评估执行饥饿与验证场景 |
 | 原文 `Task` 用 `result_refs`，`Action` 只写“结果引用” | AGENTS.md `Task` 用 `:result-refs`，`Action` 用 `:result-ref` | 采用 AGENTS.md；动作只保留本次结果引用，任务保留结果集合 |
 | 原文父项恢复写“所有直接等待者”，未提根任务台账 | AGENTS.md 增加根任务 `:ledger-key` 与接力屏障 | 采用 AGENTS.md；`finish` 伪代码同时释放台账并检查 `relay`，不改变父项恢复规则 |
@@ -4135,9 +4048,9 @@ Tim Harris、Simon Marlow、Simon Peyton Jones、Maurice Herlihy，*Composable M
 → 用于：AGENTS.md §3.10 与 §4.2 的判据来源核对；引用只支持所述工程取舍，不扩大保证范围。
 # a0lite 打包实测与平台教训（AGENTS.md 参考资料）
 
-> **定位**：本文件是 AGENTS.md §7.2、§9.4 的实测证据与实现参考，不是万象术的架构方案。它记录一个已构建、已部署的 Flatpak 打包层，用来说明环境供应与执行分离、宿主服务复用、可复现 pin 与 Linux 服务启动顺序的具体做法。
+> **定位**：本文件是 AGENTS.md §7.2 与 HISTORY.md §9.4 的实测证据与实现参考，不是万象术的架构方案。它记录一个已构建、已部署的 Flatpak 打包层，用来说明环境供应与执行分离、宿主服务复用、可复现 pin 与 Linux 服务启动顺序的具体做法。
 > **权威顺序**：AGENTS.md > 本文件。冲突以 AGENTS.md 为准；本文件不新增协议义务。
-> **支持条款**：AGENTS.md §7.2（环境供应）、§9.4（a0lite 工程教训）、§8.1（HACK.md 记录纪律）。
+> **支持条款**：AGENTS.md §7.2（环境供应）、§8.1（HACK.md 记录纪律）、HISTORY.md §9.4（a0lite 工程教训）。
 > **来源与核对**：a0lite 打包层 README（本文件原文）；上游 Agent Zero；核对日期 2026-11-03。
 > **证据等级**：构建与运行结果由 a0lite 的构建记录在 Manjaro / flatpak 1.18.4 上实测；本仓库未复测，只转述。文中未标注“实测”的条目均为打包设计说明。
 
@@ -4145,12 +4058,12 @@ Tim Harris、Simon Marlow、Simon Peyton Jones、Maurice Herlihy，*Composable M
 
 | 本文件条目 | 对应 AGENTS.md | 实现落点 | 验收证据 |
 |---|---|---|---|
-| §1 定位与边界 | §9.1、§9.4 | 判断哪些经验可复用 | 不把 a0lite 当协作架构 |
+| §1 定位与边界 | HISTORY.md §9.1、§9.4 | 判断哪些经验可复用 | 不把 a0lite 当协作架构 |
 | §2 环境分层 | §7.2 三类环境隔离 | Pixi 运行时 / 可写数据根 / 宿主服务 | 只读运行时内无写入 |
 | §3 依赖裁剪 | §7.2 四类工具接口 | 模型、语音、OCR、浏览器接入 | 每项有明确 HTTP 或进程边界 |
 | §4 pin 纪律 | §7.2、§8.1 | 依赖锁定与 HACK.md | 远端输入有 sha256/commit；两个例外单列 |
-| §5 打包传输 | §9.4 | 发布包与模型仓库传输 | 实测耗时表 |
-| §6 服务化 | §9.4 | systemd 单元与健康检查 | 无 ordering cycle |
+| §5 打包传输 | HISTORY.md §9.4 | 发布包与模型仓库传输 | 实测耗时表 |
+| §6 服务化 | HISTORY.md §9.4 | systemd 单元与健康检查 | 无 ordering cycle |
 | §7 验证记录 | §8.4 | 端到端冒烟 | 每项有可复现检查 |
 
 按此表从 AGENTS.md 条款跳到本文件的展开细节。
@@ -4173,7 +4086,7 @@ a0lite 只包含打包层：Flatpak 清单、启动器、运行时补丁与构�
 
 **许可证**：a0lite 与 Agent Zero 均为 MIT。WPS 技能与依赖归档来自第三方仓库；打包前必须单独核查其许可证，不能因为主项目是 MIT 就默认整包可再分发。
 
-→ 用于：AGENTS.md §9.4 的“可复用/不可复用”判断，以及 §9.1 的许可证隔离纪律。
+→ 用于：HISTORY.md §9.4 的“可复用/不可复用”判断，以及 §9.1 的许可证隔离纪律。
 
 ## 2 环境分层与宿主服务复用
 
@@ -4302,7 +4215,7 @@ scripts/package-models.sh /path/to/staged/ollama
 - 测得的耗时是主机相关值；换机器先复测，不把 3 s / 70 s / 3.7 h 当固定预算。
 - 以上数字进入 HACK.md，注明环境与测量日期。
 
-→ 用于：AGENTS.md §9.4 的打包性能条目，以及 §7.1 的“外部大对象区”传输选择。
+→ 用于：HISTORY.md §9.4 的打包性能条目，以及 AGENTS.md §7.1 的“外部大对象区”传输选择。
 
 ## 6 部署与服务化
 
@@ -4339,7 +4252,7 @@ scripts/deploy.sh user@host
 - 服务启动失败必须留下可诊断的单元状态，不能静默重试。
 - 系统服务与 user unit 的选择影响权限、显示访问与开机时机；在 HACK.md 记录选择理由。
 
-→ 用于：AGENTS.md §9.4 的 Linux 服务排障条目，以及 §5.1 的“状态串行、I/O 并行”部署边界。
+→ 用于：HISTORY.md §9.4 的 Linux 服务排障条目，以及 AGENTS.md §5.1 的“状态串行、I/O 并行”部署边界。
 
 ## 7 验证记录
 
@@ -4375,7 +4288,7 @@ scripts/deploy.sh user@host
 | §7.2(4) 工具接口 | HTTP、宿主 Chrome、Xpra 各走自然接口 | 15 个运行时补丁 | HACK.md 适配条目 |
 | §8.1 HACK.md | 记录构建耗时、GGUF 传输、ordering cycle | §5、§6 | HACK.md |
 | §8.4 验证 | 冒烟表含环境、结果、解释边界 | §7 | 测试报告 |
-| §9.4 工程教训 | 保留“复用宿主、剔除重依赖、pin 分类、健康探针”四条 | 全文 | AGENTS.md §9.4 |
+| §9.4 工程教训 | 保留“复用宿主、剔除重依赖、pin 分类、健康探针”四条 | 全文 | HISTORY.md §9.4 |
 
 **最小落实顺序**：
 
@@ -4383,7 +4296,7 @@ scripts/deploy.sh user@host
 2. 再把“只读运行时 / 可写数据根”落成 Pixi 与运行目录约定。
 3. 最后接入宿主 Ollama 的显式端点与失败提示；不在产品环境内打包推理栈。
 
-→ 用于：AGENTS.md §9.4 的落地，不改变 §7.2 的三类环境隔离。
+→ 用于：HISTORY.md §9.4 的落地，不改变 AGENTS.md §7.2 的三类环境隔离。
 
 ## 9 差异与不采纳：不适用与外推边界
 
@@ -4395,7 +4308,7 @@ scripts/deploy.sh user@host
 | “首次启动离线也能用” | 不成立。`uv` 供应 CPython 需要网络；离线必须说明缺什么。 |
 | “250 个工具全部可用” | 不成立。只证明一次 `initialize` 返回了 250 个工具声明。 |
 | “3 s / 70 s / 3.7 h 是通用预算” | 不成立。主机相关；换机器复测。 |
-| “可以复制 Agent Zero 的提示词或业务代码” | 不成立。AGENTS.md §9.1 要求 clean-room；只复用打包与接口事实。 |
+| “可以复制 Agent Zero 的提示词或业务代码” | 不成立。HISTORY.md §9.1 要求 clean-room；只复用打包与接口事实。 |
 
 → 用于：防止把打包经验误写成协作协议保证。
 
@@ -4422,13 +4335,13 @@ scripts/deploy.sh user@host
 | §4 配置作用域、快照与生效时点 | §2.1 模型归属；§7.4-2 模型选择 | `:session/config-snapshot`、`:profile/revision`、`:capability/decision` | E2E 02；§4 断言 1–6 |
 | §5 多客户端单一操作会话 | §5.1 多客户端 tmux 语义；§7.3 连接恢复 | `:session/controller-id`、`:session/sync-epoch`、`:ui/command` | E2E 08；§5 断言 1–6 |
 | §6 连接、模型角色与测试分层 | §2.1 主/任务模型；§5.4 模型端口与重试 | `:connection`、`:model-role`、`:model-snapshot`、`:test-result` | E2E 01/02；§6 断言 1–7 |
-| §7 子代理、目标与蜂群边界 | §2.5 Nudge；§3.1–§3.4 Swarm；§4.4 `.fission` | `hc/core/swarm_stm`；`Task`/`Action`/`Actor`/`TokenSlot`；Nudge 事件 | §7 断言 1–8 |
+| §7 子代理、目标与蜂群边界 | §2.5 Nudge；§3.1–§3.4 Swarm；§4.4 并行 worker 边界 | `hc/core/swarm_stm`；`Task`/`Action`/`Actor`/`TokenSlot`；Nudge 事件 | §7 断言 1–8 |
 | §8 执行环境、文件身份与成果交付 | §4.2 `stamp`+$W$；§7.1 Blob/产物；§7.2 环境分层 | `hc/core/workspace_gate`、`hc/server/blob-store`、`:artifact` | E2E 09；§8 断言 1–8 |
 | §9 计划任务与时区 | §7.4-7 定时任务；§7.1 当前态 | `:schedule`、`:snapshot`、`:next-run`；`hc/compose/scheduler` | E2E 16；§9 断言 1–7 |
 | §10 恢复、备份、Time Travel 与未知结果 | §7.1 故障窗口；§7.4-8 备份；§5.3 `:outcome-unknown` | `:recovery-point`、`:backup`、`:outcome-unknown`；`hc/server/recovery` | E2E 10/17/18；§10 断言 1–8 |
 | §11 外部连接、渠道、API 与凭据 | §7.2 外部服务；§5.3 报告交付 | `:connection`、`:credential`、`:channel`；`hc/server/adapters` | E2E 08；§11 断言 1–6 |
 | §12 默认值与放行门槛 | §8.4 验证矩阵；§8.5 E2E | 配置默认值表；阻断缺陷清单 | §12 表；§8.5 阻断缺陷 |
-| §13 章节处置与差异 | §7.4 前言；§2.5；§9.3 决策台账 | 不采纳清单；Kelivo 分工 | 设计评审 |
+| §13 章节处置与差异 | §7.4 前言；§2.5；HISTORY.md 决策台账 | 不采纳清单；Kelivo 分工 | 设计评审 |
 
 按此表从 AGENTS.md 条款跳到本文件的展开细节；原手册 36 章的逐章处置见 §13.1。模块名是建议落点，不是仓库现有文件清单；实现可按实际目录调整，但字段、入口与验收关系不得改变。
 
@@ -4679,7 +4592,7 @@ AGENTS.md §5.1 已规定多客户端 `tmux` 语义与 `command-id`/`command-epo
 
 **7.5 看板视图。** 前端必须能显示：任务树与 `:wait-for` 链；每个任务的 `:state`、`:owner-id`、`:claim-id`、`:needs-token`；槽位上的 `:agent-id`、`:role`、`:life-state`；唯一 holder 与 `:term-id`；$W$ 当前持有动作与排队。明确区分“等待已满足回到 `:ready`”与“父项 `:done`”；正常竞争落败死亡与无责退休显示为生命周期流转，不误报为崩溃。对应 AGENTS.md §7.4-4。
 
-**7.6 资源上限。** 源手册的 3 个子代理/1 层深度可作为产品默认值写入配置，但不能进入协议不变量；槽位容量、fission 泳道数与任务并发由实际配置决定。用户可显式调整产品默认，模型不得自行提高；超过上限的任务进入可见等待队列，不隐形创建执行者。
+**7.6 资源上限。** 源手册的 3 个子代理/1 层深度可作为产品默认值写入配置，但不能进入协议不变量；槽位容量与任务并发由实际配置决定。用户可显式调整产品默认，模型不得自行提高；超过上限的任务进入可见等待队列，不隐形创建执行者。
 
 → 用于：`hc/core/swarm_stm` 的任务转换、`hc/compose` 的 Nudge 注入、`hc/client/board-view` 的任务树；验收用 §7 断言 1–8。
 
