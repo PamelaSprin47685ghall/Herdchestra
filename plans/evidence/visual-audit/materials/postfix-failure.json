@@ -1,0 +1,21 @@
+{
+  "error": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.wb-session-list button[aria-label=\"新建会话\"]').first()\n    - locator resolved to <button type=\"button\" aria-label=\"新建会话\" class=\"wb-button wb-button-small\">新建</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n",
+  "log": "Picked up JAVA_TOOL_OPTIONS: -Xmx768m -XX:MaxDirectMemorySize=512m -Djava.io.tmpdir=/tmp/hc-visual-materials/tmp\nWARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure\nWARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key\nWARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity\nWARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send\nReflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.\nWARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nHerdchestra listening on http://127.0.0.1:40855/\nworkspace: /tmp/hc-visual-materials/work\nstore:     /tmp/hc-visual-materials/data/db\n",
+  "errors": [
+    "pageerror Failed to execute 'replaceState' on 'History': A history state object with URL 'http:/#/sessions' cannot be created in a document with origin 'http://127.0.0.1:40855' and URL 'http://127.0.0.1:40855//'."
+  ],
+  "metrics": {
+    "app": {
+      "pid": 309190,
+      "ppid": 309179,
+      "rssKb": 1137640
+    },
+    "flags": [
+      "-XX:-AOTAdapterCaching -XX:-AOTCompatibleOopCompression -XX:-AOTInvokeDynamicLinking -XX:-AOTRecordTraining -XX:-AOTReplayTraining -XX:-AOTStubCaching -XX:CICompilerCount=4 -XX:ConcGCThreads=3 -XX:+ExitOnOutOfMemoryError -XX:G1ConcRefinementThreads=10 -XX:G1EagerReclaimRemSetThreshold=10 -XX:G1HeapRegionSize=1048576 -XX:G1RemSetArrayOfCardsEntries=10 -XX:G1RemSetHowlMaxNumBuckets=8 -XX:G1RemSetHowlNumBuckets=4 -XX:HotCodeHeapSize=0 -XX:InitialHeapSize=8388608 -XX:-IntelJccErratumMitigation -XX:MarkStackSize=4194304 -XX:MarkStackSizeMax=536870912 -XX:MaxDirectMemorySize=536870912 -XX:MaxHeapSize=1073741824 -XX:MaxNewSize=643825664 -XX:MinHeapDeltaBytes=1048576 -XX:MinHeapSize=8388608 -XX:NonNMethodCodeHeapSize=5840896 -XX:NonProfiledCodeHeapSize=122912768 -XX:-OmitStackTraceInFastThrow -XX:ProfiledCodeHeapSize=122912768 -XX:ReservedCodeCacheSize=251666432 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=1073741824 -XX:+UseCompressedOops -XX:+UseCondCardMark -XX:+UseFastUnorderedTimeStamps -XX:+UseG1GC -XX:X86ICacheSync=3"
+    ],
+    "chrome": {
+      "pid": 309645,
+      "rssKb": 193280
+    }
+  }
+}

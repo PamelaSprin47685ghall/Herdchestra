@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:43151/",
+  "startedAt": "2026-11-05T09:01:41.801Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:43151/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件关联工作区文件\n新会话\n模型：尚未选择模型\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文 · 预览\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 先选择一个可用模型，草稿已保留\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793869304934.png",
+  "console": [
+    "debug: 2026-11-05T09:01:44.592Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "sessionTexts": [
+      "E2E 22 已保存会话active",
+      "新会话active"
+    ],
+    "count": 2,
+    "body": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件关联工作区文件\nE2E 22 已保存会话\n模型：qwen3.6:27b\n:active\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮上下文 · 预览\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\nE2E 22 迁移前历史消息\n\ne2e22.txt\n固定\n选择\n复制从此处分支从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "historyReadable": true,
+    "deletedButton": 0,
+    "bodyAfterDeleted": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件关联工作区文件\nE2E 22 已保存会话\n模型：qwen3.6:27b\n:active\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮上下文 · 预览\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\nE2E 22 迁移前历史消息\n\ne2e22.txt\n固定\n选择\n复制从此处分支从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "deletedVisible": false,
+    "screenshot": "/tmp/hc-w7-reg/e2e22/b-history.png"
+  },
+  "durationMs": 9796
+}

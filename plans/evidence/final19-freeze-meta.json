@@ -1,0 +1,83 @@
+{
+  "freeze": "final19",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final19: W104/W106 bug1+bug2 client fixes (turn selection passthrough, receipt! without subscription-id, merge-local-state orphan/drain/receipt-status, transact-state stale merge, 5s sweep) + clean shadow-cljs rebuild + full suite + app-check",
+  "fixes": {
+    "bug1-D27": "conversation.cljc draft-from-snapshot turn selection passthrough; conversation_bridge submitted-turn-selection/clear-turn-after-send!; view.cljs; draft.cljc",
+    "bug1-transport": "transport.cljs receipt! does not require/auto-attach subscription-id",
+    "bug2-D28": "model.cljc merge-local-state/apply-receipt orphan/drain/receipt-status; materials_bridge transact-state! stale -> merge-local-state, apply-receipt-event! setTimeout re-read, sync drains first, 5s sweep; mutations.cljs set-materials-state stale -> merge-local-state"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "f8477191e790faf4192943753196b2ee3eb3051c88f774dec10314996c70d699",
+    "bundle-sha256": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a (final18 bundle, pre-rebuild)",
+    "bundle-size": 3017311,
+    "bundle-mtime": "2026-11-07T11:21:45+08:00",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "note": "materials_bridge.cljs mtime 12:36:37 post-dates PRE hash snapshot (12:35:13) but precedes rebuild (12:42:52); POST tree hash identical f8477191; focused harness re-run post-edit: 8 tests/23 assertions 0F/0E"
+  },
+  "stability": {
+    "window-seconds": 120,
+    "tree-hash-before": "f8477191e790faf4192943753196b2ee3eb3051c88f774dec10314996c70d699",
+    "tree-hash-after": "f8477191e790faf4192943753196b2ee3eb3051c88f774dec10314996c70d699",
+    "caveat": "one src file (materials_bridge.cljs) touched at 12:36:37 inside/adjacent to window; content stable thereafter (POST==PRE hash)"
+  },
+  "clean-rebuild": {
+    "command": "flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "log": "/tmp/hc-release-final19.log",
+    "exit": 0,
+    "bundle-sha256-after": "168318c1571b33892275288c8ced7f20cf6061b8f78005cf147e8e8ec8eb1cfe",
+    "bundle-size-after": 3017514,
+    "bundle-mtime-after": "2026-11-07T12:42:52.630649577+08:00",
+    "bundle-markers": "setInterval(h_b,5E3) receipt sweep installed from materials_bridge.cljs; hc.client.workbench.materials-bridge / materials_bridge.cljs / hc.client.workbench.mutations / hc.client.conversation.stream namespaces present; 'turn-card', 'submitted', 'orphan', 'receipt' tokens present; closure renames make literal merge_local_state/receipt-sweep grep impossible"
+  },
+  "client-tests": {
+    "clj-suite": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' clojure -X:test:compose:server:client -> Ran 3818 tests containing 24714 assertions. 0 failures, 0 errors. exit 0. log /tmp/hc-final19/client-clj.log (wall ~380s; this run executed the whole suite)",
+    "cljs-harnesses": {
+      "verify_materials_bridge.sh": "8 tests/23 assertions 0F/0E (includes hc.client.workbench.transport-test); re-run post-12:36 edit: 8/23 0F/0E; log /tmp/hc-final19/verify_materials_bridge.log + materials_bridge-postedit.log",
+      "verify_workbench_draft_storage.sh": "7 tests/35 assertions 0F/0E",
+      "verify_workbench_scale_dom.sh": "PASS (benchmark JSON, exit 0)",
+      "verify_workbench_session_commands.sh": "5 tests/23 assertions 0F/0E",
+      "verify_workbench_shell_dom.sh": "7 tests/31 assertions 0F/0E",
+      "verify_conversation_selection_dom.sh": "13 tests/67 assertions 0F/0E",
+      "verify_backup_password_dom.sh": "6 tests/40 assertions 0F/0E",
+      "verify_generated_card_dom.sh": "2 tests/23 assertions 0F/0E",
+      "verify_artifacts_ui.sh": "5 tests/37 assertions 0F/0E",
+      "verify_files_ui.sh": "PASS (FILES-UI-SMOKE-OK)",
+      "verify_generated_card_ui.sh": "4 tests/49 assertions 0F/0E",
+      "verify_schedule_ui.sh": "19 tests/96 assertions 0F/0E",
+      "verify_session_controls_dom.sh": "9 tests/51 assertions 0F/0E",
+      "verify_swarm_ui.sh": "16 tests/130 assertions, 2 failures 0 errors - fleet-overview-renders expects role=\"status\"/aria-live=\"polite\" on dashboard header; markup renders rows but omits the summary <p role=status>. src/hc/client/swarm/{ui.cljs,model.cljc} last modified 2026-11-06, untouched by W104-W106 (this round touched conversation/materials/mutations/transport only); judged PRE-EXISTING fixture/React-render divergence, not a regression of this freeze. log /tmp/hc-final19/verify_swarm_ui.log"
+    }
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final19.log",
+    "exit": 0,
+    "tests": 3818,
+    "assertions": 24714,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 356
+  },
+  "app-check": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final19.log",
+    "exit": 0,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "f8477191e790faf4192943753196b2ee3eb3051c88f774dec10314996c70d699",
+    "bundle-sha256": "168318c1571b33892275288c8ced7f20cf6061b8f78005cf147e8e8ec8eb1cfe",
+    "bundle-size": 3017514,
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "git-status-porcelain-count": 17
+  },
+  "result": "PASS - final19 freeze candidate 168318c1 + f8477191; W104/W106 bug1/bug2 fixes verified in bundle (5s receipt sweep, merge-local-state, orphan drain, turn-card); full suite 3818 tests/24714 assertions 0F/0E (exit 0, 356s); app-check ok; known pre-existing verify_swarm_ui fleet-overview 2-assertion failure documented"
+}

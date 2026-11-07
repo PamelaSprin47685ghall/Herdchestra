@@ -1,0 +1,8 @@
+{
+  "initialModel": "模型：Mock Text",
+  "attachCard": "文本\nnotes.txt\n文本 · 48 B · 发送原文件\n可发送 · 将发送原文件\n已保存副本\n改用提取文本\n移除",
+  "firstAssistant": false,
+  "secondAssistant": false,
+  "error": "page.waitForTimeout: Target page, context or browser has been closed\n    at waitFor (/tmp/hc-w8/run05.cjs:14:16)\n    at async /tmp/hc-w8/run05.cjs:54:26",
+  "bodyAtError": ""
+}

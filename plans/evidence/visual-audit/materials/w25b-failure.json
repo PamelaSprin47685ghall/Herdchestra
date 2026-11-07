@@ -1,0 +1,26 @@
+{
+  "error": "TimeoutError: page.waitForFunction: Timeout 90000ms exceeded.",
+  "consoleErrors": [],
+  "pageErrors": [
+    "SecurityError: Failed to execute 'replaceState' on 'History': A history state object with URL 'http:/#/sessions' cannot be created in a document with origin 'http://127.0.0.1:33951' and URL 'http://127.0.0.1:33951//'."
+  ],
+  "steps": [],
+  "errors": [],
+  "log": "Picked up JAVA_TOOL_OPTIONS: -Xmx768m -XX:MaxDirectMemorySize=512m -Djava.io.tmpdir=/tmp/hc-visual-materials/tmp-w25b\nWARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure\nWARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key\nWARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity\nWARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send\nReflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.\nWARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nHerdchestra listening on http://127.0.0.1:33951/\nworkspace: /tmp/hc-visual-materials/mini-work\nstore:     /tmp/hc-visual-materials/data/db\n",
+  "metrics": {
+    "app": {
+      "spawnPid": 666199,
+      "java": {
+        "pid": 666199,
+        "ppid": 666189,
+        "rssKb": 1114052
+      }
+    },
+    "appFlags": "666199:\n-XX:-AOTAdapterCaching -XX:-AOTCompatibleOopCompression -XX:-AOTInvokeDynamicLinking -XX:-AOTRecordTraining -XX:-AOTReplayTraining -XX:-AOTStubCaching -XX:CICompilerCount=4 -XX:ConcGCThreads=3 -XX:+ExitOnOutOfMemoryError -XX:G1ConcRefinementThreads=10 -XX:G1EagerReclaimRemSetThreshold=10 -XX:G1HeapRegionSize=1048576 -XX:G1RemSetArrayOfCardsEntries=10 -XX:G1RemSetHowlMaxNumBuckets=8 -XX:G1RemSetHowlNumBuckets=4 -XX:HotCodeHeapSize=0 -XX:InitialHeapSize=8388608 -XX:-IntelJccErratumMitigation -XX:MarkStackSize=4194304 -XX:MarkStackSizeMax=536870912 -XX:MaxDirectMemorySize=536870912 -XX:MaxHeapSize=1073741824 -XX:MaxNewSize=643825664 -XX:MinHeapDeltaBytes=1048576 -XX:MinHeapSize=8388608 -XX:NonNMethodCodeHeapSize=5840896 -XX:NonProfiledCodeHeapSize=122912768 -XX:-OmitStackTraceInFastThrow -XX:ProfiledCodeHeapSize=122912768 -XX:ReservedCodeCacheSize=251666432 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=1073741824 -XX:+UseCompressedOops -XX:+UseCondCardMark -XX:+UseFastUnorderedTimeStamps -XX:+UseG1GC -XX:X86ICacheSync=3",
+    "appHeap": "666199:\ngarbage-first heap   total reserved 1048576K, committed 535552K, used 355488K [0x00000000c0000000, 0x0000000100000000)\n region size 1M, 232 eden (232M), 23 survivor (23M), 93 old (93M), 1 humongous (1M), 174 free (174M)",
+    "chrome": {
+      "pid": 667371,
+      "rssKb": 212184
+    }
+  }
+}

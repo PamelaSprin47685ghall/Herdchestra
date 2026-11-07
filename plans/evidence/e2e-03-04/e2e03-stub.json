@@ -1,0 +1,62 @@
+{
+  "test": "e2e03",
+  "checks": {
+    "multiChunkRendered": true,
+    "streamStarted": true,
+    "selectionKept": true,
+    "scrollKept": true,
+    "draftKept": true,
+    "stillReceivingWhileReading": true,
+    "stopStatusShown": true,
+    "contentRetained": true,
+    "noLateAppend": true,
+    "noNewMessage": true,
+    "draftKeptAfterStop": true,
+    "noModelRequestAfterStop": false,
+    "noFakeSpinner": true,
+    "stoppedContentStillVisible": false,
+    "draftSentAsNewTurn": true,
+    "newModelRequest": true,
+    "oldStoppedAnswerUntouched": false,
+    "noPageError": true
+  },
+  "samples": [
+    {
+      "phase": "grow",
+      "lens": [
+        24,
+        48,
+        96,
+        120
+      ],
+      "frames": 5
+    }
+  ],
+  "statuses": [
+    {
+      "at": 326,
+      "text": [
+        "已停止",
+        "已停止"
+      ]
+    }
+  ],
+  "errors": [],
+  "modelLabel": "模型：Stub Long",
+  "sessionId": "hc-session-c21787f6-8c8b-41c5-aa0e-0af3cfdcbb2f",
+  "selectionBefore": "# 本地推理观察\n\n第一段：本地模型推理",
+  "scrollBefore": 17,
+  "textGrowthDuringWait": 340,
+  "selectionAfter": "# 本地推理观察\n\n第一段：本地模型推理",
+  "scrollAfter": 17,
+  "draftAfterWait": "SHORT 草稿保留检查 1793861935151",
+  "charsAtStop": 484,
+  "charsAtConfirmedStop": 508,
+  "latePostsAtConfirm": 0,
+  "charsAfterStop": 508,
+  "messagesAfterStop": 2,
+  "latePosts": 11,
+  "notices": [],
+  "frames": 24,
+  "ok": false
+}

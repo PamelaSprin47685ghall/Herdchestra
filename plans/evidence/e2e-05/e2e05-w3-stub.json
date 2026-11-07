@@ -1,0 +1,46 @@
+{
+  "checks": {
+    "fact": false,
+    "assumption": false,
+    "cancelled": false,
+    "prepared": true,
+    "applied": true,
+    "originalReadable": true,
+    "continue1": false,
+    "continue2": false,
+    "outboundSummary": false,
+    "outboundCompressed": false,
+    "outboundExcludesReplaced": false,
+    "newSessionSelected": true,
+    "newSessionHasSummary": true,
+    "newSessionNoOldMessages": true,
+    "answersSurviveBeforeUndo": false,
+    "undone": true,
+    "answersSurviveAfterUndo": false,
+    "originalsAfterUndo": true
+  },
+  "actions": [
+    "no-reply:E2E05 事实：部署窗口是周四",
+    "no-reply:E2E05 假设（未确认）：用户",
+    "no-reply:E2E05 已取消要求：不要生成",
+    "no-reply:E2E05 继续一：请只回复：继",
+    "no-reply:E2E05 继续二：请只回复：继"
+  ],
+  "sessionId": "hc-session-08d9d06a-3219-480d-ac2a-48c8e970857f",
+  "chipText": "note.txt · 37 B\n可发送\n移除",
+  "lastNotices": [
+    "本轮未完成；请查看错误详情"
+  ],
+  "userTextsBefore": [
+    "E2E05 事实：部署窗口是周四 20:00。请只回复：事实。",
+    "E2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。",
+    "E2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。"
+  ],
+  "boxCount": 3,
+  "roundText": "本轮上下文 · 预览",
+  "outboundMessageCount": null,
+  "newSessionId": "hc-session-6fb3ae8b-30d4-4328-86b8-d5ec46953268",
+  "newSessionText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n23\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n摘要 · New session\nactive · 1793930962499 · Stub E2E05\n重命名\n置顶\n归档\n删除\nNew session\nactive · 1793930930619 · Stub E2E05\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n摘要 · New session\n模型：Stub E2E05\n:active\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮上下文 · 预览\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n系统 · 版本 0\n\n【压缩摘要 · 来源会话《New session》】\n原发送范围 1 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n\n选择\n复制从此处开始\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n摘要 · New session\n会话 ID\nhc-session-6fb3ae8b-30d4-4328-86b8-d5ec46953268\n状态\nactive\n消息数\n1\n模型\nStub E2E05\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "contextText": "上下文\n发送 5 条 · 摘要 0\n本轮上下文 · 预览\n阅读 5 条 · 已删除 0\n压缩当前发送范围\n压缩 reverted：\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n含来源\n包含工具详情\n导出当前分支导出纯文本",
+  "ok": false
+}

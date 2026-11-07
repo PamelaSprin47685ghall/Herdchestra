@@ -1,0 +1,370 @@
+{
+  "base": "http://127.0.0.1:39249",
+  "startedAt": "2026-11-06T03:02:55.847Z",
+  "steps": [
+    {
+      "name": "empty-1280",
+      "at": "2026-11-06T03:02:58.435Z",
+      "ok": true,
+      "viewport": [
+        1280,
+        800
+      ],
+      "doc": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "scrollHeight": 800
+      },
+      "conversation": [
+        368,
+        731
+      ],
+      "composer": [
+        368,
+        163
+      ],
+      "composerRow": [
+        336,
+        66
+      ],
+      "composerRowOverflow": 0,
+      "textarea": [
+        200,
+        66
+      ],
+      "send": [
+        60,
+        44
+      ],
+      "messages": {
+        "scrollWidth": 368,
+        "clientWidth": 368,
+        "scrollHeight": 345,
+        "clientHeight": 345,
+        "scrollTop": 0,
+        "horizontalOverflow": 0
+      },
+      "table": null,
+      "code": null,
+      "messageActionButtons": [],
+      "smallTargets": [],
+      "bodyFont": "15px",
+      "theme": "auto",
+      "scheme": "light",
+      "background": "rgb(244, 246, 248)",
+      "ink": "rgb(24, 32, 42)",
+      "bubble": null,
+      "userBubble": null
+    },
+    {
+      "name": "rich-message",
+      "at": "2026-11-06T03:02:59.855Z",
+      "ok": true,
+      "viewport": [
+        1280,
+        800
+      ],
+      "doc": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "scrollHeight": 800
+      },
+      "conversation": [
+        650,
+        731
+      ],
+      "composer": [
+        650,
+        163
+      ],
+      "composerRow": [
+        618,
+        66
+      ],
+      "composerRowOverflow": 0,
+      "textarea": [
+        317,
+        66
+      ],
+      "send": [
+        195,
+        44
+      ],
+      "messages": {
+        "scrollWidth": 650,
+        "clientWidth": 650,
+        "scrollHeight": 1457,
+        "clientHeight": 194,
+        "scrollTop": 1263,
+        "horizontalOverflow": 0
+      },
+      "table": {
+        "scrollWidth": 568,
+        "clientWidth": 568,
+        "overflow": 0
+      },
+      "code": {
+        "scrollWidth": 568,
+        "clientWidth": 568
+      },
+      "messageActionButtons": [
+        {
+          "text": "选择",
+          "size": [
+            248,
+            32
+          ]
+        },
+        {
+          "text": "复制",
+          "size": [
+            56,
+            38
+          ]
+        },
+        {
+          "text": "从此处分支",
+          "size": [
+            96,
+            38
+          ]
+        },
+        {
+          "text": "从此处开始",
+          "size": [
+            96,
+            38
+          ]
+        },
+        {
+          "text": "编辑",
+          "size": [
+            56,
+            38
+          ]
+        },
+        {
+          "text": "选择",
+          "size": [
+            444,
+            32
+          ]
+        },
+        {
+          "text": "复制",
+          "size": [
+            56,
+            38
+          ]
+        },
+        {
+          "text": "朗读",
+          "size": [
+            56,
+            38
+          ]
+        },
+        {
+          "text": "翻译",
+          "size": [
+            56,
+            38
+          ]
+        },
+        {
+          "text": "重新生成",
+          "size": [
+            83,
+            38
+          ]
+        },
+        {
+          "text": "从此处分支",
+          "size": [
+            96,
+            38
+          ]
+        },
+        {
+          "text": "从此处开始",
+          "size": [
+            96,
+            38
+          ]
+        },
+        {
+          "text": "编辑",
+          "size": [
+            56,
+            38
+          ]
+        }
+      ],
+      "smallTargets": [],
+      "bodyFont": "15px",
+      "theme": "auto",
+      "scheme": "light",
+      "background": "rgb(244, 246, 248)",
+      "ink": "rgb(24, 32, 42)",
+      "bubble": {
+        "bg": "rgb(243, 243, 250)",
+        "color": "rgb(33, 33, 33)",
+        "font": "13.2px",
+        "lineHeight": "20.46px",
+        "width": 596
+      },
+      "userBubble": {
+        "bg": "rgb(0, 122, 255)",
+        "color": "rgb(255, 255, 255)",
+        "width": 263
+      }
+    },
+    {
+      "name": "rich-table-scroll",
+      "at": "2026-11-06T03:03:00.249Z",
+      "ok": true,
+      "before": 0,
+      "after": 0,
+      "max": 0,
+      "tableClientWidth": 568,
+      "docOverflow": 0
+    },
+    {
+      "name": "rich-markdown-source",
+      "at": "2026-11-06T03:03:00.250Z",
+      "ok": true,
+      "hasHashHeading": true,
+      "hasBoldMarkers": true,
+      "hasLinkMarkers": true,
+      "hasMermaidFence": false,
+      "textSample": "## 配置迁移结论\n\n这是一段 **强调**、*斜体* 与 [链接](https://example.com) 的混排正文，用来检查行内标记是否被渲染，还是原样露出星号与井号。\n\n- 第一项：旧格式继续可用\n- 第二项：空字符串按空配置处理\n- 第三项：不要抛出解析异常\n\n> 引用：这是用户补充的验收条件。\n\n### 代码块\n\n\nclojure\n复制代码\n(defn migrate [config]\n  (assoc config :format :new))\n\n\n### 宽表（20 列）\n\n\n编号\t名称\t状态\t负责人\t开始\t结束\t耗时\t风险\t依赖\t备注\t版本\t环境\t区域\t优先级\t预算\t实际\t差异\t结论\t证据\t链接\n1\t配置解析\t进行中\t甲\t09:00\t10:30\t90m\t中\t无\t空串\tv1\tdev\t东\tP1\t10\t12\t+2\t待定\tT1\t#1\n2\t兼容层\t已交付\t乙\t10:00\t11:0"
+    },
+    {
+      "name": "regenerate-version",
+      "at": "2026-11-06T03:04:02.791Z",
+      "ok": false,
+      "error": "locator.waitFor: Timeout 60000ms exceeded.\nCall log:\n  - waiting for locator('.hc-message-versions button').filter({ hasText: 'v2' }).first() to be visible\n\n    at /tmp/hc-visual-conversation/audit.cjs:161:16\n    at async step (/tmp/hc-visual-conversation/audit.cjs:47:20)\n    at async main (/tmp/hc-visual-conversation/audit.cjs:156:5)"
+    },
+    {
+      "name": "edit-message",
+      "at": "2026-11-06T03:04:05.561Z",
+      "ok": true,
+      "meta": "助手 · 手动编辑 · 版本 1",
+      "body": "## 配置迁移结论（手动编辑）\n\n这段由操作员手动修改。"
+    },
+    {
+      "name": "context-panel",
+      "at": "2026-11-06T03:04:05.822Z",
+      "ok": true,
+      "text": "上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 上次发送\n阅读 24 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本",
+      "detailsOpen": [
+        false
+      ]
+    },
+    {
+      "name": "compression-prepare",
+      "at": "2026-11-06T03:04:09.505Z",
+      "ok": true,
+      "text": "上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 上次发送\n阅读 24 条 · 已删除 0\n压缩当前发送范围\n压缩 draft：\n使用摘要\n含来源\n包含工具详情\n导出当前分支导出纯文本"
+    },
+    {
+      "name": "compression-apply-undo",
+      "at": "2026-11-06T03:04:14.235Z",
+      "ok": true,
+      "undoVisible": 1
+    },
+    {
+      "name": "find",
+      "at": "2026-11-06T03:04:15.440Z",
+      "ok": true,
+      "counts": "2 个命中",
+      "after": 372
+    },
+    {
+      "name": "branch",
+      "at": "2026-11-06T03:04:18.557Z",
+      "ok": true,
+      "banner": "分支\n来源会话：New session",
+      "title": "Branch of New session",
+      "messages": 1
+    },
+    {
+      "name": "long-stream-generating",
+      "at": "2026-11-06T03:04:28.742Z",
+      "ok": false,
+      "error": "locator.click: Target page, context or browser has been closed\nCall log:\n  - waiting for getByRole('button', { name: '新建', exact: true })\n\n    at /tmp/hc-visual-conversation/audit.cjs:258:67\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:257:11)"
+    },
+    {
+      "name": "long-scroll-jump",
+      "at": "2026-11-06T03:04:28.742Z",
+      "ok": false,
+      "error": "locator.evaluate: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:274:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:272:11)"
+    },
+    {
+      "name": "stop-stream",
+      "at": "2026-11-06T03:04:28.743Z",
+      "ok": false,
+      "error": "locator.click: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:287:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:285:11)"
+    },
+    {
+      "name": "viewport-360",
+      "at": "2026-11-06T03:04:28.747Z",
+      "ok": false,
+      "error": "page.setViewportSize: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:308:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:307:11)"
+    },
+    {
+      "name": "viewport-820",
+      "at": "2026-11-06T03:04:28.749Z",
+      "ok": false,
+      "error": "page.setViewportSize: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:315:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:314:11)"
+    },
+    {
+      "name": "viewport-1280-dark",
+      "at": "2026-11-06T03:04:28.749Z",
+      "ok": false,
+      "error": "page.setViewportSize: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:322:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:321:11)"
+    },
+    {
+      "name": "zoom-80",
+      "at": "2026-11-06T03:04:28.753Z",
+      "ok": false,
+      "error": "page.emulateMedia: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:330:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:329:11)"
+    },
+    {
+      "name": "zoom-200",
+      "at": "2026-11-06T03:04:28.754Z",
+      "ok": false,
+      "error": "page.evaluate: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:338:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:337:11)"
+    },
+    {
+      "name": "focus-order",
+      "at": "2026-11-06T03:04:28.755Z",
+      "ok": false,
+      "error": "page.evaluate: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:345:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:344:11)"
+    },
+    {
+      "name": "deleted-area",
+      "at": "2026-11-06T03:04:28.756Z",
+      "ok": false,
+      "error": "locator.click: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:363:67\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:361:11)"
+    },
+    {
+      "name": "session-list",
+      "at": "2026-11-06T03:04:28.756Z",
+      "ok": false,
+      "error": "page.setViewportSize: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:383:18\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:382:11)"
+    },
+    {
+      "name": "contrast",
+      "at": "2026-11-06T03:04:28.756Z",
+      "ok": false,
+      "error": "page.evaluate: Target page, context or browser has been closed\n    at /tmp/hc-visual-conversation/audit.cjs:395:25\n    at step (/tmp/hc-visual-conversation/audit.cjs:47:26)\n    at main (/tmp/hc-visual-conversation/audit.cjs:394:11)"
+    }
+  ],
+  "probes": {},
+  "pageErrors": [],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "finishedAt": "2026-11-06T03:04:28.756Z"
+}

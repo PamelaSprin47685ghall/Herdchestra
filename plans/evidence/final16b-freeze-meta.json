@@ -1,0 +1,59 @@
+{
+  "freeze": "final16b",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final16b: PRE=POST same tree 99aa81a4 single-tree full-suite rerun; confirms final16 freeze candidate efbc465a+99aa81a4",
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum (1010 files, all extensions)",
+  "pre": {
+    "tree-hash-src-test": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "bundle-sha256": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f",
+    "bundle-size": 3016559,
+    "bundle-mtime": "2026-11-07T08:43:18+08:00",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "git-status-porcelain-count": 16,
+    "git-status-porcelain-uall-count": 2042,
+    "hs-err-count": 9,
+    "max-src-mtime": "2026-11-07T08:52:39.9171928900+08:00 test/hc/server/history/run_port_test.clj"
+  },
+  "stability": {
+    "window-seconds": 120,
+    "tree-hash-before": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "tree-hash-after": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final16b.log",
+    "start": "2026-11-07T09:10:00+08:00",
+    "end": "2026-11-07T09:15:55+08:00",
+    "wall-seconds": 355,
+    "exit": 0,
+    "tests": 3813,
+    "assertions": 24695,
+    "failures": 0,
+    "errors": 0,
+    "peak-vm-hwm-kb": 2281244,
+    "test-check-seeds": {"count": 171, "min": 1794013824429, "max": 1794014153830}
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final16b.log",
+    "exit": 0,
+    "ok": true,
+    "version": "0.0.1",
+    "component-errors": {},
+    "store-open": true
+  },
+  "post": {
+    "tree-hash-src-test": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "tree-hash-note": "PRE=POST identical; no src/test writes during run",
+    "bundle-sha256": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f",
+    "bundle-size": 3016559,
+    "git-status-porcelain-count": 16,
+    "hs-err-count": 9
+  },
+  "result": "PASS: PRE=POST 99aa81a4, bundle efbc465a unchanged, 3813/24695/0F/0E exit 0, app-check ok; identical to final16 (3813/24695/0F/0E/353.44s); final16 freeze candidate CONFIRMED"
+}

@@ -1,0 +1,146 @@
+{
+  "task": "D-09 分支 UI 切模型未生效",
+  "checks": {
+    "branchSwitchSent": true,
+    "branchRequestUsesModelB": true,
+    "sourceStillUsesModelA": true,
+    "branchReplyReceived": true,
+    "rootReplyReceived": true
+  },
+  "sourceId": "hc-session-06e6823f-adf3-4dec-8ec1-e36a6ae35d89",
+  "branchId": "hc-session-3b1278e0-07e4-4307-a3fb-3745722b9b0c",
+  "branchRequestModels": [
+    "model-b"
+  ],
+  "sourceRequestModels": [
+    "model-a"
+  ],
+  "branchMessages": [
+    "B-REPLY"
+  ],
+  "rootCause": "branch Owner was registered in the router/registry but not merged into the publisher snapshot; the branch receipt stripped :commands, so the client settings panel had no branch command epoch and refused :session/select-model with \"该目标的命令纪元尚未同步\".",
+  "fix": [
+    "system.clj baseline: merge router live owners into the snapshot owner map so branch summaries publish :command-epoch",
+    "commands.clj handle-branch!: include the branch Owner command epoch in the receipt session",
+    "client settings bridge: publish :session/command-epochs for every visible session (including :ui/session-list)",
+    "client settings model: merge the explicit epoch map into :server :session-command-epochs"
+  ],
+  "tests": {
+    "send_command": "7 tests / 42 assertions / 0 failures",
+    "settings_integration": "18 tests / 90 assertions / 0 failures",
+    "extensions": "35 tests / 120 assertions / 0 failures",
+    "commands_dedup": "20 tests / 169 assertions / 0 failures",
+    "control_port": "11 tests / 56 assertions / 0 failures",
+    "history_live": "31 assertions / 0 failures (W32 summary-cache fix)",
+    "note": "send-command/settings/extensions/commands-dedup/control-port pass; history-live 3F is a baseline summary-cache regression handed to W32; D-09 real UI passes.",
+    "regression_total": "control-port 11/56 + history-live 31 + send-command 7/42 + commands-dedup 20/169, 0F/0E",
+    "full_suite": "3741 tests / 24260 assertions / 0F / 0E / EXIT=0 / 370s / peak VmHWM 2149072 KB"
+  },
+  "bundle": {
+    "probe_sha256": "dd968793cc74919e139f31bb290a5dfb68309c6d9a78acfd766a4d984f2fda4b",
+    "probe_mtime": "2026-11-06T11:19:25+08:00",
+    "probe_size": 3007964,
+    "final_sha256": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+    "final_mtime": "2026-11-06T13:51:04+08:00",
+    "final_size": 3011162,
+    "css_sha256": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+    "current_freeze": {
+      "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2",
+      "mtime": "2026-11-06T13:02:42+08:00",
+      "size": 3010646
+    },
+    "note": "Final frozen bundle is 072587a4 (13:51:04) on source tree d1d8d08d. D-09 rerun on this tree: branch model-b, source model-a, B-REPLY, no epoch error.",
+    "pre_freeze_sha256": "55e4e8ea73279d58a0dbceba22ee8c815c2b24b2de600fd2e1f21e2eaa27c857",
+    "observed_after_change": {
+      "sha256": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+      "mtime": "2026-11-06T13:51:04+08:00",
+      "size": 3011162,
+      "note": "main.cljs changed 13:50:28 by a third party; bundle rebuilt 13:51:04. Final freeze pending W33. 0c05b7d1 D-08/D-09 runs are pre-freeze."
+    },
+    "post_freeze_change": {
+      "file": "src/hc/client/workbench/main.cljs",
+      "mtime": "2026-11-06T13:29:02+08:00",
+      "tree_hash": "7667323a67f6be51563c1132c66d72f28ad4099f33f6025d79ba8031b9586f93",
+      "note": "Third-party write during W35 final5; bundle ea9e5732 is stale for this file. D-08/D-09 evidence remains on ea9e5732; rerun on the next announced freeze."
+    }
+  },
+  "note": "Server-side snapshot/receipt fixes are not in the client bundle; the final frozen bundle remains dd968793.",
+  "pre_freeze_rerun": {
+    "bundle": "55e4e8ea73279d58a0dbceba22ee8c815c2b24b2de600fd2e1f21e2eaa27c857",
+    "branch_request_models": [
+      "model-b"
+    ],
+    "source_request_models": [
+      "model-a"
+    ],
+    "branch_reply": [
+      "B-REPLY"
+    ],
+    "epoch_error": false,
+    "source_id": "hc-session-c81be30a-56ad-4c99-86f4-43d8648f1ef9",
+    "branch_id": "hc-session-b835a110-0469-43cd-960a-58d3cfc63c40"
+  },
+  "pre_freeze_reruns": [
+    {
+      "bundle": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+      "branch_request_models": [
+        "model-b"
+      ],
+      "source_request_models": [
+        "model-a"
+      ],
+      "branch_reply": [
+        "B-REPLY"
+      ],
+      "epoch_error": false,
+      "source_id": "hc-session-7f88e420-e2a4-4ede-9725-eb47c486c1d7",
+      "branch_id": "hc-session-72c37447-a73f-46bf-91d6-f94d3c81de53"
+    },
+    {
+      "bundle": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2",
+      "branch_request_models": [
+        "model-b"
+      ],
+      "source_request_models": [
+        "model-a"
+      ],
+      "branch_reply": [
+        "B-REPLY"
+      ],
+      "epoch_error": false,
+      "source_id": "hc-session-bd4e1302-5d4f-47b9-b6f2-d193f263c1d5",
+      "branch_id": "hc-session-4b49d79e-7c5c-4dee-adcf-57b6148163c1"
+    },
+    {
+      "bundle": "0c05b7d1a42123adb91bf7cdb9eb671b0682a72b155ddaf805c3f84b4e68a0bc",
+      "branch_request_models": [
+        "model-b"
+      ],
+      "source_request_models": [
+        "model-a"
+      ],
+      "branch_reply": [
+        "B-REPLY"
+      ],
+      "epoch_error": false,
+      "source_id": "hc-session-b751fc38-d645-401a-a625-dccebd85ecfe",
+      "branch_id": "hc-session-10586e41-a138-4d27-a584-aa0ace18f78e"
+    }
+  ],
+  "final_rerun": {
+    "bundle": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+    "src_test_tree": "d1d8d08d44a718853271090c0ae64cfc8ebe73aef717b47d269e10947d849495",
+    "branch_request_models": [
+      "model-b"
+    ],
+    "source_request_models": [
+      "model-a"
+    ],
+    "branch_reply": [
+      "B-REPLY"
+    ],
+    "epoch_error": false,
+    "source_id": "hc-session-28d33990-0c10-407b-b5ea-f174c6a758fa",
+    "branch_id": "hc-session-4a94ca55-1329-4f00-9575-76960102fd24"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "freeze": "final17",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final17: clean shadow-cljs rebuild + verification that W87 materials fix is in release bundle + full suite + app-check",
+  "w87-fix-verification": {
+    "conclusion": "bundle efbc465a ALREADY contains W87 fix; clean rebuild byte-identical",
+    "method": "closure.variable.map mangled-name mapping + main.js body inspection (release :simple renames Clojure fns; literal grep cannot match)",
+    "recover_pending_materials_commands_BANG_": "-> e_b (def + call site in sync_from_db)",
+    "receipt_sweep_at": "-> d_b",
+    "merge_local_state": "-> c_b (def + call site in transact_state)",
+    "reachable_via": "workbench/main.cljs -> materials-bridge/sync-from-db! -> recover-pending-materials-commands!; transact-state! -> model/merge-local-state"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum (1010 files, all extensions)",
+  "pre": {
+    "tree-hash-src-test": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "bundle-sha256": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f",
+    "bundle-size": 3016559,
+    "bundle-mtime": "2026-11-07T08:43:18+08:00",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    }
+  },
+  "clean-rebuild": {
+    "cleared": ".shadow-cljs/cljs-runtime (dev cache only)",
+    "command": "flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "log": "/tmp/hc-release-final17.log",
+    "exit": 0,
+    "files-compiled": 3,
+    "warnings": 13,
+    "bundle-mtime-after": "2026-11-07T10:11:35.932386753+08:00",
+    "note": "resources/public/js/cljs-runtime/*.js are stale dev artifacts (2026-11-05); release :app does not emit them; E2E serves main.js"
+  },
+  "stability": {
+    "window-seconds": 120,
+    "tree-hash-before": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "tree-hash-after": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final17.log",
+    "wall-seconds": 357,
+    "exit": 0,
+    "tests": 3813,
+    "assertions": 24695,
+    "failures": 0,
+    "errors": 0,
+    "test-namespaces": 357
+  },
+  "app-check": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final17.log",
+    "exit": 0,
+    "ok": true,
+    "version": "0.0.1",
+    "component-errors": {}
+  },
+  "post": {
+    "tree-hash-src-test": "99aa81a4d150efa4cef70fb70052c9517d39705f872558be62c74d2cf0f96580",
+    "bundle-sha256": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f",
+    "bundle-size": 3016559,
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "git-status-porcelain-count": 16,
+    "git-status-porcelain-uall-count": 2045,
+    "hs-err-count": 9
+  },
+  "result": "PASS - final17 freeze candidate efbc465a + 99aa81a4; W87 fix verified in bundle; if E2E11 still fails 'pending command', cause is server-side/timing not client bundle"
+}

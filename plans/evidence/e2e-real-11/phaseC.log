@@ -1,0 +1,35 @@
+{
+  "ok": false,
+  "baseUrl": "http://127.0.0.1:41725/",
+  "startedAt": "2026-11-05T05:26:22.562Z",
+  "sync": {
+    "ok": false,
+    "badges": []
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:41725/#/sessions",
+  "bodyText": "工作台启动失败：ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+  "screenshot": "/tmp/hc-e2e-1793856443856.png",
+  "console": [
+    "debug: 2026-11-05T05:26:23.806Z DEBUG [hc.client.workbench.transport:70] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Aj (http://127.0.0.1:41725/js/main.js:206:193)\n    at Yc (http://127.0.0.1:41725/js/main.js:93:328)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined",
+    "error: ReferenceError: react is not defined\n    at Bqb (http://127.0.0.1:41725/js/main.js:4723:114)\n    at Cqb (http://127.0.0.1:41725/js/main.js:4727:356)\n    at wVb (http://127.0.0.1:41725/js/main.js:5777:393)\n    at ih (http://127.0.0.1:41725/js/main.js:121:414)\n    at Yk (http://127.0.0.1:41725/js/main.js:267:34)\n    at Ej (http://127.0.0.1:41725/js/main.js:212:275)\n    at ng (http://127.0.0.1:41725/js/main.js:212:127)\n    at Mh (http://127.0.0.1:41725/js/main.js:204:395)\n    at Cj (http://127.0.0.1:41725/js/main.js:202:354)\n    at p (http://127.0.0.1:41725/js/main.js:20:24)",
+    "pageerror: react is not defined"
+  ],
+  "error": "locator.evaluate: Timeout 60000ms exceeded.\nCall log:\n  - waiting for locator('textarea').first()\n\n    at setText (/tmp/hc-e2e11ui/e2e11_phaseC.cjs:8:42)\n    at module.exports (/tmp/hc-e2e11ui/e2e11_phaseC.cjs:25:11)\n    at async main (/tmp/hc-e2e-harness/e2e_driver.cjs:163:22)",
+  "durationMs": 123407
+}

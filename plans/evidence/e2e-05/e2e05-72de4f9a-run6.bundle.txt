@@ -1,0 +1,7 @@
+bundle: 72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726 (3,014,943 B, 17:45:52; CSS 332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b)
+tree:   ab8014505efefe7e69fa686689499c876c3836091b4832569d119c0b43beba2c (src+test sha256 chain; W35 final11 PASS 3792/24578/0F/0E/360s)
+app:    config05d.edn / config06c.edn, :nudge-enabled? false (E2E seam, config.clj:65), 768m/512m, flock /tmp/hc-app-single.lock
+model:  Ollama qwen3.6:27b via logging proxy 127.0.0.1:18090 -> 127.0.0.1:11434 (reasoning-effort none)
+tts:    local stub 127.0.0.1:19150 (5 s 440 Hz WAV); stt stub same port
+note:   E2E05 run6 = fresh data4 + fresh chrome profile + no mid-run reload
+        (W60 diagnosis: stale :NOT_CONTROLLER; client never sends takeover)

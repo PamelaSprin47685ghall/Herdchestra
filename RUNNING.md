@@ -120,8 +120,17 @@ aliases，否则 `-m cljs.main` 会覆盖 shadow CLI。
    根 `AGENTS.md` §8.5 要求 22 条 E2E 全部自动化，配套 mock 模型服务与
    OAuth/WebDAV/S3 mock 外部服务；手工验收只用于 mock 无法覆盖的宿主平台
    差异。自动化结果以 W10 的报告为准；W10 完成前条件 8 不能算 PASS。
+   验收按 §7.4 八段用户旅程（首次启动、日常对话、长任务、中断与恢复、
+   历史与知识、扩展能力、导出/备份/迁移、设置与诊断）组织；旧八组 UI
+   规范不再作为验收单位。
    无签名安装包；默认 loopback-only；离线恢复走 `hc.server.backup.cli`
    且有已知边界；没有 GPU 路径。
+
+**资源纪律**：所有 app/test JVM 必须带显式堆上限（`deps.edn` 默认
+`-Xmx1g -XX:MaxDirectMemorySize=512m`；测试子 JVM 512m/256m；E2E app
+768m/512m）；同一时刻最多 1 个重资源 app JVM + 1 个 Chrome；全量测试与
+E2E 串行；结束立即停止 app/Chrome。不得用无 caps 的裸 `java`/无别名
+`clojure` 绕过 `deps.edn`。
 
 0.0.1 的逐项证据与未覆盖清单以 `plans/release-notes-0.0.1.md` 为准；本文件
 只保留运行入口、发布条件与操作边界。

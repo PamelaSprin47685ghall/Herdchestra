@@ -1,0 +1,77 @@
+{
+  "freeze": "final21",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final21: W117 unwrap-receipt fix (any map? :receipt unwrap + merge + outer command-id/epoch backfill, no nil? command-id gate) + sibling session.clj :revision (D-25) + clean shadow-cljs rebuild + full suite + app-check; final20 superseded",
+  "fixes": {
+    "unwrap-receipt": "src/hc/client/materials/model.cljc:1329 unwrap-receipt accepts any map? with :receipt key; merges select-keys [:ok? :error :replayed? :effects :status :command-id :command-epoch] under inner receipt; backfills :command-id/:command-epoch from outer envelope when inner is nil (cond->, no gate on pre-existing command-id); also handles :hc/receipt unwrap",
+    "last-move": "model.cljc apply-receipt: assoc :last-move (select-keys (:undo result) [:entry-ids :book-ids]) on accepted entry-move with map? undo and not undo? payload; assoc :last-move nil on accepted undo move (D-28 preserved)"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "319f035f014024ded926b73fd5adad0193058a8a22bff4102382ad444c69c4f0",
+    "bundle-sha256": "0fbddd3c6bed295199d098e0a0a8a72ae47721b21d33d807c0fc906f2a2da47e (pre-rebuild bundle, mtime 2026-11-07T16:29:58+08:00, size 3018796)",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "snapshot": "2026-11-07T16:31+08:00"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 22,
+    "note": "513 files, 3 compiled, 13 infer warnings (pre-existing, same categories as final20)",
+    "bundle-sha256-after": "0fbddd3c6bed295199d098e0a0a8a72ae47721b21d33d807c0fc906f2a2da47e",
+    "bundle-size-after": 3018796,
+    "bundle-mtime-after": "2026-11-07 16:34:21.052976374 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930 (unchanged)",
+    "bundle-determinism": "sha256 identical to pre-rebuild bundle; rebuild is deterministic"
+  },
+  "unwrap-receipt-bundle-verification": {
+    "method": "closure.variable.map maps CLJS fn names to minified names; unwrap-receipt inlined into callers receipt-command-id (Vob) / receipt-status (Wob) / receipt-result (Xob/Yob) / apply-receipt path as C2 (materials.model) and V2 (model_auth); grep on resources/public/js/main.js",
+    "findings": [
+      "select-keys vector [aI,V,Lha,$r,Vi,dT,FM] = [:ok? :error :replayed? :effects :status :command-id :command-epoch] present 2x (C2 in materials.model, V2 in model_auth)",
+      "C2 body: cN.h(a) -> :hc/receipt unwrap; Md(xV.h(a)) -> :receipt map branch; ei(a, vector) select-keys; ci.v merge(c, inner); cond-> backfill dT(:command-id)/FM(:command-epoch) only when merged value is nil AND outer has value (k(...) checks) - NO nil? command-id gate",
+      "Vob (receipt-command-id): C2 then dT.h(a) fallback J(a,[xV,dT])",
+      "Wob (receipt-status): ok?/error/status Submitted/NotFound logic preserved",
+      "last-move keyword ep present; apply-receipt assoc :last-move (select-keys undo [ku,Fka]) and assoc :last-move null branches both in bundle"
+    ],
+    "verdict": "PASS - unwrap-receipt fix and last-move branches confirmed in release bundle"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final21.log",
+    "exit": 0,
+    "tests": 3824,
+    "assertions": 24735,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 354,
+    "start-epoch": 1794040601,
+    "end-epoch": 1794040986
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final21.log",
+    "exit": 0,
+    "wall-seconds": 14,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "319f035f014024ded926b73fd5adad0193058a8a22bff4102382ad444c69c4f0",
+    "bundle-sha256": "0fbddd3c6bed295199d098e0a0a8a72ae47721b21d33d807c0fc906f2a2da47e",
+    "bundle-size": 3018796,
+    "bundle-mtime": "2026-11-07 16:34:21.052976374 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "git-status-porcelain-count": 17,
+    "snapshot": "2026-11-07T16:43:14+08:00"
+  },
+  "result": "PASS - final21 freeze candidate bundle 0fbddd3c + tree 319f035f; unwrap-receipt fix verified in rebuilt bundle (select-keys 7-key vector + merge + conditional command-id/command-epoch backfill, no nil? gate; last-move set/clear branches present); clean rebuild deterministic (bundle sha256 identical pre/post); full suite 3824 tests/24735 assertions 0F/0E (exit 0, 354s); app-check ok (exit 0, 14s)"
+}

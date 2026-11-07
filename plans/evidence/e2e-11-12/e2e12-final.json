@@ -1,0 +1,53 @@
+{
+  "test": "e2e12-final",
+  "checks": {
+    "e2e12-first-book-created": {
+      "pass": true,
+      "detail": "wb-588cca4b-54bb-4a97-aceb-ce89dde731bf"
+    },
+    "e2e12-second-book-created": {
+      "pass": true,
+      "detail": "wb-dc92f9ed-290f-4033-9285-1f5d57f9e321"
+    },
+    "e2e12-entries-created": {
+      "pass": true,
+      "detail": {
+        "entryAny": "wbe-a391a3f0-f815-493c-b9af-0a7face0ec4f",
+        "entryAll": "wbe-a456d45e-9d1e-494d-ab78-e93c4f39ca2b",
+        "entrySticky": "wbe-11ad9e3d-48a1-4a97-a4bb-231ff4dbf469",
+        "entryCool": "wbe-cac76e5d-1bab-4c52-9996-3a738a9f7144",
+        "entryBudget": "wbe-9df6950e-f330-4592-87e2-6ac160fefaf3",
+        "entryConst": "wbe-6d8ef321-8f36-4900-9957-e59fd82a2d3d"
+      }
+    },
+    "e2e12-card-turn-selected": {
+      "pass": true,
+      "detail": true
+    }
+  },
+  "steps": [
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    }
+  ],
+  "startedAt": "2026-11-06T14:28:49.957Z",
+  "bundle": "72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726",
+  "bundleMtime": "2026-11-06T09:45:52.839Z",
+  "bookA": "wb-588cca4b-54bb-4a97-aceb-ce89dde731bf",
+  "bookB": "wb-dc92f9ed-290f-4033-9285-1f5d57f9e321",
+  "entries": {
+    "entryAny": "wbe-a391a3f0-f815-493c-b9af-0a7face0ec4f",
+    "entryAll": "wbe-a456d45e-9d1e-494d-ab78-e93c4f39ca2b",
+    "entrySticky": "wbe-11ad9e3d-48a1-4a97-a4bb-231ff4dbf469",
+    "entryCool": "wbe-cac76e5d-1bab-4c52-9996-3a738a9f7144",
+    "entryBudget": "wbe-9df6950e-f330-4592-87e2-6ac160fefaf3",
+    "entryConst": "wbe-6d8ef321-8f36-4900-9957-e59fd82a2d3d"
+  },
+  "error": {
+    "message": "frozen 上次发送 panel did not appear: r1",
+    "stack": "Error: frozen 上次发送 panel did not appear: r1\n    at send (/tmp/hc-w22/e2e12-final.cjs:116:11)\n    at async /tmp/hc-w22/e2e12-final.cjs:319:16"
+  },
+  "finishedAt": "2026-11-06T14:31:41.351Z"
+}

@@ -1,0 +1,136 @@
+{
+  "test": "E2E 09",
+  "mode": "real-app-command-channel-and-browser",
+  "startedAt": "2026-11-06T05:06:23.285Z",
+  "steps": {
+    "ping": "{:ok? true, :pid 679608, :url \"http://127.0.0.1:46417/\", :sessions 1}",
+    "focus-or-create": "{:ok? true, :active-session-id \"hc-session-07bb9c78-7f74-48a7-949d-fe5a6a4d4fd7\"}",
+    "plan-first-review": "{:ok? true, :receipt {:findings [{:key \"draft\", :value \"E2E 09 draft\"}], :ledger {\"draft\" \"E2E 09 draft\"}, :tenure-epoch 1, :reviewed? true, :call-id \"92e500c4-9379-4358-b155-98becb97624b\", :milestone :S1, :outcome :ledger-updated, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-1\", :changes {:added {\"draft\" \"E2E 09 draft\"}, :removed {}}}, :error nil}",
+    "plan-write-draft": "{:ok? true, :receipt {:status :accepted, :outcome :draft-updated, :path \"plans/e2e09.md\", :content-length 53}, :error nil, :replayed? false}",
+    "plan-clear-ledger": "{:ok? true, :receipt {:ledger {}, :successor-tenure-id \"tenure-2\", :retired-tenure-id \"tenure-1\", :tenure-epoch 2, :reviewed? true, :successor-epoch 2, :successor-binding {:role :plan, :model-id \"main-model\", :epoch 2, :milestone :S1, :phase :review, :status :active, :relay-pending? false, :tenure-id \"tenure-2\", :awaiting-user? false, :reviewed-in-tenure? false, :model-role :main}, :call-id \"1ee3a791-53b3-40d1-853e-0ace6b653352\", :milestone :S1, :outcome :relayed, :lane :plan, :relayed? true, :reason :ledger-cleared, :status :accepted, :tenure-id \"tenure-2\", :barrier-id \"barrier-1\"}, :error nil}",
+    "plan-successor": "tenure-2",
+    "plan-empty-0": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"3e7ce196-5ba6-4309-8bab-e4d9be0e767c\", :milestone :S2, :outcome :promoted, :to-milestone :S2, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S1}, :error nil}",
+    "plan-empty-1": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"b4cfdd2e-19df-45bf-ae3f-3bcd5fd08877\", :milestone :S3, :outcome :promoted, :to-milestone :S3, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S2}, :error nil}",
+    "plan-empty-2": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"a01ca202-e05e-4883-a257-f3071c5d838b\", :milestone :pending, :outcome :promoted, :to-milestone :pending, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S3}, :error nil}",
+    "plan-empty-3": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :draft-length 53, :call-id \"6f60b5b0-d860-40af-91d1-c5927cb010c8\", :milestone :pending, :execution-tenure-count 1, :board-version 1, :outcome :execution-started, :lane :plan, :execution-tenure-id \"tenure-3\", :relayed? false, :status :accepted, :draft-path \"plans/e2e09.md\", :tenure-id \"tenure-2\", :execution-epoch 3, :reviewer-binding {:role :reviewer, :model-id \"main-model\", :epoch 3, :review-window :open, :milestone :execution, :phase :review, :status :active, :relay-pending? false, :tenure-id \"tenure-3\", :awaiting-user? false, :model-role :main}}, :error nil}",
+    "execution-review": "{:ok? true, :receipt {:findings [{:key \"review\", :value \"ready\"}], :ledger {\"review\" \"ready\"}, :board-root-tasks {:task-1 {:ledger-key \"review\", :relay-task-id \"root-task-1\", :state :ready}}, :tenure-epoch 3, :reviewed? true, :review-window :closed, :call-id \"29a41307-11ad-437e-86ae-986bd8008130\", :milestone :execution, :board-version 2, :outcome :swarm-started, :lane :execution, :relayed? false, :root-tasks [{:task-id \"root-task-1\", :ledger-key \"review\", :goal \"ready\", :state :ready, :done-when \"ready\", :parent-id nil, :needs-token false, :wait-for #{}, :tenure-id \"tenure-3\", :owner-id nil, :child-ids [], :remaining-work \"ready\"}], :status :accepted, :tenure-id \"tenure-3\"}, :error nil}",
+    "root-task": "task-1",
+    "register-actor": "{:ok? true, :receipt {:status :accepted, :outcome :actor-registered, :tenure-id \"tenure-3\", :agent-id :agent-4, :slot-id :slot-e2e09, :model-role :task, :model-id \"task-model\", :binding {:role :worker, :model-id \"task-model\", :slot-id :slot-e2e09, :agent-id :agent-4, :life-state :alive, :phase :swarm, :status :active, :tenure-id \"tenure-3\", :model-role :task}}, :error nil}",
+    "split-token-task": "{:ok? true, :task-id :task-1, :events [{:type :task-split, :task-id :task-1, :child-ids [:task-2], :wait-for #{:task-2}, :released-claim-id nil, :event-seq 7, :at-version 6}], :board-version 6, :state :waiting, :op :split, :retired? false, :retired-agent-id nil, :released-claim-id nil, :status :accepted, :wait-for #{:task-2}, :tenure-id \"tenure-3\", :child-ids [:task-2], :woken #{}}",
+    "take-or-die": "{:ok? true, :receipt {:status :accepted, :outcome :take-or-die, :tenure-id \"tenure-3\", :agent-id :agent-4, :result :attempt-won, :term-id 1, :retired? false, :retired-agent-id nil}, :error nil}",
+    "claim-token-task": "{:ok? true, :receipt {:status :accepted, :outcome :task-claimed, :tenure-id \"tenure-3\", :agent-id :agent-4, :task-id :task-2, :claim-id :claim-1}, :error nil}",
+    "worker-run-program-conflict": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-5d618178-3dfa-4fde-9501-2e601d3c341f\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-1": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-0fa0f200-d0e9-4ee2-8be5-a183d64804b3\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-2": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-9a9435f0-e096-4bb3-9a9e-b0d29f00ef1d\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-3": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-121d913a-c6c9-4c2a-b943-fd4be56cd449\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+  },
+  "checks": {
+    "bundleFrozen": true,
+    "planFirstReview": true,
+    "planDraft": true,
+    "planRelay": true,
+    "executionStarted": true,
+    "swarmStarted": true,
+    "registerActor": true,
+    "tokenTask": true,
+    "takeOrDieWon": true,
+    "takeOrDieSurvived": true,
+    "claimed": true,
+    "conflictScheduled": true,
+    "conflictCard": false,
+    "conflictStatus": null,
+    "conflictExpectedShown": false,
+    "conflictActualShown": false,
+    "conflictReasonShown": false,
+    "externalContentKept": true,
+    "originalStampUnchangedInCard": false,
+    "currentStampShownInCard": false,
+    "narrowNoHorizontalOverflow": true,
+    "narrowCardVisible": false,
+    "narrowRetryButtonUsable": false,
+    "retryScheduled": true,
+    "workerContentOnDisk": true,
+    "retryApplied": true,
+    "serverStatOk": true,
+    "serverStampIsFinal": true,
+    "narrowAppliedCard": false,
+    "narrowAppliedNoOverflow": true
+  },
+  "receipts": {},
+  "errors": [],
+  "clientBundle": {
+    "path": "/home/kunweiz/Desktop/vibe/Herdchestra/resources/public/js/main.js",
+    "bytes": 3010646,
+    "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2"
+  },
+  "originalStamp": {
+    "mtime-sec": 1793941583,
+    "mtime-nsec": 286974040,
+    "size": 20
+  },
+  "sessionId": "hc-session-07bb9c78-7f74-48a7-949d-fe5a6a4d4fd7",
+  "executionTenure": "tenure-3",
+  "rootTask": "task-1",
+  "relayRootTask": "root-task-1",
+  "actor": "agent-4",
+  "tokenTask": "task-2",
+  "claimId": "claim-1",
+  "conflictJob": "worker-job-5d618178-3dfa-4fde-9501-2e601d3c341f",
+  "conflictCard": null,
+  "afterConflictText": "name,value\n原稿,1\n外部编辑,42\n",
+  "afterConflictStamp": {
+    "mtime-sec": 1793941586,
+    "mtime-nsec": 545948799,
+    "size": 36
+  },
+  "observations": {
+    "conflictFilePathShown": false,
+    "filePathShownAfterApply": false
+  },
+  "conflictRowsAll": [],
+  "conflictDashboardText": "Swarm fleet\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。",
+  "conflictPageText": "Herdchestra\n工作台\n●\n已连接，等待同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已连接，等待同步\nepoch\n—\nseq\n—\n\n通道已打开，正在等待原子基线快照。命令暂不可用。\n\nSwarm 看板\n\nfleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。\n\n已连接，等待同步\n请求重同步\nSwarm fleet\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n看板同步\nswarm 数\n0\n任务数\n0\nepoch\n—\nseq\n—\n最近确认\n—\n服务器报告本轮未完成\n×\n通道已打开，正在等待原子基线快照。命令暂不可用。",
+  "narrowOverflow": {
+    "scrollWidth": 360,
+    "clientWidth": 360
+  },
+  "narrowPrograms": [],
+  "narrowRetryButtons": [],
+  "retryAttempts": [
+    {
+      "attempt": 1,
+      "jobId": "worker-job-0fa0f200-d0e9-4ee2-8be5-a183d64804b3",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-0fa0f200-d0e9-4ee2-8be5-a183d64804b3\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    },
+    {
+      "attempt": 2,
+      "jobId": "worker-job-9a9435f0-e096-4bb3-9a9e-b0d29f00ef1d",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-9a9435f0-e096-4bb3-9a9e-b0d29f00ef1d\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    },
+    {
+      "attempt": 3,
+      "jobId": "worker-job-121d913a-c6c9-4c2a-b943-fd4be56cd449",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-121d913a-c6c9-4c2a-b943-fd4be56cd449\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    }
+  ],
+  "retryJob": "worker-job-121d913a-c6c9-4c2a-b943-fd4be56cd449",
+  "appliedCard": null,
+  "finalText": "worker,7\n",
+  "finalStamp": {
+    "mtime-sec": 1793941765,
+    "mtime-nsec": 642797698,
+    "size": 9
+  },
+  "serverStat": "{:ok? true, :path \"e2e09.txt\", :stamp {:mtime-sec 1793941765, :mtime-nsec 642797698, :size 9}, :size 9, :symlink? false, :exists? true, :kind :file, :mtime-nsec 642797698, :mtime-sec 1793941765}",
+  "narrowAppliedPrograms": [],
+  "narrowAppliedOverflow": {
+    "scrollWidth": 360,
+    "clientWidth": 360
+  },
+  "ok": false,
+  "finishedAt": "2026-11-06T05:09:56.896Z",
+  "rss": {
+    "after_health_kb": 1119612,
+    "after_driver_kb": 1380712
+  }
+}

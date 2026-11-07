@@ -1,0 +1,36 @@
+{
+  "test": "E2E01 new connection (D-12)",
+  "appUrl": "http://127.0.0.1:40771",
+  "mockUrl": "http://127.0.0.1:42087",
+  "clientBundleSha256": "a8acf56501179c24b2cbe054d2074adc472e7d95110d736bc4391fdf9371b75b",
+  "checks": {},
+  "ok": false,
+  "error": "locator.click: Target page, context or browser has been closed\nCall log:\n  - waiting for locator('.hc-model-row').filter({ hasText: 'manual-only' }).first().getByRole('button', { name: '编辑能力', exact: true }).first()\n    - locator resolved to <button type=\"button\" class=\"hc-button hc-button--quiet\">编辑能力</button>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n  - element was detached from the DOM, retrying\n\n    at settingsEnableModelAndBindMain (/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/support/ui.mjs:258:32)\n    at async file:///tmp/hc-w8/d12-check.mjs:49:3",
+  "body": "",
+  "modelLabelBeforeSend": "",
+  "sendDisabledBeforeSend": null,
+  "mockState": {
+    "mock": true,
+    "requests": 1,
+    "chatCompletions": 1,
+    "active": 0,
+    "aborted": 0,
+    "config": {
+      "reply": "Mock 回复 D12-1793934947936：手动模型可用。",
+      "chunkSize": 24,
+      "chunkDelayMs": 90,
+      "errorStatus": null,
+      "failAfterChunks": null,
+      "forceToolCall": false
+    },
+    "last": {
+      "at": "2026-11-06T03:15:49.508Z",
+      "path": "/v1/chat/completions",
+      "model": "manual-only",
+      "stream": false,
+      "messageCount": 1,
+      "hasTools": false,
+      "user": "Herdchestra connection test. Reply with OK."
+    }
+  }
+}

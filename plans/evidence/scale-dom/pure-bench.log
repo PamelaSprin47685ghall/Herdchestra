@@ -1,0 +1,7 @@
+{:env {:java "27", :os "Linux", :arch "amd64", :cpus 12, :sessions 1000, :messages 2000, :used-mb 111.75599670410156}}
+{:min 3.050116002559662, :median 4.761569000780582, :max 8.99219200015068, :result 1000, :used-mb 127.75599670410156, :scenario :sessions-list}
+{:min 2.0828180015087128, :median 2.929764002561569, :max 5.960467994213104, :result 1000, :used-mb 147.75599670410156, :scenario :sessions-filter}
+{:min 1.051595002412796, :median 1.1817659959197044, :max 4.178226999938488, :result 2000, :used-mb 31.845481872558594, :scenario :message-order}
+{:min 1.360163003206253, :median 1.4574309960007668, :max 2.1965980008244514, :result 2000, :used-mb 63.84544372558594, :scenario :messages-for-session}
+{:min 3.4535619989037514, :median 3.6701010018587112, :max 5.650310002267361, :result 400, :used-mb 143.84547424316406, :scenario :session-sources}
+{:min 0.0011500045657157898, :median 0.0012800022959709167, :max 0.05686499923467636, :result "s0", :used-mb 143.84547424316406, :scenario :selected-session}

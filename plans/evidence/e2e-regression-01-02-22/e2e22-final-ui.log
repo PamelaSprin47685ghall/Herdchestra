@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "checks": {
+    "activeVisible": true,
+    "deletedVisible": true,
+    "deletedNotInMain": true
+  },
+  "loadButton": 1
+}

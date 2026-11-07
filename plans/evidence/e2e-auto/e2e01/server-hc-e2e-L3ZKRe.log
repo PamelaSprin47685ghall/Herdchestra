@@ -1,0 +1,5 @@
+Syntax error reading source at (hc/server/app/snapshot.clj:596:55).
+Nested #()s are not allowed
+
+Full report at:
+/tmp/hc-e2e-L3ZKRe/tmp/clojure-3971302314113758613.edn

@@ -1,0 +1,108 @@
+{;; Herdchestra build graph.
+ ;; Root AGENTS.md §8.1 and src/AGENTS.md are authoritative.
+ ;; Keep core modules independent: compose, server, and client deps live in aliases.
+ :paths ["src" "resources"]
+
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}}
+
+ ;; Every alias that can start a program JVM caps the heap.  A JVM without
+ ;; -Xmx sizes its maximum heap from physical memory (one quarter by default),
+ ;; so several concurrent app/test JVMs can reserve tens of gigabytes and
+ ;; starve the host.  Child JVMs started by tests carry their own smaller cap;
+ ;; see test/hc/test_jvm.clj.
+ :aliases
+ {;; Development and property-test classpath.
+  :dev
+  {:extra-paths ["test"]
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]
+   :extra-deps {org.clojure/test.check {:mvn/version "1.1.3"}
+                ;; Real WebSocket roundtrip for the Sente boundary test.
+                org.java-websocket/Java-WebSocket {:mvn/version "1.6.0"}}}
+
+  ;; Focused browser harness: test namespaces only, without test.check or
+  ;; :main-opts.  shadow-cljs reads source paths from the classpath.
+  :browser-test
+  {:extra-paths ["test"]
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]}
+
+  ;; Run every clojure.test namespace under test/.
+  ;; clojure.test.check properties are ordinary clojure.test tests.
+  :test
+  {:extra-paths ["test"]
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]
+   :extra-deps {org.clojure/test.check {:mvn/version "1.1.3"}
+                ;; Real WebSocket roundtrip for the Sente boundary test.
+                org.java-websocket/Java-WebSocket {:mvn/version "1.6.0"}
+                io.github.cognitect-labs/test-runner
+                {:git/tag "v0.5.1"
+                 :git/sha "5e91ee0989d93115cfb5e15b6f242f5ec7ab762e"}}
+   :main-opts ["-m" "cognitect.test-runner"]
+   ;; The X entry must release Datalevin's process-global non-daemon pools
+   ;; after the suite; otherwise a leaked/failed store open keeps the JVM
+   ;; alive after the summary.  The M entry keeps the standard runner, which
+   ;; exits explicitly.
+   :exec-fn hc.test-runner/test
+   :exec-args {:dirs ["test"]}}
+
+  ;; Composition layer: guarded commands, Missionary supervision, Nudge.
+  :compose
+  {:extra-deps {missionary/missionary {:mvn/version "b.47"}}}
+
+  ;; Server adapters. Datalevin is the single selected storage engine
+  ;; (root AGENTS.md §7.1; measured limits in HACK.md).
+  :server
+  {:extra-deps {datalevin/datalevin {:mvn/version "1.2.10"}
+                org.clojure/data.json {:mvn/version "2.5.1"}
+                missionary/missionary {:mvn/version "b.47"}
+                com.taoensso/sente {:mvn/version "1.22.0"}
+                com.cognitect/transit-clj {:mvn/version "1.1.367"}
+                dev.langchain4j/langchain4j {:mvn/version "1.23.0"}
+                dev.langchain4j/langchain4j-open-ai {:mvn/version "1.23.0"}
+                dev.langchain4j/langchain4j-ollama {:mvn/version "1.23.0"}
+                http-kit/http-kit {:mvn/version "2.8.0"}
+                metosin/malli {:mvn/version "0.20.3"}
+                ;; Document extraction: PDFBox for real PDF text/pages,
+                ;; metadata-extractor for EXIF orientation, JavaCPP presets
+                ;; for CPU Tesseract (no system install, no GPU).
+                org.apache.pdfbox/pdfbox {:mvn/version "3.0.5"}
+                com.drewnoakes/metadata-extractor {:mvn/version "2.19.0"}
+                org.bytedeco/javacpp {:mvn/version "1.5.14"}
+                org.bytedeco/tesseract {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/tesseract$linux-x86_64 {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/tesseract$linux-arm64 {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/tesseract$macosx-x86_64 {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/tesseract$macosx-arm64 {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/tesseract$windows-x86_64 {:mvn/version "5.5.3-1.5.14"}
+                org.bytedeco/leptonica {:mvn/version "1.87.0-1.5.14"}
+                org.bytedeco/leptonica$linux-x86_64 {:mvn/version "1.87.0-1.5.14"}
+                org.bytedeco/leptonica$linux-arm64 {:mvn/version "1.87.0-1.5.14"}
+                org.bytedeco/leptonica$macosx-x86_64 {:mvn/version "1.87.0-1.5.14"}
+                org.bytedeco/leptonica$macosx-arm64 {:mvn/version "1.87.0-1.5.14"}
+                org.bytedeco/leptonica$windows-x86_64 {:mvn/version "1.87.0-1.5.14"}}
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]}
+
+  ;; Browser client. Framework7 React itself is an npm dependency and belongs
+  ;; in the client package manifest, not in deps.edn.
+  :client
+  {:extra-deps {com.fulcrologic/fulcro {:mvn/version "3.10.1"}
+                com.fulcrologic/fulcro-websockets {:mvn/version "3.4.0"}}}
+
+  ;; ClojureScript compiler entry point.
+  :cljs
+  {:extra-deps {org.clojure/clojurescript {:mvn/version "1.12.145"}
+                thheller/shadow-cljs {:mvn/version "3.5.11"}}
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]
+   :main-opts ["-m" "cljs.main"]}
+
+  ;; shadow-cljs CLI only.  Keep :main-opts out of this alias: with -A,
+  ;; :cljs's `-m cljs.main` deprecation path can select cljs.cli instead of
+  ;; shadow.cljs.devtools.cli.
+  :shadow
+  {:extra-deps {thheller/shadow-cljs {:mvn/version "3.5.11"}}
+   :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
+              "-XX:+ExitOnOutOfMemoryError"]}}}

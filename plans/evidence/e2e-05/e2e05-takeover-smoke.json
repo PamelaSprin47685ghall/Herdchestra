@@ -1,0 +1,11 @@
+{
+  "sid": "hc-session-440ad25d-ffaf-46bb-abfc-2b0080ed5ee7",
+  "info": {
+    "clientId": "50ba751f-e546-446b-b2c4-7fe01606a7f1",
+    "sub": 1,
+    "ready": 1
+  },
+  "epoch": 1,
+  "frame": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"5bb9c093-0583-41c8-8e8c-9916d5d02160\",\"~:command-epoch\",1,\"~:subscription-id\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:session/takeover\",\"~:session-id\",\"hc-session-440ad25d-ffaf-46bb-abfc-2b0080ed5ee7\"]]]]",
+  "receipt": "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/command-receipt\",\"~:value\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:controller-id\",\"50ba751f-e546-446b-b2c4-7fe01606a7f1\",\"~:observer-ids\",[],\"~:run-id\",\"hc-session-440ad25d-ffaf-46bb-abfc-2b0080ed5ee7-run\",\"~:run-state\",\"~:running\",\"~:status\",\"~:accepted\",\"~:outcome\",\"~:taken-over\",\"~:previous-controller-id\",null],\"~:replayed?\",false,\"~:error\",null,\"~:command-id\",\"5bb9c093-0583-41c8-8e8c-9916d5d02160\",\"~:command-epoch\",1],\"~:subscription-id\",1]]],null]"
+}

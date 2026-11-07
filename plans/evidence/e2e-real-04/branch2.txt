@@ -1,0 +1,38 @@
+你：
+E2E04 已编辑：移除图片，只保留文字。
+
+tool-call：
+（无正文）
+
+工具：
+{:role :clj-plan
+  :raw-source """
+  (defprogram e2e04-image-one-line []
+    (review {:findings []}))
+  """
+  :read-set {}
+  :started-at 1793858408082
+  :call-id "call-1/tool-0"
+  :name "e2e04-image-one-line"
+  :value {:ledger {} :tenure-epoch 1 :reviewed? false :call-id "review-call-1/tool-0" :milestone :S1 :question "我需要干什么？" :outcome :ask :lane :plan :relayed? false :status :accepted :tenure-id "tenure-1" :awaiting-user? true}
+  :numbered-source """
+  1 | (defprogram e2e04-image-one-line []
+  2 |   (review {:findings []}))
+  """
+  :attempt-id :attempt-e17e0d0d-d876-4c85-8e8a-db5e52a99a87--3
+  :control-results [{:primitive :review :result {:ledger {} :tenure-epoch 1 :reviewed? false :call-id "review-call-1/tool-0" :milestone :S1 :question "我需要干什么？" :outcome :ask :lane :plan :relayed? false :status :accepted :tenure-id "tenure-1" :awaiting-user? true}}]
+  :state :completed
+  :checks {}
+  :source """
+  1 | (defprogram e2e04-image-one-line []
+  2 |   (review {:findings []}))
+  """
+  :operation-count 0
+  :intent-bytes 120
+  :s1? true
+  :deadline-ms 6000
+  :status :COMPLETED
+  :commit nil
+  :holder? false
+  :commits []
+}

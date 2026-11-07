@@ -1,0 +1,218 @@
+{
+  "test": "e2e12-multiround",
+  "checks": {
+    "e2e12-second-book-created": {
+      "pass": true,
+      "detail": "wb-e05bdc38-9828-45ed-b85c-dc8dd0d31489"
+    },
+    "e2e12-entries-created": {
+      "pass": true,
+      "detail": {
+        "entryAny": "wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f",
+        "entryAll": "wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f",
+        "entrySticky": "wbe-3321e8cf-0073-427b-8ccc-688638c62f6e",
+        "entryCool": "wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234",
+        "entryBudget": "wbe-79868c8d-ef34-41e2-b12b-35ee10299890",
+        "entryConst": "wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3"
+      }
+    },
+    "e2e12-card-turn-selected": {
+      "pass": true,
+      "detail": true
+    },
+    "e2e12-any-hit": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-all-hit": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-hit": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-hit": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-constant-hit": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-budget-omitted": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-card-applied": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-r1-no-counters": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-second-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-blocked-second-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-budget-omitted-second-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-card-single-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-any-all-window-hit": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：6摘要：0轮次：3可见：6排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-third-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：6摘要：0轮次：3可见：6排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-blocked-third-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：6摘要：0轮次：3可见：6排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-budget-omitted-third-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：6摘要：0轮次：3可见：6排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-retriggered-after-expiry": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：7摘要：0轮次：4可见：7排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-blocked-fourth-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：7摘要：0轮次：4可见：7排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-budget-omitted-fourth-turn": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：7摘要：0轮次：4可见：7排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-second-cycle": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：9摘要：0轮次：5可见：9排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-retrigger": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：9摘要：0轮次：5可见：9排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-budget-out-of-window": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：9摘要：0轮次：5可见：9排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-any-not-all": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：11摘要：0轮次：6可见：11排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-still-second-cycle": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：11摘要：0轮次：6可见：11排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-second-cycle-blocked": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：11摘要：0轮次：6可见：11排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-sticky-ended": {
+      "pass": false,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-any-hit-no-all": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-cooldown-still-blocked": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-card-still-empty": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    },
+    "e2e12-constant-still-provided": {
+      "pass": true,
+      "detail": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    }
+  },
+  "steps": [
+    {
+      "at": "2026-11-06T10:19:17.415Z",
+      "name": "reload-after-book-a",
+      "reason": "book-create command remains pending; reload clears client state"
+    },
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    },
+    {
+      "at": "2026-11-06T10:21:00.688Z",
+      "name": "send-r1",
+      "text": "蓝色 天空 持续 冷却 预算 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:21:08.839Z",
+      "name": "send-r2",
+      "text": "蓝色 天空 冷却 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:22:16.727Z",
+      "name": "send-r3",
+      "text": "冷却 第一遍 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：6摘要：0轮次：3可见：6排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:22:24.884Z",
+      "name": "send-r4",
+      "text": "冷却 第二遍 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：7摘要：0轮次：4可见：7排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:22:33.040Z",
+      "name": "send-r5",
+      "text": "冷却 第三遍 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 关键词命中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-79868c8d-ef34-41e2-b12b-35ee10299890 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：9摘要：0轮次：5可见：9排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:22:41.192Z",
+      "name": "send-r6",
+      "text": "蓝色 只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：11摘要：0轮次：6可见：11排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "at": "2026-11-06T10:22:49.355Z",
+      "name": "send-r7",
+      "text": "只回复 OK，不要调用工具。",
+      "panel": "本轮上下文 · 预览系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af05a77d-9a61-413e-b85f-6ab6030401dd已提供 wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f · 关键词命中已提供 wbe-3321e8cf-0073-427b-8ccc-688638c62f6e · 持续提供中已提供 wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3 · 始终提供命中但未提供 wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234 · 冷却中指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：12摘要：0轮次：7可见：12排除：0估算Token：未知来源：unknown"
+    }
+  ],
+  "startedAt": "2026-11-06T10:19:07.620Z",
+  "bundle": {
+    "size": 3014943,
+    "sha256": "72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726"
+  },
+  "bookA": "wb-af05a77d-9a61-413e-b85f-6ab6030401dd",
+  "bookB": "wb-e05bdc38-9828-45ed-b85c-dc8dd0d31489",
+  "entries": {
+    "entryAny": "wbe-24a5f4c4-6d1f-4be7-a501-819f85b30a5f",
+    "entryAll": "wbe-2b8ac50b-a5e7-4bbd-b201-fc0801ce8b8f",
+    "entrySticky": "wbe-3321e8cf-0073-427b-8ccc-688638c62f6e",
+    "entryCool": "wbe-b99eff75-ec7d-41bc-ba01-b68a73c7e234",
+    "entryBudget": "wbe-79868c8d-ef34-41e2-b12b-35ee10299890",
+    "entryConst": "wbe-6c9472a4-cc2d-4ec6-8e6d-76e3bcbe9fd3"
+  },
+  "error": {
+    "message": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: '撤销移动', exact: true }).first() to be visible\n",
+    "stack": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: '撤销移动', exact: true }).first() to be visible\n\n    at /tmp/hc-w22/e2e12.cjs:394:8"
+  },
+  "finishedAt": "2026-11-06T10:23:16.133Z"
+}

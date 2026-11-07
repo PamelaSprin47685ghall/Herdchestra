@@ -1,0 +1,36 @@
+{
+  "test": "e2e01",
+  "baseUrl": "http://127.0.0.1:41847",
+  "marker": "E2E01-1793863916189",
+  "startedAt": "2026-11-05T07:31:56.189Z",
+  "checks": {
+    "connectionVisible": true,
+    "connectionHost": true,
+    "modelBound": true,
+    "replyNonEmpty": true,
+    "replyNotStub": true,
+    "replySemantic": true,
+    "userMessagePersisted": true,
+    "reloadKeepsUser": true,
+    "reloadKeepsReply": true,
+    "reloadKeepsModel": true,
+    "reopenKeepsUser": true,
+    "reopenKeepsReply": true,
+    "reopenKeepsModel": true
+  },
+  "ok": true,
+  "connectionCard": "Local Ollama (real) 本地服务",
+  "attempts": [
+    {
+      "attempt": 1,
+      "outcome": "reply",
+      "ms": 35279
+    }
+  ],
+  "modelLabel": "模型：qwen3.6:27b (real)",
+  "sendToReplyMs": 35279,
+  "replyText": "是的，本地模型正在工作。",
+  "modelLabelAfterReload": "模型：qwen3.6:27b (real)",
+  "modelLabelAfterReopen": "模型：qwen3.6:27b (real)",
+  "finishedAt": "2026-11-05T07:32:45.965Z"
+}

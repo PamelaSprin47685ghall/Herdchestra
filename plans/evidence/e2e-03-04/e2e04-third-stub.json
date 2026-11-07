@@ -1,0 +1,583 @@
+{
+  "checks": {
+    "round1": true,
+    "idleAfter1": false,
+    "round2": true,
+    "idleAfter2": false,
+    "branchSelected": true,
+    "branchTwoRounds": true,
+    "idleBeforeThird": false,
+    "thirdReply": true,
+    "sequence": "user,assistant,user,assistant,user,assistant",
+    "expectedSequence": false,
+    "noDuplicateThird": true,
+    "noFakeSpinner": false
+  },
+  "actions": [
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop",
+    "stop"
+  ],
+  "idleSamples": [
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869074064
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869075187
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869076326
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869077449
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869078529
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869079655
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869080743
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869081799
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869082886
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869083954
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869085039
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869086105
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869087159
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869088210
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869089259
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869090310
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869091363
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869092427
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869093474
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869095295
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869096364
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869097420
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869098459
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869099493
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869100523
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869101556
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869102590
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869103625
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869104660
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869105695
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869106747
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869107795
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869108845
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869109935
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869110995
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869112059
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869113135
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869114189
+    },
+    {
+      "busy": true,
+      "disabled": true,
+      "at": 1793869115242
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869118838
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869119868
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869120874
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869121881
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869122892
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869123920
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869124932
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869125947
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869126968
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869127979
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869128988
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869130005
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869131016
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869132023
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869133042
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869134049
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869135055
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869136066
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869137073
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869138078
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869139084
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869140090
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869141095
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869142101
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869143107
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869144111
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869145118
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869146122
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869147128
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869148147
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869149157
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869150168
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869151178
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869152188
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869153203
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869154211
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869155221
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869156231
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869157236
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869158242
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869159247
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869160254
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869161259
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869162268
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869163277
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869164296
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869165310
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869166326
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869167334
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869168346
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869169369
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869170377
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869171390
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869172420
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869173426
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869174431
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869175461
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869176469
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869177477
+    },
+    {
+      "busy": false,
+      "disabled": true,
+      "at": 1793869178496
+    }
+  ],
+  "sourceId": "hc-session-4ffff557-44a1-4183-9f2a-67bf7c5ccb0a",
+  "branchId": "hc-session-1b294114-47ce-4695-89d2-e3005149c764",
+  "messages": [
+    {
+      "cls": "user",
+      "text": "第一轮：请回复：收到。"
+    },
+    {
+      "cls": "assistant",
+      "text": "收到。"
+    },
+    {
+      "cls": "user",
+      "text": "第二轮：请回复：第二。"
+    },
+    {
+      "cls": "assistant",
+      "text": "第二。"
+    },
+    {
+      "cls": "user",
+      "text": "分支第三轮：请只回复：第三。不要调用工具。"
+    },
+    {
+      "cls": "assistant",
+      "text": "THIRD-REPLY 第三轮已完成。"
+    }
+  ],
+  "ok": false
+}

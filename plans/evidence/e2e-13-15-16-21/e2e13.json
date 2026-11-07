@@ -1,0 +1,64 @@
+{
+  "steps": {
+    "panel": {
+      "hasGenerate": true,
+      "text": "打开为小应用\n生成小应用\n还没有工作区小应用。输入一个工作区内的 HTML 文件路径，或先在文件页找到它。\n小应用是工作区中的 HTML 文件。复制文件默认创建独立实例，不复制数据；删除文件只会让它暂时未关联。\n选择左侧的小应用，或输入路径打开一个 HTML 文件。"
+    },
+    "aInitial": {
+      "text": "Reading A\n\nnote=(none) app=undefined",
+      "note": null
+    },
+    "aReload": {
+      "text": "Reading A\n\nnote=A-record app=undefined",
+      "note": "A-record"
+    },
+    "bInitial": {
+      "text": "Reading B\n\nnote=(none) app=undefined",
+      "note": null
+    },
+    "bReload": {
+      "text": "Reading B\n\nnote=B-record app=undefined",
+      "note": "B-record"
+    },
+    "rowsBefore": [
+      {
+        "app_id": "app-74b850a3-bd43-4e62-9f64-6a110d07d56a",
+        "key": "note",
+        "value": "B-record"
+      },
+      {
+        "app_id": "app-9e6430ac-1f92-4913-b108-ca5918505d80",
+        "key": "note",
+        "value": "A-record"
+      }
+    ],
+    "clearText": "打开为小应用\n生成小应用\nreading-a.html\n文件可用\n数据 0 B\n最近使用 2026-11-05T07:23:34\napps/reading-a.html\n打开\n数据\n检查文件\nreading-b.html\n文件可用\n数据 12 B\n最近使用 2026-11-05T07:23:33\napps/reading-b.html\n打开\n数据\n检查文件\n小应用是工作区中的 HTML 文件。复制文件默认创建独立实例，不复制数据；删除文件只会让它暂时未关联。\n已清空此小应用的数据；其他小应用与普通浏览器数据未受影响。\nreading-a.html\n文件可用\napps/reading-a.html\n数据 0 B\n收起数据\n检查文件\n关闭\n小应用数据\n关闭\n0 条记录\n约 0 B\n最近写入 —\n数据只属于此小应用；复制工作区文件不会复制这里的数据，其他小应用页面不共享此存储。\n导出数据\n清空数据\n已授权的文件范围\n尚未授权任何工作区文件；小应用请求时会让你选择具体文件或目录。\n源版本\n文件更新会保留旧版；查看或本地恢复旧版都不会改写工作区文件。恢复只改变本应用读取的源，数据保留。\n版本 v1 · 当前\n保存于 2026-11-05T07:23:25 · 声明数据版本 1\n查看旧版\n恢复此旧版（本地）\n导出 HTML",
+    "rowsAfter": [
+      {
+        "app_id": "app-74b850a3-bd43-4e62-9f64-6a110d07d56a",
+        "key": "note",
+        "value": "B-record"
+      }
+    ],
+    "aAfterClear": {
+      "text": "Reading A\n\nnote=(none) app=undefined",
+      "note": null
+    },
+    "bAfterClear": {
+      "text": "Reading B\n\nnote=B-record app=undefined",
+      "note": "B-record"
+    },
+    "extReady": true,
+    "skillDraft": {
+      "ta": "",
+      "sel": "http",
+      "disabled": false,
+      "title": "",
+      "body": "扩展状态已同步\ncatalog v1\n连接 0\n读取最新状态\nMCP 服务器\n\n新增配置 → 测试连通 → 启用工具 → 会话可用，是四个独立状态。测试成功不会自动启用任何工具，也不会自动把服务器加入当前会话。\n\n名称\n连接方式\nHTTP 流式\nSSE\n本地进程\n地址\n新增服务器\n导入 MCP 配置\n\n先预览候选；导入的服务器默认未启用。未知字段只出现在报告里，不执行。\n\n预览导入\n导入并保持停用\n尚无 MCP 服务器\n新增配置后先测试连接，再启用工具和服务器。\n技能\n\n安装后默认未启用、未绑定。技能文件是说明与配套资料，不会被执行；启用后仍需在助手或会话中选择。\n\n名称（可选）\n留空时从 SKILL.md 读取名称。\n来源\n文本\n链接\n压缩包\nSKILL.md\n助手（绑定/解绑）\n绑定不等于启用；全局停用始终优先。\n安装技能\n尚无技能\n从文本、链接或压缩包安装；安装后默认未启用。"
+    },
+    "installDisabled": false,
+    "skillBody": "扩展状态已同步\ncatalog v2\n连接 0\n读取最新状态\nMCP 服务器\n\n新增配置 → 测试连通 → 启用工具 → 会话可用，是四个独立状态。测试成功不会自动启用任何工具，也不会自动把服务器加入当前会话。\n\n名称\n连接方式\nHTTP 流式\nSSE\n本地进程\n地址\n新增服务器\n导入 MCP 配置\n\n先预览候选；导入的服务器默认未启用。未知字段只出现在报告里，不执行。\n\n预览导入\n导入并保持停用\n尚无 MCP 服务器\n新增配置后先测试连接，再启用工具和服务器。\n技能\n\n安装后默认未启用、未绑定。技能文件是说明与配套资料，不会被执行；启用后仍需在助手或会话中选择。\n\n名称（可选）\n留空时从 SKILL.md 读取名称。\n来源\n文本\n链接\n压缩包\nSKILL.md\n助手（绑定/解绑）\n绑定不等于启用；全局停用始终优先。\n安装技能\nE2E13 读书条目 · 未标版本 · 绑定 0\n来源：文本\n\n记录读书条目\n\n未启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n147 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游",
+    "enabledText": "E2E13 读书条目 · 未标版本 · 绑定 0\n来源：文本\n\n记录读书条目\n\n已启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n147 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游",
+    "boundText": "E2E13 读书条目 · 未标版本 · 绑定 1\n来源：文本\n\n记录读书条目\n\n已启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n147 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游"
+  }
+}

@@ -1,0 +1,28 @@
+[workspace]
+name = "herdchestra"
+version = "0.0.1"
+description = "Independent multi-agent engineering system: guarded Owner, Swarm STM board, protected workspace writes."
+channels = ["conda-forge"]
+# osx-arm64 omitted: conda-forge clojure has no arm build (HACK.md §4.2).
+platforms = ["linux-64", "osx-64", "win-64"]
+
+[dependencies]
+clojure = "1.12.6.*"
+openjdk = "21.0.*"
+nodejs = "22.*"
+
+[tasks]
+# Property tests: clojure.test.check runs inside clojure.test namespaces.
+test = "clojure -X:test:compose:server:client"
+test-compose = "clojure -X:test:compose"
+test-server = "clojure -X:test:server"
+test-app = "clojure -M:test:server -n hc.server.app.system-test"
+repl = "clojure -M:dev"
+deps = "clojure -P -M:dev:test"
+app = "clojure -M:server -m hc.server.app"
+app-check = "clojure -M:server -m hc.server.app --check --port 0"
+backup = "clojure -M:server -m hc.server.backup.cli"
+cljs-repl = "clojure -M:cljs:client -re node"
+client-release = "npm run release"
+client-dev = "npm run dev"
+client-install = "npm ci"

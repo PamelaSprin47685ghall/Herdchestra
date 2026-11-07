@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "checks": {
+    "distinctReplies": true,
+    "bHasB": true,
+    "bLacksA": true,
+    "aHasA": true,
+    "aLacksB": true,
+    "aKeepsModel": true,
+    "disableNotice": true,
+    "disableNoticeWording": [
+      "Enter 发送 · Shift+Enter 换行 · 所选连接已停用；请启用连接或选择其他模型，草稿已保留",
+      "模型：Alpha 模型（连接已停用）",
+      "所选连接已停用；请启用连接或选择其他模型，草稿已保留"
+    ]
+  },
+  "disable": "clicked 停用此连接",
+  "disableNotice": [
+    "Enter 发送 · Shift+Enter 换行 · 所选连接已停用；请启用连接或选择其他模型，草稿已保留",
+    "模型：Alpha 模型（连接已停用）",
+    "所选连接已停用；请启用连接或选择其他模型，草稿已保留"
+  ],
+  "replyA": "这是一个普通的问答请求，我将直接回答您的问题。 ALPHA-1793864036549",
+  "replyB": "好的，收到。BETA-1793864036549",
+  "json": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-regression-01-02-22/e2e02-result.json"
+}

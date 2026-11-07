@@ -1,0 +1,28 @@
+{
+  "test": "mock-services",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-06T02:28:31.589Z",
+  "endpoints": {
+    "oauth": "http://127.0.0.1:39433",
+    "webdav": "http://127.0.0.1:44167",
+    "s3": "http://127.0.0.1:41671"
+  },
+  "checks": {
+    "oauthWellKnown": true,
+    "oauthDeviceCode": true,
+    "oauthDeviceToken": true,
+    "oauthUserInfo": true,
+    "oauthCallbackFlow": true,
+    "webdavPut": true,
+    "webdavGet": true,
+    "webdavPropfind": true,
+    "webdavDelete": true,
+    "s3Put": true,
+    "s3Get": true,
+    "s3ListBucket": true,
+    "markedMock": true
+  },
+  "ok": true,
+  "finishedAt": "2026-11-06T02:28:31.678Z"
+}

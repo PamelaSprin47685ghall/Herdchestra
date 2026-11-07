@@ -1,0 +1,13 @@
+2026-11-05T12:39:34+08:00
+resources/public/js/main.js size=2919041 mtime=2026-11-05 12:37:25.538675310 +0800 epoch=1793853445
+resources/public/css/framework7-bundle.css size=570383 mtime=2026-11-05 12:39:14.999985749 +0800 epoch=1793853554
+main_age_seconds=129
+decision=SKIP
+reason=main.js modified within 5 minutes; parallel client build likely
+required=final gate rerun after client-audit finishes
+c17c0a87c523b7a8d4b67404d814edebc1322e4d4465efafae115f1439928610  resources/public/js/main.js
+77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57  resources/public/css/framework7-bundle.css
+post_check_observation=2026-11-05T12:39:55+08:00
+resources/public/js/main.js size=2919917 mtime=2026-11-05 12:39:44.307589093 +0800 epoch=1793853584
+artifact_changed_during_check=yes
+decision=SKIP_CONFIRMED

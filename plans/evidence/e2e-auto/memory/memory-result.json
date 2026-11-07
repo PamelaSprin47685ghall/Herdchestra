@@ -1,0 +1,32 @@
+{
+  "test": "memory-bounds",
+  "mode": "automated-benchmark",
+  "mock": true,
+  "startedAt": "2026-11-06T02:34:46.291Z",
+  "before": {
+    "heapUsed": 43429904,
+    "rss": 150777856
+  },
+  "checks": {
+    "modelHistoryBounded": true,
+    "modelCountAccurate": true,
+    "webdavHistoryBounded": true,
+    "webdavOneObject": true,
+    "webdavBytesBounded": true,
+    "s3HistoryBounded": true,
+    "s3OneObject": true,
+    "s3BytesBounded": true,
+    "heapDeltaBounded": true
+  },
+  "modelRequests": 200,
+  "modelChatCompletions": 300,
+  "after": {
+    "heapUsed": 64236888,
+    "rss": 222801920
+  },
+  "heapDelta": 20806984,
+  "rssDelta": 72024064,
+  "durationMs": 354,
+  "ok": true,
+  "finishedAt": "2026-11-06T02:34:46.639Z"
+}

@@ -1,0 +1,49 @@
+{
+  "startedAt": "2026-11-06T04:19:36.923Z",
+  "base": "http://127.0.0.1:19242",
+  "skill": "E2E13 会话技能",
+  "bundleBefore": {
+    "sha256": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+    "mtime": "2026-11-06T04:17:19.738Z"
+  },
+  "steps": {
+    "sessionAUrl": "http://127.0.0.1:19242/#/sessions/hc-session-120bfc0f-5c80-4cb1-b61e-be8fd7bb254c",
+    "sessionASidebar": "会话\n2 / 2 条\n新建\n临时\nNew session\n2026/11/06 12:19 · Skill Stub\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/06 12:19 · Skill Stub\n重命名\n置顶\n归档\n删除\n已删除会话",
+    "sectionABefore": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：跟随助手\n\n当前会话实际可用：无",
+    "sectionACustom": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：自定义\nE2E13 会话技能 · 未标版本\n\nE2E13 会话级技能交叉验证\n\n本会话可用\n\n当前会话实际可用：无",
+    "sectionAAfterSelect": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：自定义\nE2E13 会话技能 · 未标版本\n\nE2E13 会话级技能交叉验证\n\n本会话可用\n\n当前会话实际可用：E2E13 会话技能",
+    "sessionBUrl": "http://127.0.0.1:19242/#/sessions",
+    "sessionBSidebar": "会话\n2 / 2 条\n新建\n临时\nNew session\n2026/11/06 12:19 · Skill Stub\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/06 12:19 · Skill Stub\n重命名\n置顶\n归档\n删除\n已删除会话",
+    "sectionBBefore": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：跟随助手\n\n当前会话实际可用：无",
+    "sectionBCustom": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：自定义\nE2E13 会话技能 · 未标版本\n\nE2E13 会话级技能交叉验证\n\n本会话可用\n\n当前会话实际可用：无"
+  },
+  "assertions": {
+    "aModeCustom": true,
+    "aSkillRowPresent": true,
+    "aSkillChecked": true,
+    "aActiveSkill": true,
+    "newSessionCreated": true,
+    "bScopeClearedOnSwitch": true,
+    "bSkillRowPresent": true,
+    "bSkillChecked": false,
+    "bActiveEmpty": true,
+    "bModeCustom": true,
+    "pageErrorCount": 0,
+    "pageErrorsZero": true,
+    "pass": true
+  },
+  "pageErrors": [],
+  "bundleAfter": {
+    "sha256": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+    "mtime": "2026-11-06T04:17:19.738Z"
+  },
+  "bundleStable": true,
+  "finishedAt": "2026-11-06T04:19:59.170Z",
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "sha256": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+    "mtime": "2026-11-06T12:17:19+08:00",
+    "note": "新冻结 bundle（替代 55e4e8ea）；D-08 四标记、W3 speech、W9 扩展会话清空均在"
+  },
+  "note": " 本轮已在 8b210896 上复跑，A/B 断言仍全部 PASS。"
+}

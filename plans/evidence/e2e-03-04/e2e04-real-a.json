@@ -1,0 +1,31 @@
+{
+  "checks": {
+    "firstReply": true,
+    "removeControl": true,
+    "twoVersions": true,
+    "originalKeepsImage": true,
+    "newVersionNoImage": true,
+    "branchSelected": true,
+    "branchHasEditedMessage": true,
+    "branchOriginBanner": true,
+    "branchReply2": true,
+    "branchReply3": true,
+    "exportHasEdited": true,
+    "exportHasBranchTurns": false,
+    "exportNoToolLogs": true,
+    "exportNoSecrets": true,
+    "branchRenamed": true,
+    "backToSource": true,
+    "sourceExportExcludesBranch": true,
+    "sourceExportHasEdited": true,
+    "noPageError": true
+  },
+  "errors": [],
+  "sourceId": "hc-session-c1e5a55c-3d52-427c-b239-46a436ea55e7",
+  "originalAttachments": 1,
+  "originalImageLink": "/blobs/sha256-1d2366ccf3c81cb9cb695fa5c3780d09294dd58e369f0ee20895b68a14c7714a?filename=sample.png",
+  "newAttachments": 0,
+  "branchId": "hc-session-5f799335-ab69-43c0-aa4f-486d5d77121a",
+  "branchExport": "## 你\n\n第一轮（已编辑）：不含图片的版本。\n\n## 你\n\n分支第二轮：请只回复：第二。不要调用工具。\n\n## 助手\n\n第二。",
+  "sourceExport": "## 你\n\n第一轮（已编辑）：不含图片的版本。\n\n## 助手\n\n收到。"
+}

@@ -1,0 +1,201 @@
+{
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "sha256": "dd968793cc74919e139f31bb290a5dfb68309c6d9a78acfd766a4d984f2fda4b",
+    "bytes": 3007964,
+    "mtime": "2026-11-06 11:19:25"
+  },
+  "source_mtimes": {
+    "src/hc/client/backup/view.cljc": "2026-11-06 11:11:31",
+    "src/hc/client/backup/model.cljc": "2026-11-06 11:11:18",
+    "src/hc/client/schedule/view.cljs": "2026-11-06 11:08:26",
+    "src/hc/client/schedule/model.cljc": "2026-11-06 11:08:39",
+    "src/hc/client/diagnostics/view.cljs": "2026-11-06 11:09:43",
+    "src/hc/client/speech/ui.cljs": "2026-11-06 11:09:26",
+    "src/hc/client/speech/translation.cljs": "2026-11-06 11:09:04",
+    "src/hc/client/speech/playback.cljs": "2026-11-06 11:09:16",
+    "src/hc/client/settings/view.cljc": "2026-11-06 11:04:17"
+  },
+  "findings": {
+    "theme_explicit_mismatch": {
+      "before": "backup/schedule/diagnostics 仅用 @media (prefers-color-scheme: dark)，不读 html[data-theme]；用户显式选深色而系统浅色时面板保持浅色，反之亦然",
+      "status": "fixed in source (backup/schedule/diagnostics CSS), speech/translation/playback use --wb-* vars",
+      "unbuilt": false
+    },
+    "font_scale_rem": {
+      "before": "workbench.css 只把 --wb-font-scale 用在 body font-size；四个区域大量 font-size/padding 用 rem，rem 相对 html 根字号，不随 200% 缩放",
+      "status": "fixed externally in workbench.css (html font-size calc(16px * --wb-font-scale), body 0.9375rem); CSS dda62554..., 11:13:59",
+      "evidence": [
+        "resources/public/css/workbench.css:66",
+        "src/hc/client/backup/view.cljc:56",
+        "src/hc/client/diagnostics/view.cljs:60",
+        "src/hc/client/schedule/view.cljs:1030"
+      ],
+      "unbuilt": false
+    },
+    "data_center_chrome": {
+      "before": "数据中心页显示首次配置清单、数据中心占位段、供应商页脚文案；与诊断/备份内容重复且上下文错误",
+      "status": "fixed in settings/view.cljc",
+      "unbuilt": false
+    },
+    "diagnostics_facts_unstyled": {
+      "before": ".hc-diag-facts 无 CSS，<dd> 默认缩进 40px；日志/诊断包/轮次/热力图事实列表退化为默认 dl",
+      "status": "fixed in diagnostics/view.cljs",
+      "unbuilt": false
+    },
+    "diagnostics_checkbox_stacked": {
+      "before": ".hc-diag-field 的 grid 布局让复选框与标签上下堆叠；复选框字段复用文本字段样式",
+      "status": "fixed (hc-diag-check)",
+      "unbuilt": false
+    },
+    "diagnostics_link_button": {
+      "before": ".hc-diag-button 无样式；反馈页“打开邮件草稿”是默认蓝色下划线链接，与相邻按钮不一致",
+      "status": "fixed",
+      "unbuilt": false
+    },
+    "backup_size_raw": {
+      "before": "备份列表“大小”直接 str 字节数，未用 format-bytes",
+      "status": "fixed in backup/view.cljc",
+      "unbuilt": false
+    },
+    "backup_storage_dump": {
+      "before": "目标与状态页用 <pre> pr-str 整个 storage map；缺少可读的最近成功备份/占用/可用空间",
+      "status": "fixed (facts + target-summary)",
+      "unbuilt": false
+    },
+    "backup_section_heading_unstyled": {
+      "before": ".hc-backup-section-heading 无 CSS；刷新列表按钮掉到标题下方",
+      "status": "fixed",
+      "unbuilt": false
+    },
+    "schedule_dark_primary_contrast": {
+      "before": "深色 accent #9ec1ff 上仍用白字，对比度约 1.7:1",
+      "status": "fixed (#08131b)",
+      "unbuilt": false
+    },
+    "schedule_timezone_validation": {
+      "before": "跟随设备时区也要求 zone 非空，浏览器无 Intl 时区时误报“固定时区需要…”",
+      "status": "fixed in schedule/model.cljc",
+      "unbuilt": false
+    },
+    "speech_raw_layers_dump": {
+      "before": "服务测试结果用 pr-str 输出整个 layers map",
+      "status": "fixed (readable layer rows)",
+      "unbuilt": false
+    },
+    "speech_dark_inline_colors": {
+      "before": "服务卡/翻译/播放器硬编码 #555/#d8d8dc/#fff/#a11 等浅色",
+      "status": "fixed (--wb-* vars)",
+      "unbuilt": false
+    },
+    "translation_double_padding": {
+      "before": "独立翻译页额外 padding 12px，与其他标签页不对齐",
+      "status": "fixed",
+      "unbuilt": false
+    }
+  },
+  "unstyled_classes": {
+    "backup": [
+      "hc-backup-conflicts",
+      "hc-backup-maintenance-panel",
+      "hc-backup-maintenance-progress__status",
+      "hc-backup-options",
+      "hc-backup-password",
+      "hc-backup-preview-lists",
+      "hc-backup-preview-permissions",
+      "hc-backup-preview__mode",
+      "hc-backup-result-permissions"
+    ],
+    "schedule": [
+      "hc-schedule-gaps",
+      "hc-schedule-link",
+      "hc-schedule-notice--info"
+    ],
+    "diagnostics": [],
+    "speech": [
+      "hc-speech-input",
+      "hc-speech-player"
+    ]
+  },
+  "feature_gaps": [
+    "备份类别没有“预计大小”预览（服务端只在打包后记录 payload-size）",
+    "WebDAV/S3 没有配置表单与测试连接；界面只展示服务器已配置目标",
+    "恢复密码输入在未选备份时仍可编辑（无禁用）",
+    "备份复制密码的反馈只出现在页首 message banner，滚动到密码区时看不到",
+    "详细日志五个动作按钮始终同时可用，没有按 capturing/paused 状态禁用",
+    "数据中心的“最近成功备份/占用”原先只存在于状态页原始 pre；已改为可读事实",
+    "诊断页没有按动作组织的常见问题（FAQ）入口"
+  ],
+  "css": {
+    "path": "resources/public/css/workbench.css",
+    "sha256": "dda62554c9bb0b2643c0c437a1368f56b021f716001bcefa3f5cf92a32fa44ca",
+    "mtime": "2026-11-06 11:13:59"
+  },
+  "build_blocker_resolved": "shell.cljs fixed by W21 at 11:16:02; rebuilt to 4652ef26 at 11:17:42; 4 D-08 markers verified 1 each",
+  "screenshots_1280": [
+    "f-01-diag-stats-1280.png",
+    "f-02-diag-logs-1280.png",
+    "f-03-diag-bundle-1280.png",
+    "f-04-backup-create-1280.png",
+    "f-04b-backup-result-1280.png",
+    "f-05-backup-restore-1280.png",
+    "f-05b-backup-verified-1280.png",
+    "f-06-speech-empty-1280.png",
+    "f-07-speech-form-1280.png",
+    "f-08-schedule-empty-1280.png",
+    "f-09-schedule-form-1280.png"
+  ],
+  "screenshots_pending": [
+    "360",
+    "820",
+    "explicit dark",
+    "200%"
+  ],
+  "run_status": "F segment stopped at 2:40 to release lock; 11 screenshots captured; 360 diag locator hang.",
+  "screenshot_sha256": {
+    "f-01-diag-stats-1280.png": {
+      "sha256": "057017a9569da23e13ab48361809c49d13b59ada9ee3b6b4bb494b4c619b9dc3",
+      "bytes": 156990
+    },
+    "f-02-diag-logs-1280.png": {
+      "sha256": "f5dae2544cdc48c5d67725749a873c7bc4e6bef58abea0b8ca4a1b142a9be0aa",
+      "bytes": 166691
+    },
+    "f-03-diag-bundle-1280.png": {
+      "sha256": "cc8ca54c65e73951dd9827f124d3e23496398929c3824d5986f03d99c29970d1",
+      "bytes": 173771
+    },
+    "f-04-backup-create-1280.png": {
+      "sha256": "8dc5be5c0958bbad0fefdf112b359f3866980db3f45a0a773769e4191a6deba7",
+      "bytes": 157293
+    },
+    "f-04b-backup-result-1280.png": {
+      "sha256": "9599bfe14ad729963c10e2d7fe036f4e9703eb1ca6d2783a9789dc3a68c99b4e",
+      "bytes": 153192
+    },
+    "f-05-backup-restore-1280.png": {
+      "sha256": "5934240820695a4b98ce88d903d81f413d1c1e1cf0ea170cfd829bdb1ca6c5f5",
+      "bytes": 168538
+    },
+    "f-05b-backup-verified-1280.png": {
+      "sha256": "97a8e12850f1f11a07b590250188a44da4df4e265372780cef7473b931d0b286",
+      "bytes": 169424
+    },
+    "f-06-speech-empty-1280.png": {
+      "sha256": "a945749121fe5c8ea9929e82a4b6f8cebcad585e45287c79c807d49ea94da792",
+      "bytes": 75766
+    },
+    "f-07-speech-form-1280.png": {
+      "sha256": "a945749121fe5c8ea9929e82a4b6f8cebcad585e45287c79c807d49ea94da792",
+      "bytes": 75766
+    },
+    "f-08-schedule-empty-1280.png": {
+      "sha256": "05058e4cdfc81f9453ed2f4e5ef7e5ee0e6cfc2237040b0d0b7e093d40af4cff",
+      "bytes": 158482
+    },
+    "f-09-schedule-form-1280.png": {
+      "sha256": "999f9b9f2601816d8b2572059d48b9d3b42a74eb444411fb69d12e350da1ef0c",
+      "bytes": 129130
+    }
+  }
+}

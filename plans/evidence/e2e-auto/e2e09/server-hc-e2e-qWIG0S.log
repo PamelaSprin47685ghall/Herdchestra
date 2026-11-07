@@ -1,0 +1,10 @@
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+Syntax error compiling at (hc/server/app/system.clj:2872:19).
+Unable to resolve symbol: outbound-opts-fn in this context
+
+Full report at:
+/tmp/hc-e2e-qWIG0S/tmp/clojure-11878825733613607907.edn

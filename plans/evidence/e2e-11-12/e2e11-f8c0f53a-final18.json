@@ -1,0 +1,122 @@
+{
+  "test": "e2e11-f8c0f53a-final18",
+  "checks": {
+    "e2e11-defaults-off": {
+      "pass": true,
+      "detail": "read=false suggest=false"
+    },
+    "e2e11-read-switch-on": {
+      "pass": true,
+      "detail": "读取已保存记忆 checked"
+    },
+    "e2e11-assumption-badge": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-truncation-badge": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-candidate-status": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-assumption-meta": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-candidate-approved": {
+      "pass": true,
+      "detail": "工作方式\n生效\nE2E11 审批候选：批准后应进入生效记忆。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 全局 · 事实 · 更新序号 6"
+    },
+    "e2e11-candidate-rejected": {
+      "pass": true,
+      "detail": "工作方式\n已拒绝\nE2E11 拒绝候选：拒绝后不得注入。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 全局 · 事实 · 更新序号 7"
+    },
+    "e2e11-candidate-rescope-approved": {
+      "pass": true,
+      "detail": "工作方式\n生效\nE2E11 改范围候选：批准时改为项目范围。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 项目 e2e11-proj · 事实 · 更新序号 8"
+    },
+    "e2e11-suggest-switch-on": {
+      "pass": false,
+      "detail": "自动建议新记忆 enabled"
+    }
+  },
+  "steps": [
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    },
+    {
+      "name": "suggest-enable",
+      "attempts": [
+        {
+          "attempt": 0,
+          "checkedBefore": false,
+          "enabled": false,
+          "waitedMs": 25305
+        },
+        {
+          "attempt": 0.5,
+          "note": "settled-check",
+          "checked": false
+        },
+        {
+          "attempt": 1,
+          "checkedBefore": false,
+          "enabled": false,
+          "waitedMs": 25304
+        },
+        {
+          "attempt": 1.5,
+          "note": "settled-check",
+          "checked": false
+        },
+        {
+          "attempt": 2,
+          "checkedBefore": false,
+          "enabled": false,
+          "waitedMs": 25305
+        },
+        {
+          "attempt": 2.5,
+          "note": "settled-check",
+          "checked": false
+        },
+        {
+          "attempt": 3,
+          "checkedBefore": false,
+          "enabled": false,
+          "waitedMs": 25304
+        },
+        {
+          "attempt": 3.5,
+          "note": "settled-check",
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "suggest-enable-debug",
+      "switches": "读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。",
+      "errors": [
+        "同一目标已有待确认命令；请等待回执。关闭",
+        "同一目标已有待确认命令；请等待回执。"
+      ]
+    }
+  ],
+  "startedAt": "2026-11-07T03:37:54.769Z",
+  "bundle": {
+    "size": 3017311,
+    "sha256": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a"
+  },
+  "tree": {
+    "sha256": "62c00c0c83bfb0fa7ac3a09e6388b4d3f8035da55e22c1c96613c78667dab5a8"
+  },
+  "error": {
+    "message": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: '整理记忆', exact: true }).first()\n    - locator resolved to <button disabled type=\"button\" title=\"先开启“自动建议新记忆”\" class=\"wb-button wb-button-small\">整理记忆</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not enabled\n     - retrying click action\n       - waiting 500ms\n",
+    "stack": "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: '整理记忆', exact: true }).first()\n    - locator resolved to <button disabled type=\"button\" title=\"先开启“自动建议新记忆”\" class=\"wb-button wb-button-small\">整理记忆</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not enabled\n     - retrying click action\n       - waiting 500ms\n\n    at /tmp/hc-w22/e2e11-v2.cjs:334:22"
+  },
+  "finishedAt": "2026-11-07T03:40:34.985Z"
+}

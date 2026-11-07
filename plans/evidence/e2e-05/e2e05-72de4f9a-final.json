@@ -1,0 +1,431 @@
+{
+  "startedAt": "2026-11-06T16:44:35.402Z",
+  "base": "http://127.0.0.1:35571",
+  "bundle": "72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726",
+  "css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+  "summary": "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+  "checks": {
+    "composerStable": true,
+    "controllerClaimed": true,
+    "attachmentTextSendable": true,
+    "attachmentInFirstMessage": true,
+    "d15TextRoute": true,
+    "originalTurnsReplied": true,
+    "originalReadable": true,
+    "previewEditable": true,
+    "prepared": true,
+    "originalsReadableAfterPrepare": true,
+    "draftNotAppliedYet": true,
+    "applied": true,
+    "summaryOnlyAfterApply": true,
+    "originalsReadableAfterApply": true,
+    "summaryVerbatimApplied": true,
+    "assumptionNotUpgraded": true,
+    "continue-1ReplyMissing": true,
+    "continue-2ReplyMissing": true,
+    "continue1": true,
+    "continue2": true,
+    "outboundCounts": false,
+    "outboundSummary": false,
+    "outboundSummaryVerbatim": false,
+    "outboundExcludesReplaced": false,
+    "outboundHasBothContinues": false,
+    "outboundNudgeAndTurnsCompressed": false,
+    "newSessionSelected": true,
+    "newSessionHasSummarySource": true,
+    "newSessionNoOldMessages": true,
+    "newSessionOutboundSummary": true,
+    "newSessionOutboundNoOldMessages": true,
+    "newSessionOutboundHasNewMessage": true,
+    "answersSurviveBeforeUndo": true,
+    "undone": true,
+    "undoneMarked": false,
+    "originalsAfterUndo": true,
+    "answersSurviveAfterUndo": true,
+    "undoRestoresRange": true,
+    "replyMissing_after-undo": true,
+    "afterUndoReply": true,
+    "answersSurviveAfterThird": true,
+    "undoSendsRestoredHistory": false,
+    "undoDropsSummary": false,
+    "afterUndoOutboundHasNewMessage": false,
+    "noRunError": false
+  },
+  "phases": [
+    {
+      "name": "shell-ready",
+      "at": 1793983478474,
+      "detail": null
+    },
+    {
+      "name": "session-created",
+      "at": 1793983484993,
+      "detail": {
+        "sessionId": "hc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e"
+      }
+    },
+    {
+      "name": "controller-claim",
+      "at": 1793983485397,
+      "detail": {
+        "took": true
+      }
+    },
+    {
+      "name": "original-turns",
+      "at": 1793983950716,
+      "detail": {
+        "users": 3,
+        "assistants": 3
+      }
+    },
+    {
+      "name": "preview-open",
+      "at": 1793984073727,
+      "detail": {
+        "boxCount": 6
+      }
+    },
+    {
+      "name": "prepared",
+      "at": 1793984074343,
+      "detail": {
+        "prepared": true
+      }
+    },
+    {
+      "name": "applied",
+      "at": 1793984075295,
+      "detail": {
+        "header": "上下文\n发送 0 条 · 摘要 1"
+      }
+    },
+    {
+      "name": "continued-twice",
+      "at": 1793984599825,
+      "detail": {
+        "header": "上下文\n发送 2 条 · 摘要 1",
+        "round": "本轮上下文 · 预览\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this te"
+      }
+    },
+    {
+      "name": "new-session",
+      "at": 1793984783368,
+      "detail": {
+        "id": "hc-session-813c543d-8d7d-4129-bf06-7a944f1cfc0f",
+        "userMessages": 1
+      }
+    },
+    {
+      "name": "after-undo",
+      "at": 1793985054971,
+      "detail": {
+        "header": "上下文\n发送 0 条 · 摘要 0",
+        "messages": 5
+      }
+    }
+  ],
+  "texts": {
+    "chipRaw": "note.txt · 37 B\n可发送\n移除",
+    "chip": "note.txt · 37 B\n可发送\n移除",
+    "usersBefore": [
+      "E2E05 事实：部署窗口是周四 20:00。请只回复：事实。",
+      "E2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。",
+      "E2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。"
+    ],
+    "assistantsBefore": [
+      "事实。",
+      "假设。",
+      "取消。"
+    ],
+    "summaryEdited": "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+    "afterPrepare": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n26\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n新会话\n2026/11/07 00:54 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/07 00:41 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n\n服务器已拒绝\n\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n新会话\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 6 条 · 摘要 0\n阅读 6 条 · 已删除 0\n压缩当前发送范围\n压缩 草稿：\n使用摘要\n含来源\n包含工具详情\n导出当前分支\n导出纯文本\n已停止\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n返回最新内容\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n新会话\n会话 ID\nhc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e\n状态\n—\n消息数\n6\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n101\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "contextAfterApply": {
+      "header": "上下文\n发送 0 条 · 摘要 1",
+      "roundText": "本轮上下文 · 预览\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n6\n摘要：\n1\n轮次：\n3\n可见：\n6\n排除：\n6\n含压缩摘要\n估算\nToken：\n未知\n来源：\nunknown"
+    },
+    "transcriptAfterApply": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n27\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n新会话\n2026/11/07 00:54 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/07 00:41 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n\n服务器已拒绝\n\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n新会话\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n6\n摘要：\n1\n轮次：\n3\n可见：\n6\n排除：\n6\n含压缩摘要\n估算\nToken：\n未知\n来源：\nunknown\n上下文\n发送 0 条 · 摘要 1\n阅读 6 条 · 已删除 0\n压缩 已采用：\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n撤销压缩\n用摘要建新会话\n含来源\n包含工具详情\n导出当前分支\n导出纯文本\n已停止\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n返回最新内容\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n新会话\n会话 ID\nhc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e\n状态\n—\n消息数\n6\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n101\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "reply1": "取消。",
+    "reply2": "取消。",
+    "contextAfterContinue": {
+      "header": "上下文\n发送 2 条 · 摘要 1",
+      "roundText": "本轮上下文 · 预览\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n8\n摘要：\n1\n轮次：\n5\n可见：\n8\n排除：\n6\n含压缩摘要\n估算\nToken：\n未知\n来源：\nunknown"
+    },
+    "sentCount": 8,
+    "excludedCount": 0,
+    "newSession": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n35\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n3 / 3 条\n新建\n临时\n摘要 · 新会话\n2026/11/07 01:03 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/07 00:44 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/07 00:41 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n\n服务器已拒绝\n\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n摘要 · 新会话\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 1 条 · 摘要 0\n系统 · 版本 1\n\n【压缩摘要 · 来源会话《新会话》】\n原发送范围 6 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n\n选择\n复制\n从此处开始\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n摘要 · 新会话\n会话 ID\nhc-session-813c543d-8d7d-4129-bf06-7a944f1cfc0f\n状态\n—\n消息数\n1\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "assistantsBeforeUndo": [
+      "事实。",
+      "假设。",
+      "取消。"
+    ],
+    "transcriptAfterUndo": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n39\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n3 / 3 条\n新建\n临时\n摘要 · 新会话\n2026/11/07 01:03 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/07 00:44 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/07 00:41 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n\n服务器已拒绝\n\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n新会话\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 0 条 · 摘要 0\n阅读 0 条 · 已删除 0\n含来源\n包含工具详情\n导出当前分支\n导出纯文本\n已停止\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 继续一：请只回复：继续1。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 继续二：请只回复：继续2。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n新会话\n会话 ID\nhc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e\n状态\n—\n消息数\n0\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n141\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\nthis client is observing; take control first\n×\nthis client is observing; take control first\n×\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "contextAfterUndo": {
+      "header": "上下文\n发送 0 条 · 摘要 0",
+      "roundText": "本轮上下文 · 预览\n系统\n提示字节：\n未知\n助手\n身份：\nunknown\n名称：\n:unknown\n版本：\n未知\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\nunknown\n归档排除：\n未知\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n历史\n发送消息：\n0\n摘要：\n0\n轮次：\n0\n可见：\n0\n排除：\n0\n估算\nToken：\n未知\n来源：\nunknown"
+    },
+    "reply3": "取消。"
+  },
+  "proxy": {
+    "applySeq": 64,
+    "continue2": {
+      "seq": 64,
+      "bytes": 14964,
+      "messages": 12,
+      "roles": [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "user",
+        "assistant",
+        "tool"
+      ],
+      "contents": [
+        "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+        "[{\"type\":\"text\",\"text\":\"E2E05 事实：部署窗口是周四 20:00。请只回复：事实。\"},{\"type\":\"text\",\"text\":\"\\n\\n[Atta…",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…",
+        "事实。",
+        "E2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…",
+        "假设。",
+        "E2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…"
+      ],
+      "summaryCount": 0,
+      "replacedMarkCounts": {
+        "请只回复：事实。": 1,
+        "请只回复：假设。": 1,
+        "请只回复：取消。": 1,
+        "E2E05 事实": 1
+      }
+    },
+    "afterApplyRequests": [],
+    "newSession": {
+      "seq": 65,
+      "bytes": 10217,
+      "messages": 5,
+      "roles": [
+        "system",
+        "system",
+        "user",
+        "assistant",
+        "tool"
+      ],
+      "contents": [
+        "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+        "【压缩摘要 · 来源会话《新会话》】\n原发送范围 6 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF…",
+        "新会话：请只回复：来源。",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…"
+      ],
+      "summaryCount": 1,
+      "replacedMarkCounts": {
+        "请只回复：事实。": 0,
+        "请只回复：假设。": 0,
+        "请只回复：取消。": 0,
+        "E2E05 事实": 0
+      }
+    },
+    "afterUndo": {
+      "seq": 65,
+      "bytes": 10217,
+      "messages": 5,
+      "roles": [
+        "system",
+        "system",
+        "user",
+        "assistant",
+        "tool"
+      ],
+      "contents": [
+        "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+        "【压缩摘要 · 来源会话《新会话》】\n原发送范围 6 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF…",
+        "新会话：请只回复：来源。",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…"
+      ],
+      "summaryCount": 1,
+      "replacedMarkCounts": {
+        "请只回复：事实。": 0,
+        "请只回复：假设。": 0,
+        "请只回复：取消。": 0,
+        "E2E05 事实": 0
+      }
+    },
+    "requestCount": 5,
+    "requests": [
+      {
+        "seq": 60,
+        "method": "GET",
+        "url": "/v1/models",
+        "bytes": 0,
+        "messages": null
+      },
+      {
+        "seq": 61,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 62,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 63,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 64,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 65,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10217,
+        "messages": 5
+      }
+    ]
+  },
+  "pageBundle": {
+    "url": "http://127.0.0.1:35571/js/main.js",
+    "hash": "72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726"
+  },
+  "sessionId": "hc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e",
+  "existingRows": [
+    {
+      "sid": "hc-session-440ad25d-ffaf-46bb-abfc-2b0080ed5ee7",
+      "current": "true",
+      "text": "New session\n2026/11/07 00:41 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除"
+    }
+  ],
+  "takeover": {
+    "attempted": true,
+    "clientId": "d157526c-816d-40d0-b72c-4d33e9362bb5",
+    "epoch": 1,
+    "subscriptionId": 1,
+    "receipt": "vent\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/command-receipt\",\"~:value\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:controller-id\",\"d157526c-816d-40d0-b72c-4d33e9362bb5\",\"~:observer-ids\",[],\"~:run-id\",\"hc-session-08c4fe1c-7b90-40e4-aa98-5a4cba5cc07e-run\",\"~:run-state\",\"~:cancelled\",\"~:status\",\"~:accepted\",\"~:outcome\",\"~:already-controller\"],\"~:replayed?\",false,\"~:error\",null,\"~:command-id\",\"e8a0d35a-ae50-4320-94ce-26da25aef568\",\"~:command-epoch\",1],\"~:subscription-id\",1]]],null]"
+  },
+  "d15": {
+    "file": "note.txt",
+    "mime": "text/plain",
+    "chip": "note.txt · 37 B\n可发送\n移除",
+    "sendable": true,
+    "sentInFirstMessage": true,
+    "modelRequestHasAttachmentText": true,
+    "modelRequestHasNativeImagePart": false,
+    "requestSeq": 64
+  },
+  "boxCount": 6,
+  "boxCountRetry": 0,
+  "nudges": [
+    {
+      "label": "continue-1",
+      "notices": [
+        "pair-hint: request projection failed",
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    },
+    {
+      "label": "continue-2",
+      "notices": [
+        "pair-hint: request projection failed",
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    },
+    {
+      "label": "new-session",
+      "notices": [
+        "无人值守 · 自动继续",
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    },
+    {
+      "label": "after-undo",
+      "notices": [
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    }
+  ],
+  "replyMissing": [
+    {
+      "label": "continue-1",
+      "notices": [
+        "pair-hint: request projection failed",
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    },
+    {
+      "label": "continue-2",
+      "notices": [
+        "pair-hint: request projection failed",
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    },
+    {
+      "label": "after-undo",
+      "notices": [
+        "this client is observing; take control first\n×",
+        "this client is observing; take control first\n×",
+        "服务器报告本轮未完成\n×"
+      ]
+    }
+  ],
+  "newSessionId": "hc-session-813c543d-8d7d-4129-bf06-7a944f1cfc0f",
+  "undoReloaded": true,
+  "undoMissing": true,
+  "ok": false,
+  "finishedAt": "2026-11-06T17:10:55.019Z",
+  "appLogTail": [
+    "Picked up JAVA_TOOL_OPTIONS: -Xmx768m -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError",
+    "WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure",
+    "WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key",
+    "WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity",
+    "WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send",
+    "Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.",
+    "WARNING: A restricted method in java.lang.System has been called",
+    "WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)",
+    "WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module",
+    "WARNING: Restricted methods will be blocked in a future release unless native access is enabled",
+    "",
+    "SLF4J(W): No SLF4J providers were found.",
+    "SLF4J(W): Defaulting to no-operation (NOP) logger implementation",
+    "SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.",
+    "Herdchestra listening on http://127.0.0.1:41793/",
+    "workspace: /tmp/hc-w3e5r4/work",
+    "store:     /tmp/hc-w3e5r4/data3/db",
+    ""
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "test": "E2E 09",
+  "mode": "automated-server-side",
+  "mock": false,
+  "startedAt": "2026-11-06T05:15:33.439Z",
+  "appUrl": "http://127.0.0.1:36477",
+  "workspaceRoot": "/tmp/hc-e2e-WhiB5q/workspace",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-06T05:02:42.384Z",
+    "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2"
+  },
+  "checks": {
+    "driverOk": true,
+    "conflictStatus": true,
+    "conflictCode": true,
+    "externalContentKept": true,
+    "conflictExpectedHasOriginal": true,
+    "conflictActualIsExternal": true,
+    "rereadSeesExternal": true,
+    "retryApplied": true,
+    "workerContentOnDisk": true,
+    "fileCardPointsToRealFile": true,
+    "fileCardStampIsFinal": true,
+    "serverReadOk": true,
+    "serverStatOk": true,
+    "serverStampIsFinal": true,
+    "realFileMatches": true
+  },
+  "driverExitCode": 0,
+  "driverSignal": null,
+  "driverMs": 1327,
+  "driverLog": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e09/e2e09-driver.log",
+  "driver": {
+    "retry": {
+      "status": "APPLIED",
+      "result": {
+        "published?": true,
+        "file-changed?": true,
+        "request-id": "e2e09-retry",
+        "content-equality": "not-claimed",
+        "outcome": "applied",
+        "summary": {
+          "op-count": 1,
+          "write-count": 1,
+          "create-count": 0,
+          "replace-count": 1,
+          "write-bytes": 20,
+          "read-set-count": 2,
+          "check-count": 2,
+          "changed-paths": [
+            "/tmp/hc-e2e-WhiB5q/workspace/report.csv"
+          ]
+        },
+        "op-count": 1,
+        "applied-ops": [
+          {
+            "op": "write",
+            "path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+            "create?": false,
+            "size": 20
+          }
+        ],
+        "status": "APPLIED",
+        "publish-attempts": 1,
+        "observation-basis": "mtime+size"
+      }
+    },
+    "original-stamp": {
+      "mtime-sec": 1793942134,
+      "mtime-nsec": 732467645,
+      "size": 20
+    },
+    "after-conflict": "name,value\n原稿,1\n外部编辑,42\n",
+    "final-text": "name,value\nworker,7\n",
+    "original-text": "name,value\n原稿,1\n",
+    "file-card": {
+      "request-id": "e2e09-retry",
+      "status": "finished",
+      "path": "report.csv",
+      "real-path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+      "stamp": {
+        "mtime-sec": 1793942134,
+        "mtime-nsec": 752467600,
+        "size": 20
+      }
+    },
+    "external-text": "name,value\n原稿,1\n外部编辑,42\n",
+    "mode": "automated-server-side",
+    "checks": {
+      "conflict-status": true,
+      "conflict-actual-is-external": true,
+      "reread-sees-external": true,
+      "worker-content-on-disk": true,
+      "external-content-kept": true,
+      "file-card-stamp-is-final": true,
+      "conflict-expected-has-original": true,
+      "file-card-points-to-real-file": true,
+      "retry-applied": true,
+      "conflict-code": true
+    },
+    "external-stamp": {
+      "mtime-sec": 1793942134,
+      "mtime-nsec": 736467636,
+      "size": 36
+    },
+    "root": "/tmp/hc-e2e-WhiB5q/workspace",
+    "ok": true,
+    "expected": [
+      {
+        "mtime-sec": 1793942134,
+        "mtime-nsec": 736467636,
+        "size": 36
+      },
+      {
+        "mtime-sec": 1793942134,
+        "mtime-nsec": 732467645,
+        "size": 20
+      }
+    ],
+    "reread": "name,value\n原稿,1\n外部编辑,42\n",
+    "action": {
+      "created-version": 4,
+      "task-id": "task-1",
+      "request-id": "e2e09-retry",
+      "claim-id": "claim-1",
+      "agent-id": "agent-1",
+      "phase": "finished",
+      "action-id": "action-1",
+      "kind": "edit",
+      "updated-version": 6,
+      "result-ref": {
+        "request-id": "e2e09-retry",
+        "status": "APPLIED",
+        "summary": {
+          "op-count": 1,
+          "write-count": 1,
+          "create-count": 0,
+          "replace-count": 1,
+          "write-bytes": 20,
+          "read-set-count": 2,
+          "check-count": 2,
+          "changed-paths": [
+            "/tmp/hc-e2e-WhiB5q/workspace/report.csv"
+          ]
+        },
+        "op-count": 1,
+        "applied-at-version": 5
+      }
+    },
+    "final-stamp": {
+      "mtime-sec": 1793942134,
+      "mtime-nsec": 752467600,
+      "size": 20
+    },
+    "actual": {
+      "mtime-sec": 1793942134,
+      "mtime-nsec": 736467636,
+      "size": 36
+    },
+    "conflict": {
+      "status": "FILE_CONFLICT",
+      "result": {
+        "status": "FILE_CONFLICT",
+        "code": "stamp-mismatch",
+        "path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+        "expected": [
+          {
+            "mtime-sec": 1793942134,
+            "mtime-nsec": 736467636,
+            "size": 36
+          },
+          {
+            "mtime-sec": 1793942134,
+            "mtime-nsec": 732467645,
+            "size": 20
+          }
+        ],
+        "actual": {
+          "mtime-sec": 1793942134,
+          "mtime-nsec": 736467636,
+          "size": 36
+        },
+        "message": "File stamp no longer matches the read basis",
+        "outcome": "not-written",
+        "file-changed?": false
+      }
+    },
+    "test": "E2E 09",
+    "mock": false
+  },
+  "serverReadStatus": 200,
+  "serverStatStatus": 200,
+  "serverRead": "{:ok? true, :path \"report.csv\", :text \"name,value\\nworker,7\\n\", :stamp {:mtime-sec 1793942134, :mtime-nsec 752467600, :size 20}, :size 20, :kind :file, :changed-during-read? false}",
+  "serverStat": "{:ok? true, :path \"report.csv\", :stamp {:mtime-sec 1793942134, :mtime-nsec 752467600, :size 20}, :size 20, :symlink? false, :exists? true, :kind :file, :mtime-nsec 752467600, :mtime-sec 1793942134}",
+  "serverStamp": {
+    "mtime-sec": 1793942134,
+    "mtime-nsec": 752467600,
+    "size": 20
+  },
+  "ok": true,
+  "finishedAt": "2026-11-06T05:15:34.775Z"
+}

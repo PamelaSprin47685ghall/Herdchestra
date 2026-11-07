@@ -1,0 +1,1173 @@
+{
+  "test": "E2E 09",
+  "mode": "real-app-command-channel-and-browser",
+  "startedAt": "2026-11-06T05:46:33.899Z",
+  "steps": {
+    "ping": "{:ok? true, :pid 830373, :url \"http://127.0.0.1:45507/\", :sessions 1}",
+    "focus-or-create": "{:ok? true, :active-session-id \"hc-session-12844059-bf86-48c0-af15-c363a38616be\"}",
+    "plan-first-review": "{:ok? true, :receipt {:findings [{:key \"draft\", :value \"E2E 09 draft\"}], :ledger {\"draft\" \"E2E 09 draft\"}, :tenure-epoch 1, :reviewed? true, :call-id \"a1cca205-11eb-4154-9fc3-40362260611d\", :milestone :S1, :outcome :ledger-updated, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-1\", :changes {:added {\"draft\" \"E2E 09 draft\"}, :removed {}}}, :error nil}",
+    "plan-write-draft": "{:ok? true, :receipt {:status :accepted, :outcome :draft-updated, :path \"plans/e2e09.md\", :content-length 53}, :error nil, :replayed? false}",
+    "plan-clear-ledger": "{:ok? true, :receipt {:ledger {}, :successor-tenure-id \"tenure-2\", :retired-tenure-id \"tenure-1\", :tenure-epoch 2, :reviewed? true, :successor-epoch 2, :successor-binding {:role :plan, :model-id \"main-model\", :epoch 2, :milestone :S1, :phase :review, :status :active, :relay-pending? false, :tenure-id \"tenure-2\", :awaiting-user? false, :reviewed-in-tenure? false, :model-role :main}, :call-id \"9ef0244b-1124-484b-8adb-e9faef4105df\", :milestone :S1, :outcome :relayed, :lane :plan, :relayed? true, :reason :ledger-cleared, :status :accepted, :tenure-id \"tenure-2\", :barrier-id \"barrier-1\"}, :error nil}",
+    "plan-successor": "tenure-2",
+    "plan-empty-0": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"e87cc64d-176c-4169-b367-d2fccb51c2bd\", :milestone :S2, :outcome :promoted, :to-milestone :S2, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S1}, :error nil}",
+    "plan-empty-1": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"1d918837-2a24-4e66-adfe-9c3d61e27b51\", :milestone :S3, :outcome :promoted, :to-milestone :S3, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S2}, :error nil}",
+    "plan-empty-2": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :call-id \"eed2cd6a-51ed-4f01-b86e-7099239ed4c9\", :milestone :pending, :outcome :promoted, :to-milestone :pending, :lane :plan, :relayed? false, :status :accepted, :tenure-id \"tenure-2\", :from-milestone :S3}, :error nil}",
+    "plan-empty-3": "{:ok? true, :receipt {:ledger {}, :tenure-epoch 2, :reviewed? true, :draft-length 53, :call-id \"d9a3a4aa-95e0-4a20-8d74-fa7812be7405\", :milestone :pending, :execution-tenure-count 1, :board-version 1, :outcome :execution-started, :lane :plan, :execution-tenure-id \"tenure-3\", :relayed? false, :status :accepted, :draft-path \"plans/e2e09.md\", :tenure-id \"tenure-2\", :execution-epoch 3, :reviewer-binding {:role :reviewer, :model-id \"main-model\", :epoch 3, :review-window :open, :milestone :execution, :phase :review, :status :active, :relay-pending? false, :tenure-id \"tenure-3\", :awaiting-user? false, :model-role :main}}, :error nil}",
+    "execution-review": "{:ok? true, :receipt {:findings [{:key \"review\", :value \"ready\"}], :ledger {\"review\" \"ready\"}, :board-root-tasks {:task-1 {:ledger-key \"review\", :relay-task-id \"root-task-1\", :state :ready}}, :tenure-epoch 3, :reviewed? true, :review-window :closed, :call-id \"5dfa1e29-b476-4111-ac89-753b2ed4fa4a\", :milestone :execution, :board-version 2, :outcome :swarm-started, :lane :execution, :relayed? false, :root-tasks [{:task-id \"root-task-1\", :ledger-key \"review\", :goal \"ready\", :state :ready, :done-when \"ready\", :parent-id nil, :needs-token false, :wait-for #{}, :tenure-id \"tenure-3\", :owner-id nil, :child-ids [], :remaining-work \"ready\"}], :status :accepted, :tenure-id \"tenure-3\"}, :error nil}",
+    "root-task": "task-1",
+    "register-actor": "{:ok? true, :receipt {:status :accepted, :outcome :actor-registered, :tenure-id \"tenure-3\", :agent-id :agent-4, :slot-id :slot-e2e09, :model-role :task, :model-id \"task-model\", :binding {:role :worker, :model-id \"task-model\", :slot-id :slot-e2e09, :agent-id :agent-4, :life-state :alive, :phase :swarm, :status :active, :tenure-id \"tenure-3\", :model-role :task}}, :error nil}",
+    "split-token-task": "{:ok? true, :task-id :task-1, :events [{:type :task-split, :task-id :task-1, :child-ids [:task-2], :wait-for #{:task-2}, :released-claim-id nil, :event-seq 7, :at-version 6}], :board-version 6, :state :waiting, :op :split, :retired? false, :retired-agent-id nil, :released-claim-id nil, :status :accepted, :wait-for #{:task-2}, :tenure-id \"tenure-3\", :child-ids [:task-2], :woken #{}}",
+    "take-or-die": "{:ok? true, :receipt {:status :accepted, :outcome :take-or-die, :tenure-id \"tenure-3\", :agent-id :agent-4, :result :attempt-won, :term-id 1, :retired? false, :retired-agent-id nil}, :error nil}",
+    "claim-token-task": "{:ok? true, :receipt {:status :accepted, :outcome :task-claimed, :tenure-id \"tenure-3\", :agent-id :agent-4, :task-id :task-2, :claim-id :claim-1}, :error nil}",
+    "worker-run-program-conflict": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-76844fd8-8655-494f-bb63-4f0f9f695f07\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-1": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-a3fbf3b1-f588-4f8d-8254-9d568876b04a\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-2": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-e1c5e59f-2f02-49bb-b7fc-2182cc943c55\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}",
+    "worker-run-program-retry-3": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-d0623dcc-5152-4193-a227-1b869cba5002\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+  },
+  "checks": {
+    "bundleFrozen": true,
+    "planFirstReview": true,
+    "planDraft": true,
+    "planRelay": true,
+    "executionStarted": true,
+    "swarmStarted": true,
+    "registerActor": true,
+    "tokenTask": true,
+    "takeOrDieWon": true,
+    "takeOrDieSurvived": true,
+    "claimed": true,
+    "conflictScheduled": true,
+    "conflictCard": false,
+    "conflictStatus": null,
+    "conflictExpectedShown": false,
+    "conflictActualShown": false,
+    "conflictReasonShown": false,
+    "externalContentKept": true,
+    "originalStampUnchangedInCard": false,
+    "currentStampShownInCard": false,
+    "narrowNoHorizontalOverflow": true,
+    "narrowCardVisible": false,
+    "narrowRetryButtonUsable": false,
+    "retryScheduled": true,
+    "workerContentOnDisk": true,
+    "retryApplied": true,
+    "serverStatOk": true,
+    "serverStampIsFinal": true,
+    "narrowAppliedCard": false,
+    "narrowAppliedNoOverflow": true
+  },
+  "receipts": {},
+  "errors": [],
+  "clientBundle": {
+    "path": "/home/kunweiz/Desktop/vibe/Herdchestra/resources/public/js/main.js",
+    "bytes": 3011096,
+    "sha256": "0c05b7d1a42123adb91bf7cdb9eb671b0682a72b155ddaf805c3f84b4e68a0bc"
+  },
+  "originalStamp": {
+    "mtime-sec": 1793943993,
+    "mtime-nsec": 900794672,
+    "size": 20
+  },
+  "sessionId": "hc-session-12844059-bf86-48c0-af15-c363a38616be",
+  "executionTenure": "tenure-3",
+  "rootTask": "task-1",
+  "relayRootTask": "root-task-1",
+  "actor": "agent-4",
+  "tokenTask": "task-2",
+  "claimId": "claim-1",
+  "conflictJob": "worker-job-76844fd8-8655-494f-bb63-4f0f9f695f07",
+  "dbProbe": {
+    "meta": null,
+    "K": 5,
+    "F": [
+      {
+        "Ea": null,
+        "name": "keys",
+        "D": "keys",
+        "de": 1068423698,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 45,
+        "shift": 5,
+        "root": {
+          "Fa": null,
+          "F": [
+            {
+              "Fa": {},
+              "F": [
+                {
+                  "Ea": "ui",
+                  "name": "extensions",
+                  "D": "ui/extensions",
+                  "de": -1103633216,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "conversation",
+                  "D": "ui/conversation",
+                  "de": 1148770177,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "files",
+                  "D": "ui/files",
+                  "de": -472456030,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "notices",
+                  "D": "ui/notices",
+                  "de": 1377937218,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "server-revision",
+                  "D": "ui/server-revision",
+                  "de": -1486776250,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "fulcro.inspect.core",
+                  "name": "app-id",
+                  "D": "fulcro.inspect.core/app-id",
+                  "de": -1444290233,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "settings",
+                  "D": "ui/settings",
+                  "de": 1556126055,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "sidebar-open",
+                  "D": "ui/sidebar-open",
+                  "de": 634890857,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "reduced-motion",
+                  "D": "ui/reduced-motion",
+                  "de": 79593257,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "platform",
+                  "D": "ui/platform",
+                  "de": -1086416854,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "materials",
+                  "D": "ui/materials",
+                  "de": 2036899786,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "nudge",
+                  "D": "ui/nudge",
+                  "de": -715495093,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "session-list",
+                  "D": "ui/session-list",
+                  "de": -677688884,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "session",
+                  "name": "by-id",
+                  "D": "session/by-id",
+                  "de": 306465741,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "session-filter",
+                  "D": "ui/session-filter",
+                  "de": 84458830,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "viewport-width",
+                  "D": "ui/viewport-width",
+                  "de": -1146240400,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "diagnostics",
+                  "D": "ui/diagnostics",
+                  "de": 359787248,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "connection",
+                  "D": "ui/connection",
+                  "de": -123537456,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "font-scale",
+                  "D": "ui/font-scale",
+                  "de": 1496070801,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "ask",
+                  "D": "ui/ask",
+                  "de": 707710482,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "draft-storage",
+                  "D": "ui/draft-storage",
+                  "de": 2016706098,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "search",
+                  "D": "ui/search",
+                  "de": 1564960594,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "aux-open",
+                  "D": "ui/aux-open",
+                  "de": 1434512211,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "theme",
+                  "D": "ui/theme",
+                  "de": -1247877132,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "backup",
+                  "D": "ui/backup",
+                  "de": 26351125,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "assistants-tab",
+                  "D": "ui/assistants-tab",
+                  "de": 277771925,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "aux-tab",
+                  "D": "ui/aux-tab",
+                  "de": 961631319,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "contrast",
+                  "D": "ui/contrast",
+                  "de": 568332695,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "command",
+                  "D": "ui/command",
+                  "de": -894542344,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "route",
+                  "D": "ui/route",
+                  "de": 329985113,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "focus-target",
+                  "D": "ui/focus-target",
+                  "de": 425578201,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "board-expanded",
+                  "D": "ui/board-expanded",
+                  "de": 1198063449,
+                  "G": 2153775105,
+                  "P": 4096
+                }
+              ]
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "tail": [
+          {
+            "Ea": "ui",
+            "name": "find-seq",
+            "D": "ui/find-seq",
+            "de": 1468251291,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "browser",
+            "D": "ui/browser",
+            "de": 828190331,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "search-state",
+            "D": "ui/search-state",
+            "de": 641171484,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "aux-return-id",
+            "D": "ui/aux-return-id",
+            "de": 511351452,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "focus-seq",
+            "D": "ui/focus-seq",
+            "de": 948791996,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "stream",
+            "D": "ui/stream",
+            "de": 1534946076,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "draft-reset",
+            "D": "ui/draft-reset",
+            "de": 1404736317,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "com.fulcrologic.fulcro.application",
+            "name": "active-remotes",
+            "D": "com.fulcrologic.fulcro.application/active-remotes",
+            "de": 873903005,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "selected-session-id",
+            "D": "ui/selected-session-id",
+            "de": 103735229,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "draft",
+            "D": "ui/draft",
+            "de": 1421834462,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "materials-tab",
+            "D": "ui/materials-tab",
+            "de": -2011907458,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "session-limit",
+            "D": "ui/session-limit",
+            "de": -246189186,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "sidebar-return-id",
+            "D": "ui/sidebar-return-id",
+            "de": -1426175841,
+            "G": 2153775105,
+            "P": 4096
+          }
+        ],
+        "H": null,
+        "G": 167666463,
+        "P": 401412
+      },
+      {
+        "Ea": null,
+        "name": "session-ids",
+        "D": "session-ids",
+        "de": 242197656,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 1,
+        "shift": 5,
+        "root": {
+          "Fa": null,
+          "F": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "tail": [
+          "hc-session-12844059-bf86-48c0-af15-c363a38616be"
+        ],
+        "H": null,
+        "G": 167666463,
+        "P": 401412
+      },
+      {
+        "Ea": null,
+        "name": "active-id",
+        "D": "active-id",
+        "de": -59238656,
+        "G": 2153775105,
+        "P": 4096
+      },
+      null,
+      {
+        "Ea": null,
+        "name": "dashboard?",
+        "D": "dashboard?",
+        "de": -478111341,
+        "G": 2153775105,
+        "P": 4096
+      },
+      false,
+      {
+        "Ea": null,
+        "name": "worker-programs",
+        "D": "worker-programs",
+        "de": 457132907,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 1,
+        "F": [
+          "hc-session-12844059-bf86-48c0-af15-c363a38616be",
+          0
+        ],
+        "H": null,
+        "G": 16647951,
+        "P": 401412
+      }
+    ],
+    "H": null,
+    "G": 16647951,
+    "P": 401412
+  },
+  "conflictCard": null,
+  "afterConflictText": "name,value\n原稿,1\n外部编辑,42\n",
+  "afterConflictStamp": {
+    "mtime-sec": 1793943996,
+    "mtime-nsec": 876796627,
+    "size": 36
+  },
+  "observations": {
+    "conflictFilePathShown": false,
+    "filePathShownAfterApply": false
+  },
+  "conflictRowsAll": [],
+  "conflictDashboardText": "Swarm fleet\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。",
+  "conflictPageText": "Herdchestra\n工作台\n●\n已连接，等待同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已连接，等待同步\nepoch\n—\nseq\n—\n\n通道已打开，正在等待原子基线快照。命令暂不可用。\n\nSwarm 看板\n\nfleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。\n\n已连接，等待同步\n请求重同步\nSwarm fleet\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n看板同步\nswarm 数\n0\n任务数\n0\nepoch\n—\nseq\n—\n最近确认\n—\n服务器报告本轮未完成\n×\n通道已打开，正在等待原子基线快照。命令暂不可用。",
+  "narrowDbProbe": {
+    "meta": null,
+    "K": 5,
+    "F": [
+      {
+        "Ea": null,
+        "name": "keys",
+        "D": "keys",
+        "de": 1068423698,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 45,
+        "shift": 5,
+        "root": {
+          "Fa": null,
+          "F": [
+            {
+              "Fa": {},
+              "F": [
+                {
+                  "Ea": "ui",
+                  "name": "extensions",
+                  "D": "ui/extensions",
+                  "de": -1103633216,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "conversation",
+                  "D": "ui/conversation",
+                  "de": 1148770177,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "files",
+                  "D": "ui/files",
+                  "de": -472456030,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "notices",
+                  "D": "ui/notices",
+                  "de": 1377937218,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "server-revision",
+                  "D": "ui/server-revision",
+                  "de": -1486776250,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "fulcro.inspect.core",
+                  "name": "app-id",
+                  "D": "fulcro.inspect.core/app-id",
+                  "de": -1444290233,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "settings",
+                  "D": "ui/settings",
+                  "de": 1556126055,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "sidebar-open",
+                  "D": "ui/sidebar-open",
+                  "de": 634890857,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "reduced-motion",
+                  "D": "ui/reduced-motion",
+                  "de": 79593257,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "platform",
+                  "D": "ui/platform",
+                  "de": -1086416854,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "materials",
+                  "D": "ui/materials",
+                  "de": 2036899786,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "nudge",
+                  "D": "ui/nudge",
+                  "de": -715495093,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "session-list",
+                  "D": "ui/session-list",
+                  "de": -677688884,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "session-filter",
+                  "D": "ui/session-filter",
+                  "de": 84458830,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "viewport-width",
+                  "D": "ui/viewport-width",
+                  "de": -1146240400,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "diagnostics",
+                  "D": "ui/diagnostics",
+                  "de": 359787248,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "connection",
+                  "D": "ui/connection",
+                  "de": -123537456,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "font-scale",
+                  "D": "ui/font-scale",
+                  "de": 1496070801,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "ask",
+                  "D": "ui/ask",
+                  "de": 707710482,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "draft-storage",
+                  "D": "ui/draft-storage",
+                  "de": 2016706098,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "search",
+                  "D": "ui/search",
+                  "de": 1564960594,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "aux-open",
+                  "D": "ui/aux-open",
+                  "de": 1434512211,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "theme",
+                  "D": "ui/theme",
+                  "de": -1247877132,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "backup",
+                  "D": "ui/backup",
+                  "de": 26351125,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "assistants-tab",
+                  "D": "ui/assistants-tab",
+                  "de": 277771925,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "aux-tab",
+                  "D": "ui/aux-tab",
+                  "de": 961631319,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "contrast",
+                  "D": "ui/contrast",
+                  "de": 568332695,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "run",
+                  "D": "ui/run",
+                  "de": -1821171881,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "command",
+                  "D": "ui/command",
+                  "de": -894542344,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "route",
+                  "D": "ui/route",
+                  "de": 329985113,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "focus-target",
+                  "D": "ui/focus-target",
+                  "de": 425578201,
+                  "G": 2153775105,
+                  "P": 4096
+                },
+                {
+                  "Ea": "ui",
+                  "name": "board-expanded",
+                  "D": "ui/board-expanded",
+                  "de": 1198063449,
+                  "G": 2153775105,
+                  "P": 4096
+                }
+              ]
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "tail": [
+          {
+            "Ea": "ui",
+            "name": "find-seq",
+            "D": "ui/find-seq",
+            "de": 1468251291,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "browser",
+            "D": "ui/browser",
+            "de": 828190331,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "search-state",
+            "D": "ui/search-state",
+            "de": 641171484,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "aux-return-id",
+            "D": "ui/aux-return-id",
+            "de": 511351452,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "focus-seq",
+            "D": "ui/focus-seq",
+            "de": 948791996,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "stream",
+            "D": "ui/stream",
+            "de": 1534946076,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "draft-reset",
+            "D": "ui/draft-reset",
+            "de": 1404736317,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "com.fulcrologic.fulcro.application",
+            "name": "active-remotes",
+            "D": "com.fulcrologic.fulcro.application/active-remotes",
+            "de": 873903005,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "selected-session-id",
+            "D": "ui/selected-session-id",
+            "de": 103735229,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "draft",
+            "D": "ui/draft",
+            "de": 1421834462,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "materials-tab",
+            "D": "ui/materials-tab",
+            "de": -2011907458,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "session-limit",
+            "D": "ui/session-limit",
+            "de": -246189186,
+            "G": 2153775105,
+            "P": 4096
+          },
+          {
+            "Ea": "ui",
+            "name": "sidebar-return-id",
+            "D": "ui/sidebar-return-id",
+            "de": -1426175841,
+            "G": 2153775105,
+            "P": 4096
+          }
+        ],
+        "H": null,
+        "G": 167666463,
+        "P": 401412
+      },
+      {
+        "Ea": null,
+        "name": "session-ids",
+        "D": "session-ids",
+        "de": 242197656,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 0,
+        "shift": 5,
+        "root": {
+          "Fa": null,
+          "F": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "tail": [],
+        "H": null,
+        "G": 167666463,
+        "P": 401412
+      },
+      {
+        "Ea": null,
+        "name": "active-id",
+        "D": "active-id",
+        "de": -59238656,
+        "G": 2153775105,
+        "P": 4096
+      },
+      null,
+      {
+        "Ea": null,
+        "name": "dashboard?",
+        "D": "dashboard?",
+        "de": -478111341,
+        "G": 2153775105,
+        "P": 4096
+      },
+      false,
+      {
+        "Ea": null,
+        "name": "worker-programs",
+        "D": "worker-programs",
+        "de": 457132907,
+        "G": 2153775105,
+        "P": 4096
+      },
+      {
+        "meta": null,
+        "K": 0,
+        "F": [],
+        "H": null,
+        "G": 16647951,
+        "P": 401412
+      }
+    ],
+    "H": null,
+    "G": 16647951,
+    "P": 401412
+  },
+  "narrowOverflow": {
+    "scrollWidth": 360,
+    "clientWidth": 360
+  },
+  "narrowPrograms": [],
+  "narrowRetryButtons": [],
+  "retryAttempts": [
+    {
+      "attempt": 1,
+      "jobId": "worker-job-a3fbf3b1-f588-4f8d-8254-9d568876b04a",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-a3fbf3b1-f588-4f8d-8254-9d568876b04a\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    },
+    {
+      "attempt": 2,
+      "jobId": "worker-job-e1c5e59f-2f02-49bb-b7fc-2182cc943c55",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-e1c5e59f-2f02-49bb-b7fc-2182cc943c55\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    },
+    {
+      "attempt": 3,
+      "jobId": "worker-job-d0623dcc-5152-4193-a227-1b869cba5002",
+      "receipt": "{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id \"worker-job-d0623dcc-5152-4193-a227-1b869cba5002\", :task-id :task-2, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}"
+    }
+  ],
+  "retryJob": "worker-job-d0623dcc-5152-4193-a227-1b869cba5002",
+  "appliedCard": null,
+  "finalText": "worker,7\n",
+  "finalStamp": {
+    "mtime-sec": 1793944178,
+    "mtime-nsec": 391914410,
+    "size": 9
+  },
+  "serverStat": "{:ok? true, :path \"e2e09.txt\", :stamp {:mtime-sec 1793944178, :mtime-nsec 391914410, :size 9}, :size 9, :symlink? false, :exists? true, :kind :file, :mtime-nsec 391914410, :mtime-sec 1793944178}",
+  "narrowAppliedPrograms": [],
+  "narrowAppliedOverflow": {
+    "scrollWidth": 360,
+    "clientWidth": 360
+  },
+  "ok": false,
+  "finishedAt": "2026-11-06T05:50:11.609Z",
+  "rss": {
+    "after_health_kb": 1102348,
+    "after_driver_kb": 1299912
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "checks": {
+    "connectionVisible": true,
+    "connectionHost": true,
+    "modelBound": true,
+    "replyNonEmpty": true,
+    "replyNotStub": true,
+    "replySemantic": true,
+    "userMessagePersisted": true,
+    "reloadKeepsUser": true,
+    "reloadKeepsReply": true,
+    "reloadKeepsModel": true,
+    "reopenKeepsUser": true,
+    "reopenKeepsReply": true,
+    "reopenKeepsModel": true
+  },
+  "reply": "是的，本地模型正在工作。",
+  "ms": 35279,
+  "json": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-regression-01-02-22/e2e01-result.json"
+}

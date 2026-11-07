@@ -1,0 +1,36 @@
+# Clojure / ClojureScript
+.cpcache/
+.cljs_node_repl/
+.cljs_node_repl*/
+.shadow-cljs/
+.nrepl-port
+target/
+out/
+*.class
+
+# Build and test harness output
+out-*/
+resources/public/js/
+resources/public/css/framework7-bundle.css
+resources/public/smoke/js/
+
+# Pixi
+.pixi/
+
+# Node / client
+node_modules/
+dist/
+chrome-profile/
+**/chrome-profile/
+
+# Local tooling and runtime artifacts
+.pi/
+.lsp/
+mbdbg.*/
+*.log
+hs_err_pid*.log
+!plans/evidence/**/*.log
+
+# Release-prep exclusions (user ruling 2026-11-06)
+/机制提炼/
+plans/evidence/**/playwright-report/

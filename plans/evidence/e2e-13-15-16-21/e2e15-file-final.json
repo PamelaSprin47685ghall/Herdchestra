@@ -1,0 +1,30 @@
+{
+  "steps": {
+    "transcribe": {
+      "status": 200,
+      "text": "{:ok? true, :receipt {:service {:connect-timeout-ms 5000, :processing :device, :api-key-env nil, :request-timeout-ms 60000, :test-audio-configured? false, :response-format \"json\", :base-url \"http://127.0.0.1:19150\", :enabled? true, :status {:state :unknown}, :label \"Local STT\", :id \"local-stt\", :kind :openai-compatible, :transcriptions-path \"/v1/audio/transcriptions\", :key-source nil, :order 0, :has-key? false, :languages [\"zh-CN\"], :processing-source :explicit, :model \"whisper-1\"}, :usage-recorded? false, :recording-id \"rec-ed703f46-20e4-42ac-8245-444cf7a6a128\", :auto-send? false, :recording-persisted? true, :transcript-language nil, :usage nil, :draft {:action :insert-into-draft, :text \"明天下午三点，不，是四点。\", :auto-send? false, :insert-at 0}, :status :complete, :audio {:preserved? true, :bytes 64044, :content-type \"audio/wav\"}, :transcript \"明天下午三点，不，是四点。\", :attempt {:service-id \"local-stt\", :started-at 1793869729052, :finished-at 1793869729121, :status :ok, :http-status nil, :error nil}}}"
+    },
+    "afterInsert": {
+      "draft": "明天下午三点，不，是四点。（人工修订）",
+      "messages": 0
+    },
+    "afterSend": {
+      "messages": 2,
+      "assistant": [
+        "你 · 版本 0\n\n明天下午三点，不，是四点。（人工修订）\n\n选择\n复制从此处分支从此处开始\n编辑",
+        "助手 · 版本 0\n正在生成\n\nE2E15 受控模型回复：这是朗读测试正文。\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑"
+      ]
+    },
+    "playing": {
+      "player": "正在朗读\n暂停\n停止\n速度\n0.5\n0.75\n1\n1.25\n1.5\n2\n下载音频"
+    },
+    "afterStop": {
+      "player": false
+    },
+    "afterVersionSwitch": {
+      "player": true,
+      "versions": [],
+      "body": "型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n54\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\nactive · 1793869736249 · Speech Stub Model\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n无人值守 · 自动继续\nNew session\n模型：Speech Stub Model\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 预览\n阅读 41 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\n明天下午三点，不，是四点。（人工修订）\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nE2E15 受控模型回复：这是朗读测试正文。\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n正在朗读\n暂停\n停止\n速度\n0.5\n0.75\n1\n1.25\n1.5\n2\n下载音频\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-053a12ab-e8f5-4d71-8f09-c6e6a388df08\n状态\nactive\n消息数\n2\n模型\nSpeech Stub Model\n分支来源\n—\n草稿版本\n2\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。"
+    }
+  }
+}

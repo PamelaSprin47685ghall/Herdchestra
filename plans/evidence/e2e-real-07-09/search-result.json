@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:40003/",
+  "startedAt": "2026-11-05T04:52:54.462Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:40003/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件\nNew session\n模型：qwen3.6:27b\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮尚未发送\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793854375993.png",
+  "console": [
+    "debug: 2026-11-05T04:52:55.746Z DEBUG [hc.client.workbench.transport:70] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "selectFound": true,
+      "mustFound": true,
+      "sendDisabled": false,
+      "searchRan": false,
+      "sourceCardCount": 0,
+      "bodyHasNumbers": true
+    },
+    "searchRequests": [],
+    "selectValue": "local-stub",
+    "modeButtons": [
+      {
+        "text": "关闭",
+        "pressed": "false",
+        "cls": "hc-search-mode"
+      },
+      {
+        "text": "自动",
+        "pressed": "false",
+        "cls": "hc-search-mode"
+      },
+      {
+        "text": "本轮必须搜索",
+        "pressed": "true",
+        "cls": "hc-search-mode"
+      }
+    ],
+    "bodyAfterSetup": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n收起\n关闭\n自动\n本轮必须搜索\n答案形成前至少尝试一次；失败时本轮报错，不挂“已联网”。\n服务\n未选择\nLocal Stub Search (non-internet) · searxng\n添加附件\nNew session\n模型：qwen3.6:27b\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮尚未发送\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "body": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n收起\n关闭\n自动\n本轮必须搜索\n答案形成前至少尝试一次；失败时本轮报错，不挂“已联网”。\n服务\n未选择\nLocal Stub Search (non-internet) · searxng\n添加附件\n正在生成\nNew session\n模型：qwen3.6:27b\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮尚未发送\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n导出当前分支导出纯文本\n你 · 版本 0\n\n请只根据搜索结果回答：ALPHA-ONE 来自哪个文档？请用 [1] 引用来源。\n\n选择\n复制从此处分支从此处开始\n编辑\n语音输入\n正在生成\n发送（需先停止当前轮）\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "sourceCards": [],
+    "screenshot": "/tmp/hc-e2e07search/answer.png"
+  },
+  "durationMs": 95831
+}

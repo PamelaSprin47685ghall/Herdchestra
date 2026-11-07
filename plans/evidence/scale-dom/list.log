@@ -1,0 +1,94 @@
+WARNING: Namespace hc.client.conversation.export contains a reserved JavaScript keyword, the corresponding Google Closure namespace will be munged to hc.client.conversation.export$ at line 1 /home/kunweiz/Desktop/vibe/Herdchestra/src/hc/client/conversation/export.cljc
+2026-11-05T01:18:37.302Z WARN [com.fulcrologic.fulcro.raw.components:730] - Component hc.client.workbench.scale-dom-test/ShellRoot has a constant ident (id in the ident is not nil for empty props), but it has no initial state. This could cause this component's props to appear as nil unless you have a mutation or load that connects it to the graph after application startup. See https://book.fulcrologic.com/#warn-constant-ident-no-initial-state
+Warning: Each child in a list should have a unique "key" prop.
+
+Check the top-level render call using <dl>. See https://reactjs.org/link/warning-keys for more information.
+    at dt
+Warning: Unsupported style property font-size. Did you mean fontSize?
+    at p
+    at aside
+    at div
+    at div
+Warning: An update to hc$client$workbench$views$session$ConversationWithAttachments inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at hc$client$workbench$views$session$ConversationWithAttachments (/home/kunweiz/Desktop/vibe/Herdchestra/out-workbench-scale-dom.CeAuWq/hc/client/workbench/views/session.js:306:100)
+    at div
+    at section
+    at div
+    at main
+    at div
+    at div
+Warning: An update to hc$client$workbench$views$session$ConversationWithAttachments inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at hc$client$workbench$views$session$ConversationWithAttachments (/home/kunweiz/Desktop/vibe/Herdchestra/out-workbench-scale-dom.CeAuWq/hc/client/workbench/views/session.js:306:100)
+    at div
+    at section
+    at div
+    at main
+    at div
+    at div
+{
+  "message-scroll": {
+    "ms": 2.2983399999998255,
+    "scrollTop": 12345
+  },
+  "render-ms": 494.4370940000001,
+  "restore": {
+    "ms": 136.47508800000014,
+    "scrollTop": 0,
+    "expected": 12345
+  },
+  "memory": {
+    "rss": 380456960,
+    "heapTotal": 282415104,
+    "heapUsed": 231045256,
+    "external": 6004485,
+    "arrayBuffers": 334470
+  },
+  "draft-edit": {
+    "ms": 2.018531999999823,
+    "length": 20000
+  },
+  "draft-undo": {
+    "ms": 0.014220000000022992,
+    "length": 20000
+  },
+  "env": {
+    "sessions": 1000,
+    "messages": 0,
+    "cpus": 12,
+    "userAgent": "Node.js/26"
+  },
+  "session-rows": 1000,
+  "message-nodes": 0,
+  "find-controls": 0,
+  "draft-selection": {
+    "ms": 1.245964999999842,
+    "range": [
+      100,
+      200
+    ]
+  },
+  "session-list-scroll": {
+    "ms": 1.1220280000000002,
+    "scrollTop": 500
+  }
+}
+(node:1019049) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)

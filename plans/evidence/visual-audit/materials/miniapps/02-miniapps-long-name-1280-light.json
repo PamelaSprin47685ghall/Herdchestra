@@ -1,0 +1,265 @@
+{
+  "name": "02-miniapps-long-name-1280-light",
+  "screenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/visual-audit/materials/miniapps/02-miniapps-long-name-1280-light.png",
+  "runtime": {
+    "appPid": "239194",
+    "chromePid": "246210",
+    "appRssMiB": 982,
+    "chromeRssMiB": 231,
+    "pid": "239194",
+    "flags": [
+      "-XX:-AOTAdapterCaching -XX:-AOTCompatibleOopCompression -XX:-AOTInvokeDynamicLinking -XX:-AOTRecordTraining -XX:-AOTReplayTraining -XX:-AOTStubCaching -XX:CICompilerCount=4 -XX:ConcGCThreads=3 -XX:+ExitOnOutOfMemoryError -XX:G1ConcRefinementThreads=10 -XX:G1EagerReclaimRemSetThreshold=10 -XX:G1HeapRegionSize=1048576 -XX:G1RemSetArrayOfCardsEntries=10 -XX:G1RemSetHowlMaxNumBuckets=8 -XX:G1RemSetHowlNumBuckets=4 -XX:HotCodeHeapSize=0 -XX:InitialHeapSize=8388608 -XX:-IntelJccErratumMitigation -XX:MarkStackSize=4194304 -XX:MarkStackSizeMax=536870912 -XX:MaxDirectMemorySize=536870912 -XX:MaxHeapSize=1073741824 -XX:MaxNewSize=643825664 -XX:MinHeapDeltaBytes=1048576 -XX:MinHeapSize=8388608 -XX:NonNMethodCodeHeapSize=5840896 -XX:NonProfiledCodeHeapSize=122912768 -XX:-OmitStackTraceInFastThrow -XX:ProfiledCodeHeapSize=122912768 -XX:ReservedCodeCacheSize=251666432 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=1073741824 -XX:+UseCompressedOops -XX:+UseCondCardMark -XX:+UseFastUnorderedTimeStamps -XX:+UseG1GC -XX:X86ICacheSync=3 "
+    ],
+    "heap": [
+      "garbage-first heap   total reserved 1048576K, committed 376832K, used 263076K [0x00000000c0000000, 0x0000000100000000)",
+      " region size 1M, 139 eden (139M), 18 survivor (18M), 100 old (100M), 1 humongous (1M), 110 free (110M)"
+    ],
+    "rssMiB": 981
+  },
+  "phase": "long-name",
+  "viewport": {
+    "w": 1280,
+    "h": 900,
+    "dpr": 1
+  },
+  "url": "http://127.0.0.1:39551/#/materials",
+  "doc": {
+    "scrollW": 1280,
+    "clientW": 1280,
+    "scrollH": 900,
+    "clientH": 900
+  },
+  "rootFontSize": "16px",
+  "theme": "auto",
+  "horizontalOverflow": false,
+  "elements": {
+    "header": [
+      {
+        "tag": "div",
+        "text": "quarterly-sales-dashboard-with-regional-breakdown-and-export-notes-for-the-operations-team-2026.html\n文件可用\napps/quarterly-sales-dashboard-with-regional-breakdown",
+        "ariaLabel": null,
+        "rect": {
+          "x": 498,
+          "y": 618.3,
+          "w": 440,
+          "h": 290.3
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 440,
+          "h": 290,
+          "cw": 440,
+          "ch": 290
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "h2": [
+      {
+        "tag": "h2",
+        "text": "quarterly-sales-dashboard-with-regional-breakdown-and-export-notes-for-the-operations-team-2026.html",
+        "ariaLabel": null,
+        "rect": {
+          "x": 498,
+          "y": 618.3,
+          "w": 440,
+          "h": 50.2
+        },
+        "fontSize": "16.2px",
+        "lineHeight": "25.11px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 440,
+          "h": 50,
+          "cw": 440,
+          "ch": 50
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "meta": [
+      {
+        "tag": "div",
+        "text": "文件可用\napps/quarterly-sales-dashboard-with-regional-breakdown-and-export-notes-for-the-operations-team-2026.html\n数据 0 B",
+        "ariaLabel": null,
+        "rect": {
+          "x": 498,
+          "y": 668.5,
+          "w": 440,
+          "h": 108.3
+        },
+        "fontSize": "12.8px",
+        "lineHeight": "19.84px",
+        "color": "rgb(77, 91, 106)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 6.64,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 440,
+          "h": 108,
+          "cw": 440,
+          "ch": 108
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "frame": [
+      {
+        "tag": "iframe",
+        "text": "",
+        "ariaLabel": null,
+        "rect": {
+          "x": 498,
+          "y": 918.6,
+          "w": 440,
+          "h": 520
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 440,
+          "h": 520,
+          "cw": 440,
+          "ch": 520
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "rows": [
+      {
+        "tag": "li",
+        "text": "quarterly-sales-dashboard-with-regional-breakdown-and-export-notes-for-the-operations-team-2026.html\n文件可用\n数据 0 B\n最近使用 2026-11-06T02:58:31\napps/quarterly-sales-d",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 744.8,
+          "w": 240,
+          "h": 378.2
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 240,
+          "h": 378,
+          "cw": 240,
+          "ch": 378
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "rowButtons": [
+      {
+        "tag": "button",
+        "text": "打开",
+        "ariaLabel": null,
+        "rect": {
+          "x": 255,
+          "y": 994,
+          "w": 198.8,
+          "h": 36
+        },
+        "fontSize": "13.6px",
+        "lineHeight": "21.08px",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(11, 95, 138)",
+        "contrast": 6.96,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 197,
+          "h": 34,
+          "cw": 197,
+          "ch": 34
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "数据",
+        "ariaLabel": null,
+        "rect": {
+          "x": 255,
+          "y": 1036,
+          "w": 198.8,
+          "h": 36
+        },
+        "fontSize": "13.6px",
+        "lineHeight": "21.08px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 197,
+          "h": 34,
+          "cw": 197,
+          "ch": 34
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "检查文件",
+        "ariaLabel": null,
+        "rect": {
+          "x": 255,
+          "y": 1078,
+          "w": 198.8,
+          "h": 36
+        },
+        "fontSize": "13.6px",
+        "lineHeight": "21.08px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 197,
+          "h": 34,
+          "cw": 197,
+          "ch": 34
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ]
+  }
+}

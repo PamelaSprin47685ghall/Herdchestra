@@ -1,0 +1,57 @@
+{
+  "bundle": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+  "pageBundle": {
+    "url": "http://127.0.0.1:37691/js/main.js",
+    "hash": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85"
+  },
+  "css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+  "at": "2026-11-06T04:36:56.411Z",
+  "fix": "attachments/model.clj native-capability(:text) -> nil (W8); text/plain takes the text route, never native",
+  "ui": {
+    "chipRaw": "note.txt · 37 B\n可发送\n移除",
+    "sendable": true,
+    "nativeOriginal": false,
+    "note": "E2E05 uploaded note.txt and clicked 提取文字; the composer chip showed 可发送. The attachment card label 发送提取文本 was not read by this script."
+  },
+  "outbound": {
+    "source": "/tmp/hc-e2e05/proxy.jsonl seq 14",
+    "userContentIncludes": "[Attachment: note.txt]\\nE2E05 附件：部署检查清单。\\n",
+    "inlineText": true,
+    "nativeTextRejectionSeen": false
+  },
+  "pure": {
+    "bundle": "55e4e8ea73279d58a0dbceba22ee8c815c2b24b2de600fd2e1f21e2eaa27c857",
+    "at": "2026-11-06T04:10:06.838530554Z",
+    "fix": "attachments/model.clj native-capability :text -> nil",
+    "model-capabilities": [
+      ":text",
+      ":streaming",
+      ":tools"
+    ],
+    "textRaw": {
+      "route": "needs-choice",
+      "send-route": null,
+      "reason": "extract-text",
+      "detail": "模型不接受原格式，可在设备上提取文本"
+    },
+    "textExtracted": {
+      "route": "text",
+      "send-route": "text",
+      "reason": "local-text",
+      "detail": "在设备上提取文本后发送"
+    },
+    "prepareSend": {
+      "ok?": true,
+      "issues": [],
+      "sendable": [
+        {
+          "id": "a2",
+          "send-route": "text",
+          "send-text": "部署窗口是周四 20:00"
+        }
+      ]
+    },
+    "nativeTextRejection": "not triggered (route is needs-choice/text, never native)"
+  },
+  "conclusion": "text/plain no longer routes native; no :ATTACHMENT_NOT_SENDABLE; the file text is inlined as a text block in the request."
+}

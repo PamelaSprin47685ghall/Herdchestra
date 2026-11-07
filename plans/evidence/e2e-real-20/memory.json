@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:44619/",
+  "startedAt": "2026-11-05T06:23:05.261Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:44619/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件\nNew session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793859787143.png",
+  "console": [
+    "debug: 2026-11-05T06:23:06.858Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "tempCreated": true,
+      "readDefaultOff": true,
+      "suggestDefaultOff": true,
+      "tempNotice": true,
+      "onceControl": true,
+      "onceDefaultOff": true,
+      "onceOn": true,
+      "onceOff": true
+    },
+    "tempBody": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n33\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n转为普通\n结束临时\n临时会话\nactive · 1793859788769 · DeepSeek V4.1 Flash\n重命名\n置顶\n归档\n删除\nNew session\nactive · 1793859670337 · DeepSeek V4.1 Flash\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件\n临时会话\n临时\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-dd3ff845-0fc5-42ba-aa79-d3d6603b77df\n状态\nactive\n消息数\n0\n模型\nDeepSeek V4.1 Flash\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "memoryBody": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n33\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 1\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前是临时会话：服务器默认不读不写长期记忆。\n\n仅本次读取已保存记忆\n范围：会话 hc-session-dd3ff845-0fc5-42ba-aa79-d3d6603b77df；助手 default；项目 未声明。发送成功后自动关闭；切换会话不保留。\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 1\n读取最新材料\n整理记忆\n0\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n没有符合条件的记忆\n待审、生效、归档与已拒绝记录会按服务器快照显示。\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n0\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n33\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n0\n世界书\n0\n指令卡\n0\n材料 revision\n1\n同步序号\n33\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "onceBody": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n33\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 1\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前是临时会话：服务器默认不读不写长期记忆。\n\n仅本次读取已保存记忆\n范围：会话 hc-session-dd3ff845-0fc5-42ba-aa79-d3d6603b77df；助手 default；项目 未声明。发送成功后自动关闭；切换会话不保留。\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 1\n读取最新材料\n整理记忆\n0\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n没有符合条件的记忆\n待审、生效、归档与已拒绝记录会按服务器快照显示。\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n0\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n33\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n0\n世界书\n0\n指令卡\n0\n材料 revision\n1\n同步序号\n33\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "screenshot": "/tmp/hc-e2e20verify/memory.png"
+  },
+  "durationMs": 9982
+}

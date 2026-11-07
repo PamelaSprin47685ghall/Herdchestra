@@ -1,0 +1,11 @@
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:IDS {:status :ok, :ids ["s-deleted" "s1"]}
+:SESSION s1 :found
+:TITLE E2E22 Active :STATUS :active :DELETED-AT nil
+:SESSION s-deleted :found
+:TITLE E2E22 Deleted :STATUS :deleted :DELETED-AT 2026-11-05T02:06:49.548Z

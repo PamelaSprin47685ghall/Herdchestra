@@ -1,0 +1,22 @@
+2026-11-06T03:51:06.066Z console-error WebSocket connection to 'ws://127.0.0.1:33895/chsk?client-id=acbc2098-fc7b-4221-9a57-6f4f77dffd61' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+2026-11-06T03:51:06.066Z console-error 2026-11-06T03:51:06.066Z ERROR [taoensso.sente:1487] - Client WebSocket error: [object Event]
+2026-11-06T03:51:06.667Z close
+2026-11-06T03:51:06.682Z browser-disconnected
+2026-11-06T03:59:52.977Z console-error WebSocket connection to 'ws://127.0.0.1:32965/chsk?client-id=44af994b-d2e0-434c-9324-b533484f52d7' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+2026-11-06T03:59:52.977Z console-error 2026-11-06T03:59:52.976Z ERROR [taoensso.sente:1487] - Client WebSocket error: [object Event]
+2026-11-06T03:59:53.569Z close
+2026-11-06T03:59:53.582Z browser-disconnected
+2026-11-06T04:15:29.636Z close
+2026-11-06T04:15:29.652Z browser-disconnected
+2026-11-06T04:50:19.529Z console-error WebSocket connection to 'ws://127.0.0.1:40211/chsk?client-id=4075d90a-da1b-4d7b-9172-53c1766507f7' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+2026-11-06T04:50:19.529Z console-error 2026-11-06T04:50:19.528Z ERROR [taoensso.sente:1487] - Client WebSocket error: [object Event]
+2026-11-06T04:50:20.113Z close
+2026-11-06T04:50:20.126Z browser-disconnected
+2026-11-06T05:02:29.237Z console-error WebSocket connection to 'ws://127.0.0.1:35603/chsk?client-id=7d536b3e-6d2b-4b7f-ab53-f3c408ae7376' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+2026-11-06T05:02:29.238Z console-error 2026-11-06T05:02:29.234Z ERROR [taoensso.sente:1487] - Client WebSocket error: [object Event]
+2026-11-06T05:02:29.914Z close
+2026-11-06T05:02:29.930Z browser-disconnected
+2026-11-06T05:14:38.516Z console-error WebSocket connection to 'ws://127.0.0.1:46203/chsk?client-id=6e3182b9-31ff-420b-a4df-18127b447ba4' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+2026-11-06T05:14:38.516Z console-error 2026-11-06T05:14:38.515Z ERROR [taoensso.sente:1487] - Client WebSocket error: [object Event]
+2026-11-06T05:14:39.133Z close
+2026-11-06T05:14:39.147Z browser-disconnected

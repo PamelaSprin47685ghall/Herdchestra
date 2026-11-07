@@ -1,0 +1,679 @@
+{
+  "startedAt": "2026-11-07T03:40:50.780Z",
+  "base": "http://127.0.0.1:43509",
+  "bundle": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a",
+  "css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+  "summary": "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+  "checks": {
+    "composerStable": true,
+    "attachmentTextSendable": true,
+    "attachmentInFirstMessage": true,
+    "d15TextRoute": true,
+    "originalTurnsReplied": true,
+    "originalReadable": true,
+    "previewEditable": true,
+    "prepared": true,
+    "originalsReadableAfterPrepare": true,
+    "draftNotAppliedYet": true,
+    "applied": true,
+    "summaryOnlyAfterApply": true,
+    "originalsReadableAfterApply": true,
+    "summaryVerbatimApplied": true,
+    "assumptionNotUpgraded": true,
+    "continue1": true,
+    "continue2": true,
+    "outboundCounts": false,
+    "outboundSummary": true,
+    "outboundSummaryVerbatim": true,
+    "outboundExcludesReplaced": true,
+    "outboundHasBothContinues": true,
+    "outboundNudgeAndTurnsCompressed": true,
+    "newSessionSelected": true,
+    "newSessionHasSummarySource": true,
+    "newSessionNoOldMessages": true,
+    "newSessionOutboundSummary": true,
+    "newSessionOutboundNoOldMessages": true,
+    "newSessionOutboundHasNewMessage": true,
+    "noRunError": true
+  },
+  "phases": [
+    {
+      "name": "shell-ready",
+      "at": 1794022853832,
+      "detail": null
+    },
+    {
+      "name": "session-created",
+      "at": 1794022950428,
+      "detail": {
+        "sessionId": null
+      }
+    },
+    {
+      "name": "original-turns",
+      "at": 1794023439744,
+      "detail": {
+        "users": 3,
+        "assistants": 3
+      }
+    },
+    {
+      "name": "preview-open",
+      "at": 1794023562733,
+      "detail": {
+        "boxCount": 6
+      }
+    },
+    {
+      "name": "prepared",
+      "at": 1794023563345,
+      "detail": {
+        "prepared": true
+      }
+    },
+    {
+      "name": "applied",
+      "at": 1794023564281,
+      "detail": {
+        "header": "上下文\n发送 0 条 · 摘要 1"
+      }
+    },
+    {
+      "name": "continued-twice",
+      "at": 1794023871719,
+      "detail": {
+        "header": "上下文\n发送 4 条 · 摘要 1",
+        "round": "本轮上下文 · 上次发送\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this "
+      }
+    },
+    {
+      "name": "new-session",
+      "at": 1794024029829,
+      "detail": {
+        "id": "hc-session-70496d23-62bf-4eb2-a44c-c8a3fd862f35",
+        "userMessages": 1
+      }
+    }
+  ],
+  "texts": {
+    "chipRaw": "note.txt · 37 B\n可发送\n移除",
+    "chip": "note.txt · 37 B\n可发送\n移除",
+    "usersBefore": [
+      "E2E05 事实：部署窗口是周四 20:00。请只回复：事实。",
+      "E2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。",
+      "E2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。"
+    ],
+    "assistantsBefore": [
+      "事实。",
+      "假设。",
+      "取消。"
+    ],
+    "summaryEdited": "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+    "afterPrepare": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n19\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:52 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 上次发送\n上下文\n发送 6 条 · 摘要 0\n阅读 6 条 · 已删除 0\n压缩当前发送范围\n压缩 草稿：\n使用摘要\n含来源\n包含工具详情\n导出当前分支\n导出纯文本\n已停止\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n6\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n7\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "contextAfterApply": {
+      "header": "上下文\n发送 0 条 · 摘要 1",
+      "roundText": "本轮上下文 · 上次发送\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n6\n摘要：\n1\n轮次：\n3\n可见：\n6\n排除：\n6\n含压缩摘要\n附件\nnote.txt · unknown · 页 未知\n估算\nToken：\n未知\n来源：\nunknown"
+    },
+    "transcriptAfterApply": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n20\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:52 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 上次发送\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n6\n摘要：\n1\n轮次：\n3\n可见：\n6\n排除：\n6\n含压缩摘要\n附件\nnote.txt · unknown · 页 未知\n估算\nToken：\n未知\n来源：\nunknown\n上下文\n发送 0 条 · 摘要 1\n阅读 6 条 · 已删除 0\n压缩 已采用：\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n撤销压缩\n用摘要建新会话\n含来源\n包含工具详情\n导出当前分支\n导出纯文本\n已停止\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n6\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n7\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "reply1": "继续",
+    "reply2": "继续2",
+    "contextAfterContinue": {
+      "header": "上下文\n发送 4 条 · 摘要 1",
+      "roundText": "本轮上下文 · 上次发送\n系统\n提示字节：\n4213\n模块：program-role\n助手\n身份：\ndefault\n名称：\n通用助手\n版本：\n1\n指令\n会话覆盖：\n否\n记忆\n启用：\n否\n状态：\n读取已关闭\n归档排除：\n0\n世界书\n启用书籍：\n指令卡\n本轮未使用指令卡\n工具\ndevops · read\nRun the Plan dedicated worker synchronously on the task model and return its full report. The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\n历史\n发送消息：\n10\n摘要：\n1\n轮次：\n5\n可见：\n10\n排除：\n6\n含压缩摘要\n估算\nToken：\n未知\n来源：\nunknown"
+    },
+    "sentCount": 10,
+    "excludedCount": 0,
+    "newSession": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n31\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n摘要 · New session\n2026/11/07 11:57 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/07 11:55 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n摘要 · New session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 1 条 · 摘要 0\n系统 · 版本 1\n\n【压缩摘要 · 来源会话《New session》】\n原发送范围 6 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。\n\n选择\n复制\n从此处开始\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n摘要 · New session\n会话 ID\nhc-session-70496d23-62bf-4eb2-a44c-c8a3fd862f35\n状态\n—\n消息数\n1\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。"
+  },
+  "proxy": {
+    "applySeq": 113,
+    "continue2": {
+      "seq": 115,
+      "bytes": 8033,
+      "messages": 5,
+      "roles": [
+        "system",
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "contents": [
+        "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+        "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+        "E2E05 继续一：请只回复：继续1。",
+        "继续",
+        "E2E05 继续二：请只回复：继续2。"
+      ],
+      "summaryCount": 1,
+      "replacedMarkCounts": {
+        "请只回复：事实。": 0,
+        "请只回复：假设。": 0,
+        "请只回复：取消。": 0,
+        "E2E05 事实": 0
+      }
+    },
+    "afterApplyRequests": [
+      {
+        "seq": 114,
+        "bytes": 7885,
+        "messages": 3,
+        "roles": [
+          "system",
+          "system",
+          "user"
+        ],
+        "contents": [
+          "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+          "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+          "E2E05 继续一：请只回复：继续1。"
+        ],
+        "summaryCount": 1,
+        "replacedMarkCounts": {
+          "请只回复：事实。": 0,
+          "请只回复：假设。": 0,
+          "请只回复：取消。": 0,
+          "E2E05 事实": 0
+        }
+      },
+      {
+        "seq": 115,
+        "bytes": 8033,
+        "messages": 5,
+        "roles": [
+          "system",
+          "system",
+          "user",
+          "assistant",
+          "user"
+        ],
+        "contents": [
+          "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+          "事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：不要生成 PDF 报告。",
+          "E2E05 继续一：请只回复：继续1。",
+          "继续",
+          "E2E05 继续二：请只回复：继续2。"
+        ],
+        "summaryCount": 1,
+        "replacedMarkCounts": {
+          "请只回复：事实。": 0,
+          "请只回复：假设。": 0,
+          "请只回复：取消。": 0,
+          "E2E05 事实": 0
+        }
+      }
+    ],
+    "newSession": {
+      "seq": 116,
+      "bytes": 10219,
+      "messages": 5,
+      "roles": [
+        "system",
+        "system",
+        "user",
+        "assistant",
+        "tool"
+      ],
+      "contents": [
+        "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draf…",
+        "【压缩摘要 · 来源会话《New session》】\n原发送范围 6 条消息（未复制原文）。\n\n事实：部署窗口是周四 20:00。假设（未确认）：用户可能偏好蓝色主题。已取消要求：…",
+        "新会话：请只回复：来源。",
+        "",
+        "Reasoning and all outward output must be in English.\n\n# Pair programming discipline\nMnemon…"
+      ],
+      "summaryCount": 1,
+      "replacedMarkCounts": {
+        "请只回复：事实。": 0,
+        "请只回复：假设。": 0,
+        "请只回复：取消。": 0,
+        "E2E05 事实": 0
+      }
+    },
+    "requestCount": 54,
+    "requests": [
+      {
+        "seq": 60,
+        "method": "GET",
+        "url": "/v1/models",
+        "bytes": 0,
+        "messages": null
+      },
+      {
+        "seq": 61,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 62,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 63,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 64,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 65,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10217,
+        "messages": 5
+      },
+      {
+        "seq": 66,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 67,
+        "method": "GET",
+        "url": "/v1/models",
+        "bytes": 0,
+        "messages": null
+      },
+      {
+        "seq": 68,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 69,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 70,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 71,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 72,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 73,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 74,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 75,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7885,
+        "messages": 3
+      },
+      {
+        "seq": 76,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8034,
+        "messages": 5
+      },
+      {
+        "seq": 77,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10217,
+        "messages": 5
+      },
+      {
+        "seq": 78,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8179,
+        "messages": 7
+      },
+      {
+        "seq": 79,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9982,
+        "messages": 4
+      },
+      {
+        "seq": 80,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 4784,
+        "messages": 5
+      },
+      {
+        "seq": 81,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7190,
+        "messages": 8
+      },
+      {
+        "seq": 82,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9753,
+        "messages": 11
+      },
+      {
+        "seq": 83,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12394,
+        "messages": 14
+      },
+      {
+        "seq": 84,
+        "method": "GET",
+        "url": "/v1/models",
+        "bytes": 0,
+        "messages": null
+      },
+      {
+        "seq": 85,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 86,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 87,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 88,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7885,
+        "messages": 3
+      },
+      {
+        "seq": 89,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8037,
+        "messages": 5
+      },
+      {
+        "seq": 90,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10219,
+        "messages": 5
+      },
+      {
+        "seq": 91,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9982,
+        "messages": 4
+      },
+      {
+        "seq": 92,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 4784,
+        "messages": 5
+      },
+      {
+        "seq": 93,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7140,
+        "messages": 8
+      },
+      {
+        "seq": 94,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9475,
+        "messages": 11
+      },
+      {
+        "seq": 95,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 96,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 97,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 98,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 99,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 100,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7885,
+        "messages": 3
+      },
+      {
+        "seq": 101,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8034,
+        "messages": 5
+      },
+      {
+        "seq": 102,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10217,
+        "messages": 5
+      },
+      {
+        "seq": 103,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8179,
+        "messages": 7
+      },
+      {
+        "seq": 104,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9982,
+        "messages": 4
+      },
+      {
+        "seq": 105,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 4784,
+        "messages": 5
+      },
+      {
+        "seq": 106,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7157,
+        "messages": 8
+      },
+      {
+        "seq": 107,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 9530,
+        "messages": 11
+      },
+      {
+        "seq": 108,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 11903,
+        "messages": 14
+      },
+      {
+        "seq": 109,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 110,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 111,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10121,
+        "messages": 4
+      },
+      {
+        "seq": 112,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 12549,
+        "messages": 8
+      },
+      {
+        "seq": 113,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 14964,
+        "messages": 12
+      },
+      {
+        "seq": 114,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 7885,
+        "messages": 3
+      },
+      {
+        "seq": 115,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 8033,
+        "messages": 5
+      },
+      {
+        "seq": 116,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "bytes": 10219,
+        "messages": 5
+      }
+    ]
+  },
+  "pageBundle": {
+    "url": "http://127.0.0.1:43509/js/main.js",
+    "hash": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a"
+  },
+  "sessionId": null,
+  "newAttempt0": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 0 条 · 摘要 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n0\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "newAttempt1": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 0 条 · 摘要 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n0\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "newAttempt2": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 0 条 · 摘要 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n0\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "newAttempt3": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/07 11:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 0 条 · 摘要 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-c1854d61-37b2-4012-9df0-83efd56b4a5f\n状态\n—\n消息数\n0\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "d15": {
+    "file": "note.txt",
+    "mime": "text/plain",
+    "chip": "note.txt · 37 B\n可发送\n移除",
+    "sendable": true,
+    "sentInFirstMessage": true,
+    "modelRequestHasAttachmentText": true,
+    "modelRequestHasNativeImagePart": false,
+    "requestSeq": 113
+  },
+  "boxCount": 6,
+  "boxCountRetry": 0,
+  "newSessionId": "hc-session-70496d23-62bf-4eb2-a44c-c8a3fd862f35",
+  "error": "locator.click: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('li.wb-session-item').filter({ has: locator('[data-session-id=\"null\"]') }).first().locator('button.wb-list-button').first()\n\n    at selectSession (/tmp/hc-w3e5r4/e2e05v5.cjs:236:56)\n    at /tmp/hc-w3e5r4/e2e05v5.cjs:584:11",
+  "finishedAt": "2026-11-07T04:00:49.877Z",
+  "appLogTail": [
+    "Picked up JAVA_TOOL_OPTIONS: -Xmx768m -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError",
+    "WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure",
+    "WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key",
+    "WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity",
+    "WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send",
+    "Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.",
+    "WARNING: A restricted method in java.lang.System has been called",
+    "WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)",
+    "WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module",
+    "WARNING: Restricted methods will be blocked in a future release unless native access is enabled",
+    "",
+    "SLF4J(W): No SLF4J providers were found.",
+    "SLF4J(W): Defaulting to no-operation (NOP) logger implementation",
+    "SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.",
+    "Herdchestra listening on http://127.0.0.1:40349/",
+    "workspace: /tmp/hc-w3e5r4/work64",
+    "store:     /tmp/hc-w3e5r4/data64/db",
+    ""
+  ]
+}

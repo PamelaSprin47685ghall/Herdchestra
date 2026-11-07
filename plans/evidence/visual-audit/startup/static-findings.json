@@ -1,0 +1,225 @@
+{
+  "capturedAt": "2026-11-06T11:15:00+08:00",
+  "bundle": {
+    "sha256": "dd968793cc74919e139f31bb290a5dfb68309c6d9a78acfd766a4d984f2fda4b",
+    "size": 3007964,
+    "mtime": "2026-11-06T11:19:25+08:00",
+    "status": "final-frozen",
+    "note": "W9 最终冻结（11:26–11:41 冻结窗口）；W16 视觉段尚未运行"
+  },
+  "css": {
+    "sha256": "dda62554c9bb0b2643c0c437a1368f56b021f716001bcefa3f5cf92a32fa44ca",
+    "path": "resources/public/css/workbench.css",
+    "note": "审查期间由其他工人更新；我的补丁未应用"
+  },
+  "sourceScreenshots": [
+    {
+      "path": "plans/evidence/bundle-health/settings.png",
+      "note": "设置页现状；两组同款 pill 标签；首次配置面板"
+    },
+    {
+      "path": "plans/evidence/bundle-health/home.png",
+      "note": "空安装首页；无引导卡/示例"
+    },
+    {
+      "path": "plans/evidence/no-model/no-model.png",
+      "note": "无模型草稿；两条英文浏览器错误"
+    },
+    {
+      "path": "plans/evidence/no-model/no-model-dom.html",
+      "note": "空安装 DOM 全文，用于确认引导卡/示例不存在"
+    },
+    {
+      "path": "plans/evidence/e2e-auto/e2e01/e2e01-03-onboarding.png",
+      "note": "首次配置；默认 ol 标记与标签编号叠加"
+    },
+    {
+      "path": "plans/evidence/e2e-auto/e2e01/e2e01-04-connection-saved.png",
+      "note": "连接已保存；三条重复保存提示"
+    },
+    {
+      "path": "plans/evidence/e2e-auto/e2e01/e2e01-05-model-bound.png",
+      "note": "角色卡无边框/默认块流"
+    },
+    {
+      "path": "plans/evidence/e2e-auto/e2e01/e2e01-05-connection-tested.png",
+      "note": "测试层表格与状态"
+    }
+  ],
+  "missingCssClasses": [
+    "hc-appearance",
+    "hc-appearance-button",
+    "hc-appearance-fieldset",
+    "hc-appearance-font",
+    "hc-appearance-range",
+    "hc-appearance-row",
+    "hc-appearance-status",
+    "hc-appearance-toggles",
+    "hc-appearance-value",
+    "hc-auth-status",
+    "hc-badges",
+    "hc-capability-editor",
+    "hc-capability-field",
+    "hc-capability-fields",
+    "hc-capability-name",
+    "hc-checkbox",
+    "hc-connection-list",
+    "hc-draft-status",
+    "hc-form",
+    "hc-model-detail",
+    "hc-model-detail__table",
+    "hc-model-group",
+    "hc-model-group__header",
+    "hc-model-list",
+    "hc-model-meta",
+    "hc-model-row",
+    "hc-model-row__header",
+    "hc-model-switch",
+    "hc-new-connection",
+    "hc-onboarding",
+    "hc-onboarding__step",
+    "hc-onboarding__steps",
+    "hc-role-card",
+    "hc-role-grid",
+    "hc-role-status",
+    "hc-role-tabs",
+    "hc-secret__state",
+    "hc-settings__footer",
+    "hc-stale-results",
+    "hc-test-conclusion",
+    "hc-test-layers",
+    "hc-unsaved-drafts"
+  ],
+  "missingCssClassCount": 42,
+  "findings": [
+    {
+      "id": "V-01",
+      "severity": "ugly",
+      "area": "模型与角色",
+      "evidence": "42 个视图类名在 workbench.css 中无任何规则；model-row/role-card/onboarding/appearance 全部退回默认块流",
+      "fix": "纯 CSS 补齐布局",
+      "status": "patch-prepared"
+    },
+    {
+      "id": "V-02",
+      "severity": "ugly",
+      "area": "外观",
+      "evidence": "appearance/view.cljc 使用 hc-button--primary，样式表定义 hc-button-primary；选中主题按钮无视觉反馈",
+      "fix": "CSS 别名 + aria-pressed 选择器",
+      "status": "patch-prepared"
+    },
+    {
+      "id": "V-03",
+      "severity": "ugly",
+      "area": "设置标签",
+      "evidence": "外层工作区标签与内层设置分区标签同为 pill；两层视觉权重相同",
+      "fix": "外层改下划线标签",
+      "status": "patch-prepared"
+    },
+    {
+      "id": "V-04",
+      "severity": "ugly",
+      "area": "窄屏表格",
+      "evidence": "密钥表 6 列、模型详情表 4 列，容器无横向滚动；360px 会挤压/溢出",
+      "fix": "容器 overflow-x + 表 min-width",
+      "status": "patch-prepared"
+    },
+    {
+      "id": "V-05",
+      "severity": "bug",
+      "area": "首次启动首页",
+      "evidence": "no-model-dom.html 中无“连接模型/恢复已有资料/稍后设置”引导卡，也无三个示例；settings/view.cljc 文案却声称“首次启动会在会话页显示连接引导”",
+      "fix": "会话页增加引导卡与只入草稿的示例；或改文案",
+      "status": "reported"
+    },
+    {
+      "id": "V-06",
+      "severity": "bug",
+      "area": "连接模型",
+      "evidence": "设置页只有单页长表单；无三步标题/返回；onboarding 为 4 项检查表",
+      "fix": "实现三步向导或明确合并理由",
+      "status": "reported"
+    },
+    {
+      "id": "V-07",
+      "severity": "bug",
+      "area": "无模型提示",
+      "evidence": "composer 提示仅“先选择一个可用模型，草稿已保留”，缺“或所属连接已停用/原模型已不可用”和“选择模型/打开连接设置”入口",
+      "fix": "补文案与入口",
+      "status": "reported"
+    },
+    {
+      "id": "V-08",
+      "severity": "bug",
+      "area": "首次启动错误态",
+      "evidence": "no-model DOM 出现两条相同英文提示“managed browser is not connected for this session”",
+      "fix": "空安装不自动触发浏览器命令；服务端错误本地化并去重",
+      "status": "reported"
+    },
+    {
+      "id": "V-09",
+      "severity": "bug",
+      "area": "外观",
+      "evidence": "无界面语言、背景、气泡设置；仅有主题/字号/对比度/动态效果",
+      "fix": "按 §7.4-16 补齐或修订规格",
+      "status": "reported"
+    },
+    {
+      "id": "V-10",
+      "severity": "bug",
+      "area": "价格表单",
+      "evidence": "模型详情有输入/输出价格、币种、单位，但无示例预览",
+      "fix": "增加示例预览并标注未知",
+      "status": "reported"
+    },
+    {
+      "id": "V-11",
+      "severity": "bug",
+      "area": "设置通知",
+      "evidence": "e2e01-04-connection-saved.png 中同一“设置草稿已保存”提示重复 3 条并遮挡内容",
+      "fix": "按文本合并/只在失败时提示",
+      "status": "reported"
+    },
+    {
+      "id": "V-12",
+      "severity": "ugly",
+      "area": "首次配置",
+      "evidence": "ol 默认标记 1.–4. 与标签自带的 1–4 叠加；当前步骤无高亮",
+      "fix": "list-style:none + 当前/完成态",
+      "status": "patch-prepared"
+    }
+  ],
+  "patch": {
+    "path": "/tmp/hc-visual-startup/settings-visual-fixes.css",
+    "sha256": "cf29c6c1e8b93d00202fa183462a0a93bf2918faf21fdad37c7d5d79eae07ddb",
+    "applied": false,
+    "note": "纯 CSS，不重建 bundle"
+  },
+  "screenshotScript": {
+    "path": "/tmp/hc-visual-startup/audit-segment.cjs",
+    "sha256": "9ba4d469f97a1c9cd44b7d0521433ca1e97579338771a1d14d120958a0f5d634"
+  },
+  "staticContrast": {
+    "light": {
+      "ink/bg": 15.16,
+      "muted/bg": 6.42,
+      "warn/surface": 6.33,
+      "danger/surface": 7.36,
+      "ok/surface": 6.52,
+      "accentInk/accent": 6.96
+    },
+    "dark": {
+      "ink/bg": 16.4,
+      "muted/bg": 10.24,
+      "warn/surface": 10.3,
+      "danger/surface": 8.17,
+      "ok/surface": 10.47,
+      "accentInk/accent": 9.62
+    },
+    "note": "按 CSS 变量计算，均 ≥4.5:1；真实渲染待复验"
+  },
+  "staticTouch": {
+    "finding": "hc-input/hc-select 最小高度 40px，360px 触屏低于 44px",
+    "fix": "已在补丁的 max-width:599px 中提升到 44px"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "url": "http://127.0.0.1:43829/#/sessions",
+  "capturedAt": "2026-11-05T04:36:15.514Z",
+  "modelButtonText": "模型：尚未选择模型",
+  "sendDisabled": true,
+  "textareaValue": "无模型发布验证草稿",
+  "draftPreserved": true,
+  "messageCount": 0,
+  "commandRows": 0,
+  "bodyHasModelPrompt": true,
+  "noFakeModelReply": true,
+  "evidence": {
+    "probeJson": "plans/evidence/no-model-final/no-model.json",
+    "screenshot": "plans/evidence/no-model-final/no-model.png",
+    "dom": "plans/evidence/no-model-final/no-model-dom.html"
+  }
+}

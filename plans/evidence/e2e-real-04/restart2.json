@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:38749/",
+  "startedAt": "2026-11-05T06:02:29.721Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步",
+      "分支"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:38749/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n分支\n来源会话：New session\n联网搜索\n展开\n添加附件\nBranch of New session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793858551009.png",
+  "console": [
+    "debug: 2026-11-05T06:02:30.762Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "versionButtons": 2,
+      "editedText": true,
+      "exportControls": 1
+    },
+    "bodies": {},
+    "body": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件\nNew session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮上下文\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n导出当前分支导出纯文本\n你 · 版本 1\nv1\nv2\n\nE2E04 已编辑：移除图片，只保留文字。\n\n选择\n复制从此处分支从此处开始\n编辑\ntool-call\n选择\n复制从此处分支从此处开始\n工具\n\n{:role :clj-plan\n  :raw-source \"\"\"\n  (defprogram e2e04-image-one-line []\n    (review {:findings []}))\n  \"\"\"\n  :read-set {}\n  :started-at 1793858408082\n  :call-id \"call-1/tool-0\"\n  :name \"e2e04-image-one-line\"\n  :value {:ledger {} :tenure-epoch 1 :reviewed? false :call-id \"review-call-1/tool-0\" :milestone :S1 :question \"我需要干什么？\" :outcome :ask :lane :plan :relayed? false :status :accepted :tenure-id \"tenure-1\" :awaiting-user? true}\n  :numbered-source \"\"\"\n  1 | (defprogram e2e04-image-one-line []\n  2 |   (review {:findings []}))\n  \"\"\"\n  :attempt-id :attempt-e17e0d0d-d876-4c85-8e8a-db5e52a99a87--3\n  :control-results [{:primitive :review :result {:ledger {} :tenure-epoch 1 :reviewed? false :call-id \"review-call-1/tool-0\" :milestone :S1 :question \"我需要干什么？\" :outcome :ask :lane :plan :relayed? false :status :accepted :tenure-id \"tenure-1\" :awaiting-user? true}}]\n  :state :completed\n  :checks {}\n  :source \"\"\"\n  1 | (defprogram e2e04-image-one-line []\n  2 |   (review {:findings []}))\n  \"\"\"\n  :operation-count 0\n  :intent-bytes 120\n  :s1? true\n  :deadline-ms 6000\n  :status :COMPLETED\n  :commit nil\n  :holder? false\n  :commits []\n}\n\n选择\n复制从此处分支从此处开始\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "screenshot": "/tmp/hc-e2e04final/restart-src.png"
+  },
+  "durationMs": 5405
+}

@@ -1,0 +1,2682 @@
+{
+  "bundleHash": "dd968793cc74919e139f31bb290a5dfb68309c6d9a78acfd766a4d984f2fda4b",
+  "cssHash": "dda62554c9bb0b2643c0c437a1368f56b021f716001bcefa3f5cf92a32fa44ca",
+  "part": "part1",
+  "results": [
+    {
+      "label": "desktop-1280-light-boot",
+      "firstPaintText": "Herdchestra\n正在打开本地数据…"
+    },
+    {
+      "label": "desktop-1280-light-sessions",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-sessions-no-match",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 15,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 2
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-conversation-draft",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "modelCtaCount": 0,
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-aux-details",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-aux-文件",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 23,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 2
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-aux-浏览器",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 31,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 2
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-aux-来源",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 18,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 2
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-board",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 7,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-assistants",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 15,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "模型归属",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "供应商连接",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-materials",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 20,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "工作区文件",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "产物",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "长期记忆",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "世界书",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "指令卡",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "扩展",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "小应用",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-settings",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 21,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-settings-models",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 31,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "主模型",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "任务模型",
+          "selected": null,
+          "tabIndex": 0
+        },
+        {
+          "label": "辅助模型",
+          "selected": null,
+          "tabIndex": 0
+        },
+        {
+          "label": "嵌入模型",
+          "selected": null,
+          "tabIndex": 0
+        },
+        {
+          "label": "视觉模型",
+          "selected": null,
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-settings-appearance",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 18,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-settings-data",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 32,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "用量与费用",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "详细日志",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "诊断包",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "反馈草稿",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "true",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-sessions",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-sessions-no-match",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 15,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 2
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-conversation-draft",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "modelCtaCount": 0,
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-aux-details",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-board",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 7,
+      "rawTokens": [],
+      "contrastFailures": [
+        {
+          "text": "Swarm 看板",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 20.25,
+          "large": true,
+          "pass": false
+        },
+        {
+          "text": "fleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 15,
+          "large": false,
+          "pass": false
+        }
+      ],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-assistants",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 15,
+      "rawTokens": [],
+      "contrastFailures": [
+        {
+          "text": "助手与角色",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 20.25,
+          "large": true,
+          "pass": false
+        },
+        {
+          "text": "查看主模型（Steward / Plan / Reviewer）与任务模型（@task）的归属、供应商连接与能力状态。绑定在设置中修改，服务",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 15,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未选择主模型；发送前需先选择。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "普通回答、Steward、Plan 与 Reviewer 的主要任务。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未选择任务模型；Plan dedicated worker 与蜂群无法启动。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "Plan dedicated worker、Swarm 普通个体与持令者使用的任务模型；未选择时蜂群无法启动。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未选择主模型；辅助模型需先选择主模型或单独指定。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "摘要、会话标题等轻任务；可由主模型兼任，但需要确认。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "检索不可用；纯文本聊天不受影响。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "检索向量。未就绪时明确显示检索不可用，不影响纯文本聊天。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未选择主模型；图片功能不可用。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "图片理解。默认使用主模型已确认的视觉能力；单独指定时显示数据去向。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 12.5,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "主模型",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未设置",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "任务模型",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "未设置",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "连接数",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "同步 epoch",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "1",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "同步序号",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "1",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "最近确认",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "2026/11/6 11:29:56",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        }
+      ],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "模型归属",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "供应商连接",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-materials",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 20,
+      "rawTokens": [],
+      "contrastFailures": [
+        {
+          "text": "材料与扩展",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 20.25,
+          "large": true,
+          "pass": false
+        },
+        {
+          "text": "工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 15,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "工作区文件",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 16.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "work-part1",
+          "cls": "hc-files-crumb",
+          "ratio": 1.06,
+          "size": 15,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "stamp 是服务器读取时的 (mtime, size) 依据；目录不携带内容 stamp。本视图只读，不提供删除、重命名或新建入口。",
+          "cls": "hc-files-note",
+          "ratio": 1.69,
+          "size": 12.9,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "当前目录条目",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "产物条目",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "记忆条目",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "世界书",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "指令卡",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "MCP 服务器",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "技能",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "0",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "同步序号",
+          "cls": "",
+          "ratio": 1.69,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        },
+        {
+          "text": "1",
+          "cls": "",
+          "ratio": 1.06,
+          "size": 13.2,
+          "large": false,
+          "pass": false
+        }
+      ],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "工作区文件",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "产物",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "长期记忆",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "世界书",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "指令卡",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "扩展",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "小应用",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-settings",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 21,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-dark-settings-appearance",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "20.25px",
+      "colorScheme": "dark",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 1,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 18,
+      "rawTokens": [],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": null,
+        "conversation": null,
+        "composer": null
+      },
+      "sessionRows": [],
+      "tabs": [
+        {
+          "label": "设置",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "定时任务",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "语音与朗读",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "独立翻译",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "快捷键",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-tab-order",
+      "order": [
+        {
+          "tag": "button",
+          "id": "wb-menu",
+          "cls": "wb-icon-button wb-menu-button",
+          "text": "打开导航",
+          "outline": "solid 2px",
+          "box": {
+            "x": 12,
+            "y": 12,
+            "w": 44,
+            "h": 44
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-badge",
+          "text": "连接状态：已同步；打开设置",
+          "outline": "solid 2px",
+          "box": {
+            "x": 1127,
+            "y": 17,
+            "w": 87,
+            "h": 33
+          }
+        },
+        {
+          "tag": "button",
+          "id": "wb-aux-toggle",
+          "cls": "wb-icon-button",
+          "text": "关闭详情",
+          "outline": "solid 2px",
+          "box": {
+            "x": 1224,
+            "y": 12,
+            "w": 44,
+            "h": 44
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-nav-item",
+          "text": "◎会话与分支对话、草稿、停止",
+          "outline": "solid 2px",
+          "box": {
+            "x": 8,
+            "y": 115,
+            "w": 207,
+            "h": 56
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-nav-item",
+          "text": "▦Swarm 看板fleet、任务树、槽位",
+          "outline": "solid 2px",
+          "box": {
+            "x": 8,
+            "y": 173,
+            "w": 207,
+            "h": 56
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-nav-item",
+          "text": "◇助手与角色模型绑定与能力",
+          "outline": "solid 2px",
+          "box": {
+            "x": 8,
+            "y": 231,
+            "w": 207,
+            "h": 56
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-nav-item",
+          "text": "▤材料与扩展文件、记忆、技能、MCP",
+          "outline": "solid 2px",
+          "box": {
+            "x": 8,
+            "y": 288,
+            "w": 207,
+            "h": 56
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-nav-item",
+          "text": "⚙设置与数据连接、外观、诊断",
+          "outline": "solid 2px",
+          "box": {
+            "x": 8,
+            "y": 346,
+            "w": 207,
+            "h": 56
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small",
+          "text": "新建会话",
+          "outline": "solid 2px",
+          "box": {
+            "x": 329,
+            "y": 83,
+            "w": 46,
+            "h": 49
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small",
+          "text": "新建临时会话",
+          "outline": "solid 2px",
+          "box": {
+            "x": 383,
+            "y": 83,
+            "w": 46,
+            "h": 49
+          }
+        },
+        {
+          "tag": "input",
+          "id": "wb-session-search",
+          "cls": "wb-input wb-session-search",
+          "text": "过滤会话",
+          "outline": "solid 2px",
+          "box": {
+            "x": 234,
+            "y": 142,
+            "w": 200,
+            "h": 36
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-list-button",
+          "text": "New session2026/11/06 11:26",
+          "outline": "solid 2px",
+          "box": {
+            "x": 234,
+            "y": 178,
+            "w": 200,
+            "h": 69
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small",
+          "text": "重命名：修改会话标题；服务器接受后当前快照才会更新。",
+          "outline": "solid 2px",
+          "box": {
+            "x": 234,
+            "y": 253,
+            "w": 60,
+            "h": 32
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small",
+          "text": "置顶：置顶会话；列表顺序由服务器快照决定。",
+          "outline": "solid 2px",
+          "box": {
+            "x": 298,
+            "y": 253,
+            "w": 47,
+            "h": 32
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small",
+          "text": "归档：归档会话；归档后可恢复。",
+          "outline": "solid 2px",
+          "box": {
+            "x": 349,
+            "y": 253,
+            "w": 47,
+            "h": 32
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "wb-button wb-button-small wb-button-danger",
+          "text": "删除：删除会话；普通删除可在 30 天内恢复，临时会话不进入已删除区。",
+          "outline": "solid 2px",
+          "box": {
+            "x": 234,
+            "y": 289,
+            "w": 47,
+            "h": 32
+          }
+        },
+        {
+          "tag": "summary",
+          "id": "",
+          "cls": "",
+          "text": "已删除会话",
+          "outline": "auto 1px",
+          "box": {
+            "x": 234,
+            "y": 342,
+            "w": 200,
+            "h": 44
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "hc-button",
+          "text": "展开",
+          "outline": "solid 2px",
+          "box": {
+            "x": 472,
+            "y": 119,
+            "w": 60,
+            "h": 44
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "hc-button",
+          "text": "添加附件",
+          "outline": "solid 2px",
+          "box": {
+            "x": 598,
+            "y": 69,
+            "w": 90,
+            "h": 44
+          }
+        },
+        {
+          "tag": "button",
+          "id": "",
+          "cls": "hc-button",
+          "text": "关联工作区文件",
+          "outline": "solid 2px",
+          "box": {
+            "x": 688,
+            "y": 69,
+            "w": 135,
+            "h": 44
+          }
+        }
+      ]
+    },
+    {
+      "label": "desktop-1280-light-tabs-arrow",
+      "before": {
+        "active": "详情",
+        "selected": [
+          [
+            "详情",
+            "true",
+            0
+          ],
+          [
+            "文件",
+            "false",
+            0
+          ],
+          [
+            "浏览器",
+            "false",
+            0
+          ],
+          [
+            "来源",
+            "false",
+            0
+          ]
+        ]
+      },
+      "after": {
+        "active": "详情",
+        "selected": [
+          [
+            "详情",
+            "true",
+            0
+          ],
+          [
+            "文件",
+            "false",
+            0
+          ],
+          [
+            "浏览器",
+            "false",
+            0
+          ],
+          [
+            "来源",
+            "false",
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "label": "desktop-1280-light-offline",
+      "htmlFont": "16px",
+      "bodyFont": "15px",
+      "h1Font": "15px",
+      "colorScheme": "light",
+      "menuDisplay": "flex",
+      "navLandmarks": 1,
+      "asideCount": 2,
+      "shellHeight": 800,
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "docOverflowX": 0,
+      "smallCount": 19,
+      "rawTokens": [
+        {
+          "name": "New session",
+          "count": 3
+        }
+      ],
+      "contrastFailures": [],
+      "widths": {
+        "nav": {
+          "x": 0,
+          "w": 224,
+          "h": 731,
+          "display": "block"
+        },
+        "aux": {
+          "x": 960,
+          "w": 320,
+          "h": 731,
+          "display": "block"
+        },
+        "list": {
+          "x": 224,
+          "w": 221,
+          "h": 731,
+          "display": "block"
+        },
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "h": 731,
+          "display": "flex"
+        },
+        "composer": {
+          "x": 598,
+          "w": 362,
+          "h": 182,
+          "display": "flex"
+        }
+      },
+      "sessionRows": [
+        "New session2026/11/06 11:26"
+      ],
+      "tabs": [
+        {
+          "label": "详情",
+          "selected": "true",
+          "tabIndex": 0
+        },
+        {
+          "label": "文件",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "浏览器",
+          "selected": "false",
+          "tabIndex": 0
+        },
+        {
+          "label": "来源",
+          "selected": "false",
+          "tabIndex": 0
+        }
+      ]
+    }
+  ],
+  "consoleIssues": []
+}

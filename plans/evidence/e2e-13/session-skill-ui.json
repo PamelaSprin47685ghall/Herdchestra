@@ -1,0 +1,177 @@
+{
+  "checks": {
+    "installEnabled": true,
+    "skillInstalled": true,
+    "skillEnabled": true,
+    "sessionSection": true,
+    "customListAppeared": true,
+    "sessionACustomActive": true,
+    "sessionAChecked": true,
+    "requestACarriesSkill": true,
+    "requestBExcludesSkill": true,
+    "sessionBFollow": true,
+    "sessionBNoActive": true,
+    "noPageError": true
+  },
+  "actions": [],
+  "errors": [],
+  "console": [],
+  "frames": [
+    {
+      "dir": "recv",
+      "data": "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"STATE_SNAPSHOT\",\"~:at\",1793934068557,\"~:epoch\",1,\"~:seq\",2,\"~:subscription-id\",1,\"~:snapshot\",[\"^ \",\"~:task/by-id\",[\"^ \"],\"~:scheduler\",[\"^ \",\"~:schedules\",[\"^ \"],\"~:runs\",[\"^ \"],\"~:run-order\",[],\"^4\",0,\"~:revision\",0,\"~:device-zone\",\"Asia/Shanghai\"],\"~:agent/by-id\",[\"^ \"],\"~:settings/by-id\",[\"^ \",\"d08-conn\",[\"^ \",\"~:credentials\",[],\"~:name\",\"D08 Stub\",\"~:source\",\"~:launch\",\"~:auth\",null,\"~:base-url\",\"http://127.0.0.1:18091/v1\",\"~:headers\",null,\"~:models\",[[\"^ \",\"~:id\",\"d08-stub\",\"^B\",\"D08 Stub\",\"~:display-name\",\"D08 Stub\",\"~:capabilities\",[\"~#set\",[\"~:tools\",\"~:streaming\",\"~:text\"]],\"~:max-output-tokens\",256]],\"^I\",\"d08-conn\",\"~:kind\",\"~:openai-compatible\",\"~:has-key?\",true,\"~:options\",[\"^ \",\"~:reasoning-effort\",\"none\"],\"~:timeout-ms\",60000]],\"~:session/history\",[\"^ \",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\",[\"^ \",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\",\"~:message-ids\",[],\"~:context\",[\"^ \",\"~:boundary\",null,\"~:recent-rounds\",null,\"~:pinned-attachment-ids\",[],\"~:pinned-attachments\",[],\"~:missing-pinned-attachments\",[],\"~:compressions\",[],\"~:outbound\",[\"^ \",\"~:worldbook\",[\"^ \",\"~:enabled-books\",[],\"~:provided\",[],\"~:hit-not-provided\",[]],\"~:system\",[\"^ \",\"~:prompt-bytes\",4213,\"~:modules\",[\"program-role\"]],\"~:assistant\",[\"^ \",\"^I\",\"default\",\"^B\",\"通用助手\",\"^<\",1],\"~:excluded\",[],\"^M\",[[\"^ \",\"^B\",\"devops\",\"^C\",\"~:unknown\",\"~:read-write\",\"~:read\",\"~:enabled?\",true,\"~:description\",\"Run the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat\"]],\"~:version-ids\",[\"^ \"],\"~:attachments\",[],\"~:instructions\",[\"^ \",\"~:session-override?\",false,\"~:text-preview\",null,\"~:redacted?\",fals"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"bbd16130-50e8-413b-8e8b-638c9b091aee\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"5d2c1cae-adcf-4364-af42-5125e83760cf\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"ef51a881-6ca6-4462-8745-2b8be3c1f1e2\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "recv",
+      "data": "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/command-receipt\",\"~:value\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:effective\",\"~:now\",\"~:session-scope\",[\"^ \",\"~:mode\",\"~:custom\",\"~:skills\",[\"~#set\",[]]],\"~:status\",\"~:accepted\",\"~:command-id\",\"6f67a67f-7ef7-49e6-ad1f-1d809b313790\"],\"~:replayed?\",false,\"~:error\",null,\"^?\",\"6f67a67f-7ef7-49e6-ad1f-1d809b313790\",\"~:command-epoch\",1],\"~:subscription-id\",1]],[\"^0\",[\"^ \",\"^1\",\"STATE_DELTA\",\"~:at\",1793934079311,\"~:epoch\",1,\"~:seq\",5,\"^C\",1,\"~:delta\",[[\"^ \",\"~:op\",\"replace\",\"~:path\",\"/session~1by-id/hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956/updated-at\",\"^3\",1793934079301],[\"^ \",\"op\",\"replace\",\"path\",\"/server~1now\",\"value\",1793934079310]]]]],null]"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"f66cdcc6-bb67-4a49-a1f5-fcfda78c792c\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "recv",
+      "data": "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/command-receipt\",\"~:value\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:effective\",\"~:now\",\"~:session-scope\",[\"^ \",\"~:mode\",\"~:custom\",\"~:skills\",[\"~#set\",[\"skill-4ef194f0-8532-46dd-b79e-bced99b4b9d7\"]]],\"~:status\",\"~:accepted\",\"~:command-id\",\"8f080c37-ff16-4a1f-ac1a-6e0b63e0c1ab\"],\"~:replayed?\",false,\"~:error\",null,\"^?\",\"8f080c37-ff16-4a1f-ac1a-6e0b63e0c1ab\",\"~:command-epoch\",1],\"~:subscription-id\",1]],[\"^0\",[\"^ \",\"^1\",\"STATE_DELTA\",\"~:at\",1793934079840,\"~:epoch\",1,\"~:seq\",6,\"^C\",1,\"~:delta\",[[\"^ \",\"~:op\",\"replace\",\"~:path\",\"/session~1by-id/hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956/updated-at\",\"^3\",1793934079833],[\"^ \",\"op\",\"replace\",\"path\",\"/server~1now\",\"value\",1793934079839]]]]],null]"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"790d14a9-dfd8-4578-8f07-b4339afef35a\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"47428124-3979-4e07-b23a-42940bfb314a\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-2226b283-ebc5-4474-85c8-1fefe4511f8f\"],\"~:subscription-id\",1]]]"
+    },
+    {
+      "dir": "recv",
+      "data": "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"STATE_SNAPSHOT\",\"~:at\",1793934092007,\"~:epoch\",1,\"~:seq\",38,\"~:subscription-id\",1,\"~:snapshot\",[\"^ \",\"~:task/by-id\",[\"^ \"],\"~:scheduler\",[\"^ \",\"~:schedules\",[\"^ \"],\"~:runs\",[\"^ \"],\"~:run-order\",[],\"^4\",0,\"~:revision\",0,\"~:device-zone\",\"Asia/Shanghai\"],\"~:agent/by-id\",[\"^ \"],\"~:settings/by-id\",[\"^ \",\"d08-conn\",[\"^ \",\"~:credentials\",[],\"~:name\",\"D08 Stub\",\"~:source\",\"~:launch\",\"~:auth\",null,\"~:base-url\",\"http://127.0.0.1:18091/v1\",\"~:headers\",null,\"~:models\",[[\"^ \",\"~:id\",\"d08-stub\",\"^B\",\"D08 Stub\",\"~:display-name\",\"D08 Stub\",\"~:capabilities\",[\"~#set\",[\"~:tools\",\"~:streaming\",\"~:text\"]],\"~:max-output-tokens\",256]],\"^I\",\"d08-conn\",\"~:kind\",\"~:openai-compatible\",\"~:has-key?\",true,\"~:options\",[\"^ \",\"~:reasoning-effort\",\"none\"],\"~:timeout-ms\",60000]],\"~:session/history\",[\"^ \",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\",[\"^ \",\"~:session-id\",\"hc-session-522d7cdf-8a5b-47ee-9be4-c7cd50305956\",\"~:message-ids\",[\"user-cmd-90f05cf5-4069-4def-ad47-f0acdd2278b5\",\"assistant-call-1-attempt-12535949-6606-4a2a-a26c-380712f6291e--2\"],\"~:context\",[\"^ \",\"~:boundary\",null,\"~:recent-rounds\",null,\"~:pinned-attachment-ids\",[],\"~:pinned-attachments\",[],\"~:missing-pinned-attachments\",[],\"~:compressions\",[],\"~:outbound\",[\"^ \",\"~:worldbook\",[\"^ \",\"~:enabled-books\",[],\"~:provided\",[],\"~:hit-not-provided\",[]],\"~:system\",[\"^ \",\"~:prompt-bytes\",\"~:unknown\",\"~:modules\",[]],\"~:assistant\",[\"^ \",\"^I\",\"^1=\",\"^B\",\"^1=\",\"^<\",\"^1=\"],\"~:excluded\",[],\"^M\",[],\"~:version-ids\",[\"^ \",\"user-cmd-90f05cf5-4069-4def-ad47-f0acdd2278b5\",\"user-cmd-90f05cf5-4069-4def-ad47-f0acdd2278b5-v1\",\"assistant-call-1-attempt-12535949-6606-4a2a-a26c-380712f6291e--2\",\"assistant-call-1-attempt-12535949-6606-4a2a-a26c-380712f6291e--2-v1\"],\"~:attachments\",[],\"~:instructions\",[\"^ \",\"~:session-override?\",f"
+    },
+    {
+      "dir": "sent",
+      "data": "[[\"~:hc/command\",[\"^ \",\"~:command-id\",\"a3e53478-0c52-4aa7-a564-7150d64e4152\",\"~:command-epoch\",1,\"~:payload\",[\"^ \",\"~:kind\",\"~:extensions/view\",\"~:session-id\",\"hc-session-2226b283-ebc5-4474-85c8-1fefe4511f8f\"],\"~:subscription-id\",1]]]"
+    }
+  ],
+  "skillCardText": "d08-skill · 未标版本 · 绑定 0\n来源：文本\n\nD08 session skill\n\n已启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n84 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游",
+  "sessionA": "hc-session-d0a248a3-1c36-457e-a9b1-39211a4aaa46",
+  "requestA": {
+    "at": 1793947061458,
+    "lastUser": "D08-A：会话 A 的消息。",
+    "hasSkill": true,
+    "skillNames": [
+      "Skill: d08-skill"
+    ],
+    "hasA": true,
+    "hasB": false
+  },
+  "sessionB": "hc-session-9dcf3429-91fa-4881-9508-7fecdb7846d7",
+  "requestB": {
+    "at": 1793947067632,
+    "lastUser": "D08-B：会话 B 的消息。",
+    "hasSkill": false,
+    "skillNames": [],
+    "hasA": false,
+    "hasB": true
+  },
+  "sectionB": "会话技能\n\n技能按会话生效：跟随助手使用助手绑定，自定义只使用本会话勾选的技能。全局停用始终优先。\n\n跟随助手\n自定义\n当前：跟随助手\n\n当前会话实际可用：无",
+  "ok": true,
+  "bundle": {
+    "verified_sha256": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+    "verified_mtime": "2026-11-06T13:51:04+08:00",
+    "verified_size": 3011162,
+    "css_sha256": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+    "pre_freeze": [
+      "4ba6edb2",
+      "dd968793",
+      "55e4e8ea"
+    ],
+    "note": "D-08 rerun on final bundle 072587a4 / source tree d1d8d08d: A custom selection carries Skill: d08-skill; B new session excludes it and shows follow/no active.",
+    "observed_after_change": {
+      "sha256": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+      "mtime": "2026-11-06T13:51:04+08:00",
+      "size": 3011162,
+      "note": "main.cljs changed 13:50:28 by a third party; bundle rebuilt 13:51:04. Final freeze pending W33. 0c05b7d1 D-08/D-09 runs are pre-freeze."
+    },
+    "pre_freeze_verified_sha256": "0c05b7d1a42123adb91bf7cdb9eb671b0682a72b155ddaf805c3f84b4e68a0bc",
+    "final_sha256": "072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f",
+    "final_mtime": "2026-11-06T13:51:04+08:00",
+    "final_size": 3011162,
+    "current_freeze": {
+      "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2",
+      "mtime": "2026-11-06T13:02:42+08:00",
+      "size": 3010646
+    },
+    "post_freeze_change": {
+      "file": "src/hc/client/workbench/main.cljs",
+      "mtime": "2026-11-06T13:29:02+08:00",
+      "tree_hash": "7667323a67f6be51563c1132c66d72f28ad4099f33f6025d79ba8031b9586f93",
+      "note": "Third-party write during W35 final5; bundle ea9e5732 is stale for this file. D-08/D-09 evidence remains on ea9e5732; rerun on the next announced freeze."
+    },
+    "src_test_tree": "d1d8d08d44a718853271090c0ae64cfc8ebe73aef717b47d269e10947d849495"
+  },
+  "memory": {
+    "app_jvm": "-Xmx768m -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError",
+    "max_heap_bytes": 805306368,
+    "max_direct_bytes": 536870912,
+    "heap_committed_kb": 332800,
+    "heap_used_kb": 236816,
+    "rss_kb": 944936,
+    "chrome_args": [
+      "--disable-dev-shm-usage"
+    ],
+    "note": "one app JVM + one Chrome during the run; stopped immediately after"
+  },
+  "tests": {
+    "client_extensions": {
+      "tests": 34,
+      "assertions": 116,
+      "failures": 0
+    },
+    "sessions": {
+      "tests": 48,
+      "assertions": 307,
+      "failures": 0
+    },
+    "skill": {
+      "tests": 17,
+      "assertions": 60,
+      "failures": 0
+    },
+    "app_integration": {
+      "tests": 12,
+      "assertions": 82,
+      "failures": 0
+    },
+    "outbound_context": {
+      "tests": 1,
+      "assertions": 30,
+      "failures": 0
+    },
+    "history_context": {
+      "tests": 18,
+      "assertions": 63,
+      "failures": 0
+    },
+    "commands_dedup": {
+      "tests": 20,
+      "assertions": 169,
+      "failures": 0
+    },
+    "total": {
+      "tests": 150,
+      "assertions": 827,
+      "failures": 0
+    },
+    "full_suite": "3749 tests / 24310 assertions / 0F / 0E / EXIT=0 / 445s / peak 2095668 KB (072587a4/d1d8d08d)"
+  }
+}

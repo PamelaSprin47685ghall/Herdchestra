@@ -1,0 +1,911 @@
+{
+  "name": "90-probe-assistants-1280-light",
+  "screenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/visual-audit/materials/assistants/90-probe-assistants-1280-light.png",
+  "runtime": {
+    "appPid": "239194",
+    "chromePid": "245694",
+    "appRssMiB": 981,
+    "chromeRssMiB": 223
+  },
+  "phase": "probe",
+  "url": "http://127.0.0.1:39551/#/assistants",
+  "viewport": {
+    "w": 1280,
+    "h": 900,
+    "dpr": 1
+  },
+  "doc": {
+    "scrollW": 1280,
+    "clientW": 1280,
+    "scrollH": 900,
+    "clientH": 900
+  },
+  "rootFontSize": "16px",
+  "theme": "auto",
+  "horizontalOverflow": false,
+  "elements": {
+    "title": [
+      {
+        "tag": "div",
+        "text": "助手与角色\n\n查看主模型（Steward / Plan / Reviewer）与任务模型（@task）的归属、供应商连接与能力状态。绑定在设置中修改，服务器回执后才生效；客户端不显示密钥。\n\n已同步\n打开模型设置\n请求重同步",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 87,
+          "w": 692,
+          "h": 107.7
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 692,
+          "h": 108,
+          "cw": 692,
+          "ch": 108
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "titleButtons": [
+      {
+        "tag": "button",
+        "text": "打开模型设置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 714.6,
+          "y": 120.7,
+          "w": 223.4,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 221,
+          "h": 30,
+          "cw": 221,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "请求重同步",
+        "ariaLabel": null,
+        "rect": {
+          "x": 714.6,
+          "y": 162.7,
+          "w": 223.4,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 221,
+          "h": 30,
+          "cw": 221,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "tabs": [
+      {
+        "tag": "div",
+        "text": "模型归属\n供应商连接",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 212.7,
+          "w": 692,
+          "h": 78
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 692,
+          "h": 78,
+          "cw": 692,
+          "ch": 78
+        },
+        "role": "tablist",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "div",
+        "text": "详情\n文件\n浏览器\n来源",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 129.5,
+          "w": 291,
+          "h": 162
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 291,
+          "h": 162,
+          "cw": 291,
+          "ch": 162
+        },
+        "role": "tablist",
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "tab": [
+      {
+        "tag": "button",
+        "text": "模型归属",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 212.7,
+          "w": 692,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(11, 95, 138)",
+        "contrast": 6.96,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 690,
+          "h": 34,
+          "cw": 690,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "供应商连接",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 254.7,
+          "w": 692,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 690,
+          "h": 34,
+          "cw": 690,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "详情",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 129.5,
+          "w": 291,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(255, 255, 255)",
+        "background": "rgb(11, 95, 138)",
+        "contrast": 6.96,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 289,
+          "h": 34,
+          "cw": 289,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "文件",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 171.5,
+          "w": 291,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 289,
+          "h": 34,
+          "cw": 289,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "浏览器",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 213.5,
+          "w": 291,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 289,
+          "h": 34,
+          "cw": 289,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "来源",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 255.5,
+          "w": 291,
+          "h": 36
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 289,
+          "h": 34,
+          "cw": 289,
+          "ch": 34
+        },
+        "role": "tab",
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "list": [
+      {
+        "tag": "ul",
+        "text": "主模型\n未选择主模型；发送前需先选择。\n普通回答、Steward、Plan 与 Reviewer 的主要任务。\n未设置\n配置\n任务模型\n未选择任务模型；Plan dedicated worker 与蜂群无法启动。\nPlan dedicated worker、Swarm 普通个体与持令者使用的任务模型；未选择时蜂群无法启",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 304.7,
+          "w": 692,
+          "h": 454
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 454,
+          "cw": 692,
+          "ch": 454
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "rows": [
+      {
+        "tag": "li",
+        "text": "主模型\n未选择主模型；发送前需先选择。\n普通回答、Steward、Plan 与 Reviewer 的主要任务。\n未设置\n配置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 304.7,
+          "w": 692,
+          "h": 91
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 90,
+          "cw": 692,
+          "ch": 90
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "li",
+        "text": "任务模型\n未选择任务模型；Plan dedicated worker 与蜂群无法启动。\nPlan dedicated worker、Swarm 普通个体与持令者使用的任务模型；未选择时蜂群无法启动。\n未设置\n配置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 395.7,
+          "w": 692,
+          "h": 91
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 90,
+          "cw": 692,
+          "ch": 90
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "li",
+        "text": "辅助模型\n未选择主模型；辅助模型需先选择主模型或单独指定。\n摘要、会话标题等轻任务；可由主模型兼任，但需要确认。\n跟随来源缺失\n更换",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 486.7,
+          "w": 692,
+          "h": 91
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 90,
+          "cw": 692,
+          "ch": 90
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "li",
+        "text": "嵌入模型\n检索不可用；纯文本聊天不受影响。\n检索向量。未就绪时明确显示检索不可用，不影响纯文本聊天。\n未设置\n配置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 577.7,
+          "w": 692,
+          "h": 91
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 90,
+          "cw": 692,
+          "ch": 90
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "li",
+        "text": "视觉模型\n未选择主模型；图片功能不可用。\n图片理解。默认使用主模型已确认的视觉能力；单独指定时显示数据去向。\n跟随来源缺失\n更换",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 668.7,
+          "w": 692,
+          "h": 90
+        },
+        "fontSize": "15px",
+        "lineHeight": "23.25px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": true,
+        "overflowY": false,
+        "scroll": {
+          "w": 704,
+          "h": 90,
+          "cw": 692,
+          "ch": 90
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "rowButtons": [
+      {
+        "tag": "button",
+        "text": "配置",
+        "ariaLabel": "配置主模型",
+        "rect": {
+          "x": 511.2,
+          "y": 316.7,
+          "w": 432.8,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 431,
+          "h": 30,
+          "cw": 431,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "配置",
+        "ariaLabel": "配置任务模型",
+        "rect": {
+          "x": 588.9,
+          "y": 407.7,
+          "w": 355.1,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 353,
+          "h": 30,
+          "cw": 353,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "更换",
+        "ariaLabel": "更换辅助模型",
+        "rect": {
+          "x": 545.2,
+          "y": 498.7,
+          "w": 398.8,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 397,
+          "h": 30,
+          "cw": 397,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "配置",
+        "ariaLabel": "配置嵌入模型",
+        "rect": {
+          "x": 532,
+          "y": 589.7,
+          "w": 412,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 410,
+          "h": 30,
+          "cw": 410,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "button",
+        "text": "更换",
+        "ariaLabel": "更换视觉模型",
+        "rect": {
+          "x": 575.6,
+          "y": 680.7,
+          "w": 368.4,
+          "h": 32
+        },
+        "fontSize": "12.6px",
+        "lineHeight": "19.53px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 366,
+          "h": 30,
+          "cw": 366,
+          "ch": 30
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "badges": [
+      {
+        "tag": "button",
+        "text": "●\n已同步",
+        "ariaLabel": "连接状态：已同步；打开设置",
+        "rect": {
+          "x": 477,
+          "y": 23,
+          "w": 389.1,
+          "h": 22
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "normal",
+        "color": "rgb(31, 107, 58)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.75,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 387,
+          "h": 20,
+          "cw": 387,
+          "ch": 20
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "已同步",
+        "ariaLabel": null,
+        "rect": {
+          "x": 714.6,
+          "y": 87,
+          "w": 52.2,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(31, 107, 58)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.75,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 50,
+          "h": 22,
+          "cw": 50,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "未设置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 447,
+          "y": 316.7,
+          "w": 52.2,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(138, 83, 0)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.59,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 50,
+          "h": 22,
+          "cw": 50,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "未设置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 524.7,
+          "y": 407.7,
+          "w": 52.2,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(138, 83, 0)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.59,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 50,
+          "h": 22,
+          "cw": 50,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "跟随来源缺失",
+        "ariaLabel": null,
+        "rect": {
+          "x": 446.8,
+          "y": 498.7,
+          "w": 86.4,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(138, 83, 0)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.59,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 84,
+          "h": 22,
+          "cw": 84,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "未设置",
+        "ariaLabel": null,
+        "rect": {
+          "x": 467.8,
+          "y": 589.7,
+          "w": 52.2,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(138, 83, 0)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.59,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 50,
+          "h": 22,
+          "cw": 50,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "span",
+        "text": "跟随来源缺失",
+        "ariaLabel": null,
+        "rect": {
+          "x": 477.3,
+          "y": 680.7,
+          "w": 86.4,
+          "h": 23.7
+        },
+        "fontSize": "11.4px",
+        "lineHeight": "17.67px",
+        "color": "rgb(138, 83, 0)",
+        "background": "rgb(238, 241, 245)",
+        "contrast": 5.59,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 84,
+          "h": 22,
+          "cw": 84,
+          "ch": 22
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "facts": [
+      {
+        "tag": "dl",
+        "text": "阶段\n已同步\nepoch\n1\nseq\n2",
+        "ariaLabel": null,
+        "rect": {
+          "x": 8,
+          "y": 438,
+          "w": 207,
+          "h": 73.4
+        },
+        "fontSize": "13.2px",
+        "lineHeight": "20.46px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 207,
+          "h": 73,
+          "cw": 207,
+          "ch": 73
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "dl",
+        "text": "主模型\n未设置\n任务模型\n未设置\n连接数\n0\n同步 epoch\n1\n同步序号\n2\n最近确认\n1793933888214",
+        "ariaLabel": null,
+        "rect": {
+          "x": 246,
+          "y": 758.7,
+          "w": 692,
+          "h": 152.7
+        },
+        "fontSize": "13.2px",
+        "lineHeight": "20.46px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(250, 249, 254)",
+        "contrast": 15.67,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 692,
+          "h": 153,
+          "cw": 692,
+          "ch": 153
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      },
+      {
+        "tag": "dl",
+        "text": "连接数\n0\n主模型\n未设置\n任务模型\n未设置\n辅助模型\n未选择主模型；辅助模型需先选择主模型或单独指定。\n嵌入模型\n检索不可用；纯文本聊天不受影响。\n视觉模型\n未选择主模型；图片功能不可用。",
+        "ariaLabel": null,
+        "rect": {
+          "x": 975,
+          "y": 363.7,
+          "w": 291,
+          "h": 173.2
+        },
+        "fontSize": "13.2px",
+        "lineHeight": "20.46px",
+        "color": "rgb(24, 32, 42)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 16.42,
+        "overflowX": false,
+        "overflowY": false,
+        "scroll": {
+          "w": 291,
+          "h": 173,
+          "cw": 291,
+          "ch": 173
+        },
+        "role": null,
+        "disabled": false,
+        "visible": true
+      }
+    ],
+    "empty": []
+  }
+}

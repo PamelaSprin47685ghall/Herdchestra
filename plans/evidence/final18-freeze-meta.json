@@ -1,0 +1,61 @@
+{
+  "freeze": "final18",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final18: D-26 materials pending-command fix (W99) + clean shadow-cljs rebuild + full suite + app-check",
+  "w99-fix-verification": {
+    "jvm-focused": "clojure -M:test:compose:server:client -n hc.client.materials.model-test -n hc.client.workbench.materials-bridge-test -> Ran 57 tests containing 271 assertions. 0 failures, 0 errors. exit 0",
+    "sweep-in-bundle": "resources/public/js/main.js f8c0f53a contains setInterval(h_b,5E3) installed from materials_bridge.cljs install! (receipt-sweep-timer, sweep-pending-materials-commands!, receipt-sweep-ms=5000); recover-pending-materials-commands! reachable via sync-from-db! and dispatch!; closure renames make literal grep impossible, interval literal + source install site verified"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "6d1ad03bf767ed1070f99434871ff8d1c08dbec98c12282ed991840e66e11feb",
+    "bundle-sha256": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f (stale final17 bundle, pre-rebuild)",
+    "bundle-size": 3016559,
+    "bundle-mtime": "2026-11-07T10:11:35+08:00",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    }
+  },
+  "stability": {
+    "window-seconds": 120,
+    "tree-hash-before": "6d1ad03bf767ed1070f99434871ff8d1c08dbec98c12282ed991840e66e11feb",
+    "tree-hash-after": "6d1ad03bf767ed1070f99434871ff8d1c08dbec98c12282ed991840e66e11feb"
+  },
+  "clean-rebuild": {
+    "command": "flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "log": "/tmp/hc-release-final18.log",
+    "exit": 0,
+    "bundle-sha256-after": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a",
+    "bundle-size-after": 3017311,
+    "bundle-mtime-after": "2026-11-07T11:21:45.730221231+08:00"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final18.log",
+    "wall-seconds": 355,
+    "exit": 0,
+    "tests": 3816,
+    "assertions": 24705,
+    "failures": 0,
+    "errors": 0
+  },
+  "app-check": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final18.log",
+    "exit": 0,
+    "ok": true,
+    "version": "0.0.1",
+    "component-errors": {}
+  },
+  "post": {
+    "tree-hash-src-test": "6d1ad03bf767ed1070f99434871ff8d1c08dbec98c12282ed991840e66e11feb",
+    "bundle-sha256": "f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a",
+    "bundle-size": 3017311,
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "git-status-porcelain-count": 17
+  },
+  "result": "PASS - final18 freeze candidate f8c0f53a + 6d1ad03b; W99 D-26 fix verified in bundle (5s receipt sweep + pending-command recovery); JVM focused 0F/0E; full suite 3816 tests/24705 assertions 0F/0E; app-check ok"
+}

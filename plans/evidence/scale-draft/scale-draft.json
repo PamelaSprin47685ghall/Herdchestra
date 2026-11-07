@@ -1,0 +1,28 @@
+{
+  "url": "http://127.0.0.1:7581/#/sessions",
+  "capturedAt": "2026-11-05T01:18:06.342Z",
+  "insertMs": 3794,
+  "selectionMs": 0,
+  "undoMs": 31,
+  "beforeUndo": 20000,
+  "afterUndo": 0,
+  "afterInsert": {
+    "length": 20000,
+    "selectionStart": 20000,
+    "selectionEnd": 20000,
+    "savedBytes": 22037,
+    "hint": "Enter 发送 · Shift+Enter 换行 · 先选择一个可用模型，草稿已保留",
+    "bodyHasSaved": false
+  },
+  "savedBeforeReload": 22037,
+  "afterReload": {
+    "length": 20000,
+    "head": "```js\nconst x = 1;\n`",
+    "savedBytes": 22037
+  },
+  "metrics": {
+    "JSHeapUsedSize": 17736612,
+    "Nodes": 12652,
+    "LayoutCount": 10
+  }
+}

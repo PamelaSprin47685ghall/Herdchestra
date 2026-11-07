@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <title>Herdchestra 工作台</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/framework7-bundle.css">
+    <link rel="stylesheet" href="/css/workbench.css">
+  </head>
+  <body>
+    <div id="app">
+      <div class="hc-boot" role="status" aria-live="polite">
+        <strong>Herdchestra</strong>
+        <span>正在打开本地数据…</span>
+        <div class="hc-boot-bar" aria-hidden="true"></div>
+      </div>
+      <noscript>Herdchestra 工作台需要 JavaScript。</noscript>
+    </div>
+    <script>
+      (function () {
+        function showBootError(message) {
+          var app = document.getElementById("app");
+          if (!app) return;
+          var pre = document.getElementById("boot-error");
+          if (!pre) {
+            pre = document.createElement("pre");
+            pre.id = "boot-error";
+            pre.setAttribute("role", "alert");
+            pre.style.cssText = "margin:16px;padding:12px;border:1px solid #a3261f;color:#a3261f;white-space:pre-wrap;font:14px/1.4 monospace";
+            app.appendChild(pre);
+          }
+          pre.textContent = "工作台启动失败：" + message;
+        }
+        window.addEventListener("error", function (event) {
+          showBootError((event.error && event.error.stack) || event.message || "unknown error");
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          showBootError((reason && reason.stack) || String(reason));
+        });
+      }());
+    </script>
+    <script src="/js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "test": "e2e-11-12-real",
+  "startedAt": "2026-11-05T09:18:18.955Z",
+  "baseUrl": "http://127.0.0.1:7594",
+  "checks": {
+    "e2e12-bind-default": {
+      "pass": true,
+      "detail": "wb-31bf474c-e3a3-4803-9884-cbf1704f1955"
+    },
+    "e2e12-entries-created": {
+      "pass": true,
+      "detail": {
+        "W4-任一": "wbe-28554142-99fb-462a-8934-dfe285142062",
+        "W4-全部": "wbe-887ddf1c-83a9-42ad-aa3c-dfdc7e9de070",
+        "W4-持续": "wbe-11bfeee9-05f6-4a12-b595-592bbfc1d5d9",
+        "W4-冷却": "wbe-4b93a618-edb0-40e8-a315-3b95b9d5c29a",
+        "W4-预算": "wbe-11a9a0cc-d161-4fff-9b5c-f89fa59b7a2c",
+        "W4-始终": "wbe-8fb0f050-b4b0-4f19-b4f3-11d27b074d8b"
+      }
+    },
+    "e2e12-card-turn-selected": {
+      "pass": true,
+      "detail": "card-65e25a99-4f5d-4d61-8f61-9a1d38fceb82"
+    }
+  },
+  "e2e11": {},
+  "e2e12": {
+    "book": {
+      "name": "E2E12-W4-1793870302927",
+      "id": "wb-31bf474c-e3a3-4803-9884-cbf1704f1955"
+    },
+    "entries": {
+      "W4-任一": "wbe-28554142-99fb-462a-8934-dfe285142062",
+      "W4-全部": "wbe-887ddf1c-83a9-42ad-aa3c-dfdc7e9de070",
+      "W4-持续": "wbe-11bfeee9-05f6-4a12-b595-592bbfc1d5d9",
+      "W4-冷却": "wbe-4b93a618-edb0-40e8-a315-3b95b9d5c29a",
+      "W4-预算": "wbe-11a9a0cc-d161-4fff-9b5c-f89fa59b7a2c",
+      "W4-始终": "wbe-8fb0f050-b4b0-4f19-b4f3-11d27b074d8b"
+    },
+    "cardId": "card-65e25a99-4f5d-4d61-8f61-9a1d38fceb82"
+  },
+  "steps": [],
+  "pageErrors": [],
+  "health": "{:owners {\"hc-session-fa929e41-cc64-43ed-a137-ed02de7b4b19\" {:version 46, :conversation 5, :pending-turns 0, :calls {\"call-1\" :succeeded, \"call-2\" :outcome-unknown}, :turn? true}, \"w4-s1\" {:version 65, :conversation 5, :pending-turns 0, :calls {\"call-1\" :succeeded, \"call-2\" :outcome-unknown, \"call-2/tool-0\" :outcome-unknown}, :turn? true}}, :store {:open? true, :path \"/tmp/hc-w4/data/db\"}, :config",
+  "bundle": {
+    "path": "/home/kunweiz/Desktop/vibe/Herdchestra/resources/public/js/main.js",
+    "size": 2960121,
+    "mtime": "2026-11-05T09:08:51.470Z",
+    "sha256": "2e5d19322b0614d60ae7ce745f1bab78c64b1952d07ee9a60160930ae686b913"
+  },
+  "error": {
+    "message": "send disabled: ☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n11\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n转为普通\n结束临时\nE2E11 memory\nactive · 1793868862190 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n临时会话\nactive · 1793868862063 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n无人值守 · 自动继续\n临时会话\n临时\n模型：Qwen 3.6 27B\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 预览\n阅读 3 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\n只回复 OK，不要调用工具。\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nOK\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 无人值守运行中，可停止当前轮后再发送\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-fa929e41-cc64-43ed-a137-ed02de7b4b19\n状态\nactive\n消息数\n2\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n1\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "stack": "Error: send disabled: ☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n11\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n转为普通\n结束临时\nE2E11 memory\nactive · 1793868862190 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n临时会话\nactive · 1793868862063 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n无人值守 · 自动继续\n临时会话\n临时\n模型：Qwen 3.6 27B\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 预览\n阅读 3 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\n只回复 OK，不要调用工具。\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nOK\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 无人值守运行中，可停止当前轮后再发送\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-fa929e41-cc64-43ed-a137-ed02de7b4b19\n状态\nactive\n消息数\n2\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n1\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。\n    at send (/tmp/hc-w4/e2e12-only.cjs:140:11)\n    at async /tmp/hc-w4/e2e12-only.cjs:251:5"
+  },
+  "failureText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n11\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n转为普通\n结束临时\nE2E11 memory\nactive · 1793868862190 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n临时会话\nactive · 1793868862063 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n无人值守 · 自动继续\n临时会话\n临时\n模型：Qwen 3.6 27B\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮上下文 · 预览\n阅读 3 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\n只回复 OK，不要调用工具。\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nOK\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 无人值守运行中，可停止当前轮后再发送\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-fa929e41-cc64-43ed-a137-ed02de7b4b19\n状态\nactive\n消息数\n2\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n1\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "finishedAt": "2026-11-05T09:20:14.181Z"
+}

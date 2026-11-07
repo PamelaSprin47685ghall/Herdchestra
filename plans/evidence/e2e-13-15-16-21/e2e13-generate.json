@@ -1,0 +1,17 @@
+{
+  "steps": {
+    "failure": {
+      "body": "生成小应用\n生成小应用\nAPP_EXISTS · 同名文件已存在；请换一个文件名\n刷新已有文件",
+      "list": "reading-a.html\n文件可用\n数据 0 B\n最近使用 2026-11-05T07:44:36\napps/reading-a.html\n打开\n数据\n检查文件"
+    },
+    "generationMs": 198,
+    "outcome": "settled",
+    "after": {
+      "body": "打开为小应用\n生成小应用\n生成小应用\nreading-log.html\n文件可用\n数据 0 B\n最近使用 2026-11-05T07:44:41\nminiapps/reading-log.html\n打开\n数据\n检查文件\nreading-a.html\n文件可用\n数据 0 B\n最近使用 2026-11-05T07:44:36\napps/reading-a.html\n打开\n数据\n检查文件\n小应用是工作区中的 HTML 文件。复制文件默认创建独立实例，不复制数据；删除文件只会让它暂时未关联。\n正在读取小应用…",
+      "iframe": false,
+      "error": []
+    },
+    "fileExists": true,
+    "fileBytes": 3748
+  }
+}

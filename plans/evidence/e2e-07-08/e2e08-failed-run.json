@@ -1,0 +1,21 @@
+{
+  "ok": false,
+  "baseUrl": "http://127.0.0.1:44569/",
+  "startedAt": "2026-11-05T06:51:14.990Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:44569/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：qwen3.6:27b\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文 · 预览\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793861476952.png",
+  "console": [
+    "debug: 2026-11-05T06:51:16.663Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "error": "locator.click: Timeout 180000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: '发送消息' }).first()\n    - locator resolved to <button disabled type=\"button\" aria-label=\"发送消息\" aria-disabled=\"true\" class=\"hc-button hc-button-primary\">发送</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not enabled\n    - retrying click action\n      - waiting 100ms\n    348 × waiting for element to be visible, enabled and stable\n        - element is not enabled\n      - retrying click action\n        - waiting 500ms\n\n    at module.exports (/tmp/hc-w2/e2e08_steps.cjs:119:60)\n    at async main (/tmp/hc-e2e-harness/e2e_driver.cjs:163:22)",
+  "durationMs": 361430
+}

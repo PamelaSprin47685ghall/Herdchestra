@@ -1,0 +1,194 @@
+{
+  "config": {
+    "argv": [
+      "/usr/bin/node",
+      "/home/kunweiz/Desktop/vibe/Herdchestra/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "test/e2e/playwright.config.mjs",
+      "test/e2e/e2e-09-protected-commit.spec.mjs"
+    ],
+    "configFile": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/playwright.config.mjs",
+    "rootDir": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.mjs"
+        ],
+        "timeout": 240000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e",
+        "snapshotDir": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.mjs",
+        "timeout": 240000,
+        "use": {
+          "headless": true,
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "permissions": [
+            "clipboard-read",
+            "clipboard-write"
+          ],
+          "launchOptions": {
+            "executablePath": "/usr/bin/google-chrome",
+            "args": [
+              "--no-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--js-flags=--max-old-space-size=512",
+              "--font-render-hinting=none"
+            ]
+          },
+          "screenshot": "only-on-failure",
+          "trace": "retain-on-failure",
+          "video": "off"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/playwright-results.json"
+        }
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/playwright-report",
+          "open": "never"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "e2e-09-protected-commit.spec.mjs",
+      "file": "e2e-09-protected-commit.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@core E2E 09 protected commit keeps the external edit, then applies after re-read",
+          "ok": true,
+          "tags": [
+            "core"
+          ],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-09-protected-commit.spec.mjs",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 17648,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-06T05:15:17.482Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-09-protected-commit.spec.mjs",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "832a91d250c01367b2df-20a742aa481b2eb1f8dd",
+          "file": "e2e-09-protected-commit.spec.mjs",
+          "line": 55,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-06T05:15:17.219Z",
+    "duration": 17955.904,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

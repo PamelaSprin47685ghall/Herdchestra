@@ -1,0 +1,152 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:42083/",
+  "console": [
+    "debug: 2026-11-06T10:02:22.915Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "debug: 2026-11-06T10:02:23.187Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake"
+  ],
+  "steps": {
+    "assertions": {
+      "modelSelected": true,
+      "residualRunStopped": true,
+      "askSendEnabled": true,
+      "askCard": true,
+      "askQuestion": true,
+      "askSubmitCount": 1,
+      "askAnswered": true,
+      "unparkContinued": true,
+      "hcAskNamePresent": true,
+      "bareAskNameAbsent": true,
+      "runIdleAfterUnpark": true,
+      "composerRecoveredAfterAsk": true,
+      "composerHintHasNoBlocker": true,
+      "emptyDraftDisabled": true,
+      "escSendEnabled": true,
+      "escStreamSeen": false,
+      "escFirstChunk": true,
+      "escToolCallPath": false,
+      "escStopped": true,
+      "escRunInactiveAfterStop": true,
+      "escContentPreserved": true,
+      "escNoLateAppend": true,
+      "noPageErrors": true
+    },
+    "wire": {
+      "frames": 237,
+      "askFrames": [
+        "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/command-receipt\",\"~:value\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:status\",\"~:accepted\",\"~:snapshot\",[\"^ \",\"~:max-cards\",200,\"~:session-id\",\"hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\",\"~:permission\",[\"^ \",\"~:enabled?\",false,\"~:scope\",\"~:current-tab\",\"~:sites\",[\"~#set\",[]],\"~:private-read-approved?\",false,\"~:model-provider\",null],\"~:next-observation\",1,\"~:tabs\",[\"^ \"],\"~:cards-dropped\",0,\"~:events\",[],\"~:active-tab-id\",null,\"~:offline?\",true,\"~:cards\",[],\"~:next-card\",1,\"~:limits\",[\"^ \",\"~:coordinates\",\"~:resolved-against-current-dom\",\"~:external-browser\",\"~:not-controlled\",\"^;\",\"~:ephemeral-not-inherited\",\"~:outcome-unknown\",\"~:no-auto-retry\",\"~:observation\",\"~:top-document-visible-text\",\"~:iframes\",\"~:not-read\",\"~:page-content\",\"~:may-contain-personal-data\",\"~:sensitive-detection\",\"~:best-effort\",\"~:operator-input-uncovered\",\"~:fail-closed\",\"~:operator-input\",\"~:isolated-world-top-document-only\",\"~:screenshot\",\"~:historical-not-live\"],\"~:operator-input-detection\",\"~:unavailable\",\"~:stopped?\",false]],\"~:command-id\",\"e544c292-4e14-4873-a8d9-42dcb76ad7e3\",\"~:command-epoch\",1],\"~:subscription-id\",1]],[\"^0\",[\"^ \",\"^1\",\"CUSTOM\",\"^2\",\"hc/ask\",\"^3\",[\"^ \",\"^:\",\"hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\",\"~:call-id\",\"call-3/tool-0\",\"^2\",\"e2e-08-ask\",\"~:question\",\"E2E-08 请给出一个数字\",\"^1\",\"~:hc/ask\",\"~:lane\",\"~:plan\",\"~:program-name\",\"e2e-08-ask\",\"~:at\",1793959416690,\"~:tenure-id\",\"tenure-1\",\"~:ask-id\",\"ask-call-3/tool-0\",\"~:",
+        "[[[\"~:hc/event\",[\"^ \",\"~:type\",\"CUSTOM\",\"~:name\",\"hc/ask-resolved\",\"~:value\",[\"^ \",\"~:session-id\",\"hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\",\"^2\",\"e2e-08-ask\",\"^1\",\"~:hc/ask-resolved\",\"~:lane\",\"~:plan\",\"~:at\",1793959417155,\"~:tenure-id\",\"tenure-1\",\"~:ask-id\",\"ask-call-3/tool-0\",\"~:thread-id\",\"hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\",\"~:outbox-seq\",5],\"~:subscription-id\",1]],[\"^0\",[\"^ \",\"^1\",\"STATE_DELTA\",\"^8\",1793959417169,\"~:epoch\",1,\"~:seq\",106,\"^=\",1,\"~:delta\",[[\"^ \",\"~:op\",\"replace\",\"~:path\",\"/session~1by-id/hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e/relay/lanes/plan/awaiting-user?\",\"^3\",false],[\"^ \",\"^A\",\"add\",\"^B\",\"/message~1order/5\",\"^3\",\"message-5\"],[\"^ \",\"^A\",\"add\",\"^B\",\"/message~1by-id/message-5\",\"^3\",[\"^ \",\"~:role\",\"~:user\",\"^4\",\"hc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\",\"~:message-id\",\"message-5\",\"~:unparked-tenure-id\",\"tenure-1\",\"~:content\",\"42\",\"~:id\",\"message-5\",\"^8\",1793959417155,\"~:command-id\",\"cmd-d6ce88c9-931c-4d3a-9dc0-f1d5ab15bbb4\",\"~:text\",\"42\"]],[\"^ \",\"op\",\"replace\",\"path\",\"/server~1now\",\"value\",1793959417169]]]],[\"^0\",[\"^ \",\"^1\",\"CUSTOM\",\"^2\",\"hc/command-receipt\",\"^3\",[\"^ \",\"~:ok?\",true,\"~:receipt\",[\"^ \",\"~:ledger\",[\"^ \"],\"~:tenure-epoch\",1,\"~:reviewed?\",false,\"~:milestone\",\"~:S1\",\"~:outcome\",\"~:answer-accepted\",\"^6\",\"^7\",\"~:relayed?\",false,\"~:status\",\"~:accepted\",\"^9\",\"tenure-1\"],\"~:error\",null,\"^I\",\"cmd-d6ce88c9-931c-4d3a-9dc0-f1d5ab15bbb4\",\"~:command-epoch\",1],\"^=\",1]],[\"^0\",[\"^ \",\"^1\",\"RUN_STARTED\",\"~:run-id\",\"call-4\",\"^;"
+      ],
+      "bareAskNameFrames": 0
+    },
+    "phases": [
+      {
+        "at": "2026-11-06T10:02:33.385Z",
+        "phase": "residual-stop",
+        "stopped": true
+      },
+      {
+        "at": "2026-11-06T10:02:33.739Z",
+        "phase": "ask-sent",
+        "sendEnabled": true
+      },
+      {
+        "at": "2026-11-06T10:03:36.818Z",
+        "phase": "ask-card",
+        "card": true
+      },
+      {
+        "at": "2026-11-06T10:03:37.217Z",
+        "phase": "answer-submitted",
+        "answered": true
+      },
+      {
+        "at": "2026-11-06T10:03:37.277Z",
+        "phase": "run-continued",
+        "continued": true
+      },
+      {
+        "at": "2026-11-06T10:04:09.426Z",
+        "phase": "run-idle",
+        "idle": true,
+        "ms": 32145,
+        "evidence": {
+          "resumeProgramSeen": true,
+          "parkedProgramCompleted": true
+        }
+      },
+      {
+        "at": "2026-11-06T10:04:10.392Z",
+        "phase": "composer-check",
+        "recovered": true,
+        "hint": "Enter 发送 · Shift+Enter 换行"
+      },
+      {
+        "at": "2026-11-06T10:04:11.588Z",
+        "phase": "esc-sent",
+        "enabled": true
+      },
+      {
+        "at": "2026-11-06T10:04:21.015Z",
+        "phase": "esc-first-chunk",
+        "firstChunk": true,
+        "ms": 9371,
+        "hint": "Enter 发送 · Shift+Enter 换行 · 输入为空"
+      },
+      {
+        "at": "2026-11-06T10:04:26.328Z",
+        "phase": "esc-stopped",
+        "stopped": true
+      }
+    ],
+    "askBody": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n104\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/06 18:03 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n无人值守 · 自动继续\nNew session\n模型：qwen3.6:27b\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n本轮上下文 · 预览\n上下文\n发送 3 条 · 摘要 0\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\nI understand. I need to:\n\nCall (ask {:question \"E2E-08 请给出一个数字\" :input? true}) to ask the user a question and then wait for their response\nAfter they respond, use unpark with the value \"42\" to resume and provide a brief summary\n\nLet me make the first call now. I'll use the clj-plan function with a minimal program that just asks the question.\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\ntool-call\n选择\n复制\n从此处开始\n工具\n\n{:role :clj-plan\n  :raw-source \"\"\"\n  (defprogram e2e-08-ask []\n   (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :payload {:question \"E2E-08 请给出一个数字\"}\n  :revision 1\n  :started-at 1793959416675\n  :call-id \"call-3/tool-0\"\n  :name \"e2e-08-ask\"\n  :numbered-source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :attempt-id :attempt-804b9da8-84c0-4984-a640-4c44d2ecfa1d--3\n  :command nil\n  :control-results []\n  :state :parked\n  :source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :pending-operations []\n  :remaining-wait-ms 1947\n  :intent-bytes 39\n  :reason :ask\n  :s1? true\n  :park-id 1\n  :deadline-ms 1950\n  :status :PARKED\n  :holder? false\n  :delta \"\"\n  :commits []\n  :interrupt true\n}\n\n选择\n复制\n从此处开始\n需要你回答\n等待你回答\n\nE2E-08 请给出一个数字\n\n提交回答并恢复\n跳过\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\n状态\n—\n消息数\n3\n模型\nqwen3.6:27b\n分支来源\n—\n草稿版本\n2\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n设置草稿已保存到本浏览器。\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "askScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-ask-card.png",
+    "askCardText": "需要你回答\n等待你回答\n\nE2E-08 请给出一个数字\n\n提交回答并恢复\n跳过",
+    "afterAnswerScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-answered.png",
+    "afterUnparkBody": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n106\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/06 18:03 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n正在生成\nNew session\n模型：qwen3.6:27b\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 3 条 · 摘要 0\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\nI understand. I need to:\n\nCall (ask {:question \"E2E-08 请给出一个数字\" :input? true}) to ask the user a question and then wait for their response\nAfter they respond, use unpark with the value \"42\" to resume and provide a brief summary\n\nLet me make the first call now. I'll use the clj-plan function with a minimal program that just asks the question.\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\ntool-call\n选择\n复制\n从此处开始\n工具\n\n{:role :clj-plan\n  :raw-source \"\"\"\n  (defprogram e2e-08-ask []\n   (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :payload {:question \"E2E-08 请给出一个数字\"}\n  :revision 1\n  :started-at 1793959416675\n  :call-id \"call-3/tool-0\"\n  :name \"e2e-08-ask\"\n  :numbered-source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :attempt-id :attempt-804b9da8-84c0-4984-a640-4c44d2ecfa1d--3\n  :command nil\n  :control-results []\n  :state :parked\n  :source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :pending-operations []\n  :remaining-wait-ms 1947\n  :intent-bytes 39\n  :reason :ask\n  :s1? true\n  :park-id 1\n  :deadline-ms 1950\n  :status :PARKED\n  :holder? false\n  :delta \"\"\n  :commits []\n  :interrupt true\n}\n\n选择\n复制\n从此处开始\n你\n\n42\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n需要你回答\n已回答\n\nE2E-08 请给出一个数字\n\n回答记录\n42\n已提交\n已提交回答\n跳过\n已回答\n语音输入\n正在生成\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\n状态\n—\n消息数\n3\n模型\nqwen3.6:27b\n分支来源\n—\n草稿版本\n2\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n设置草稿已保存到本浏览器。\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "afterUnparkScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-unparked.png",
+    "idleWaitMs": 32145,
+    "idleTrail": [
+      {
+        "ms": 2,
+        "busy": true,
+        "hint": "Enter 发送 · Shift+Enter 换行 · 输入为空"
+      },
+      {
+        "ms": 32145,
+        "busy": false,
+        "hint": "Enter 发送 · Shift+Enter 换行 · 输入为空"
+      }
+    ],
+    "unparkEvidence": {
+      "resumeProgramSeen": true,
+      "parkedProgramCompleted": true
+    },
+    "composerIdleHint": "Enter 发送 · Shift+Enter 换行",
+    "composerRecoveredScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-composer-recovered.png",
+    "emptyDraftHint": "Enter 发送 · Shift+Enter 换行 · 输入为空",
+    "escSentAt": "2026-11-06T10:04:11.585Z",
+    "escDecisionVisibleAfterSend": 0,
+    "escBaselineAssistantCount": 1,
+    "escBaselineLastLength": 338,
+    "escFirstChunkMs": 9371,
+    "escBeforeAssistant": "Why Unmanned Agent",
+    "escBeforeScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-esc-before.png",
+    "stopLabelBeforeEsc": "正在生成",
+    "hintBeforeEsc": "Enter 发送 · Shift+Enter 换行 · 输入为空",
+    "escAt": "2026-11-06T10:04:21.017Z",
+    "afterEscAssistant": "Why Unmanned Agent Systems",
+    "afterEscBody": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n119\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/06 18:04 · qwen3.6:27b\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：qwen3.6:27b\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 5 条 · 摘要 0\n已停止\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n当前处于 S1。请只做一件事：调用 (ask {:question \"E2E-08 请给出一个数字\" :input? true}) 向我提问，然后等待我的回答。我回答之后，请用一个全新的程序名（不要再用 e2e-08-ask）调用 (unpark {:name \"e2e-08-ask\" :value \"42\"}) 恢复挂起的程序，然后简短总结。不要写底稿，不要调用其他工具。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\nI understand. I need to:\n\nCall (ask {:question \"E2E-08 请给出一个数字\" :input? true}) to ask the user a question and then wait for their response\nAfter they respond, use unpark with the value \"42\" to resume and provide a brief summary\n\nLet me make the first call now. I'll use the clj-plan function with a minimal program that just asks the question.\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n请直接用大约 800 字详细分析无人值守代理系统为什么需要单 Owner 串行状态入口，并列出 10 个理由。不要调用任何工具，不要调用 clj-plan 或其他程序工具，只输出正文文字。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n已停止\nWhy Unmanned Agent Systems\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\ntool-call\n选择\n复制\n从此处开始\n工具\n\n{:role :clj-plan\n  :raw-source \"\"\"\n  (defprogram e2e-08-ask []\n   (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :payload {:question \"E2E-08 请给出一个数字\"}\n  :revision 1\n  :started-at 1793959416675\n  :call-id \"call-3/tool-0\"\n  :name \"e2e-08-ask\"\n  :numbered-source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :attempt-id :attempt-804b9da8-84c0-4984-a640-4c44d2ecfa1d--3\n  :command nil\n  :control-results []\n  :state :parked\n  :source \"\"\"\n  1 | (defprogram e2e-08-ask []\n  2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n  \"\"\"\n  :pending-operations []\n  :remaining-wait-ms 1947\n  :intent-bytes 39\n  :reason :ask\n  :s1? true\n  :park-id 1\n  :deadline-ms 1950\n  :status :PARKED\n  :holder? false\n  :delta \"\"\n  :commits []\n  :interrupt true\n}\n\n选择\n复制\n从此处开始\n你\n\n42\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\ntool-call\n选择\n复制\n从此处开始\n工具\n\n{:role :clj-plan\n  :raw-source \"\"\"\n  (defprogram e2e-08-resume []\n   (unpark {:name \"e2e-08-ask\" :value \"42\"}))\n  \"\"\"\n  :read-set {}\n  :started-at 1793959448749\n  :call-id \"call-4/tool-0\"\n  :name \"e2e-08-resume\"\n  :value {:role :clj-plan\n    :raw-source \"\"\"\n    (defprogram e2e-08-ask []\n     (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n    \"\"\"\n    :read-set {}\n    :started-at 1793959416675\n    :call-id \"call-3/tool-0\"\n    :name \"e2e-08-ask\"\n    :value \"42\"\n    :numbered-source \"\"\"\n    1 | (defprogram e2e-08-ask []\n    2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n    \"\"\"\n    :attempt-id :attempt-804b9da8-84c0-4984-a640-4c44d2ecfa1d--3\n    :control-results []\n    :state :completed\n    :checks {}\n    :source \"\"\"\n    1 | (defprogram e2e-08-ask []\n    2 |  (ask {:question \"E2E-08 请给出一个数字\" :input? true}))\n    \"\"\"\n    :operation-count 0\n    :intent-bytes 39\n    :s1? true\n    :deadline-ms 1950\n    :status :COMPLETED\n    :commit nil\n    :holder? false\n    :commits []\n  }\n  :numbered-source \"\"\"\n  1 | (defprogram e2e-08-resume []\n  2 |  (unpark {:name \"e2e-08-ask\" :value \"42\"}))\n  \"\"\"\n  :attempt-id :attempt-804b9da8-84c0-4984-a640-4c44d2ecfa1d--11\n  :control-results []\n  :state :completed\n  :checks {}\n  :source \"\"\"\n  1 | (defprogram e2e-08-resume []\n  2 |  (unpark {:name \"e2e-08-ask\" :value \"42\"}))\n  \"\"\"\n  :operation-count 0\n  :intent-bytes 72\n  :s1? true\n  :deadline-ms 3600\n  :status :COMPLETED\n  :commit nil\n  :holder? false\n  :commits []\n}\n\n选择\n复制\n从此处开始\n需要你回答\n已回答\n\nE2E-08 请给出一个数字\n\n回答记录\n42\n已提交\n已提交回答\n跳过\n已回答\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-471830be-d8b6-4a40-944d-caf9c071ac8e\n状态\n—\n消息数\n5\n模型\nqwen3.6:27b\n分支来源\n—\n草稿版本\n6\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n设置草稿已保存到本浏览器。\n×\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "afterEscHint": "Enter 发送 · Shift+Enter 换行 · 输入为空",
+    "afterEscScreenshot": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07-08/e2e08s-esc-after.png",
+    "escLengthBefore": 18,
+    "escLengthAfterStop": 26,
+    "escLengthAfter5s": 26,
+    "after5sTail": "Why Unmanned Agent Systems",
+    "pageErrors": []
+  },
+  "bundle": "72de4f9a3d452e697e4d8a0311af6954621d373124d378964eee1f24b7ac0726",
+  "src_tree": "ab8014505efefe7e69fa686689499c876c3836091b4832569d119c0b43beba2c",
+  "bundle_mtime": "2026-11-06 17:45:52",
+  "note": "Runtime hashes recorded by run08s_locked.sh: app started 18:02:07 on final11 freeze (bundle 72de4f9a + tree ab801450). Steps: e2e08s_steps.cjs with assistant-scoped probe and residual-run stop."
+}

@@ -1,0 +1,33 @@
+{
+  "checks": {
+    "twoVersions": true,
+    "readButton": true,
+    "playingV2": true,
+    "playerStopped": true,
+    "v1Pressed": true,
+    "oldReadNotContinuing": true,
+    "playingV2Again": true
+  },
+  "buttonsBefore": [
+    {
+      "t": "v1",
+      "p": "false"
+    },
+    {
+      "t": "v2",
+      "p": "true"
+    }
+  ],
+  "playing": "正在朗读\n暂停\n停止\n速度\n0.5\n0.75\n1\n1.25\n1.5\n2\n下载音频",
+  "buttonsAfter": [
+    {
+      "t": "v1",
+      "p": "true"
+    },
+    {
+      "t": "v2",
+      "p": "false"
+    }
+  ],
+  "ok": true
+}

@@ -1,0 +1,72 @@
+{
+  "test": "E2E 01",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-06T05:14:20.054Z",
+  "marker": "E2E01-1793942060054",
+  "appUrl": "http://127.0.0.1:46203",
+  "mockUrl": "http://127.0.0.1:40961",
+  "chromeVersion": "153.0.8010.36",
+  "clientBundle": "resources/public/js/main.js",
+  "clientBundleSha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2",
+  "checks": {
+    "onboardingNoRegistration": true,
+    "onboardingSaysDraftSurvives": true,
+    "serviceIdentityVisible": true,
+    "serviceHostVisible": true,
+    "serviceKindVisible": true,
+    "draftSurvivedSettings": true,
+    "sessionModelVisible": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-01-empty-sessions.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-02-draft-before-model.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-03-onboarding.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-04-connection-saved.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-05-model-bound.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-06-draft-restored.png"
+  ],
+  "browserEvents": [],
+  "sendDisabledBeforeModel": true,
+  "bind": {
+    "switchStatus": "clicked",
+    "toolsDeclared": true,
+    "rowText": "manual-only\n\nmanual-only · 来源：Mock 本地服务 · 127.0.0.1:40961\n\n已选为当前角色\n用于下一轮当前没有生成中的回复；新模型用于下一轮。\n此次列表未返回本地服务用户设置视觉：尚未确认音频：尚未确认视频：尚未确认文档：尚未确认工具：已声明支持推理：尚未确认\n价格\n未知\n上下文容量\n未知\n推理档位\n使用默认\n连接\nMock 本地服务 · 127.0.0.1:40961\n在连接中启用\n能力设置 · 用户设置\n\n手动修改是用户声明，第一次实际请求仍可能被服务拒绝；未知能力不会默认支持。\n\n视觉\n尚未确认\n声明支持\n不支持\n音频\n尚未确认\n声明支持\n不支持\n视频\n尚未确认\n声明支持\n不支持\n文档\n尚未确认\n声明支持\n不支持\n工具 · 用户设置\n尚未确认\n声明支持\n不支持\n推理\n尚未确认\n声明支持\n不支持\n恢复已知信息保存连接\n模型详情与有效配置\n\n留空表示未知或使用默认；数字 0 是真实值，不等同于未设置。\n\n项目\t值\t来源\t限制\n显示名\t\n\t本地配置\t非空\n模型标识\t\n\t本地配置\t非空；连接内唯一\n上下文容量\t\n\t尚未确认\t≥ 0；未知留空\n容量来源\t\n未知\n用户设置\n估算\n服务返回\n\t本地配置\t只影响展示口径\n最大回复长度\t\n\t本地配置\t≥ 0；留空=服务默认\n温度\t\n\t本地配置\t≥ 0；留空=使用默认\ntop-p\t\n\t本地配置\t0–1；留空=使用默认\n输入价格\t\n\t本地配置\t≥ 0；未知留空\n输出价格\t\n\t本地配置\t≥ 0；未知留空\n价格币种\t\n\t本地配置\t填写价格时必填\n价格单位\t\n未设置\n百万 tokens\n请求\n图片\n秒\n\t本地配置\t填写价格时建议填写\n推理档位\t\n使用默认\n最低可用\n\t模型声明/用户设置\t仅离散档位；不能关闭时显示最低可用\n\n能力含用户设置；图标只表示已声明或已知，不代表当前会话已有执行许可。"
+  },
+  "modelLabel": "模型：manual-only",
+  "sendUserMessageCreated": false,
+  "sendNotices": [
+    "The selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.",
+    "The selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved."
+  ],
+  "bodyAfterSend": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n5\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n1 / 1 条\n新建\n临时\nNew session\n2026/11/06 13:14 · manual-only\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\nNew session\n模型：manual-only\n设置\n辅助面板\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\n上下文\n发送 0 条 · 摘要 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\nNew session\n会话 ID\nhc-session-08b05f7f-d755-4d56-bc71-5788e43617c7\n状态\n—\n消息数\n0\n模型\nmanual-only\n分支来源\n—\n草稿版本\n3\n保存状态\n已保存\n命令\n—\n复制会话 ID\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\n×\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\n×\nThe selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved.\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "errorStep": "send-no-user-message",
+  "ok": false,
+  "finishedAt": "2026-11-06T05:14:38.507Z",
+  "mockState": {
+    "mock": true,
+    "requests": 1,
+    "chatCompletions": 1,
+    "active": 0,
+    "aborted": 0,
+    "config": {
+      "reply": "Mock 回复 E2E01-1793942060054：这条回答可以复制。",
+      "chunkSize": 24,
+      "chunkDelayMs": 90,
+      "errorStatus": null,
+      "failAfterChunks": null,
+      "forceToolCall": false
+    },
+    "last": {
+      "at": "2026-11-06T05:14:21.545Z",
+      "path": "/v1/chat/completions",
+      "model": "manual-only",
+      "stream": false,
+      "messageCount": 1,
+      "hasTools": false,
+      "user": "Herdchestra connection test. Reply with OK."
+    }
+  },
+  "evidence": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e01/e2e01-result.json",
+  "error": "send did not create a user message; notices=The selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved. | The selected model does not declare tool support; Plan and Reviewer require their program tool. Select a model with tools and send again; your draft is preserved."
+}

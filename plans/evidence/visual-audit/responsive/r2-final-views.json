@@ -1,0 +1,235 @@
+{
+  "bundleHash": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2",
+  "cssHash": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+  "checks": [
+    {
+      "check": "phone-430",
+      "theme": "light",
+      "boxes": {
+        "vw": 430,
+        "docScroll": 430,
+        "conversation": {
+          "x": 0,
+          "w": 430,
+          "right": 430,
+          "h": 867,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "conv": {
+          "x": 0,
+          "w": 430,
+          "right": 430,
+          "h": 741,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "stream": {
+          "x": 10,
+          "w": 410,
+          "right": 420,
+          "h": 71,
+          "display": "flex",
+          "bg": "rgba(0, 0, 0, 0)"
+        },
+        "composer": {
+          "x": 0,
+          "w": 430,
+          "right": 430,
+          "h": 166,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "send": {
+          "x": 360,
+          "w": 60,
+          "right": 420,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(11, 95, 138)"
+        },
+        "content": null,
+        "menu": {
+          "x": 8,
+          "w": 44,
+          "right": 52,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(255, 255, 255)"
+        }
+      }
+    },
+    {
+      "check": "tablet-820",
+      "theme": "light",
+      "boxes": {
+        "vw": 820,
+        "docScroll": 820,
+        "conversation": {
+          "x": 0,
+          "w": 820,
+          "right": 820,
+          "h": 1111,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "conv": {
+          "x": 0,
+          "w": 820,
+          "right": 820,
+          "h": 985,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "stream": {
+          "x": 16,
+          "w": 788,
+          "right": 804,
+          "h": 71,
+          "display": "flex",
+          "bg": "rgba(0, 0, 0, 0)"
+        },
+        "composer": {
+          "x": 0,
+          "w": 820,
+          "right": 820,
+          "h": 163,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "send": {
+          "x": 744,
+          "w": 60,
+          "right": 804,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(11, 95, 138)"
+        },
+        "content": null,
+        "menu": {
+          "x": 12,
+          "w": 44,
+          "right": 56,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(255, 255, 255)"
+        }
+      }
+    },
+    {
+      "check": "desktop-1280",
+      "theme": "light",
+      "boxes": {
+        "vw": 1280,
+        "docScroll": 1280,
+        "conversation": {
+          "x": 445,
+          "w": 515,
+          "right": 960,
+          "h": 731,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "conv": {
+          "x": 445,
+          "w": 515,
+          "right": 960,
+          "h": 605,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "stream": {
+          "x": 461,
+          "w": 483,
+          "right": 944,
+          "h": 71,
+          "display": "flex",
+          "bg": "rgba(0, 0, 0, 0)"
+        },
+        "composer": {
+          "x": 445,
+          "w": 515,
+          "right": 960,
+          "h": 163,
+          "display": "flex",
+          "bg": "rgb(244, 246, 248)"
+        },
+        "send": {
+          "x": 884,
+          "w": 60,
+          "right": 944,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(11, 95, 138)"
+        },
+        "content": null,
+        "menu": {
+          "x": 0,
+          "w": 0,
+          "right": 0,
+          "h": 0,
+          "display": "none",
+          "bg": "rgb(255, 255, 255)"
+        }
+      }
+    },
+    {
+      "check": "desktop-narrow-360",
+      "theme": "dark",
+      "boxes": {
+        "vw": 360,
+        "docScroll": 360,
+        "conversation": {
+          "x": 0,
+          "w": 360,
+          "right": 360,
+          "h": 735,
+          "display": "flex",
+          "bg": "rgb(17, 22, 28)"
+        },
+        "conv": {
+          "x": 0,
+          "w": 360,
+          "right": 360,
+          "h": 609,
+          "display": "flex",
+          "bg": "rgb(17, 22, 28)"
+        },
+        "stream": {
+          "x": 10,
+          "w": 340,
+          "right": 350,
+          "h": 71,
+          "display": "flex",
+          "bg": "rgba(0, 0, 0, 0)"
+        },
+        "composer": {
+          "x": 0,
+          "w": 360,
+          "right": 360,
+          "h": 185,
+          "display": "flex",
+          "bg": "rgb(17, 22, 28)"
+        },
+        "send": {
+          "x": 290,
+          "w": 60,
+          "right": 350,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(108, 196, 238)"
+        },
+        "content": null,
+        "menu": {
+          "x": 8,
+          "w": 44,
+          "right": 52,
+          "h": 44,
+          "display": "flex",
+          "bg": "rgb(24, 32, 41)"
+        }
+      }
+    }
+  ],
+  "issues": []
+}

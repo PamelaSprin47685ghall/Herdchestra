@@ -1,0 +1,106 @@
+{
+  "freeze": "final20",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final20: W110 D-27 (turn selection passthrough) + D-28 (last-move assoc nil) + W113 D-25 (session-summary :revision, snapshot cache delta fix) + clean shadow-cljs rebuild + full suite + app-check; final19 voided",
+  "fixes": {
+    "bug-D27": "conversation.cljc :draft/turn-selection action; conversation_bridge.cljs send-snapshot! emits turn-selection; draft.cljc/view.cljs passthrough",
+    "bug-D28": "materials/model.cljc undo :last-move assoc nil",
+    "bug-D25": "sessions.clj session-summary :revision; test/hc/server/app/snapshot_session_cache_test.clj; sync_test.clj delta case"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "5e301ce49f25b3de5786d677244b1d124322de5ee499f8de61c8782b0c5ef451",
+    "bundle-sha256": "20f3b90fdb3d3814305a6675b6f674c2b850bf7f9d846dabba840da79bbb684b (pre-rebuild bundle, mtime 2026-11-07T14:12:20+08:00, size 18791935)",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "snapshot": "2026-11-07T15:23:51+08:00"
+  },
+  "stability": {
+    "window-seconds": 120,
+    "tree-hash-before": "5e301ce49f25b3de5786d677244b1d124322de5ee499f8de61c8782b0c5ef451",
+    "tree-hash-after": "5e301ce49f25b3de5786d677244b1d124322de5ee499f8de61c8782b0c5ef451",
+    "result": "STABLE"
+  },
+  "focused-tests": {
+    "client-jvm": {
+      "log": "/tmp/hc-final20/client-focused.log",
+      "tests": 270,
+      "assertions": 1456,
+      "failures": 0,
+      "errors": 0,
+      "namespaces": "hc.client.conversation.{attachments-test,attachments-storage-test,export-test,stream-test,minimap-test,composer-test}, hc.client.materials.model-test, hc.client.workbench.{model-test,events-test,materials-bridge-test,conversation-bridge-test,scale-bench}, hc.client.{sync-test,sync-feed-test,sync-object-test}"
+    },
+    "server-jvm": {
+      "log": "/tmp/hc-final20/server-focused.log",
+      "tests": 167,
+      "assertions": 1460,
+      "failures": 0,
+      "errors": 0,
+      "namespaces": "hc.server.{commands-test,commands-gateway-test,commands-sensitive-test,history-test,history-durable-smoke-test,history-snapshot-test,history-live-smoke-test,history-regenerate-live-test}, hc.server.app.{snapshot-command-epoch-test,commands-dedup-test,fleet-commands-test,snapshot-deletion-test,snapshot-unresolved-calls-test,snapshot-session-cache-test}, hc.server.sessions.sessions-test"
+    },
+    "cljs-harnesses": {
+      "verify_materials_bridge.sh": "8 tests/23 assertions 0F/0E",
+      "verify_workbench_draft_storage.sh": "0 failures 0 errors",
+      "verify_workbench_session_commands.sh": "5 tests/23 assertions 0F/0E",
+      "verify_workbench_scale_dom.sh": "exit 0",
+      "verify_workbench_shell_dom.sh": "0 failures 0 errors",
+      "verify_conversation_selection_dom.sh": "13 tests/67 assertions 0F/0E",
+      "verify_backup_password_dom.sh": "0 failures 0 errors",
+      "verify_generated_card_dom.sh": "2 tests/23 assertions 0F/0E",
+      "verify_artifacts_ui.sh": "5 tests/37 assertions 0F/0E",
+      "verify_files_ui.sh": "FILES-UI-SMOKE-OK",
+      "verify_generated_card_ui.sh": "4 tests/49 assertions 0F/0E",
+      "verify_schedule_ui.sh": "19 tests/96 assertions 0F/0E",
+      "verify_session_controls_dom.sh": "9 tests/51 assertions 0F/0E",
+      "verify_swarm_ui.sh": "16 tests/130 assertions, 2 failures 0 errors - fleet-overview-renders expects role=status/aria-live=polite summary <p>; markup omits it; swarm src untouched by W110-W113; same pre-existing failure documented in final19 meta"
+    },
+    "log-dir": "/tmp/hc-final20/"
+  },
+  "clean-rebuild": {
+    "command": "flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "log": "/tmp/hc-release-final20.log",
+    "exit": 0,
+    "wall-seconds": 23,
+    "bundle-sha256-after": "87b0dee4cec24e7ffc720c96f25bafcb45fd73ca91b6444a030ed51e0fe6da94",
+    "bundle-size-after": 3018665,
+    "bundle-mtime-after": "2026-11-07 15:26:31.833661015 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930 (unchanged)",
+    "bundle-markers": "grep counts in resources/public/js/main.js: 'turn-selection' x8, 'last-move' x2, 'revision' x15, 'draft/turn-selection' x2; conversation_bridge.cljs :type :draft/turn-selection and model.cljc assoc :last-move nil confirmed in source; sessions.clj :revision present"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final20.log",
+    "exit": 0,
+    "tests": 3823,
+    "assertions": 24731,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 354
+  },
+  "app-check": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final20.log",
+    "exit": 0,
+    "wall-seconds": 14,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "5e301ce49f25b3de5786d677244b1d124322de5ee499f8de61c8782b0c5ef451",
+    "bundle-sha256": "87b0dee4cec24e7ffc720c96f25bafcb45fd73ca91b6444a030ed51e0fe6da94",
+    "bundle-size": 3018665,
+    "bundle-mtime": "2026-11-07 15:26:31.833661015 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "git-status-porcelain-count": 17,
+    "snapshot": "2026-11-07T15:33:18+08:00"
+  },
+  "result": "PASS - final20 freeze candidate bundle 87b0dee4 + tree 5e301ce4; W110/W113 fixes verified in rebuilt bundle (turn-selection x8, last-move x2, revision x15); focused JVM 270+167 tests 0F/0E; all CLJS harnesses green except pre-existing verify_swarm_ui 2-assertion failure (documented since final19, swarm src untouched); full suite 3823 tests/24731 assertions 0F/0E (exit 0, 354s); app-check ok"
+}

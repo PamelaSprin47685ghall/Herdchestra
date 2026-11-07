@@ -1,0 +1,7 @@
+end 2026-11-06T10:59:46+08:00
+ 246999 1119508 3830832
+246999:
+garbage-first heap   total reserved 1048576K, committed 485376K, used 145546K [0x00000000c0000000, 0x0000000100000000)
+ region size 1M, 26 eden (26M), 19 survivor (19M), 97 old (97M), 1 humongous (1M), 331 free (331M)
+leftover_ppid1:
+ 242669       1  2300 flock /tmp/hc-app-single.lock bash -c cd /home/kunweiz/Desktop/vibe/Herdchestra && exec .pixi/envs/default/bin/clojure -J-Xmx768m -J-XX:MaxDirectMemorySize=512m -J-Djava.io.tmpdir=/tmp/hc-w5c/tmp -M

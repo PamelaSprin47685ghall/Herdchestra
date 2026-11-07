@@ -1,0 +1,145 @@
+{
+  "base": "http://127.0.0.1:19241",
+  "session": "hc-session-92167ffd-73ea-4732-a8ef-964dad29a110",
+  "steps": {
+    "firstReplyAt": "2026-11-06T04:20:30.965Z",
+    "firstReplyText": "助手 · 手动编辑 · 版本 2\nv1\nv2\nv3\nv4\n\nE2E15 第二版回复正文。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑",
+    "editedAt": "2026-11-06T04:20:32.129Z",
+    "messageText": "助手 · 手动编辑 · 版本 2\nv1\nv2\nv3\nv4\n\nE2E15 第二版回复正文。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n正在保存编辑\n取消",
+    "versionsBefore": [
+      {
+        "text": "v1",
+        "pressed": "false"
+      },
+      {
+        "text": "v2",
+        "pressed": "true"
+      },
+      {
+        "text": "v3",
+        "pressed": "false"
+      },
+      {
+        "text": "v4",
+        "pressed": "false"
+      }
+    ],
+    "versionsAfterSelectV2": [
+      {
+        "text": "v1",
+        "pressed": "false"
+      },
+      {
+        "text": "v2",
+        "pressed": "true"
+      },
+      {
+        "text": "v3",
+        "pressed": "false"
+      },
+      {
+        "text": "v4",
+        "pressed": "false"
+      }
+    ],
+    "playingV2": "正在朗读\n暂停\n停止\n速度\n0.5\n0.75\n1\n1.25\n1.5\n2\n下载音频",
+    "playerAfterSwitchV1": null,
+    "versionsAfterSwitchV1": [
+      {
+        "text": "v1",
+        "pressed": "true"
+      },
+      {
+        "text": "v2",
+        "pressed": "false"
+      },
+      {
+        "text": "v3",
+        "pressed": "false"
+      },
+      {
+        "text": "v4",
+        "pressed": "false"
+      },
+      {
+        "text": "v5",
+        "pressed": "false"
+      }
+    ],
+    "playerAfterSwitchBackV2": null,
+    "playingV2Again": "正在朗读\n暂停\n停止\n速度\n0.5\n0.75\n1\n1.25\n1.5\n2\n下载音频"
+  },
+  "pageErrors": [],
+  "assertions": {
+    "audioWhilePlayingV2": [
+      {
+        "i": 0,
+        "paused": false,
+        "currentTime": 1.224145,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/c0583003-d2ff-429a-bf69-f0edd745"
+      }
+    ],
+    "audioAfterSwitchV1": [
+      {
+        "i": 0,
+        "paused": true,
+        "currentTime": 0,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/c0583003-d2ff-429a-bf69-f0edd745"
+      }
+    ],
+    "oldAudio": [
+      {
+        "i": 0,
+        "paused": true,
+        "currentTime": 0,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/c0583003-d2ff-429a-bf69-f0edd745"
+      }
+    ],
+    "audioAfterWait3s": [
+      {
+        "i": 0,
+        "paused": true,
+        "currentTime": 0,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/c0583003-d2ff-429a-bf69-f0edd745"
+      }
+    ],
+    "playerStillGoneAfter3s": true,
+    "audioAfterReplay": [
+      {
+        "i": 0,
+        "paused": true,
+        "currentTime": 0,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/c0583003-d2ff-429a-bf69-f0edd745"
+      },
+      {
+        "i": 1,
+        "paused": false,
+        "currentTime": 1.496842,
+        "ended": false,
+        "src": "blob:http://127.0.0.1:19241/6f5e8214-ce43-4451-a564-4ca3e037"
+      }
+    ],
+    "newAudioPlayingAfterReplay": true,
+    "playerGoneAfterSwitch": true,
+    "oldAudioPaused": true,
+    "oldAudioAtZero": true,
+    "oldAudioStaysPaused": true,
+    "versionButtonsUpdated": true,
+    "pageErrorCount": 0,
+    "pageErrorsZero": true,
+    "pass": true
+  },
+  "finishedAt": "2026-11-06T04:20:40.623Z",
+  "totalElapsedMs": 10810,
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "sha256": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+    "mtime": "2026-11-06T12:17:19+08:00",
+    "note": "新冻结 bundle（替代 55e4e8ea）；含 W3 release-audio!/AbortController 与 W9 扩展会话清空修复"
+  }
+}

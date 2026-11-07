@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:34599/",
+  "startedAt": "2026-11-05T08:56:23.082Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:34599/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：尚未选择模型\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文 · 预览\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 先选择一个可用模型，草稿已保留\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793868985195.png",
+  "console": [
+    "debug: 2026-11-05T08:56:25.003Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "baseUrl": "http://127.0.0.1:34599/",
+    "detailsFound": true,
+    "detailsVisible": true,
+    "loadFound": true,
+    "deletedText": "已删除会话\n加载已删除会话",
+    "body": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n会话\n新建会话\nNew session\nactive\n已删除会话\n加载已删除会话\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n联网搜索\n展开\n添加附件关联工作区文件\nNew session\n模型：尚未选择模型\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文 · 预览\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 先选择一个可用模型，草稿已保留\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "screenshot": "/tmp/hc-w5-final/evidence/e2e22-deleted.png"
+  },
+  "durationMs": 8699
+}

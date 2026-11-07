@@ -1,0 +1,22 @@
+{:models
+ {:connections
+  [{:id "local-ollama"
+    :name "Local Ollama (E2E)"
+    :kind :openai-compatible
+    :base-url "http://127.0.0.1:11434/v1"
+    :api-key ""
+    :models [{:id "qwen3.6:27b"
+              :name "qwen3.6:27b"
+              :capabilities #{:text :tools :streaming :reasoning}}]}]
+  :roles {:main {:connection "local-ollama" :model "qwen3.6:27b"}
+          :task {:connection "local-ollama" :model "qwen3.6:27b"}}}
+ :search
+ {:services
+  [{:id "local-stub"
+    :name "Local Stub Search (non-internet)"
+    :kind :searxng
+    :base-url "http://127.0.0.1:18095/search"
+    :enabled? true
+    :timeout-ms 10000
+    :preferences {:result-count 4}}]
+  :default-service-id "local-stub"}}

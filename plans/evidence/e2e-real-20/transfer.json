@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:40025/",
+  "startedAt": "2026-11-05T06:17:44.410Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:40025/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件\nNew session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793859466165.png",
+  "console": [
+    "debug: 2026-11-05T06:17:45.913Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "tempButton": true,
+      "tempCreated": true,
+      "transferButton": true,
+      "transferred": true,
+      "contentKept": true,
+      "draftKept": true,
+      "noDuplicateWork": true
+    },
+    "beforeCounts": {
+      "read": 1,
+      "sent": 1
+    },
+    "transferElapsedMs": 279,
+    "afterBody": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n50\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n临时会话\nactive · 1793859472138 · DeepSeek V4.1 Flash\n重命名\n置顶\n归档\n删除\nNew session\nactive · 1793859363438 · DeepSeek V4.1 Flash\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件\n正在生成\n临时会话\n模型：DeepSeek V4.1 Flash\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n上下文\n发送 1 条 · 摘要 0\n本轮上下文\n阅读 1 条 · 已删除 0\n压缩当前发送范围\n含来源\n包含工具详情\n导出当前分支导出纯文本\n你 · 版本 0\n\nE2E20 转存探针：转为普通会话后内容保留，外部动作不重复执行。\n\n选择\n复制从此处分支从此处开始\n编辑\ntool-call\n选择\n复制从此处分支从此处开始\n工具\n\n{:report \"attempt-id is already in use\" :call-id \"call-1/tool-0\" :outcome :devops-completed :status :accepted :worker-result-status :failed :tenure-id \"tenure-1\" :worker-id \"plan-worker-1\" :worker-status :failed :worker-lifecycle-status :idle}\n\n选择\n复制从此处分支从此处开始\n语音输入\n正在生成\n发送（需先停止当前轮）\nEnter 发送 · Shift+Enter 换行 · 当前轮仍在生成\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-8df11c6f-ac27-4066-bb3f-8787a48db303\n状态\nactive\n消息数\n1\n模型\nDeepSeek V4.1 Flash\n分支来源\n—\n草稿版本\n3\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "afterCounts": {
+      "read": 1,
+      "sent": 1
+    },
+    "screenshot": "/tmp/hc-e2e20ui3/transfer.png"
+  },
+  "durationMs": 8069
+}

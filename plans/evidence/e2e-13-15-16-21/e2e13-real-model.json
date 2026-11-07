@@ -1,0 +1,59 @@
+{
+  "startedAt": "2026-11-06T02:31:39.120Z",
+  "base": "http://127.0.0.1:19253",
+  "filename": "reading-log-real.html",
+  "prompt": "生成一个记录读书条目的小应用：可以输入书名和页数并添加，列表显示所有记录，数据保存在 localStorage，界面用中文。",
+  "steps": {
+    "syncedAt": "2026-11-06T02:31:40.035Z",
+    "formFilledAt": "2026-11-06T02:31:40.144Z",
+    "clickedAt": "2026-11-06T02:31:40.188Z",
+    "generateElapsedMs": 124513,
+    "outcome": "success",
+    "bodyAfter": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 0\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n工作区小应用\n独立存储\n沙箱运行\n工作区：workspace · /tmp/hc-e2e13-real/workspace\n在线\n刷新\n全屏\n打开为小应用\n生成小应用\n生成小应用\nreading-log-real.html\n文件可用\n数据 0 B\n最近使用 2026-11-06T02:33:43\nminiapps/reading-log-real.html\n打开\n数据\n检查文件\n小应用是工作区中的 HTML 文件。复制文件默认创建独立实例，不复制数据；删除文件只会让它暂时未关联。\nreading-log-real.html\n文件可用\nminiapps/reading-log-real.html\n数据 0 B\n数据\n检查文件\n关闭\n小应用与普通浏览器、其他小应用、其他工作区互不共享登录态或本地存储；模型不会自动读取小应用数据。\n当前目录条目\n0\n产物条目\n0\n记忆条目\n0\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n2\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n0\n世界书\n0\n指令卡\n0\n材料 revision\n0\n同步序号\n2\n已取得服务器基线，命令可以携带 command-id 提交。"
+  },
+  "assertions": {
+    "listShowsFile": true,
+    "iframePresent": true,
+    "iframeMode": null,
+    "iframeBody": "📚 读书记录\n添加书籍\n暂无记录",
+    "iframeHasContent": true,
+    "iframeHasReadingUi": true,
+    "filePath": "/tmp/hc-e2e13-real/workspace/miniapps/reading-log-real.html",
+    "fileExists": true,
+    "fileBytes": 5052,
+    "fileHasDoctype": true,
+    "fileHasHtmlClose": true,
+    "fileHasStorageMarker": true,
+    "fileHead": "<!DOCTYPE html>\n<html lang=\"zh\">\n<head><script data-hc-miniapp-storage=\"app-dcc162d3-ad6c-479e-9af4-00440676ab91\">\n(function(){\n  var APP_ID = \"app-dcc162d3-ad6c-479e-9af4-00440676ab91\";\n  var PREFIX = \"miniapp:app-dcc162d3-ad6c-479e-9af4-00440676ab91:\";\n  if (window.__hcMiniappStorage && window.__hcMiniappStorage.appId === APP_ID) return;\n  var nativeStorage = null;\n  try { nativeStorage = window.localStorage; } catch (e) { nativeStorage = null; }\n  if (!nativeStorage) {\n    var memory = Object.create(null);\n    nativeStorage = {\n      getItem: function(k){ return Object.prototype.hasOwnProperty.call(memory, k) ? memory[k] : null; },\n      setItem: function(k, v){ memory[String(k)] = String(v); },\n      removeItem: function(k){ delete memory[String(k)]; },\n      clear: function(){ memory = Object.create(null); },\n      key: function(i){ var keys = Object.keys(memory); return i >= 0 && i < keys.length ? keys[i] : null; }\n    };\n    Object.defineProperty(nativeStorage, 'length', { get: function(){ return Object.keys(memory).length; } });\n  }\n  function keys(){\n    var out = [];\n    try {\n      for (var i = 0; i < nativeStorage.length; i++) {\n        var key = nativeStorage.key(i);\n …[截断 3794 字符]",
+    "singleGenerateRequest": true,
+    "pageErrorCount": 0,
+    "pageErrorsZero": true,
+    "consoleErrorCount": 1,
+    "pass": true
+  },
+  "requests": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:19253/api/workspace/miniapp-generate",
+      "at": "2026-11-06T02:31:40.188Z",
+      "body": "{\"prompt\":\"生成一个记录读书条目的小应用：可以输入书名和页数并添加，列表显示所有记录，数据保存在 localStorage，界面用中文。\",\"filename\":\"reading-log-real.html\"}"
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "finishedAt": "2026-11-06T02:33:44.812Z",
+  "totalElapsedMs": 125692,
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "sha256": "5addfe1dd8e567b5c8aa047b30911e992520452648a594d12a37257d701f75b7",
+    "mtime": "2026-11-06T10:21:01+08:00",
+    "note": "E2E13 两次运行（10:31/10:34）时的 bundle"
+  },
+  "bundleNote": "旧 hash 5addfe1d（10:21:01）取得；miniapp 生成路径的功能源码未变（server/miniapps.clj 与 client/miniapps 的生成逻辑未改），最终 8b210896 的差异为视觉/语音/扩展；会话技能与 E2E15 已在 55e4e8ea 复跑。",
+  "finalBundle": {
+    "sha256": "8b2108963aca76226146ba275409d5fe95f851d5877e1f73a6ab7466d43b9b85",
+    "mtime": "2026-11-06T12:17:19+08:00"
+  }
+}

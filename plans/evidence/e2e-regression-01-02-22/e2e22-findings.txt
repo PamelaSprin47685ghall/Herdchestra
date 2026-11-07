@@ -1,0 +1,5 @@
+FINDING: CLI backup excluded the deleted session
+FINDING: CLI backup excluded the deleted session
+FINDING: CLI backup excluded the deleted session
+FINDING: CLI backup excluded the deleted session
+FINDING: CLI backup excluded the deleted session

@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:41397/",
+  "startedAt": "2026-11-05T04:52:00.221Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:41397/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n展开\n添加附件\n无人值守 · 自动继续\nNew session\n模型：qwen3.6:27b\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮尚未发送\n阅读 2 条 · 已删除 0\n压缩当前发送范围\n含来源\n导出当前分支导出纯文本\n你 · 版本 0\n\n请只根据搜索结果回答：ALPHA-ONE 和 BETA-TWO 分别来自哪个文档？请用 [1][2] 这样的编号引用来源。\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nBased\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793854322311.png",
+  "console": [
+    "debug: 2026-11-05T04:52:02.040Z DEBUG [hc.client.workbench.transport:70] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "selectCount": 1,
+    "options": [
+      {
+        "value": "",
+        "text": "未选择",
+        "selected": true
+      },
+      {
+        "value": "local-stub",
+        "text": "Local Stub Search (non-internet) · searxng",
+        "selected": false
+      }
+    ],
+    "valueBefore": "",
+    "valueAfter": "local-stub",
+    "bodyAfterSelect": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n联网搜索\n收起\n关闭\n自动\n本轮必须搜索\n不发起联网搜索，也不会把模型知识标成已联网。\n服务\n未选择\nLocal Stub Search (non-internet) · searxng\n添加附件\n无人值守 · 自动继续\nNew session\n模型：qwen3.6:27b\n:active\n无人值守 · 自动继续\n设置\n辅助面板\n可见输出已暂停，服务器仍在无人值守自动继续；可停止当前轮\n上下文\n发送 2 条 · 摘要 0\n本轮尚未发送\n阅读 2 条 · 已删除 0\n压缩当前发送范围\n含来源\n导出当前分支导出纯文本\n你 · 版本 0\n\n请只根据搜索结果回答：ALPHA-ONE 和 BETA-TWO 分别来自哪个文档？请用 [1][2] 这样的编号引用来源。\n\n选择\n复制从此处分支从此处开始\n编辑\n助手 · 版本 0\n\nBased\n\n选择\n复制朗读\n翻译\n重新生成从此处分支从此处开始\n编辑\n语音输入\n停止无人值守运行\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。"
+  },
+  "durationMs": 4760
+}

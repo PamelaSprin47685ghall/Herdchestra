@@ -1,0 +1,53 @@
+{
+  "test": "e2e12-final",
+  "checks": {
+    "e2e12-first-book-created": {
+      "pass": true,
+      "detail": "wb-f25b6495-ed22-4cd0-bec7-aca26122b475"
+    },
+    "e2e12-second-book-created": {
+      "pass": true,
+      "detail": "wb-1a2e26b3-f065-4555-9eee-1203d6519476"
+    },
+    "e2e12-entries-created": {
+      "pass": true,
+      "detail": {
+        "entryAny": "wbe-a266201f-62af-4946-90b6-7965be473876",
+        "entryAll": "wbe-3bf16b56-7831-4f85-92f4-515cc42a55e4",
+        "entrySticky": "wbe-602f5ac9-19f5-423c-b231-9246ec2b2bb1",
+        "entryCool": "wbe-69d27c21-cd9d-4b18-9805-73d1e0e6fa41",
+        "entryBudget": "wbe-def71182-39a6-4d83-8381-c7309cbdd18e",
+        "entryConst": "wbe-3eb81aa1-7b98-4e08-95ca-7ed1e6a1d415"
+      }
+    },
+    "e2e12-card-turn-selected": {
+      "pass": true,
+      "detail": true
+    }
+  },
+  "steps": [
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    }
+  ],
+  "startedAt": "2026-11-07T01:51:32.411Z",
+  "bundle": "efbc465adf88139896949461fe0c10469bb3f3c2d5802de3ec7262473f61cd7f",
+  "bundleMtime": "2026-11-07T00:43:18.021Z",
+  "bookA": "wb-f25b6495-ed22-4cd0-bec7-aca26122b475",
+  "bookB": "wb-1a2e26b3-f065-4555-9eee-1203d6519476",
+  "entries": {
+    "entryAny": "wbe-a266201f-62af-4946-90b6-7965be473876",
+    "entryAll": "wbe-3bf16b56-7831-4f85-92f4-515cc42a55e4",
+    "entrySticky": "wbe-602f5ac9-19f5-423c-b231-9246ec2b2bb1",
+    "entryCool": "wbe-69d27c21-cd9d-4b18-9805-73d1e0e6fa41",
+    "entryBudget": "wbe-def71182-39a6-4d83-8381-c7309cbdd18e",
+    "entryConst": "wbe-3eb81aa1-7b98-4e08-95ca-7ed1e6a1d415"
+  },
+  "error": {
+    "message": "prevPanel is not defined",
+    "stack": "ReferenceError: prevPanel is not defined\n    at send (/tmp/hc-w22/e2e12-final.cjs:274:59)\n    at async /tmp/hc-w22/e2e12-final.cjs:479:16"
+  },
+  "finishedAt": "2026-11-07T01:52:24.636Z"
+}

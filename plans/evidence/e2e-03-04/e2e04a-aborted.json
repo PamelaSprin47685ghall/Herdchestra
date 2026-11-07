@@ -1,0 +1,8 @@
+{
+  "checks": {
+    "firstReply": false
+  },
+  "errors": [],
+  "sourceId": "hc-session-56fb080d-f90e-4ff3-ad59-458c068735f6",
+  "error": "locator.click: Timeout 12000ms exceeded.\nCall log:\n  - waiting for locator('.hc-message-out').first().locator('button').filter({ hasText: /^编辑$/ }).first()\n\n    at /tmp/hc-w3/e2e04a.cjs:60:74"
+}

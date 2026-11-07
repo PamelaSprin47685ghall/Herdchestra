@@ -1,0 +1,12 @@
+{
+  "checks": {
+    "sessionRow": true,
+    "fullTextPersisted": true,
+    "grewPastFirstChunk": true,
+    "hasTopic": true,
+    "noFakeSpinner": true
+  },
+  "textAfterRestart": 83,
+  "textSample": "本地推理的边界受限于硬件算力、算法规模与数据隐私的多重博弈。在终端设备上部署大模型虽能彻底消除网络延迟并保障数据不出域，但当前消费级芯片难以支撑百亿参数以上的实时生成",
+  "ok": true
+}

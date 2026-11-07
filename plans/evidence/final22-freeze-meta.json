@@ -1,0 +1,83 @@
+{
+  "freeze": "final22",
+  "date": "2026-11-07",
+  "timezone": "CST",
+  "purpose": "final22: W124 D-28 runtime fix (current-with-local(db) merges local keys :last-move/:commands/:outbox/:orphan-receipts/drafts/turn staging when DB projection selected-session-id matches @last-state; session mismatch does not merge; 6 state-from-db read sites switched) + W126 E2E11 same-race fix (sync-from-db! connection -> bridge/connection synchronous adapter projection; fetch timer command-allowed? -> bridge/command-allowed?; new regression assertions) + clean shadow-cljs rebuild + full suite + app-check; final21 superseded",
+  "fixes": {
+    "current-with-local": "src/hc/client/workbench/materials_bridge.cljs:134 current-with-local(db): state-from-db projection + merge-local-state(current, @last-state) only when (:selected-session-id current) equals (:selected-session-id @last-state); used at 6 read sites (receipt sweep, sync-from-db!, fetch timer, apply-receipt-event! paths)",
+    "connection-race": "materials_bridge.cljs:446 connection (bridge/connection) reads adapter atom synchronously instead of queued :ui/connection DB projection; :502 fetch timer uses (bridge/command-allowed?) live read; fixes E2E11 suggest-switch-on '连接尚未完成同步' stale-connection refusal",
+    "merge-local-state": "src/hc/client/materials/model.cljc:1403 merges NEXT local fields onto CURRENT server-derived projection; 18 local keys [:commands :outbox :orphan-receipts :last-move :last-error :memory-suggest-result :memory-draft :book-draft :entry-draft :card-draft :selected-memory-id :selected-book-id :selected-card-id :instruction-mode :temporary-read? :turn-card-ids :instruction-values :turn-selection-version]; commands merge-with pending-statuses guard; outbox unions by command id; turn-selection-version max"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "1e824c8366c70563fea46b1a5bf188b1fe92dd3e531b1daa338ddb8b1c2363ed",
+    "bundle-sha256": "eddb0e535bea9df86011842df9ec028df89dae993b4dc9d990202d3627797f30 (pre-rebuild bundle built 17:49:48 from W124-only tree, superseded by W126 changes; mtime 2026-11-07T17:49:48+08:00, size 3018861)",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "snapshot": "2026-11-07T18:11:36+08:00"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-client-release.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 23,
+    "note": "513 files, 8 compiled, 13 infer warnings (same pre-existing categories as final21)",
+    "bundle-sha256-after": "c9cbfdf6603b66c601a3e8b220f8fb64e178d72f54974f7c6bfd03367712f30d",
+    "bundle-size-after": 3018831,
+    "bundle-mtime-after": "2026-11-07 18:12:03.120944949 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930 (unchanged)",
+    "note-history": "first rebuild at 17:49 produced eddb0e53 from W124-only tree; paused for W126 connection-race fix; second clean rebuild at 18:12 produced c9cbfdf6 from final tree"
+  },
+  "bundle-verification": {
+    "method": "closure.variable.map maps CLJS fn names to minified names; grep on resources/public/js/main.js",
+    "findings": [
+      "merge-local-state = Zob (def at 1663059): reduce over 18-key vector M(null,18,5,Q,[xr,LQ,ew,ep,RU,MSa,UA,iR,jl,qS,Qr,Ov,dn,rV,DH,Py,Gl,xz]) = [:commands :outbox :orphan-receipts :last-move :last-error :memory-suggest-result :memory-draft :book-draft :entry-draft :card-draft :selected-memory-id :selected-book-id :selected-card-id :instruction-mode :temporary-read? :turn-card-ids :instruction-values :turn-selection-version]; commands merge-with pending-statuses guard (Onb set + Vi.h status check); outbox union by command id (dT key); turn-selection-version max via re.l",
+      "current-with-local = n$ (def at 2757923): a=NP.h(a) (state-from-db :ui/materials projection); b=mI.h(a) (:selected-session-id); k(k(b)?r.l(b,mI.h(Xb(TUb))):b)?Zob(a,Xb(TUb)):a - merge only when session ids equal",
+      "Zob call sites: 4 total (merge-local-state in current-with-local, transact-state! stale-merge, apply-receipt-event! pending-command merge, plus def)",
+      "n$ call sites: 6 total matching the 6 state-from-db read sites",
+      "bridge/connection in sync-from-db!: iVb (sync-from-db!, def at ~2761800) calls ntb(Xb(Y1)) - ntb is model/connection-view (def at 1763897, builds Mh map with :command-allowed?=yr key, :command-epoch fallback chain KI/UG/FM then string keys) applied to adapter atom Y1 synchronously, NOT :ui/connection DB projection",
+      "bridge/command-allowed? in fetch timer: setTimeout(...,750) callback at 2762789 calls X1() - X1 (def at 1628536) reads Xb(Y1) adapter state: dF.h==:synced (it), vC.h!=null (:epoch), oq.h!=null (:seq), Lu.h==null (:pending-object), Id(GL.h) (deferred-events empty) - live adapter read, no DB",
+      "yr (:command-allowed?) reads in iVb: VT,eb(yr.h(d)) and fetch? gate both use live connection view d=ntb(Xb(Y1))"
+    ],
+    "verdict": "PASS - current-with-local/merge-local-state and bridge/connection + bridge/command-allowed? all confirmed in release bundle c9cbfdf6"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final22.log",
+    "exit": 0,
+    "tests": 3824,
+    "assertions": 24735,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 354,
+    "start-epoch": 1794046415,
+    "end-epoch": 1794046769,
+    "note": "first attempt bg_2096 cancelled at ~60s when W33 paused for W126; clean rerun after W126 landed"
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final22.log",
+    "exit": 0,
+    "wall-seconds": 14,
+    "ok": true,
+    "version": "0.0.1",
+    "start-epoch": 1794046778,
+    "end-epoch": 1794046792
+  },
+  "post": {
+    "tree-hash-src-test": "1e824c8366c70563fea46b1a5bf188b1fe92dd3e531b1daa338ddb8b1c2363ed",
+    "bundle-sha256": "c9cbfdf6603b66c601a3e8b220f8fb64e178d72f54974f7c6bfd03367712f30d",
+    "bundle-size": 3018831,
+    "bundle-mtime": "2026-11-07 18:12:03.120944949 +0800",
+    "manifest-edn-sha256": "c2158f6bdb365d28fc85cd8351db797facc99d0fb2a2abc641d26d5d107ba930",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b"
+    },
+    "git-status-porcelain-count": 17,
+    "snapshot": "2026-11-07T18:20:07+08:00"
+  },
+  "result": "PASS - final22 freeze candidate bundle c9cbfdf6 + tree 1e824c83; current-with-local/merge-local-state (D-28) and bridge/connection + bridge/command-allowed? (E2E11 connection race) verified in rebuilt bundle; clean rebuild exit 0 (23s); full suite 3824 tests/24735 assertions 0F/0E (exit 0, 354s); app-check ok:true version 0.0.1 (exit 0, 14s)"
+}

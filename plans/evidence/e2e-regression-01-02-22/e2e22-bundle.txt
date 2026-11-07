@@ -1,0 +1,5 @@
+run=e2e22
+started_at=2026-11-05T17:02:51+08:00
+bundle=/home/kunweiz/Desktop/vibe/Herdchestra/resources/public/js/main.js
+913bd31cdabc7593b469422a16186f8560a2394441a0286ac306853553be52d6  /home/kunweiz/Desktop/vibe/Herdchestra/resources/public/js/main.js
+mtime=2026-11-05 16:47:42.356264199 +0800 size=2960072

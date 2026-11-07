@@ -1,0 +1,36 @@
+{
+  "baseUrl": "http://127.0.0.1:39167",
+  "bundle": "a14d9abda8bff867a487ac2cfa8f58b34630a51e4fe0031ddd4fd68a40175549",
+  "css": "332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b",
+  "tree": "651b9a45a6bbc8fea3ceb8635e7d62a02fe31705287fe87b943aa55c2a249cde (w76r5 before/after identical; script field patched from stale tree-before-05.txt)",
+  "attachmentRequests": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:39167/attachments?name=p1.png&draft-count=1"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:39167/attachments/extract"
+    }
+  ],
+  "pageErrors": [],
+  "modelText": "模型：Qwen Text",
+  "modelAfterPick": "模型：Qwen Text",
+  "textImageCard": "p1.png\n图片 · 926 B · 等待选择处理方式\n需要选择处理方式 · 模型不接受原格式，可提取文字或换模型\n已保存副本\n预览\n提取文字\n排除\n移除",
+  "checks": {
+    "cardNeedsChoice": true,
+    "cardOffersActions": true,
+    "cardNotSendable": true,
+    "sendBlockedNoNewMessage": true,
+    "blockedNoticeShown": true,
+    "extractRouteAvailable": false
+  },
+  "messagesBeforeBlockedSend": 0,
+  "sendDisabled": false,
+  "messagesAfterBlockedSend": 0,
+  "blockedNotice": true,
+  "extractCount": 1,
+  "cardAfterExtract": "p1.png\n图片 · 926 B · 等待选择处理方式\n准备失败 · 文字提取失败\n已保存副本\n预览\n重试\n排除\n移除",
+  "ok": false,
+  "note": "bundle a14d9abd + tree 651b9a45 (final15); extractRouteAvailable=false is environment limitation (no OCR backend), same as 72de4f9a run"
+}

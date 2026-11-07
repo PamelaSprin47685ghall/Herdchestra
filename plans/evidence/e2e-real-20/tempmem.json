@@ -1,0 +1,32 @@
+{
+  "ok": false,
+  "baseUrl": "http://127.0.0.1:40025/",
+  "startedAt": "2026-11-05T06:18:03.334Z",
+  "sync": {
+    "ok": false,
+    "badges": [
+      "●已连接，等待同步"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:40025/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已连接，等待同步\n≡\n尚未选择会话\n已连接，等待同步。 连接建立后，服务器当前态才会出现在这里。\n服务器报告本轮未完成\n×\n通道已打开，正在等待原子基线快照。命令暂不可用。",
+  "screenshot": "/tmp/hc-e2e-1793859514754.png",
+  "console": [
+    "debug: 2026-11-05T06:18:04.600Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "tempCreated": false,
+      "readChecked": false,
+      "suggestChecked": false,
+      "tempNotice": false,
+      "onceOnlyControl": 0
+    },
+    "body": "☰\nHerdchestra\n工作台\n●\n已连接，等待同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已连接，等待同步\nepoch\n—\nseq\n—\n\n通道已打开，正在等待原子基线快照。命令暂不可用。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已连接，等待同步\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n服务器尚未提供当前会话；记忆写入与注入范围按全局默认处理。\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库未就绪\n读取最新材料\n整理记忆\n0\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n没有符合条件的记忆\n待审、生效、归档与已拒绝记录会按服务器快照显示。\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n0\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n—\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n0\n世界书\n0\n指令卡\n0\n材料 revision\n—\n同步序号\n—\n服务器报告本轮未完成\n×\n尚未与服务器同步，命令不可提交\n×\n通道已打开，正在等待原子基线快照。命令暂不可用。",
+    "screenshot": "/tmp/hc-e2e20ui3/temp-memory.png"
+  },
+  "durationMs": 36516,
+  "error": "page did not reach 已同步"
+}

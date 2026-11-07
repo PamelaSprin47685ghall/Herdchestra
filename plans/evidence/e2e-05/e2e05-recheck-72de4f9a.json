@@ -1,0 +1,27 @@
+{
+  "base": "http://127.0.0.1:37807",
+  "steps": {
+    "rowCount": 5,
+    "sourceSessionIndex": 3,
+    "sourceHash": "#/sessions/hc-session-07c5cda9-cb8c-4e25-affb-33c729aea555",
+    "foundSource": true,
+    "sourceRecheck": {
+      "proxyBefore": 22,
+      "proxyAfter": 22,
+      "assistantBefore": 3,
+      "assistantAfter": 3,
+      "replied": false,
+      "sawFail": true,
+      "notices": [
+        "服务器报告本轮未完成\n×"
+      ],
+      "bodyTail": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n3\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n5 / 5 条\n新建\n临时\nNew session\n2026/11/06 22:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/06 22:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n摘要 · 新会话\n2026/11/06 22:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/06 22:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n新会话\n2026/11/06 22:40 · Qwen 3.6 27B\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n新会话\n模型：Qwen 3.6 27B\n设置\n辅助面板\n本轮上下文 · 预览\n上下文\n发送 3 条 · 摘要 1\n你 · 版本 1\n\nE2E05 事实：部署窗口是周四 20:00。请只回复：事实。\n\nnote.txt\n已保存副本\n打开\n固定\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n事实。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 假设（未确认）：用户可能偏好蓝色主题。请只回复：假设。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n假设。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 已取消要求：不要生成 PDF 报告。请只回复：取消。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n助手 · 版本 1\n\n取消。\n\n选择\n复制\n朗读\n翻译\n重新生成\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 继续一：请只回复：继续1。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\nE2E05 继续二：请只回复：继续2。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n撤销后：请只回复：撤销后。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n你 · 版本 1\n\n复测：请只回复：复测。\n\n选择\n复制\n从此处分支\n从此处开始\n编辑\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n新会话\n会话 ID\nhc-session-07c5cda9-cb8c-4e25-affb-33c729aea555\n状态\n—\n消息数\n9\n模型\nQwen 3.6 27B\n分支来源\n—\n草稿版本\n2\n保存状态\n已保存\n命令\n服务器已接受\n复制会话 ID\n服务器报告本轮未完成\n×\n已取得服务器基线，命令可以携带 command-id 提交。"
+    },
+    "control": {
+      "proxyBefore": 22,
+      "proxyAfter": 23,
+      "replied": false
+    }
+  },
+  "pageErrors": []
+}

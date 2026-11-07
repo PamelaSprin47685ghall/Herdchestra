@@ -1,0 +1,15 @@
+{
+ "checks": {
+  "thirdTurn": "PASS",
+  "restartExport": "PASS",
+  "byteIdentical": true,
+  "sequence": "user,assistant,user,assistant,user,assistant",
+  "noToolLogs": true,
+  "noSecrets": true,
+  "onlySelectedPath": true
+ },
+ "beforeSha256": "56fd6bdc357ccab31f1c14edea0760b4f12fbfb196ffee1fa913f5af18005580",
+ "afterSha256": "56fd6bdc357ccab31f1c14edea0760b4f12fbfb196ffee1fa913f5af18005580",
+ "bytes": 247,
+ "exportText": "## 你\n\n第一轮：请回复：收到。\n\n## 助手\n\n收到。\n\n## 你\n\n第二轮：请回复：第二。\n\n## 助手\n\n第二。\n\n## 你\n\n分支第三轮：请只回复：第三。不要调用工具。\n\n## 助手\n\nTHIRD-REPLY 第三轮已完成。"
+}

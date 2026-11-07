@@ -1,0 +1,193 @@
+{
+  "test": "e2e11-c9cbfdf6-final22",
+  "checks": {
+    "e2e11-defaults-off": {
+      "pass": true,
+      "detail": "read=false suggest=false"
+    },
+    "e2e11-read-switch-on": {
+      "pass": true,
+      "detail": "读取已保存记忆 checked"
+    },
+    "e2e11-assumption-badge": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-truncation-badge": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-candidate-status": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-assumption-meta": {
+      "pass": true,
+      "detail": "工作方式\n待审\n截断样本：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长…\n假设，待确认已截断至 2000 字\n来源片段：E2E11 构造样本来源：用户说以后先确认再回答。\n范围 全局 · 假设（未确认） · 更新序号 1"
+    },
+    "e2e11-candidate-approved": {
+      "pass": true,
+      "detail": "工作方式\n生效\nE2E11 审批候选：批准后应进入生效记忆。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 全局 · 事实 · 更新序号 6"
+    },
+    "e2e11-candidate-rejected": {
+      "pass": true,
+      "detail": "工作方式\n已拒绝\nE2E11 拒绝候选：拒绝后不得注入。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 全局 · 事实 · 更新序号 7"
+    },
+    "e2e11-candidate-rescope-approved": {
+      "pass": true,
+      "detail": "工作方式\n生效\nE2E11 改范围候选：批准时改为项目范围。\n来源片段：E2E11 候选审阅构造样本：用户说了对应内容。\n范围 项目 e2e11-proj · 事实 · 更新序号 8"
+    },
+    "e2e11-suggest-switch-on": {
+      "pass": true,
+      "detail": "自动建议新记忆 enabled"
+    },
+    "e2e11-suggest-ran": {
+      "pass": true,
+      "detail": "candidates 1 -> 1; suggest switch on=true"
+    },
+    "e2e11-active-memory-created": {
+      "pass": true,
+      "detail": "active memory row present"
+    },
+    "e2e11-panel-source-recorded": {
+      "pass": true,
+      "detail": "panel source=last-run"
+    },
+    "e2e11-memory-injected": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：0E2E11 旧运行记忆：先确认再回答。 · identity-background · 全局 · 版本 1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-candidate-not-injected": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：0E2E11 旧运行记忆：先确认再回答。 · identity-background · 全局 · 版本 1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-memory-archived": {
+      "pass": true,
+      "detail": "身份与背景\n已归档\nE2E11 旧运行记忆：先确认再回答。\n范围 全局 · 事实 · 更新序号 10"
+    },
+    "e2e11-archive-stops-injection": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-archive-excluded-count": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-temp-warning": {
+      "pass": true,
+      "detail": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n19\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 11\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前是临时会话：服务器默认不读不写长期记忆。\n\n仅本次读取已保存记忆\n范围：会话 w22-temp；助手 default；项目 未声明。发送成功后自动关闭；切换会话不保留。\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 11\n读取最新"
+    },
+    "e2e11-temp-read-off-by-default": {
+      "pass": true,
+      "detail": "unchecked before enabling"
+    },
+    "e2e11-temp-read-scope": {
+      "pass": true,
+      "detail": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n19\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 11\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前是临时会话：服务器默认不读不写长期记忆。\n\n仅本次读取已保存记忆\n范围：会话 w22-temp；助手 default；项目 未声明。发送成功后自动关闭；切换会话不保留。\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 11\n读取最新材料\n整理记忆\n0\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n没有符合条件的记忆\n待审、生效、归档与已拒绝记录会按服务器快照显示。\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）"
+    },
+    "e2e11-temp-read-injected": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：临时会话不读记忆归档排除：1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：3摘要：0轮次：2可见：3排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-temp-read-cleared": {
+      "pass": true,
+      "detail": "unchecked after accepted send"
+    },
+    "e2e11-temp-default-no-read": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：临时会话不读记忆归档排除：1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    "e2e11-temp-read-not-in-other-session": {
+      "pass": true,
+      "detail": "no temporary-read control in ordinary session"
+    }
+  },
+  "steps": [
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    },
+    {
+      "name": "suggest-enable",
+      "attempts": [
+        {
+          "attempt": 0,
+          "checkedBefore": false,
+          "enabled": true,
+          "waitedMs": 706
+        }
+      ]
+    },
+    {
+      "at": "2026-11-07T10:28:37.453Z",
+      "name": "before-archive",
+      "text": "只回复 OK，不要调用工具。",
+      "source": "last-run",
+      "panel": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：0E2E11 旧运行记忆：先确认再回答。 · identity-background · 全局 · 版本 1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    },
+    {
+      "at": "2026-11-07T10:29:05.559Z",
+      "name": "after-archive",
+      "text": "只回复 OK，不要调用工具。",
+      "source": "last-run",
+      "panel": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：正常归档排除：1E2E11 审批候选：批准后应进入生效记忆。 · working-style · 全局 · 版本 1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "name": "focus",
+      "session": "w22-temp",
+      "reply": "{:ok? true, :active-session-id \"w22-temp\"}\n"
+    },
+    {
+      "name": "focus",
+      "session": "w22-temp",
+      "reply": "{:ok? true, :active-session-id \"w22-temp\"}\n"
+    },
+    {
+      "at": "2026-11-07T10:29:35.794Z",
+      "name": "temp-read-on",
+      "text": "只回复 OK，不要调用工具。",
+      "source": "last-run",
+      "panel": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：临时会话不读记忆归档排除：1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：3摘要：0轮次：2可见：3排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "name": "focus",
+      "session": "w22-temp",
+      "reply": "{:ok? true, :active-session-id \"w22-temp\"}\n"
+    },
+    {
+      "at": "2026-11-07T10:29:52.379Z",
+      "name": "temp-read-off",
+      "text": "只回复 OK，不要调用工具。",
+      "source": "last-run",
+      "panel": "本轮上下文 · 上次发送系统提示字节：4213模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：是状态：临时会话不读记忆归档排除：1世界书启用书籍：指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：5摘要：0轮次：3可见：5排除：0估算Token：未知来源：unknown"
+    },
+    {
+      "name": "focus",
+      "session": "w22-s1",
+      "reply": "{:ok? true, :active-session-id \"w22-s1\"}\n"
+    }
+  ],
+  "startedAt": "2026-11-07T10:23:03.488Z",
+  "bundle": {
+    "size": 3018831,
+    "sha256": "c9cbfdf6603b66c601a3e8b220f8fb64e178d72f54974f7c6bfd03367712f30d"
+  },
+  "tree": {
+    "sha256": "3beacf527a5b419171f0e44cbef0a52f761507b6e14f152587195233843525ce"
+  },
+  "suggest": {
+    "before": 1,
+    "after": 1,
+    "waitedMs": 300236
+  },
+  "frozenGap": null,
+  "tempPanelSource": "last-run",
+  "ok": true,
+  "finishedAt": "2026-11-07T10:30:02.627Z"
+}

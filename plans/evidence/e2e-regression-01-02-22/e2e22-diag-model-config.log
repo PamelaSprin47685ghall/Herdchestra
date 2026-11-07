@@ -1,0 +1,47 @@
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+:LAUNCH-MODELS {}
+:PERSISTED-CONNECTIONS-TYPE clojure.lang.PersistentVector
+:PERSISTED-CONNECTIONS [{:updated-at 2000, :name "Local Ollama (E2E)", :base-url "http://127.0.0.1:11434/v1", :enabled? true, :models {"qwen3.6:27b" {:capabilities #{:tools :reasoning :vision :streaming :text}, :id "qwen3.6:27b", :model-entry-id "qwen3.6:27b", :name "qwen3.6:27b"}}, :id "local-ollama", :kind :openai-compatible, :connection-id "local-ollama", :created-at 1000, :model-order ["qwen3.6:27b"]}]
+:MERGED-MODELS {:connections [{:updated-at 2000, :name "Local Ollama (E2E)", :base-url "http://127.0.0.1:11434/v1", :enabled? true, :models {"qwen3.6:27b" {:capabilities #{:tools :reasoning :vision :streaming :text}, :id "qwen3.6:27b", :model-entry-id "qwen3.6:27b", :name "qwen3.6:27b"}}, :id "local-ollama", :kind :openai-compatible, :connection-id "local-ollama", :created-at 1000, :model-order ["qwen3.6:27b"]}]}
+:CLASS clojure.lang.ExceptionInfo
+:MESSAGE configuration contains a field the adapter does not understand
+:DATA {:error/kind :invalid-model-adapter-config, :reason :unknown-field, :path [], :unknown [:created-at]}
+clojure.lang.ExceptionInfo: configuration contains a field the adapter does not understand {:error/kind :invalid-model-adapter-config, :reason :unknown-field, :path [], :unknown [:created-at]}
+	at hc.server.model_adapter.config$invalid_BANG_.invokeStatic(config.clj:44)
+	at hc.server.model_adapter.config$invalid_BANG_.invoke(config.clj:42)
+	at hc.server.model_adapter.config$check_keys_BANG_.invokeStatic(config.clj:54)
+	at hc.server.model_adapter.config$check_keys_BANG_.invoke(config.clj:49)
+	at hc.server.model_adapter.config$normalize_connection.invokeStatic(config.clj:308)
+	at hc.server.model_adapter.config$normalize_connection.invoke(config.clj:306)
+	at clojure.core$mapv$fn__8565.invoke(core.clj:7063)
+	at clojure.lang.PersistentVector.reduce(PersistentVector.java:418)
+	at clojure.core$reduce.invokeStatic(core.clj:6968)
+	at clojure.core$mapv.invokeStatic(core.clj:7054)
+	at clojure.core$mapv.invoke(core.clj:7054)
+	at hc.server.model_adapter.config$normalize_connections.invokeStatic(config.clj:429)
+	at hc.server.model_adapter.config$normalize_connections.invoke(config.clj:412)
+	at hc.server.model_adapter.config$normalize_config.invokeStatic(config.clj:575)
+	at hc.server.model_adapter.config$normalize_config.invoke(config.clj:568)
+	at hc.server.model_adapter$create_model_port.invokeStatic(model_adapter.clj:84)
+	at hc.server.model_adapter$create_model_port.invoke(model_adapter.clj:70)
+	at user$eval104056$fn__104057.invoke(diag_model_config.clj:24)
+	at user$eval104056.invokeStatic(diag_model_config.clj:23)
+	at user$eval104056.invoke(diag_model_config.clj:9)
+	at clojure.lang.Compiler.eval(Compiler.java:7757)
+	at clojure.lang.Compiler.load(Compiler.java:8223)
+	at clojure.lang.Compiler.loadFile(Compiler.java:8161)
+	at clojure.main$load_script.invokeStatic(main.clj:476)
+	at clojure.main$init_opt.invokeStatic(main.clj:478)
+	at clojure.main$init_opt.invoke(main.clj:478)
+	at clojure.main$initialize.invokeStatic(main.clj:509)
+	at clojure.main$null_opt.invokeStatic(main.clj:543)
+	at clojure.main$null_opt.invoke(main.clj:540)
+	at clojure.main$main.invokeStatic(main.clj:665)
+	at clojure.main$main.doInvoke(main.clj:617)
+	at clojure.lang.RestFn.applyTo(RestFn.java:140)
+	at clojure.lang.Var.applyTo(Var.java:707)
+	at clojure.main.main(main.java:40)

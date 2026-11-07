@@ -1,0 +1,3 @@
+ollama already listening on 127.0.0.1:11434
+starting 'w7-e2e22-b2-r2' (attempt 1) data=/tmp/hc-w7-reg/data-e2e22-b-r2 log=/tmp/hc-w7-reg/run/w7-e2e22-b2-r2/app.attempt1.log
+instance 'w7-e2e22-b2-r2' ready at http://127.0.0.1:46717/ (pid 4109762)

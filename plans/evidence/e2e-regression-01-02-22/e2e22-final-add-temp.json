@@ -1,0 +1,5 @@
+{
+  "baseUrl": "http://127.0.0.1:42893",
+  "clicked": true,
+  "body": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n3\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n转为普通\n结束临时\nE2E22 Active\nactive · 2000\n重命名\n置顶\n归档\n删除\n临时会话\nactive · 1793932153760\n重命名\n置顶\n归档\n删除\n已删除会话\n联网搜索\n展开\n添加附件关联工作区文件\n临时会话\n临时\n模型：尚未选择模型\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文 · 预览\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 先选择一个可用模型，草稿已保留\n上下文\n×\n详情\n文件\n浏览器\n来源\n会话详情\n标题\n临时会话\n会话 ID\nhc-session-739941af-ff4b-46bc-bf19-b30983bfab8a\n状态\nactive\n消息数\n0\n模型\n—\n分支来源\n—\n草稿版本\n0\n保存状态\n已保存\n命令\n—\n复制会话 ID\n已取得服务器基线，命令可以携带 command-id 提交。"
+}

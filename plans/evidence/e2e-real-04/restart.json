@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:38749/",
+  "startedAt": "2026-11-05T06:02:12.139Z",
+  "sync": {
+    "ok": true,
+    "badges": [
+      "●已同步",
+      "分支"
+    ]
+  },
+  "title": "Herdchestra 工作台",
+  "url": "http://127.0.0.1:38749/#/sessions",
+  "bodyText": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n分支\n来源会话：New session\n联网搜索\n展开\n添加附件\nBranch of New session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "screenshot": "/tmp/hc-e2e-1793858533867.png",
+  "console": [
+    "debug: 2026-11-05T06:02:13.579Z DEBUG [hc.client.workbench.transport:77] - Ignoring Sente event :chsk/handshake",
+    "error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "steps": {
+    "assertions": {
+      "sessionCount": 2,
+      "branchFound": true,
+      "branchHasEdited": false,
+      "versionButtons": 0,
+      "exportControls": 0
+    },
+    "bodies": {
+      "after": "☰\nHerdchestra\n工作台\n●\n已同步\n≡\n分支\n来源会话：New session\n联网搜索\n展开\n添加附件\nBranch of New session\n模型：DeepSeek V4.1 Flash\n:active\n设置\n辅助面板\n上下文\n发送 0 条 · 摘要 0\n本轮上下文\n阅读 0 条 · 已删除 0\n还没有消息。输入内容开始。\n语音输入\n停止\n发送\nEnter 发送 · Shift+Enter 换行 · 输入为空\n已取得服务器基线，命令可以携带 command-id 提交。"
+    },
+    "sessions": [
+      "New sessionactive · 1793858522622 · DeepSeek V4.1 Flash重命名置顶归档删除",
+      "Branch of New sessionactive · 1793858412871 · DeepSeek V4.1 Flash重命名置顶归档删除"
+    ],
+    "screenshot": "/tmp/hc-e2e04final/restart.png"
+  },
+  "durationMs": 6375
+}
