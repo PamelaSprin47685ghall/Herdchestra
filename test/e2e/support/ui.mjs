@@ -87,7 +87,10 @@ export async function send(page, text) {
 }
 
 export function assistantBodies(page) {
-  return page.locator('.hc-message-in:not(.hc-message-process) .hc-message-body');
+  // `:has(*)` keeps structurally empty bodies out: a `:tool-call` conversation
+  // record renders as an incoming bubble whose `.hc-message-body` holds no
+  // segment elements, and it must not shadow the real assistant reply.
+  return page.locator('.hc-message-in:not(.hc-message-process) .hc-message-body:has(*)');
 }
 
 export function userBodies(page) {
@@ -105,7 +108,13 @@ export async function userTexts(page) {
 }
 
 export async function lastAssistantText(page) {
-  return assistantBodies(page).last().innerText().catch(() => '');
+  // `innerText` on a zero-match locator waits for the element to appear;
+  // inside a Playwright test that wait is bounded only by the test timeout
+  // (a fresh session has no `.hc-message-body` yet), so check the count
+  // first and treat "no assistant bubble" as an empty string.
+  const last = assistantBodies(page).last();
+  if ((await last.count()) === 0) return '';
+  return last.innerText().catch(() => '');
 }
 
 export function stopButton(page) {
@@ -114,7 +123,9 @@ export function stopButton(page) {
 
 export async function turnLive(page) {
   const last = page.locator('.hc-message-in:not(.hc-message-process)').last();
-  const lastText = await last.innerText().catch(() => '');
+  // Same zero-match hazard as lastAssistantText: `innerText` waits for an
+  // element to appear, bounded only by the test timeout.
+  const lastText = (await last.count()) === 0 ? '' : await last.innerText().catch(() => '');
   if (/已停止/.test(lastText)) return false;
   if (await page.getByText('当前轮仍在生成').count()) return true;
   const stop = stopButton(page);

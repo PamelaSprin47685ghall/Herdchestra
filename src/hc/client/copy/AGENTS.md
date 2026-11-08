@@ -17,6 +17,12 @@
 `:transport-disconnected` 归入第四类但不计入 24 类。分类是呈现层分组，
 不改变错误码与协议。
 
+消费侧约定：诊断与 blocked/unconfirmed/rejected 卡片先渲染类别
+（`failure-reason-card` 的 `:number`/`:label`/`:explanation`，或
+`failure-copy :reason`/`reason-label` 前缀），再渲染具体 kind 的
+`:title`/`:body`/action；`failure-copy` 结果自带 `:reason` 卡，view
+不得只渲染具体 kind 而丢掉类别。
+
 覆盖 24 类：未选模型、供应商停用、模型移除、凭据无效、授权过期、额度不足、
 限流、网络不可达、响应未到、输入超容量、附件不支持、部分不可读、空间不足、
 资料不可读、外部文件移动、权限撤销、工具失败、回执丢失、错过时间、备份密码错、

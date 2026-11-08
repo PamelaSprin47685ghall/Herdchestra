@@ -94,6 +94,24 @@
    :before-current "当前轮之前"
    :between-recent "近期之间"})
 
+(def instruction-output-formats
+  "Declared instruction-card output formats.  The editor only offers these
+  values; validation refuses anything else before a command leaves."
+  {:text "文本"
+   :markdown "Markdown"
+   :json "JSON"})
+
+(def instruction-output-keys
+  "Valid instruction-card output format keywords."
+  (set (keys instruction-output-formats)))
+
+(defn instruction-output-options
+  "Select options `[[label value]]` for the card editor's format field."
+  []
+  (into [["未声明" ""]]
+        (map (fn [[k label]] [label (name k)]))
+        instruction-output-formats))
+
 (def pending-statuses #{:queued :submitting})
 
 (def omitted-reason-labels
@@ -189,6 +207,20 @@
     (non-blank-string? value) (keyword (str/replace (str/trim value) #"^:" ""))
     :else nil))
 
+(defn format-label
+  "Chinese badge label for an instruction-card output format.
+
+  Accepts keywords, strings and `:name` output.  Unknown values fall back
+  to `:name`-style text so an unrecognized server format is still shown
+  instead of dropped."
+  [format]
+  (cond
+    (nil? format) "文本"
+    (contains? instruction-output-formats
+                (keyword-value format))
+    (get instruction-output-formats (keyword-value format))
+    :else (name (keyword-value format))))
+
 (defn- read-edn [text]
   (try
     (#?(:clj edn/read-string :cljs reader/read-string) text)
@@ -261,7 +293,7 @@
        (mapcat (fn [card] (keep :key (:placeholders card))))
        set))
 
-(declare memory-draft book-draft entry-draft card-draft)
+(declare memory-draft book-draft entry-draft card-draft format-placeholders)
 
 (defn apply-snapshot
   "Replace server-derived fields in STATE with SNAPSHOT.
@@ -325,7 +357,23 @@
                                 (not (contains? cards
                                                 (get-in state [:card-draft :card-id]))))
                          (card-draft)
-                         (:card-draft state))
+                         (let [selected-card-id
+                               (keep-selected (:selected-card-id state)
+                                              cards)]
+                           (if selected-card-id
+                             (let [card (get cards selected-card-id)]
+                               (card-draft
+                                {:mode :edit
+                                 :card-id selected-card-id
+                                 :name (:name card)
+                                 :description (:description card)
+                                 :body (:body card)
+                                 :placeholders-text
+                                 (format-placeholders (:placeholders card))
+                                 :output-format
+                                 (some-> (:output-format card) name)
+                                 :enabled? (:enabled? card)}))
+                             (:card-draft state))))
             state (-> state
                       (assoc :ready? ready?
                              :selected-session-id
@@ -414,6 +462,7 @@
     :epistemic (or epistemic :fact)
     :always? (boolean always?)
     :reject-reason ""
+    :confirm-delete? false
     :error nil}))
 
 (defn book-draft
@@ -1200,17 +1249,17 @@
 
 (defn validate-card-draft
   [draft]
-  (let [name (trimmed (:name draft))
+  (let [card-name (trimmed (:name draft))
         description (:description draft)
         body (:body draft)
         placeholders (parse-placeholders (:placeholders-text draft))
         keys (map :key placeholders)
         output-format (keyword-value (:output-format draft))]
     (cond
-      (not (non-blank-string? name))
+      (not (non-blank-string? card-name))
       {:ok? false :error "指令卡名称不能为空。"}
 
-      (> (unicode-length name) card-name-max-chars)
+      (> (unicode-length card-name) card-name-max-chars)
       {:ok? false :error (str "指令卡名称超过 " card-name-max-chars " 字。")}
 
       (and (some? description)
@@ -1229,9 +1278,16 @@
       (not= (count keys) (count (set keys)))
       {:ok? false :error "占位符 key 必须唯一。"}
 
+      (and output-format
+           (not (contains? instruction-output-keys output-format)))
+      {:ok? false
+       :error (str "输出格式只能是："
+                   (str/join "、" (map name (sort instruction-output-keys)))
+                   "。")}
+
       :else
       {:ok? true
-       :payload {:name name
+       :payload {:name card-name
                  :description description
                  :body body
                  :placeholders placeholders
@@ -1254,6 +1310,35 @@
                       (contains? pending-statuses (:status command)))
              command))
          (:commands state))))
+
+(defn command-pending?
+  "True when a command with `key` is still queued or submitting.  The view
+  uses this to disable selection toggles so a pending write cannot be
+  raced by a second toggle."
+  [state key]
+  (boolean
+   (some (fn [[_ command]]
+           (when (and (= key (:key command))
+                      (contains? pending-statuses (:status command)))
+             command))
+         (:commands state))))
+
+(defn- command-pending-kind?
+  [state kind]
+  (boolean
+   (some (fn [[_ command]]
+           (when (and (= kind (:kind command))
+                      (contains? pending-statuses (:status command)))
+             command))
+         (:commands state))))
+
+(defn instruction-selection-pending?
+  "True while any instruction-card selection command is pending: session
+  set/clear or turn clear.  The view disables the mode switch and both
+  checklists while a selection write is unconfirmed."
+  [state]
+  (or (command-pending-kind? state instruction-session-set-kind)
+      (command-pending-kind? state instruction-session-clear-kind)))
 
 (defn- queue-command*
   [state kind payload key opts]
@@ -1617,6 +1702,7 @@
    (case form
      :memory #{:category :scope-kind :epistemic}
      :entry #{:trigger-kind :match :position-kind}
+     :card #{:output-format}
      #{})
    field))
 

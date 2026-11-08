@@ -95,6 +95,20 @@
    :created-seq 3
    :updated-seq 4})
 
+(def memory-archived
+  {:id "mem-c"
+   :v 2
+   :status :archived
+   :body "旧项目约定已归档"
+   :category :long-term-requirement
+   :scope {:kind :global}
+   :epistemic :requirement
+   :always? false
+   :source nil
+   :created-seq 1
+   :updated-seq 5
+   :versions [{:body "更早的约定"}]})
+
 (def snapshot
   {:materials/ready? true
    :materials/revision 9
@@ -1421,3 +1435,202 @@
                    {:key [:materials/settings]})]
         (is (true? (:ok? retry))
             "a refused command frees the pending key for a retry")))))
+
+(defn- button-labeled
+  [nodes label]
+  (first (filter #(and (= :button (:tag %))
+                       (= [label] (:children %)))
+                 nodes)))
+
+(deftest view-shows-assistant-display-names
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :selected-book-id "wb-1"
+                         :book-draft (model/book-draft
+                                      {:mode :edit :book-id "wb-1"
+                                       :assistant-id "a-2"})))
+        rendered (pr-str (view/panel-tree state :worldbook))]
+    (is (re-find #"主助手" rendered))
+    (is (not (re-find #"绑定 assistant-writer" rendered)))))
+
+(deftest card-format-badges-are-chinese
+  (let [state (model/apply-snapshot (synced-state) snapshot)
+        nodes (tree-nodes (view/panel-tree state :instructions))
+        badges (->> nodes
+                    (filter #(and (= :span (:tag %))
+                                  (= "hc-mat-badge"
+                                     (get-in % [:attrs :class]))))
+                    (mapcat :children)
+                    set)]
+    (is (contains? badges "JSON"))
+    (is (contains? badges "文本"))
+    (is (not (contains? badges "json")))))
+
+(deftest card-output-format-uses-enum-select
+  (let [state (-> (synced-state)
+                  (assoc :selected-card-id "card-1")
+                  (model/apply-snapshot snapshot))
+        nodes (tree-nodes (view/panel-tree state :instructions))
+        selects (filter #(= :select (:tag %)) nodes)
+        format-select (first (filter (fn [node]
+                                       (some #(and (= :option (:tag %))
+                                                  (some #{"JSON"}
+                                                        (:children %)))
+                                             (tree-nodes node)))
+                                     selects))]
+    (is format-select "the output format field is a select")
+    (is (= "text" (get-in format-select [:attrs :value])))
+    (is (some #(and (= :option (:tag %)) (= "json" (get-in % [:attrs :value])))
+              (tree-nodes format-select)))
+    (is (some #(and (= :option (:tag %)) (= "" (get-in % [:attrs :value])))
+              (tree-nodes format-select)))))
+
+(deftest card-format-validation-refuses-unknown
+  (is (false? (:ok? (model/validate-card-draft
+                     (model/card-draft {:name "x" :body "b"
+                                        :output-format "yaml"}))))
+      "a free-text format the server would refuse is refused locally"))
+
+(deftest one-new-button-per-material-block
+  (doseq [[section label] [[:memory "新建记忆"]
+                          [:instructions "新建指令卡"]]]
+    (let [base (model/apply-snapshot (synced-state) snapshot)
+          state (assoc base
+                       :memory-draft (model/memory-draft
+                                      {:mode :edit :memory-id "mem-a"}))
+          rendered (pr-str (view/panel-tree state section))
+          new-buttons (count (re-seq #":materials/(memory|book|entry|card)-new" rendered))]
+      (is (= 1 new-buttons)
+          (str section " renders exactly one new-button action, got " new-buttons)))))
+
+(deftest worldbook-block-has-one-new-action-per-editor
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :book-draft (model/book-draft
+                                      {:mode :edit :book-id "wb-1"})
+                         :entry-draft (model/entry-draft
+                                       {:mode :edit :entry-id "wbe-1"
+                                        :book-id "wb-1"})))
+        rendered (pr-str (view/panel-tree state :worldbook))]
+    (is (= #{:materials/book-new :materials/entry-new}
+           (set (map #(keyword (subs % 1))
+                     (re-seq #":materials/(?:book|entry)-new" rendered))))
+        "the worldbook block keeps one 新建 action per editor")))
+
+(deftest entry-position-depth-only-for-between-recent
+  (let [base (-> (model/apply-snapshot (synced-state) snapshot)
+                 (assoc :entry-draft (model/entry-draft
+                                      {:mode :edit :entry-id "wbe-1"
+                                       :book-id "wb-1"})))
+        background (pr-str (view/panel-tree base :worldbook))
+        between (pr-str (view/panel-tree
+                         (assoc-in base [:entry-draft :position-kind]
+                                   :between-recent)
+                         :worldbook))]
+    (is (not (re-find #"位置深度" background)))
+    (is (re-find #"位置深度" between))))
+
+(deftest entry-move-target-excludes-current-book
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :entry-draft (model/entry-draft
+                                       {:mode :edit :entry-id "wbe-1"
+                                        :book-id "wb-1"
+                                        :move-book-id ""})))
+        nodes (tree-nodes (view/panel-tree state :worldbook))
+        move-select (first (filter (fn [node]
+                                     (and (= :select (:tag node))
+                                          (some #(= ["选择目标世界书"] (:children %))
+                                                (tree-nodes node))))
+                                   nodes))]
+    (is move-select)
+    (is (not (some #(and (= :option (:tag %))
+                         (= "wb-1" (get-in % [:attrs :value])))
+                  (tree-nodes move-select))))))
+
+(deftest delete-confirmation-is-two-step
+  (doseq [[section draft-key draft] [[:worldbook :book-draft
+                                      (model/book-draft {:mode :edit :book-id "wb-1"})]
+                                     [:instructions :card-draft
+                                      (model/card-draft {:mode :edit :card-id "card-1"})]
+                                     [:memory :memory-draft
+                                      (model/memory-draft {:mode :edit
+                                                           :memory-id "mem-c"})]]]
+    (let [snap (if (= :memory section)
+                 (-> snapshot
+                     (assoc :memory/by-id
+                            (assoc (:memory/by-id snapshot)
+                                   "mem-c" memory-archived))
+                     (assoc :memory/order ["mem-a" "mem-b" "mem-c"]
+                            :memory/counts {:candidate 1 :active 1
+                                            :archived 1 :rejected 0
+                                            :deleted 0}))
+                 snapshot)
+          state (-> (model/apply-snapshot (synced-state) snap)
+                    (assoc draft-key draft)
+                    (cond-> (= :memory section)
+                      (assoc :selected-memory-id "mem-c")))
+          first-render (pr-str (view/panel-tree state section))]
+      (is (re-find #"永久删除|删除条目|删除世界书|删除指令卡"
+                   first-render))
+      (is (not (re-find #"确认删除|确认永久删除" first-render)))
+      (let [confirmed (assoc-in state [draft-key :confirm-delete?] true)
+            second-render (pr-str (view/panel-tree confirmed section))]
+        (is (re-find #"确认" second-render))))))
+
+(deftest instruction-selection-pending-disables-controls
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :instruction-mode :session))
+        queued (:state (model/reduce-action
+                        state
+                        {:type :materials/card-toggle-selection
+                         :card-id "card-1"}))
+        command (first (filter #(= model/instruction-session-set-kind (:kind %))
+                               (vals (:commands queued))))
+        submitting (model/mark-submitting queued (:command-id command))
+        rendered (pr-str (view/panel-tree submitting :instructions))
+        nodes (tree-nodes (view/panel-tree submitting :instructions))
+        checkboxes (filter #(and (= :input (:tag %))
+                                 (= "checkbox" (get-in % [:attrs :type])))
+                           nodes)]
+    (is (model/instruction-selection-pending? submitting))
+    (is (every? #(true? (get-in % [:attrs :disabled])) checkboxes))
+    (is (re-find #"待确认" rendered))))
+
+(deftest memory-suggest-receipt-sets-result-and-view-renders-note
+  (let [state (synced-state)
+        queued (:state (model/reduce-action
+                        state {:type :materials/memory-suggest}))
+        command-id (->> (:commands queued)
+                        (filter (fn [[_ c]]
+                                  (= (keyword "materials" "memory/suggest")
+                                     (:kind c))))
+                        first val :command-id)
+        submitting (model/mark-submitting queued command-id)
+        receipt {:ok? true
+                 :command-id command-id
+                 :command-epoch 7
+                 :receipt {:status :accepted
+                           :command-id command-id
+                           :command-epoch 7
+                           :result {:candidates [{:body "喜欢简洁回答"
+                                                  :category :expression-preference}]
+                                    :skipped 2
+                                    :skipped-reasons {:empty 2}
+                                    :dropped-message-count 0}}}
+        applied (model/apply-receipt submitting receipt)]
+    (is command-id "the suggest command was queued")
+    (is (= :accepted
+           (get-in applied [:commands command-id :status])))
+    (is (some? (:memory-suggest-result applied))
+        "an accepted suggest receipt stores :memory-suggest-result")
+    (is (= 1 (count (:candidates (:memory-suggest-result applied)))))
+    (is (= 2 (:skipped (:memory-suggest-result applied))))
+    (is (some #(= :materials/snapshot (get-in % [:payload :kind]))
+              (:outbox applied))
+        "the receipt queues a reconcile snapshot")
+    (testing "the memory panel renders the 本次整理 note"
+      (let [snap-state (-> (model/apply-snapshot (synced-state) snapshot)
+                           (assoc :selected-session-id "s-1"
+                                  :memory-suggest-result
+                                  (:memory-suggest-result applied)))
+            rendered (pr-str (view/panel-tree snap-state :memory))]
+        (is (re-find #"本次整理" rendered))
+        (is (re-find #"候选 1" rendered))))))

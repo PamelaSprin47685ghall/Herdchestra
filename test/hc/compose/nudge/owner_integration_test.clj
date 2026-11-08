@@ -39,6 +39,30 @@
              {:attempt-id (:attempt-id request)})
    :cancel! (fn [_] nil)})
 
+(defn- gated-model-gateway
+  "Record every model request and hold its events until the test releases
+  them, one `deliver!` per request in start order.
+
+  The Owner settles a turn only after the model terminal commits, and a
+  tool-free `:succeeded` stop is the `:plain-response` legal exit.  Tests
+  that need several Nudge rounds must therefore gate each request: an
+  instantly-completing gateway runs the whole chain to the round boundary
+  before the assertions can observe the live turn.  `deliver!` for the
+  `:completed` event queues the call terminal, so releasing it is the same
+  as the gateway answering.
+
+  Returns `{:gateway g :releases (atom [deliver! ...])}`; call
+  `(deliver! {:event :tool-call ...})` then `(deliver! {:event :completed
+  ...})` on the released slot to finish that round with tool evidence."
+  [requests]
+  (let [releases (atom [])]
+    {:gateway {:start! (fn [request deliver!]
+                         (swap! requests conj request)
+                         (swap! releases conj deliver!)
+                         {:attempt-id (:attempt-id request)})
+              :cancel! (fn [_] nil)}
+     :releases releases}))
+
 (defn- start-owner
   [requests opts]
   (owner/start-owner!
@@ -163,23 +187,44 @@
 
 (deftest model-completion-emits-turn-and-nudges
   (let [requests (atom [])
+        ;; The user turn invokes a tool, so its end is task-cycle work and
+        ;; still owes a Nudge.  The Nudge request itself is held open: a
+        ;; tool-free Nudge answer would be the `:plain-response` legal
+        ;; exit and clear the live turn this test asserts on.  `negotiate`
+        ;; is a Scope-exempt member, so the fake call needs no `:scope`.
         gateway {:start! (fn [request deliver!]
-                           (swap! requests conj request)
-                           (when (= 1 (count @requests))
-                             (deliver! {:event :completed
-                                        :text "stopped early"}))
+                           (let [n (count (swap! requests conj request))]
+                             (if (= 1 n)
+                               (do
+                                 (deliver! {:event :tool-call
+                                            :call-id "negotiate-1"
+                                            :name "negotiate"
+                                            :payload {}})
+                                 (deliver! {:event :completed
+                                            :text "stopped early"}))
+                               nil))
                            {:attempt-id (:attempt-id request)})
                  :cancel! (fn [_] nil)}
         handle (start-owner requests {:model-gateway gateway})]
     (try
       (command! handle "c1"
                 {:kind :send-message :text "hello"})
-      (is (wait-for #(= 2 (count @requests)) 3000))
+      ;; Wait until the Nudge call exists and owns a live turn; the held
+      ;; request keeps that window open instead of racing the next settle.
+      (is (wait-for
+           (fn []
+             (let [s (state handle)
+                   c (first (nudge-calls s))]
+               (and (some? c)
+                    (false? (get-in s [:turn :ended?]))
+                    (= (:call-id c) (get-in s [:turn :call-id])))))
+           5000))
       (let [state (state handle)
             nudge-request (second @requests)
             messages (get-in nudge-request [:snapshot :messages])
             nudge-call (first (nudge-calls state))]
         (is (some? nudge-call))
+        (is (= 1 (count (nudge-calls state))))
         (is (= :plan (:agent-id nudge-call)))
         (is (= "tenure-1" (:tenure-id nudge-call)))
         (is (= "nudge-plan-tenure-1-1" (:nudge-id nudge-call)))
@@ -200,7 +245,16 @@
                  :capabilities #{:tools}}
         gateway {:start! (fn [request deliver!]
                            (swap! requests conj request)
+                           ;; Same shape as `model-completion-emits-turn-
+                           ;; and-nudges`: the user turn calls the exempt
+                           ;; `negotiate` member and the Nudge request is
+                           ;; held open so its live turn keeps the frozen
+                           ;; model binding this test asserts on.
                            (when (= 1 (count @requests))
+                             (deliver! {:event :tool-call
+                                        :call-id "negotiate-1"
+                                        :name "negotiate"
+                                        :payload {}})
                              (deliver! {:event :completed
                                         :text "stopped early"}))
                            {:attempt-id (:attempt-id request)})
@@ -212,7 +266,16 @@
     (try
       (command! handle "c1"
                 {:kind :send-message :text "hello"})
-      (is (wait-for #(= 2 (count @requests)) 3000))
+      ;; The Nudge owns a live turn while its request is held open; wait
+      ;; for that window instead of racing the next settle.
+      (is (wait-for
+           (fn []
+             (let [s (state handle)
+                   c (first (nudge-calls s))]
+               (and (some? c)
+                    (false? (get-in s [:turn :ended?]))
+                    (= (:call-id c) (get-in s [:turn :call-id])))))
+           5000))
       (let [turn-request (first @requests)
             nudge-request (second @requests)
             owner-state (state handle)]
@@ -224,6 +287,33 @@
         (is (= {:connection "alpha" :model "same-model"}
                (get-in owner-state [:turn :model-binding]))
             "the ended turn records the identity its Nudge must reuse"))
+      (finally
+        ((:stop! handle))))))
+
+(deftest plain-answer-turn-ends-without-nudge
+  ;; A user turn whose model answer is plain text — no tool call, empty
+  ;; Plan ledger — is a legal §2.5 stop.  No Nudge call is created, the
+  ;; turn history records `:plain-response`, and the session can idle.
+  (let [requests (atom [])
+        gateway {:start! (fn [request deliver!]
+                           (swap! requests conj request)
+                           (deliver! {:event :completed
+                                      :text "plain answer"})
+                           {:attempt-id (:attempt-id request)})
+                 :cancel! (fn [_] nil)}
+        handle (start-owner requests {:model-gateway gateway})]
+    (try
+      (command! handle "c1" {:kind :send-message :text "hello"})
+      (is (wait-for #(seq (:turn-history (state handle))) 5000))
+      (let [owner-state (state handle)]
+        (is (= 1 (count @requests))
+            "a plain answer dispatches exactly one model request")
+        (is (empty? (nudge-calls owner-state))
+            "no Nudge call is created for a plain answer")
+        (is (= :plain-response
+               (get-in owner-state [:turn-history 0 :exit :kind])))
+        (is (nil? (:turn owner-state))
+            "the committed exit clears the turn"))
       (finally
         ((:stop! handle))))))
 
@@ -590,18 +680,46 @@
 
 (deftest ordinary-natural-stops-keep-nudging
   (let [requests (atom [])
-        gateway {:start! (fn [request deliver!]
-                           (swap! requests conj request)
-                           (when (<= (count @requests) 4)
-                             (deliver! {:event :completed
-                                        :text "still here"}))
-                           {:attempt-id (:attempt-id request)})
-                 :cancel! (fn [_] nil)}
+        {:keys [gateway releases]}
+        (gated-model-gateway requests)
         handle (start-owner requests {:model-gateway gateway})]
     (try
       (command! handle "c1" {:kind :send-message :text "hello"})
-      (is (wait-for #(>= (count (nudge-calls (state handle))) 3) 5000))
+      ;; Release the held request, then wait for the Nudge call it produced
+      ;; to own a live turn before releasing the next one.  Every turn
+      ;; invokes the Scope-exempt `negotiate` member, so each settled turn
+      ;; is task-cycle work that still owes a Nudge; the budget, not a
+      ;; plain stop, ends the chain.  Four rounds leave the fourth Nudge
+      ;; request held, so its live turn is what the final assertions see.
+      (dotimes [n 4]
+        (is (wait-for #(<= (inc n) (count @requests)) 5000)
+            (str "request " (inc n) " was dispatched"))
+        (let [deliver! (nth @releases n)]
+          (deliver! {:event :tool-call
+                     :call-id (str "negotiate-" (inc n))
+                     :name "negotiate"
+                     :payload {}})
+          (deliver! {:event :completed :text "still here"}))
+        (when (< n 3)
+          (is (wait-for (fn []
+                          (let [s (state handle)
+                                live (some (fn [[_ call]]
+                                             (when (and (:nudge? call)
+                                                        (contains? #{:ready
+                                                                     :dispatching
+                                                                     :running
+                                                                     :retry-wait}
+                                                                    (:state call)))
+                                               call))
+                                           (:calls s))]
+                            (and (some? live)
+                                 (false? (get-in s [:turn :ended?]))
+                                 (= (:call-id live)
+                                    (get-in s [:turn :call-id])))))
+                        5000)
+              (str "round " (inc n) " produced a live Nudge call"))))
       (let [owner-state (state handle)]
+        (is (>= (count (nudge-calls owner-state)) 3))
         (is (not-any? #(= :NUDGE_BUDGET_EXHAUSTED (:code %))
                       (:diagnostics owner-state))
             "ordinary natural stops are not failure-budgeted")
@@ -772,6 +890,58 @@
     (is (= 1 (count (:turn-history settled)))
         "one answer, one history entry")
     (is (empty? (nudge-calls settled)))))
+
+(deftest round-boundary-stops-nudging-after-the-budget
+  ;; D-13: an unresolved Plan ledger keeps §2.5 asking for a Nudge, but the
+  ;; host round budget is a hard stop.  After `:nudge-round-budget`
+  ;; consecutive Nudge calls the settle records `:round-boundary`, clears
+  ;; the turn, and creates no further call.
+  (let [budget 3
+        ;; `:nudge-rounds` is the committed count the observation reads;
+        ;; the fixture's ended turn already consumed `budget` rounds.
+        owner-state (settled-turn-owner
+                     {:config {:nudge-round-budget budget}
+                      :nudge-rounds {["tenure-1" :plan] budget}})
+        prepared (settle-preparation owner-state)
+        settled (:state prepared)]
+    (is (some? prepared))
+    (is (= :round-boundary
+           (get-in settled [:turn-history 0 :reason])))
+    (is (= budget (get-in settled [:turn-history 0 :round-seq])))
+    (is (nil? (:turn settled))
+        "the boundary clears the turn like every other committed answer")
+    (is (= 1 (count (nudge-calls settled)))
+        "no new Nudge call is created at the boundary")
+    (is (not (contains? (:nudge-rounds settled) ["tenure-1" :plan]))
+        "the boundary resets the consumed count for the next judgement")))
+
+(deftest round-boundary-resets-and-level-triggers-again
+  ;; After a boundary the count restarts: the next ended turn is judged
+  ;; fresh, and a full budget of Nudge calls can run again before the next
+  ;; boundary.  Suppression is not one-shot; neither is the boundary.
+  (let [budget 2
+        base (settled-turn-owner
+              {:config {:nudge-round-budget budget}
+               :nudge-rounds {["tenure-1" :plan] budget}})
+        settled (:state (settle-preparation base))
+        ;; A fresh ended turn after the boundary sees `round-seq` 0 again.
+        next-state (assoc settled
+                          :turn {:role :plan
+                                 :agent-id :plan
+                                 :tenure-id "tenure-1"
+                                 :ended? true
+                                 :at 9})
+        guard (guards/settle-turn-guard)
+        work ((:enabled? guard) next-state {:now 10})
+        plan (when work ((:prepare guard) next-state {:now 10} work
+                         :settle-attempt-2))
+        next-state' (:state plan)]
+    (is (some? work)
+        "a later ended turn is judged again after the boundary")
+    (is (= 2 (count (nudge-calls next-state')))
+        "the fresh judgement creates one more Nudge call")
+    (is (= 1 (get-in next-state' [:nudge-rounds ["tenure-1" :plan]]))
+        "the count restarts at one for the new round")))
 
 (defn- cancelling-owner-with-live-shell
   "An Owner mid-Esc: the run is cancelling, and one managed Shell call was
@@ -965,6 +1135,8 @@
         (is (some #(re-find #"SCOPE_ANNOTATION_MISSING" (str (:text %)))
                   messages)
             "the Nudge request carries the refusal so the model can correct it")
+        (is (re-find #"Scope 提醒" (str (:text (last messages))))
+            "the Nudge restates that :scope lives inside the tool parameters")
         (testing "the refusal tells the model the expected shape"
           (let [text (str (:text refusal))]
             (is (re-find #":expected" text)
@@ -1483,5 +1655,130 @@
       (let [entry (last (:turn-history (state handle)))]
         (is (= :plan-s1-ask (get-in entry [:exit :kind])))
         (is (not= :nudge-suppressed (:reason entry))))
+      (finally
+        ((:stop! handle))))))
+
+(deftest round-boundary-stops-the-request-loop
+  ;; D-13 end to end: an open Plan ledger keeps §2.5 enabled, but after the
+  ;; configured round budget the Owner answers `:round-boundary`, clears
+  ;; the turn, and stops dispatching model requests.  The next ended turn
+  ;; is judged again (level-triggered), never silently re-enabled.  The
+  ;; gateway completes every request immediately, so each settled turn
+  ;; produces exactly one Nudge call until the budget is spent.
+  (let [requests (atom [])
+        budget 3
+        {:keys [gateway releases]}
+        (gated-model-gateway requests)
+        handle (start-owner requests
+                            {:model-gateway gateway
+                             :config {:swarm-slots []
+                                      :nudge-round-budget budget}})]
+    (try
+      (command! handle "c1"
+                {:kind :send-message :text "hello"})
+      ;; One user turn plus `budget` Nudge rounds, then the boundary.
+      ;; Release one request at a time, only after the Nudge call it
+      ;; produced owns a live turn.  Every turn invokes the Scope-exempt
+      ;; `negotiate` member, so each settled turn is task-cycle work that
+      ;; still owes a Nudge — the round budget, not a `:plain-response`
+      ;; exit, is what stops the loop.
+      (dotimes [n (inc budget)]
+        (is (wait-for #(<= (inc n) (count @requests)) 5000)
+            (str "request " (inc n) " was dispatched"))
+        (let [deliver! (nth @releases n)]
+          (deliver! {:event :tool-call
+                     :call-id (str "negotiate-" (inc n))
+                     :name "negotiate"
+                     :payload {}})
+          (deliver! {:event :completed :text "still working"}))
+        (when (< n budget)
+          (is (wait-for (fn []
+                          (let [s (state handle)
+                                live (some (fn [[_ call]]
+                                             (when (and (:nudge? call)
+                                                        (contains? #{:ready
+                                                                     :dispatching
+                                                                     :running
+                                                                     :retry-wait}
+                                                                    (:state call)))
+                                               call))
+                                           (:calls s))]
+                            (and (some? live)
+                                 (false? (get-in s [:turn :ended?]))
+                                 (= (:call-id live)
+                                    (get-in s [:turn :call-id])))))
+                        5000)
+              (str "round " (inc n) " produced a live Nudge call"))))
+      (is (wait-for
+           (fn []
+             (let [s (state handle)]
+               (and (nil? (:turn s))
+                    (= :round-boundary
+                       (:reason (last (:turn-history s)))))))
+           5000)
+          "the round budget commits the :round-boundary stop")
+      (let [owner-state (state handle)]
+        (is (= (inc budget) (count @requests))
+            "the request count stops growing at the budget")
+        (is (= budget (count (nudge-calls owner-state)))
+            "exactly `budget` Nudge calls were created")
+        (is (= :round-boundary
+               (:reason (last (:turn-history owner-state)))))
+        (is (= budget
+               (get-in owner-state
+                       [:turn-history (dec (count (:turn-history
+                                                   owner-state)))
+                        :round-seq]))
+            "the boundary records the consumed round count")
+        (is (nil? (:turn owner-state))
+            "the boundary leaves no live turn")
+        ;; The snapshot's run-status derivation (`hc.server.app.snapshot`)
+        ;; treats a settled `:round-boundary` as an idle boundary: with no
+        ;; live call or turn the session reports `:finished`/`unattended?
+        ;; false` even while actor slots are still initialized.  The
+        ;; expressions below mirror snapshot.clj's let bindings.
+        (let [live-calls
+              (remove (fn [[_ call]]
+                        (contains? #{:completed :succeeded :failed
+                                     :cancelled :outcome-unknown}
+                                   (:state call)))
+                      (:calls owner-state))
+              nudge-active?
+              (boolean
+               (some (fn [[_ call]]
+                       (or (:nudge? call) (:nudge-id call)
+                           (get-in call [:request :snapshot :nudge-id])))
+                     live-calls))
+              turn-active? (some? (:turn owner-state))
+              actor-active?
+              (boolean
+               (some (fn [[_ tenure]]
+                       (some (fn [[_ slot]]
+                               (or (= :running (:status slot))
+                                   (some? (:attempt-id slot))))
+                             (:slots tenure)))
+                     (:tenures (:actors owner-state))))
+              has-conversation? (boolean (seq (:conversation owner-state)))
+              round-boundary?
+              (and (seq (:turn-history owner-state))
+                   (= :round-boundary
+                      (:reason (last (:turn-history owner-state))))
+                   (not turn-active?)
+                   (empty? live-calls))
+              run-active? (boolean
+                           (or (seq live-calls) turn-active?
+                               (and has-conversation? actor-active?
+                                    (not round-boundary?))))
+              run-status (if (or run-active?
+                                 (and has-conversation? actor-active?
+                                      (not round-boundary?)))
+                           :running :finished)
+              unattended? (boolean
+                           (and (or has-conversation? run-active?)
+                                (not round-boundary?)
+                                (or nudge-active? turn-active?
+                                    actor-active?)))]
+          (is (= :finished run-status))
+          (is (false? unattended?))))
       (finally
         ((:stop! handle))))))

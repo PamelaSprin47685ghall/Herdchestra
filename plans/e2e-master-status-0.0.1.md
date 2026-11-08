@@ -1,5 +1,9 @@
 # E2E 01–22 单一权威状态表（0.0.1）
 
+> **final28 冻结（2026-11-08，v0.0.2）**：bundle `fd5e1f90…`（3,089,772 B，22:19:01）+ 源码树 `77d92bc2`（PRE=POST，1060 files）；全量 3929/25571/0F/0E、app-check `:ok true`/0.0.1；E2E 22/22 PASS（E2E04 42/42、E2E11 30/30）。git：annotated tag **v0.0.2**（message 见下），未 push；台账内 git 标识为发布时快照，权威以 `git rev-parse HEAD` 与 `git rev-parse 'v0.0.2^{}'` 为准；树 hash 口径 = `find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum`（LC_ALL=C 按字节序）。final27b（`92d18d8f`+`43431535`）、final26/27 及更旧作废；E2E/视觉证据须双记 `fd5e1f90` + `77d92bc2`。
+
+> **final28 前收口（2026-11-08）**：**E2E 22/22 全部 PASS**——E2E04 42/42 checks（3 连 PASS）、E2E11 30/30（含 `temp-read-injected`/`temp-write-refused`）。E2E04 根因：publisher 首见 session 误把分支复制的 3 条 assistant 全文当流式 delta 广播 → 客户端 `:streaming? true` → composer `:needs-decision` → 分支第二轮永不发出；修复 `publish-run-events!` 首见基线。D-29 证伪（teardown SIGTERM）、D-30 已修（runtime message->items 携带 attachments/quotes/citations + composer-snapshot 文本竞态）。W287 正跑 final28 clean release rebuild + 全量 + app-check；待新 hash 后重冻结并准备 tag **v0.0.2**。
+
 - 日期：2026-11-05
 - 范围：汇总首轮 `plans/e2e-0.0.1-results.md` 与后续真实端点/真实 Chrome 复跑。
 - 原则：同一场景取“证据更强且时间更晚”的结论；组件级 PASS 不升级为 UI PASS。

@@ -2599,3 +2599,693 @@ button {
   width: 100%;
   max-width: min(820px, 100%);
 }
+
+/* --------------------------------------------------------------------------
+   Settings visual audit fixes (2026-11-07, H-21 patch merge + audit deltas)
+
+   The settings and appearance trees name these classes, but the stylesheet
+   never defined them.  Without layout rules the model rows, role cards,
+   onboarding steps, and appearance controls collapse into default block
+   flow.  These rules are scoped to the settings surfaces.
+   -------------------------------------------------------------------------- */
+
+/* The workbench-level tabs and the settings-level tabs both used the same
+   pill treatment.  Give the outer row a quieter underline so the two levels
+   read as hierarchy, not as two competing tab bars. */
+[data-settings-section] > .wb-tabs {
+  gap: 2px;
+  margin: 8px 0 16px;
+  border-bottom: 1px solid var(--wb-line);
+}
+
+[data-settings-section] > .wb-tabs .wb-tab {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wb-ink-muted);
+}
+
+[data-settings-section] > .wb-tabs .wb-tab:hover {
+  color: var(--wb-ink);
+  background: var(--wb-surface-2);
+}
+
+[data-settings-section] > .wb-tabs .wb-tab[aria-selected="true"] {
+  color: var(--wb-accent);
+  border-bottom-color: var(--wb-accent);
+  background: transparent;
+  font-weight: 700;
+}
+
+[data-settings-section] > .wb-tabs .wb-tab:focus-visible,
+.hc-tab:focus-visible,
+.hc-appearance-range:focus-visible,
+.hc-checkbox input:focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
+}
+
+/* Onboarding checklist */
+.hc-onboarding {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--wb-accent);
+  border-radius: var(--wb-radius);
+  background: color-mix(in srgb, var(--wb-accent) 6%, var(--wb-surface));
+}
+
+.hc-onboarding h2 {
+  margin: 0 0 6px;
+  font-size: 1.05em;
+}
+
+.hc-onboarding > p {
+  margin: 0;
+}
+
+.hc-onboarding__steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hc-onboarding__step {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--wb-line);
+  border-radius: 9px;
+  background: var(--wb-surface);
+}
+
+.hc-onboarding__step strong {
+  font-size: 0.92em;
+}
+
+.hc-onboarding__step span {
+  color: var(--wb-ink-muted);
+  font-size: 0.82em;
+}
+
+.hc-onboarding__step--current {
+  border-color: var(--wb-accent);
+  box-shadow: inset 3px 0 0 var(--wb-accent);
+}
+
+.hc-onboarding__step--done {
+  border-color: color-mix(in srgb, var(--wb-ok) 55%, var(--wb-line));
+}
+
+.hc-onboarding__step--done span {
+  color: var(--wb-ok);
+}
+
+.hc-onboarding .hc-actions {
+  justify-content: flex-start;
+}
+
+/* Provider list, drafts, and key editor */
+.hc-connection-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hc-connection-list .hc-connection-card {
+  margin: 0;
+}
+
+.hc-connection-card__header h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.hc-connection-card--selected {
+  border-color: var(--wb-accent);
+  box-shadow: inset 3px 0 0 var(--wb-accent);
+}
+
+.hc-new-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hc-form {
+  max-width: 74ch;
+}
+
+.hc-draft-list__item {
+  flex-wrap: wrap;
+}
+
+.hc-draft-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--wb-line);
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hc-draft-status--new,
+.hc-draft-status--dirty {
+  color: var(--wb-warn);
+  border-color: var(--wb-warn);
+}
+
+.hc-draft-status--clean,
+.hc-draft-status--saved {
+  color: var(--wb-ok);
+  border-color: var(--wb-ok);
+}
+
+.hc-draft-status--saving {
+  color: var(--wb-accent);
+  border-color: var(--wb-accent);
+}
+
+.hc-draft-status--refused,
+.hc-draft-status--unknown,
+.hc-draft-status--orphaned {
+  color: var(--wb-danger);
+  border-color: var(--wb-danger);
+}
+
+.hc-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hc-secret__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hc-secret__input .hc-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+/* Narrow tables scroll inside their container instead of squeezing the
+   page at 360px (H-23).  `.hc-panel` wraps the connection test table; the
+   keys and model-detail sections carry their own classes. */
+.hc-keys,
+.hc-test-panel,
+.hc-model-detail {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.hc-panel:has(> .hc-table),
+.hc-panel:has(.hc-table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.hc-keys .hc-table {
+  min-width: 42rem;
+}
+
+.hc-test-panel .hc-table,
+.hc-panel .hc-test-layers {
+  min-width: 30rem;
+}
+
+.hc-model-detail .hc-table {
+  min-width: 38rem;
+}
+
+.hc-table th {
+  background: var(--wb-surface-2);
+  font-weight: 600;
+}
+
+.hc-settings__footer {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--wb-line);
+}
+
+/* Model roles and model rows */
+.hc-role-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.hc-role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.hc-role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-bg);
+}
+
+.hc-role-card h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.hc-role-card p {
+  margin: 0;
+}
+
+.hc-role-card .hc-actions {
+  justify-content: flex-start;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.hc-role-status {
+  color: var(--wb-accent);
+  font-weight: 600;
+}
+
+.hc-model-group {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-bg);
+}
+
+.hc-model-group__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.hc-model-group__header h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.hc-model-group__header p {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--wb-ink-muted);
+  font-size: 0.88em;
+}
+
+.hc-model-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hc-model-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-surface);
+}
+
+.hc-model-row--selected,
+.hc-model-row--role-selected {
+  border-color: var(--wb-accent);
+  box-shadow: inset 3px 0 0 var(--wb-accent);
+}
+
+.hc-model-row__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.hc-model-row__header > div:first-child {
+  min-width: 0;
+}
+
+.hc-model-row__header h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.hc-model-row__header p {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.hc-model-row__header > .hc-actions {
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.hc-model-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hc-model-switch small {
+  flex-basis: 100%;
+  text-align: right;
+}
+
+.hc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hc-model-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.88em;
+}
+
+.hc-model-meta dt {
+  color: var(--wb-ink-muted);
+}
+
+.hc-model-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.hc-capability-editor {
+  margin: 4px 0;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--wb-line);
+}
+
+.hc-capability-editor legend {
+  padding: 0 6px 0 0;
+  font-weight: 600;
+  font-size: 0.92em;
+}
+
+.hc-capability-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.hc-capability-field {
+  display: grid;
+  gap: 3px;
+}
+
+.hc-capability-name {
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+.hc-model-detail {
+  padding-top: 10px;
+  border-top: 1px solid var(--wb-line);
+}
+
+.hc-model-detail h4 {
+  margin: 0 0 4px;
+  font-size: 0.95em;
+}
+
+.hc-test-conclusion {
+  font-weight: 600;
+}
+
+.hc-stale-results {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--wb-warn);
+}
+
+/* Availability badges: text remains the primary signal; color is secondary. */
+.hc-badge--available,
+.hc-badge--complete,
+.hc-badge--synced {
+  color: var(--wb-ok);
+  border-color: var(--wb-ok);
+}
+
+.hc-badge--unavailable,
+.hc-badge--failed,
+.hc-badge--error {
+  color: var(--wb-danger);
+  border-color: var(--wb-danger);
+}
+
+.hc-badge--not-returned,
+.hc-badge--pending,
+.hc-badge--running {
+  color: var(--wb-warn);
+  border-color: var(--wb-warn);
+}
+
+.hc-badge--unknown,
+.hc-badge--unconfirmed {
+  color: var(--wb-ink-muted);
+}
+
+/* Appearance */
+.hc-appearance {
+  display: grid;
+  gap: 10px;
+}
+
+.hc-appearance h2 {
+  margin: 0;
+}
+
+.hc-appearance-fieldset {
+  display: grid;
+  gap: 8px;
+}
+
+.hc-appearance-font {
+  display: grid;
+  gap: 6px;
+}
+
+.hc-appearance-font .hc-field {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.hc-appearance-font .hc-field__label {
+  grid-column: 1 / -1;
+}
+
+.hc-appearance-range {
+  width: 100%;
+  accent-color: var(--wb-accent);
+}
+
+.hc-appearance-value {
+  min-width: 4ch;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-appearance-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.hc-appearance-toggles .hc-field {
+  margin-bottom: 0;
+}
+
+.hc-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.hc-checkbox input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--wb-accent);
+}
+
+.hc-appearance-button[aria-pressed="true"] {
+  border-color: var(--wb-accent);
+  background: var(--wb-accent);
+  color: var(--wb-accent-ink);
+}
+
+/* The appearance tree uses `hc-button--primary`; the shared class is
+   `hc-button-primary`.  Keep both names working without a JS rebuild. */
+.hc-button--primary {
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+  color: var(--wb-accent-ink);
+}
+
+.hc-button--primary:hover:not([disabled]),
+.hc-button--primary:focus-visible:not([disabled]) {
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+  color: var(--wb-accent-ink);
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 1px;
+}
+
+.hc-appearance-status {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--wb-line);
+}
+
+@media (max-width: 599px) {
+  .hc-input,
+  .hc-select,
+  .hc-settings textarea {
+    min-height: 44px;
+  }
+
+  .hc-appearance-range {
+    min-height: 44px;
+  }
+
+  .hc-model-row__header > .hc-actions,
+  .hc-model-switch {
+    justify-content: flex-start;
+  }
+
+  .hc-model-switch small {
+    text-align: left;
+  }
+
+  .hc-model-meta {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .hc-model-meta dt {
+    margin-top: 4px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Visual audit deltas not covered by the prepared patch
+   -------------------------------------------------------------------------- */
+
+/* H-17: the schedule view injects its own light palette with
+   --hc-accent:#0b57d0 (or #9ec1ff in dark).  White text on #9ec1ff is about
+   1.7:1, so the primary button text switches to the dark ink in dark themes.
+   The schedule's own dark rules use the same selectors inside a
+   prefers-color-scheme media query; these rules carry the same specificity
+   and are placed later in the cascade. */
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] .hc-schedule,
+  html[data-theme="system"] .hc-schedule {
+    --hc-fg: #f2f2f2;
+    --hc-muted: #c9c9c9;
+    --hc-bg: #121212;
+    --hc-surface: #1e1e1e;
+    --hc-border: #5a5a5a;
+    --hc-accent: #9ec1ff;
+    --hc-positive: #7ddc9a;
+    --hc-warning: #ffd479;
+    --hc-danger: #ff8a8a;
+  }
+
+  html[data-theme="auto"] .hc-schedule-button--primary,
+  html[data-theme="system"] .hc-schedule-button--primary {
+    color: #08131b;
+  }
+}
+
+html[data-theme="dark"] .hc-schedule {
+  --hc-fg: #f2f2f2;
+  --hc-muted: #c9c9c9;
+  --hc-bg: #121212;
+  --hc-surface: #1e1e1e;
+  --hc-border: #5a5a5a;
+  --hc-accent: #9ec1ff;
+  --hc-positive: #7ddc9a;
+  --hc-warning: #ffd479;
+  --hc-danger: #ff8a8a;
+}
+
+html[data-theme="dark"] .hc-schedule-button--primary {
+  color: #08131b;
+}
+
+/* M-08: the topbar already shows the connection/sync badge.  The browser
+   panel header repeated the same "已同步"/"等待同步" badge; hide the second
+   copy.  The panel keeps its enabled/CDP badges. */
+.hc-browser-header .hc-browser-actions .wb-badge:nth-of-type(2) {
+  display: none;
+}
+
+/* H-15: on <=1023px every conversation control keeps a 44px touch target.
+   Inline `minHeight:32` styles in the conversation view beat ordinary
+   rules, so the override needs !important.  The 599px block in the
+   injected stylesheet already uses the same pattern. */
+@media (max-width: 1023px) {
+  .hc-conversation .hc-button,
+  .hc-conversation .hc-version-button,
+  .hc-conversation .hc-find-input,
+  .hc-conversation .hc-context-panel > summary,
+  .hc-conversation .hc-process summary {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  .hc-conversation .hc-context-header {
+    min-height: 44px;
+  }
+}
+
+/* H-16: at 200% text scale the message column collapsed to ~81px because
+   the find bar, context panel, and composer stack above it.  A floor keeps
+   at least a few lines of transcript visible. */
+.hc-conversation-messages {
+  min-height: 150px;
+}
+
+/* H-22 follow-up: the selected appearance theme button must keep a visible
+   border and must not lose its accent fill on hover. */
+.hc-appearance-button[aria-pressed="true"]:hover:not([disabled]),
+.hc-appearance-button[aria-pressed="true"]:focus-visible:not([disabled]) {
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+  color: var(--wb-accent-ink);
+}

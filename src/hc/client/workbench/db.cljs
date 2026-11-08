@@ -93,7 +93,15 @@
       (:theme settings) (assoc :ui/theme (:theme settings))
       (:font-scale settings) (assoc :ui/font-scale (:font-scale settings))
       (:contrast settings) (assoc :ui/contrast (:contrast settings))
-      (some? (:reduced-motion settings)) (assoc :ui/reduced-motion (:reduced-motion settings)))))
+      (some? (:reduced-motion settings)) (assoc :ui/reduced-motion (:reduced-motion settings))
+      ;; Language, background, and bubble presets persist beside the other
+      ;; appearance keys and read back through `appearance-model/from-db`.
+      (some? (:language settings))
+      (update :ui/settings assoc :language (:language settings))
+      (some? (:background settings))
+      (update :ui/settings assoc :background (:background settings))
+      (some? (:bubble settings))
+      (update :ui/settings assoc :bubble (:bubble settings)))))
 
 (defn empty-draft-for
   [session-id]

@@ -72,6 +72,9 @@
               :reduce "true"
               :no-preference "false"
               "auto"))
+      (set! (.. root -dataset -language) (name (:language state)))
+      (set! (.. root -dataset -background) (name (:background state)))
+      (set! (.. root -dataset -bubble) (name (:bubble state)))
       (.setProperty (.-style root) "--wb-font-scale"
                     (str (/ (:font-scale state) 100)))
       (ensure-style!))))

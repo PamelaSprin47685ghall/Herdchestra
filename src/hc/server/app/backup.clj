@@ -7,22 +7,29 @@
   writers, then run restore through the offline entry point.  It never
   pretends a live restore succeeded."
   (:require [clojure.string :as str]
+            [hc.server.sessions.ports :as ports]
             [hc.server.backup :as backup]
             [hc.server.backup.service :as backup-service]))
 
 (defn service
   "Build the backup service from the open store and application config."
-  [{:keys [store data-dir config maintenance]}]
-  (backup-service/service
-   {:store store
-    :data-dir data-dir
-    :target-root (get-in config [:backup :dir])
-    :recovery-root (get-in config [:backup :recovery-dir])
-    :targets (get-in config [:backup :targets])
-    :target (get-in config [:backup :target])
-    :default-target-id (get-in config [:backup :default-target-id])
-    :maintenance maintenance
-    :config config}))
+  [{:keys [store data-dir config maintenance persistence]}]
+  (let [config-store (when persistence
+                       {:read (fn [] (ports/read-config persistence))
+                        :commit! (fn [expected-revision doc]
+                                   (ports/commit-config!
+                                    persistence expected-revision doc))})]
+    (backup-service/service
+     {:store store
+      :data-dir data-dir
+      :target-root (get-in config [:backup :dir])
+      :recovery-root (get-in config [:backup :recovery-dir])
+      :targets (get-in config [:backup :targets])
+      :target (get-in config [:backup :target])
+      :default-target-id (get-in config [:backup :default-target-id])
+      :maintenance maintenance
+      :config-store config-store
+      :config config})))
 
 (defn- ok
   [receipt]

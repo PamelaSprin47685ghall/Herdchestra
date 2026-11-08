@@ -6,13 +6,13 @@
   (is (= #{:cat :write :where :whereAll :park :unpark :ask :devops :review}
          (cap/capabilities :clj-plan)))
   (is (= #{:cat :stat :ls :where :whereAll :unpark :review
-           :askPreviousScope :assume}
+           :askPreviousScope :assume :negotiate}
          (cap/capabilities :clj-review)))
   (is (= #{:cat :stat :ls :write :mkdir :rm :mv :where :whereAll :park
            :unpark :call :split :claim :finish :cancel :replace :release
            :reopen :comment :update :take-or-die :park-slot :abandon
            :resolve-action :acknowledge-recovery
-           :askPreviousScope :assume}
+           :askPreviousScope :assume :negotiate}
          (cap/capabilities :clj-worker)))
   (is (= #{:cat :stat :ls :where :whereAll :park :unpark :call}
          (cap/capabilities :dedicated-worker))))
@@ -20,7 +20,7 @@
 (deftest narrowing-cannot-widen
   (is (= #{:cat} (cap/narrowed :clj-review #{:cat :write :eval})))
   (is (= #{:cat :stat :ls :where :whereAll :unpark :review
-           :askPreviousScope :assume}
+           :askPreviousScope :assume :negotiate}
          (cap/narrowed :clj-review nil)))
   (is (empty? (cap/narrowed :clj-plan #{}))))
 

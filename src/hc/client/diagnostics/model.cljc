@@ -294,6 +294,7 @@
    :log-loaded? false
    :log-days 1
    :clear-log-confirm? false
+   :faq-query ""
    :pending {}
    :bundle (initial-bundle)
    :price (initial-price)
@@ -1357,6 +1358,9 @@
 
           :diagnostics/select-day
           [(assoc state :selected-day (:day action)) nil]
+
+          :diagnostics/set-faq-query
+          [(assoc state :faq-query (str (or (:value action) ""))) nil]
 
           :diagnostics/set-hide-amounts
           [(assoc state :hide-amounts? (boolean (:value action))) nil]

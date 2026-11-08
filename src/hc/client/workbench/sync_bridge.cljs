@@ -44,6 +44,30 @@
 (defonce resync-retry-timer
   (atom nil))
 
+(defonce ^:private event-log (atom []))
+
+(defn- record-event!
+  [event]
+  (when (exists? js/window)
+    (let [value (or (:value event) (:data event) event)]
+      (swap! event-log
+             (fn [log]
+               (-> log
+                   (conj {:at (js/Date.now)
+                          :type (or (:type event) (:event event)
+                                    (:name event))
+                          :session-id (or (:session-id event)
+                                          (:session-id value))
+                          :run-id (or (:run-id event) (:run-id value))
+                          :status (or (:status event) (:status value))})
+                   (subvec (max 0 (- (count log) 199)))))))))
+
+(defn- install-event-log-probe!
+  []
+  (when (exists? js/window)
+    (set! (.-__HC_EVENTS__ js/window)
+          (fn [] (clj->js @event-log)))))
+
 (defn- cancel-resync-retry!
   []
   (when-let [timer @resync-retry-timer]
@@ -422,6 +446,7 @@
 
       :else
       (do
+        (record-event! event)
         (when-let [app @app-ref]
           (comp/transact! app [(mutations/apply-run-event {:event event})]))
         (when (events/epoch-error? (or (:value event) event))
@@ -457,6 +482,24 @@
         (cancel-resync-retry!)
         (reset! subscribed? false)
         (reset! fetching-token nil)
+        ;; Diagnostic: record the physical WebSocket close (code, reason,
+        ;; clean flag) once per close.  `:last-ws-close` lives on the Sente
+        ;; channel state atom, which `transport/start!` exposes; the
+        ;; `:chsk/state` payload carries only the open/closed transition.
+        ;; A missing `:last-ws-close` is itself evidence: Sente reported a
+        ;; closed state without a physical close (or the connection never
+        ;; reached the close callback), so record the transition fields too
+        ;; instead of staying silent.
+        (let [close-info (some-> (:state-atom @transport/channel)
+                                 deref :last-ws-close)]
+          (log/error "HC-WS-CLOSE"
+                     (or close-info
+                         {:missing? true
+                          :phase phase
+                          :reason (:reason state)
+                          :closed? (:closed? state)
+                          :open-change? (:open-changed? state)
+                          :last-close (:last-close state)})))
         (when-not (= :disconnected (:phase current))
           (let [reason (or (:reason state) :channel-closed)
                 next-state (sync/channel-interrupted current reason)]
@@ -478,6 +521,26 @@
   "Start the workbench connection.  Idempotent: repeated calls only ensure the
   Sente client exists."
   []
+  ;; Read-only E2E probe: the adapter phase, transport state and last
+  ;; outcome are not observable from the DOM, and a failed command can be
+  ;; caused by either a stale adapter phase or a closed transport.  The
+  ;; function returns state only, never drafts or message content.
+  (when (exists? js/window)
+    (set! (.-__HC_SYNC__ js/window)
+          (fn []
+            (let [state @adapter
+                  ch @transport/channel]
+              (clj->js {:phase (:phase state)
+                        :reason (:reason state)
+                        :seq (:seq state)
+                        :epoch (:epoch state)
+                        :last-outcome (:last-outcome state)
+                        :transport-status (:status ch)
+                        :transport-open (:open? ch)
+                        :subscription-id (:subscription-id ch)
+                        :transport-last-error (some-> (:last-error ch)
+                                                      str)})))))
+  (install-event-log-probe!)
   (cancel-resync-retry!)
   (reset! fetching-token nil)
   (reset! object-failures 0)

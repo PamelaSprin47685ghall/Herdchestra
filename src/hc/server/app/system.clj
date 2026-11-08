@@ -32,6 +32,8 @@
             [hc.compose.owner :as owner]
             [hc.compose.workspace :as workspace]
             [hc.core.pair-hint :as pair-hint]
+            [hc.core.scope.ledger :as scope-ledger]
+            [hc.core.scope.records :as scope-records]
             [hc.core.scope.runtime :as scope-runtime]
             [hc.core.swarm-stm :as swarm]
             [hc.core.ufss :as ufss]
@@ -620,14 +622,19 @@
 
     :else nil))
 
-(defn- current-tools-supported
-  "Return the current tool fact for BINDING as one merged answer.
+(defn- current-tools-fact
+  "Return `[fact source]` for BINDING.
 
   A binding fixes model attribution; it must not freeze a capability
   declaration the operator later edits.  The live model entry is authoritative
   when it carries a `:tools` fact, including an explicit no.  When the live
   entry has no tools fact (a probe or list that cannot see tool support), the
-  binding's copied declaration is the fallback, then the startup fallback."
+  binding's copied declaration is the fallback, then the startup fallback.
+
+  The fact is the merged answer `current-tools-supported` returns; the
+  source names which declaration produced it: `:live-model` for the live
+  model entry, `:binding` for the binding's copied capabilities, and
+  `:none` when neither carried a fact and the startup fallback answered."
   [current-config binding fallback]
   (let [model (try
                 (when (and (fn? current-config) (map? binding))
@@ -637,18 +644,31 @@
                 (catch Throwable _ nil))
         live-entry (when (map? model)
                      (tools-capability-entry (:capabilities model)))
-        binding-supported (when (and (map? binding)
-                                     (contains? binding :capabilities))
+        binding-fact (when (and (map? binding)
+                                (contains? binding :capabilities))
+                       (tools-capability-entry (:capabilities binding)))
+        binding-supported (when (some? binding-fact)
                             (mission-model/supports-tools?
                              (:capabilities binding)))]
     (cond
       (some? live-entry)
-      (mission-model/supports-tools? (:capabilities model))
+      [(mission-model/supports-tools? (:capabilities model)) :live-model]
 
-      (some? binding-supported)
-      binding-supported
+      (some? binding-fact)
+      [binding-supported :binding]
 
-      :else fallback)))
+      :else [fallback :none])))
+
+(defn- current-tools-supported
+  "Return the current tool fact for BINDING as one merged answer."
+  [current-config binding fallback]
+  (first (current-tools-fact current-config binding fallback)))
+
+(defn- current-tools-source
+  "Return the capability source for BINDING: `:live-model`, `:binding`, or
+  `:none`."
+  [current-config binding fallback]
+  (second (current-tools-fact current-config binding fallback)))
 
 (defn- request-model-binding
   "Return the binding identity frozen into REQUEST, when it names both halves.
@@ -662,6 +682,23 @@
                (some? (:model snapshot)))
       {:connection-id (:connection snapshot)
        :model-entry-id (:model snapshot)})))
+
+(defn- request-session-binding
+  "Return the binding a `[request session]` tools resolver should read:
+  the identity frozen into the request first, then the committed session
+  binding visible through OWNER-REF."
+  [owner-ref request]
+  (let [owner (when owner-ref @owner-ref)
+        session-binding
+        (get-in (when owner ((:snapshot owner)))
+                [:state :session :model-binding])
+        request-binding (request-model-binding request)]
+    (if (and (map? session-binding)
+             (map? request-binding)
+             (= (:connection-id session-binding) (:connection-id request-binding))
+             (= (:model-entry-id session-binding) (:model-entry-id request-binding)))
+      (merge session-binding request-binding)
+      (or request-binding session-binding))))
 
 (defn- live-tools-supported
   "Return a `[request session]` option that reads the session's committed
@@ -685,14 +722,32 @@
      (let [role (provider-role (or (get-in request [:snapshot :model-role])
                                    (get-in request [:snapshot :role])))]
        (if (= :main role)
-         (let [owner (when owner-ref @owner-ref)
-               snapshot (when owner ((:snapshot owner)))
-               binding (or (request-model-binding request)
-                           (get-in snapshot [:state :session :model-binding]))]
+         (let [binding (request-session-binding owner-ref request)]
            (if (map? binding)
              (current-tools-supported current-config binding fallback)
              fallback))
          true)))))
+
+(defn- live-tools-source
+  "Return a `[request session]` option that names the capability source for
+  the merged tools fact `live-tools-supported` resolves.
+
+  `:live-model` when the live model entry carried the `:tools` fact,
+  `:binding` when the binding's copied declaration answered, and `:none`
+  when neither had a fact and only the startup fallback did.  Task-role
+  requests keep their own contract and answer `:none`."
+  ([owner-ref fallback]
+   (live-tools-source owner-ref fallback nil))
+  ([owner-ref fallback current-config]
+   (fn [request _session]
+     (let [role (provider-role (or (get-in request [:snapshot :model-role])
+                                   (get-in request [:snapshot :role])))]
+       (if (= :main role)
+         (let [binding (request-session-binding owner-ref request)]
+           (if (map? binding)
+             (current-tools-source current-config binding fallback)
+             :none))
+         :none)))))
 
 (defn- resolve-tools-supported
   "Resolve the gateway's tools-supported option for one request.
@@ -796,11 +851,32 @@
   ([model-port-ref materials registry-ref session-id stream? browser-ref
     search-contexts search-ref diagnostics-ref tools-supported?
     model-availability-fn]
+   (model-gateway model-port-ref materials registry-ref session-id stream?
+                  browser-ref search-contexts search-ref diagnostics-ref
+                  tools-supported? model-availability-fn nil))
+  ([model-port-ref materials registry-ref session-id stream? browser-ref
+    search-contexts search-ref diagnostics-ref tools-supported?
+    model-availability-fn tools-source?]
    (let [seen-turns (atom #{})]
      {:start! (fn [request deliver!]
                (let [program-role (get-in request [:snapshot :program-role])
                      mission-role (get-in request [:snapshot :mission-role])
                      tools? (resolve-tools-supported tools-supported? request)
+                     capabilities-source
+                     (when (and tools-source?
+                                (mission-model/program-role-requires-tools?
+                                 program-role)
+                                (not (true? (get-in request [:snapshot :chat?])))
+                                (not tools?))
+                       (let [role (provider-role
+                                   (or (get-in request [:snapshot :model-role])
+                                       (get-in request [:snapshot :role])))]
+                         (cond
+                           (not= :main role) :none
+                           (fn? tools-source?)
+                           (try (tools-source? request nil)
+                                (catch Throwable _ nil))
+                           :else nil)))
                      tools-unavailable?
                      ;; A `:chat?` turn is an Owner-declared plain-text
                      ;; answer: it never carries the program tool, so a
@@ -866,6 +942,7 @@
                                 program-role
                                 :mission-role
                                 mission-role
+                                :capabilities-source capabilities-source
                                 :remedy :select-model}}))
                            (let [intent-result
                                (when (and first? search-intent
@@ -1193,6 +1270,57 @@
               :message (or (ex-message t) (str (class t)))}))))))
   result)
 
+(defn- draft-disk-read
+  "Read the Plan draft file under DRAFT-ROOT; nil when unreadable.
+
+  The returned bytes are the reconcile input for `:review`: the Owner
+  compares them against the relay draft cache inside the review command's
+  CAS, so a user edit between the last Plan program and handoff always wins.
+  A missing file or read failure returns nil; nil is \"no disk bytes\", not
+  an error, and never blocks handoff on a filesystem problem."
+  [draft-root draft-path]
+  (when (and (string? draft-root) (not (str/blank? draft-root))
+             (string? draft-path) (not (str/blank? draft-path)))
+    (let [file (java.io.File. ^String draft-root ^String draft-path)]
+      (try
+        (when (.isFile file)
+          (slurp file :encoding "UTF-8"))
+        (catch Throwable _
+          nil)))))
+
+(defn- draft-divergence?
+  "True when the disk bytes differ from the relay draft cache.
+
+  A nil disk read (missing/unreadable file) is never divergence: the
+  reconcile in `review-state` owns the missing-file semantics."
+  [disk-content relay-content]
+  (and (some? disk-content)
+       (not= disk-content relay-content)))
+
+(defn- review-early-check
+  "Refuse a Plan handoff review while the disk draft diverges.
+
+  MISSION-STATE is the Owner `:mission` value; REQUEST is the review
+  command payload (`:lane`, `:findings`).  Only a Plan review at `:pending`
+  with empty findings is the handoff; a divergent disk file means the user
+  edited the draft after the last Plan program.  The refusal returns to
+  the program as the `review` primitive result, so the Plan's next step is
+  `cat` + polish + `write`, converging on the user's version.  An aligned
+  draft or a non-handoff review passes through with nil."
+  [mission-state disk-content request]
+  (let [plan-tenure (get-in mission-state [:relay :lanes :plan])
+        relay-content (get-in mission-state [:relay :draft :content])]
+    (when (and (= :plan (keyword (:lane request)))
+               (= :pending (:milestone plan-tenure))
+               (empty? (:findings request))
+               (draft-divergence? disk-content relay-content))
+      {:code :DRAFT_USER_EDITED
+       :message (str "draft was edited on disk; cat the file, polish it, "
+                     "write it back, then review again")
+       :details {:path (get-in mission-state [:relay :draft :path])
+                 :disk-length (some-> disk-content count)
+                 :relay-length (some-> relay-content count)}})))
+
 (defn- control-fallback
   "Handle program control primitives owned by the application.
 
@@ -1201,8 +1329,18 @@
   keeps the existing executor path.  Both primitives receive the program
   control context's pinned `:tenure-id` and `:call-id`; a model's primitive
   arguments name only intent, never the lane tenure or worker call identity.
-  Other primitives are unsupported."
-  [owner-ref devops-exec-ref]
+  `:askPreviousScope` submits an Owner `:scope/ask-previous` receipt command;
+  the synchronous receipt never carries the answer.  `:negotiate` is a pure
+  read of the Owner Scope book.  Other primitives are unsupported.
+
+  OPTS may carry `:draft-root` and `:draft-reader` for the `:review` early
+  check: the app reads the Plan draft from disk before submitting so a
+  divergent user edit is refused with `:DRAFT_USER_EDITED` instead of
+  handing off a stale relay copy."
+  ([owner-ref devops-exec-ref]
+   (control-fallback owner-ref devops-exec-ref nil))
+  ([owner-ref devops-exec-ref {:keys [draft-root draft-reader]
+                                :or {draft-reader draft-disk-read}}]
   (fn [ctx {:keys [primitive request]}]
     (case primitive
       :devops
@@ -1222,18 +1360,94 @@
 
       :review
       (if-let [owner @owner-ref]
-        (submit-owner-command!
-         owner
-         (str "review-" (or (:call-id ctx) (random-uuid)))
-         (mission-control/review-command ctx request))
+        (let [snapshot ((:snapshot owner))
+              state (:state snapshot)
+              draft-path (get-in state [:mission :relay :draft :path])
+              disk-content (draft-reader draft-root draft-path)
+              lane (or (:lane ctx) (:lane request)
+                       (mission-control/review-lane ctx))
+              request* (assoc request
+                              :draft-disk-content disk-content
+                              :lane lane)
+              early (review-early-check (:mission state) disk-content request*)]
+          (if early
+            {:ok? false :error early}
+            (submit-owner-command!
+             owner
+             (str "review-" (or (:call-id ctx) (random-uuid)))
+             (mission-control/review-command ctx request*))))
         {:ok? false
          :error {:code :OWNER_NOT_READY
                  :message "review needs a started Owner"}})
 
+      :negotiate
+      ;; A pure read of the Owner Scope book.  It never writes a receipt and
+      ;; never asks a question; the answer is the synchronous snapshot.
+      (if-let [owner @owner-ref]
+        (let [book (get-in ((:snapshot owner)) [:state :scope :book])]
+          (if (map? book)
+            (let [reset (scope-ledger/last-reset book)
+                  established? (scope-ledger/established? book)]
+              {:ok? true
+               :kind :negotiate
+               :session-id (get-in ((:snapshot owner)) [:state :session-id])
+               :goal (:goal reset)
+               :budget (:budget reset)
+               :remaining (scope-ledger/remaining book)
+               :established? established?
+               :must-reset (or (not established?)
+                               (scope-ledger/spent? book))
+               :spin (scope-ledger/spin book)
+               :resets (count (scope-ledger/reset-beats book))
+               :notice (when-not established?
+                         (scope-records/cold-start-notice
+                          {:resets (scope-ledger/reset-beats book)}))})
+            {:ok? false
+             :error {:code :SCOPE_BOOK_UNAVAILABLE
+                     :message "the Owner has no Scope book to negotiate"}}))
+        {:ok? false
+         :error {:code :OWNER_NOT_READY
+                 :message "negotiate needs a started Owner"}})
+
+      :askPreviousScope
+      ;; Receipt-only P1: the Owner records an :accepted ask receipt keyed by
+      ;; the physical tool call id.  The answer arrives later through the
+      ;; consult path or an explicit :scope/ask-answer command; it is never
+      ;; part of this synchronous receipt.
+      (if-let [owner @owner-ref]
+        (if (str/blank? (str (:questions request)))
+          {:ok? false
+           :error {:code :ASK_QUESTIONS_REQUIRED
+                   :message "askPreviousScope needs a non-blank :questions string"}}
+          (let [receipt
+                (submit-owner-command!
+                 owner
+                 (str "scope-ask-" (or (:call-id ctx) (random-uuid)))
+                 {:kind :scope/ask-previous
+                  :call-id (or (:call-id ctx) (:call-id request))
+                  :questions (:questions request)
+                  :member (or (:member request) (:member ctx)
+                              (:agent-id ctx) (:agent-id request))
+                  :turn-id (:turn-id ctx)
+                  :tenure-id (:tenure-id ctx)
+                  :lane (:lane ctx)
+                  :agent-id (:agent-id ctx)})]
+            ;; `submit-command!` strips `:ok?`; a refused command arrives as
+            ;; `:status :refused` with the business `:error` intact.
+            (if (not= :refused (:status receipt))
+              receipt
+              {:ok? false
+               :error (or (:error receipt)
+                          {:code :ASK_PREVIOUS_SCOPE_FAILED
+                           :message "askPreviousScope command was refused"})})))
+        {:ok? false
+         :error {:code :OWNER_NOT_READY
+                 :message "askPreviousScope needs a started Owner"}})
+
       {:ok? false
        :error {:code :UNSUPPORTED_OPERATION
                :message "control primitive is not owned by the workspace bridge"
-               :details {:primitive primitive}}})))
+               :details {:primitive primitive}}}))))
 
 (defn- worktree-evaluate-factory
   "Build the program evaluator for one fleet worktree runtime.
@@ -1531,7 +1745,9 @@
            {:workspace (workspace/workspace-port workspace-runtime)
             :control (workspace/control-port workspace-runtime
                                              (control-fallback
-                                              owner-ref devops-exec-ref))
+                                              owner-ref devops-exec-ref
+                                              {:draft-root
+                                               (:workspace-root config)}))
             ;; The Plan dedicated worker has no board/token; it gets the
             ;; separate best-effort read-only shell path.  Swarm workers keep
             ;; the holder/token/claim board path unchanged.
@@ -1572,7 +1788,8 @@
                                 :control (workspace/control-port
                                           rt
                                           (control-fallback
-                                           owner-ref devops-exec-ref))
+                                           owner-ref devops-exec-ref
+                                           {:draft-root root}))
                                 :on-terminal program-on-terminal
                                 :clock #(System/currentTimeMillis)})]
                       (reset! eval-ref (partial program/evaluate-program! prt))
@@ -1823,12 +2040,17 @@
           model-tools-supported
           (fn [binding]
             (current-tools-supported session-config binding nil))
+          model-tools-source
+          (live-tools-source owner-ref
+                             restored-tools-supported
+                             session-config)
           gateway-base (model-gateway model-port-ref materials registry-ref
                                       session-id (:model-stream? config true)
                                       browser-ref search-contexts search-ref
                                       diagnostics-ref
                                       tools-supported
-                                      (binding-availability-fn session-config))
+                                      (binding-availability-fn session-config)
+                                      model-tools-source)
           owner-store-instance (owner-store/owner-store store session-id)
           persisted-owner (try
                             (owner-store/load-state owner-store-instance)
@@ -1988,7 +2210,10 @@
                     ;; tools-capable one.
                     {:workspace-root (:workspace-root config)
                      :plan-tools [mission-devops/devops-tool-spec]
-}
+                     ;; §2.5 round budget: `nil` keeps the policy default;
+                     ;; a positive integer caps consecutive Nudge rounds
+                     ;; per actor before the Owner records `:round-boundary`.
+                     :nudge-round-budget (:nudge-round-budget config)}
                      :extension-tools-fn
                      (fn [{:keys [session-id]}]
                        (if extensions
@@ -2057,6 +2282,7 @@
                     :attachment-contract {:resolve? true}
                     :attachment-policy attachment-policy
                     :model-tools-supported model-tools-supported
+                    :model-tools-source model-tools-source
                     ;; Test/E2E seam: `:nudge-enabled? false` (config key or
                     ;; HC_NUDGE_ENABLED=false) suppresses every enabled Nudge
                     ;; decision.  The Owner records `:nudge-suppressed` in
@@ -2267,9 +2493,9 @@
   [store session-id]
   (try
     (owner-store/state-from-view
-     (storage/read-session-view store
-                                {:partition (str "session/" session-id)
-                                 :session-id session-id}))
+     (storage/read-partition-head store
+                                  {:partition (str "session/" session-id)
+                                   :session-id session-id}))
     (catch clojure.lang.ExceptionInfo e
       (if (= :OWNER_STORE_CORRUPT (:code (ex-data e)))
         (do
@@ -2305,7 +2531,7 @@
                                           {:code :SESSION_LIST_FAILED
                                            :message "the committed session list could not be read"})))})))
     (doseq [session-id (:ids listed)]
-      (let [result (session-ports/read-session persistence session-id)]
+      (let [result (session-ports/read-session-summary persistence session-id)]
         (case (:status result)
           :missing nil
           :found (when (not= :deleted (get-in result [:session :status]))
@@ -2580,9 +2806,13 @@
    (baseline registry owners router config sync known-sessions nil))
   ([registry owners router config sync known-sessions outbound-opts-fn]
    (baseline registry owners router config sync known-sessions
-             outbound-opts-fn nil))
+             outbound-opts-fn nil nil nil))
   ([registry owners router config sync known-sessions outbound-opts-fn
     session-cache]
+   (baseline registry owners router config sync known-sessions outbound-opts-fn
+             session-cache nil nil))
+  ([registry owners router config sync known-sessions outbound-opts-fn
+    session-cache published-windows history-window-size]
   (let [sessions (or known-sessions
                      (let [listed (registry/list-sessions
                                    registry {:include-deleted? false})]
@@ -2639,6 +2869,8 @@
                  :config config
                  :outbound-opts-fn outbound-opts-fn
                  :session-cache session-cache
+                 :published-windows published-windows
+                 :history-window-size history-window-size
                  :sync (merge {:phase :synced
                                :command-epoch
                                (commands/app-command-epoch router)}
@@ -2654,13 +2886,15 @@
   in any of them rebuilds the projection; otherwise the publisher reuses the
   previous map instead of walking every session again."
   [sessions owner-versions active-session command-epoch config-models
-   materials-revision]
+   materials-revision published-windows history-window-size]
   [(mapv (juxt :session-id :revision) sessions)
    owner-versions
    active-session
    command-epoch
    config-models
-   materials-revision])
+   materials-revision
+   published-windows
+   history-window-size])
 
 (defn- cached-baseline
   "Return the cached baseline for KEY, or build and cache one.
@@ -2930,12 +3164,28 @@
                     old-calls (get @previous-calls session-id {})
                     old-lengths (get @previous-message-lengths
                                      session-id {})]
+                ;; First sight of a session: seed the assistant-text length
+                ;; baseline without broadcasting.  A branch copies finished
+                ;; messages in one step; treating their full text as an
+                ;; append-only delta would replay it as a live stream and
+                ;; leave the client composer stuck in "generating".  The
+                ;; state snapshot published right after carries the same
+                ;; text, so no content is lost.
+                (let [first-sight? (nil? (get @previous-message-lengths
+                                              session-id))]
                 (doseq [[call-id call] calls]
                   (let [old-state (get old-calls call-id)
                         new-state (:state call)]
                     (when (and (not= old-state new-state)
                                (contains? active-call-states new-state)
                                (not (contains? active-call-states old-state)))
+                      (println "[hc-run-event]"
+                               (pr-str {:type "RUN_STARTED"
+                                        :session-id session-id
+                                        :call-id call-id
+                                        :old old-state
+                                        :new new-state}))
+                      (flush)
                       (gateway/broadcast! gateway
                                           {:type "RUN_STARTED"
                                            :run-id (str call-id)
@@ -2945,6 +3195,13 @@
                     (when (and (not= old-state new-state)
                                (contains? terminal-call-states new-state)
                                (not (contains? terminal-call-states old-state)))
+                      (println "[hc-run-event]"
+                               (pr-str {:type "RUN_FINISHED"
+                                        :session-id session-id
+                                        :call-id call-id
+                                        :old old-state
+                                        :new new-state}))
+                      (flush)
                       (gateway/broadcast! gateway
                                           {:type "RUN_FINISHED"
                                            :run-id (str call-id)
@@ -2978,6 +3235,13 @@
                     (when (and (not= old-state new-state)
                                (= :failed new-state)
                                (not= :failed old-state))
+                      (println "[hc-run-event]"
+                               (pr-str {:type "RUN_ERROR"
+                                        :session-id session-id
+                                        :call-id call-id
+                                        :old old-state
+                                        :new new-state}))
+                      (flush)
                       (gateway/broadcast!
                        gateway
                        {:type "RUN_ERROR"
@@ -2988,27 +3252,28 @@
                         :error (or (:error call)
                                    (:last-error call)
                                    (:error (:result call)))}))))
-                (doseq [[message-index message] (map-indexed vector messages)
-                        :when (and (= :assistant (:role message))
-                                   (not (:nudge? message))
-                                   (not (:nudge-id message))
-                                   (not (:message/nudge? message))
-                                   (not (:message/nudge-id message)))]
-                  (let [message-id (or (:message-id message)
-                                       (:id message)
-                                       (:call-id message)
-                                       (str session-id "-assistant-"
-                                            message-index))
-                        text (or (:text message) (:content message) "")
-                        old-length (long (or (get old-lengths message-id) 0))
-                        delta (text-delta text old-length)]
-                    (when (seq delta)
-                      (gateway/broadcast! gateway
-                                          {:type "TEXT_MESSAGE_CONTENT"
-                                           :message-id message-id
-                                           :thread-id session-id
-                                           :session-id session-id
-                                           :delta delta}))))
+                (when-not first-sight?
+                  (doseq [[message-index message] (map-indexed vector messages)
+                          :when (and (= :assistant (:role message))
+                                     (not (:nudge? message))
+                                     (not (:nudge-id message))
+                                     (not (:message/nudge? message))
+                                     (not (:message/nudge-id message)))]
+                    (let [message-id (or (:message-id message)
+                                         (:id message)
+                                         (:call-id message)
+                                         (str session-id "-assistant-"
+                                              message-index))
+                          text (or (:text message) (:content message) "")
+                          old-length (long (or (get old-lengths message-id) 0))
+                          delta (text-delta text old-length)]
+                      (when (seq delta)
+                        (gateway/broadcast! gateway
+                                            {:type "TEXT_MESSAGE_CONTENT"
+                                             :message-id message-id
+                                             :thread-id session-id
+                                             :session-id session-id
+                                             :delta delta})))))
                 (swap! previous-calls
                        assoc session-id
                        (into {}
@@ -3029,7 +3294,7 @@
                                    (count (or (:text message)
                                               (:content message)
                                               ""))])))
-                             messages)))
+                             messages))))
               (catch Throwable _ nil)))
             (let [live @live-ids]
               (swap! previous-calls prune-to-live live)
@@ -3081,10 +3346,21 @@
                                     (catch Throwable _ nil)))))
                         @owners)
                   epoch (commands/app-command-epoch router)
+                  ;; `(:state router)` is the router's state atom; the
+                  ;; window atoms live inside its value.  Reading the atom
+                  ;; itself as a map yields nil for both keys, and `@nil`
+                  ;; throws inside `deref`.
+                  router-state @(:state router)
+                  published-windows (or (get router-state :published-windows)
+                                        (atom {}))
+                  history-window-size (get router-state :history-window-size)
                   key (baseline-cache-key
                        sessions owner-versions active epoch
-                       (:models config)
-                       (:materials/revision components-snapshot))
+                       (merge (:models config)
+                              (select-keys config [:assistants]))
+                       (:materials/revision components-snapshot)
+                       @published-windows
+                       @history-window-size)
                   outbound-opts-fn
                   (fn [session]
                     (outbound-context-opts
@@ -3098,7 +3374,9 @@
                                {:phase :synced :command-epoch epoch}
                                sessions
                                outbound-opts-fn
-                               baseline-session-cache)))
+                               baseline-session-cache
+                               published-windows
+                               @history-window-size)))
                   ;; The active session's outbound panel depends on live Owner
                   ;; context (compressions, boundary, materials).  A cache key
                   ;; cannot see every context mutation cheaply, so rebuild
@@ -3139,7 +3417,11 @@
                      {:message (or (.getMessage t) (str t))
                       :class (.getName (class t))
                       :data (ex-data t)})
-              nil)))
+              {:ok? false
+               :mode :error
+               :error {:message (or (.getMessage t) (str t))
+                       :class (.getName (class t))
+                       :data (ex-data t)}})))
         publish-now!
         (fn []
           (reset! scheduled? false)
@@ -3147,6 +3429,8 @@
             (.lock publish-lock)
             (try
               (when-not @stopped?
+                ;; Return the publish outcome so callers can observe the
+                ;; result; nil still means the publisher was stopped.
                 (publish-body!))
               (finally
                 (.unlock publish-lock)))))
@@ -3643,7 +3927,11 @@
                                               :path
                                               (str (get-in config [:data-dir])
                                                    "/maintenance/state.edn")}}))))
-        partial-system (atom {:blocked? true :partial? true :config config})]
+        partial-system (atom {:blocked? true :partial? true :config config})
+        ;; Shared with the command router: `:history/messages` records the
+        ;; fetched window here so the publisher keeps those entities.
+        published-windows (atom {})
+        history-window-size (atom 200)]
     (try
       (if blocked-journal
       (let [offline? (maintenance-journal/offline-record? blocked-journal)
@@ -3820,9 +4108,12 @@
             ;; Snapshots must project the committed settings configuration,
             ;; not the launch config captured at startup.  A save updates
             ;; the settings service; a later publish must show the new
-            ;; connections and roles.
+            ;; connections, roles, and assistants.
             live-settings-config (fn []
-                                   {:models (settings/config settings-service)})
+                                   {:models (settings/config settings-service)
+                                    :assistants (:assistants
+                                                  (settings/document
+                                                   settings-service))})
             shared-gate (wg/write-gate)
             documents-component (documents/service)
             owners (atom {})
@@ -3963,6 +4254,7 @@
               (backup-app/service {:store store
                                    :data-dir (:data-dir config)
                                    :maintenance maintenance
+                                   :persistence persistence
                                    :config config})
               (catch Throwable t
                 (swap! system-ref assoc :backup-error
@@ -4207,26 +4499,44 @@
                                      :on-change (fn [_]
                                                   (when-let [f @notify-ref] (f)))})
             _ (swap! partial-system assoc :router router)
+            ;; The command router creates session Owners lazily through this
+            ;; factory; it is stashed in router state so `commands` does not
+            ;; need a new Router record field.
+            _ (swap! (:state router) assoc :session-owner-factory owner-factory)
+            _ (swap! (:state router) assoc :published-windows published-windows
+                     :history-window-size history-window-size)
             listed (registry/list-sessions session-registry
                                            {:include-deleted? false})
             existing (ensure-session-list! store listed)
             owner-errors (atom {})
-            _ (doseq [session existing]
+            ;; Owners are created lazily: only the presentation active session
+            ;; (the first listed one at startup) gets an Owner now.  Every
+            ;; other committed session is started on first access through
+            ;; `ensure-live-owner!` in the command router, so startup does not
+            ;; pay one Owner construction per stored session.
+            eager-session-ids
+            (when (seq existing)
+              (let [active-id (or (commands/active-session-id router)
+                                  (:session-id (first existing)))]
+                (if (some #(= active-id (:session-id %)) existing)
+                  [active-id]
+                  [(:session-id (first existing))])))
+            _ (doseq [session-id eager-session-ids]
                 (try
-                  (let [handle (owner-factory {:session-id (:session-id session)})]
+                  (let [handle (owner-factory {:session-id session-id})]
                     ;; The registry registration serves command dispatch;
                     ;; the application `owners` atom is the baseline,
                     ;; publisher and health view.  A restored session must
                     ;; appear in both, or the client never receives its
                     ;; command epoch.
-                    (commands/register-owner! router (:session-id session) handle)
+                    (commands/register-owner! router session-id handle)
                     (when handle
-                      (swap! owners assoc (:session-id session) handle)))
+                      (swap! owners assoc session-id handle)))
                   (catch Throwable t
-                    (println :owner-start-failed (:session-id session)
+                    (println :owner-start-failed session-id
                              (str (class t)) (str t))
                     (swap! owner-errors assoc
-                           (:session-id session)
+                           session-id
                            {:code :OWNER_START_FAILED
                             :message (or (.getMessage ^Throwable t) (str t))
                             :class (.getName (class t))}))))
@@ -4290,7 +4600,10 @@
                         (outbound-context-opts
                          {:session session
                           :materials materials-service
-                          :session-config live-settings-config})))
+                          :session-config live-settings-config}))
+                      nil
+                      published-windows
+                      @history-window-size)
             initial-snapshot
             (merge (:snapshot baseline-snapshot)
                    (component-snapshot

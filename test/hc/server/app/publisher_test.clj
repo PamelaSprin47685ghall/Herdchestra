@@ -208,18 +208,18 @@
 
 (deftest baseline-cache-key-tracks-session-owner-and-materials
   (let [sessions [{:session-id "s1" :revision 1}]
-        key (#'system/baseline-cache-key sessions {"s1" 1} "s1" 1 {} 1)]
+        key (#'system/baseline-cache-key sessions {"s1" 1} "s1" 1 {} 1 nil nil)]
     (is (= key (#'system/baseline-cache-key
-                sessions {"s1" 1} "s1" 1 {} 1)))
+                sessions {"s1" 1} "s1" 1 {} 1 nil nil)))
     (is (not= key (#'system/baseline-cache-key
                    [{:session-id "s1" :revision 2}] {"s1" 1}
-                   "s1" 1 {} 1))
+                   "s1" 1 {} 1 nil nil))
         "a session revision invalidates")
     (is (not= key (#'system/baseline-cache-key
-                   sessions {"s1" 2} "s1" 1 {} 1))
+                   sessions {"s1" 2} "s1" 1 {} 1 nil nil))
         "an owner version invalidates")
     (is (not= key (#'system/baseline-cache-key
-                   sessions {"s1" 1} "s1" 1 {} 2))
+                   sessions {"s1" 1} "s1" 1 {} 2 nil nil))
         "a materials revision invalidates")))
 
 (deftest baseline-rebuilds-only-changed-session-blocks

@@ -1,0 +1,363 @@
+{
+  "test": "E2E 12",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-08T04:42:47.996Z",
+  "marker": "E2E12-mw7cj267",
+  "appUrl": "http://127.0.0.1:43597",
+  "tempRoot": "/tmp/hc-e2e-saEk3q",
+  "mockUrl": "http://127.0.0.1:43429",
+  "chromeVersion": "157.0.8103.38",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-08T03:47:24.652Z",
+    "sha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30"
+  },
+  "bundleSha256Expected": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+  "treeSha256Expected": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
+  "sourceTreeSha256": "5dfcb730e374066966a5e89e32ad38d05483b158063347bf730898c1ddf63589",
+  "freeze": {
+    "bundle": "45f11529",
+    "tree": "76cf2fd0"
+  },
+  "checks": {
+    "e2e12-sessions-created": {
+      "pass": true,
+      "detail": {
+        "sessionA": "hc-session-ff394f96-08ba-4c5c-a864-819ec32925f1",
+        "sessionB": "hc-session-c7ad8a81-faac-4cd6-b9c5-43371baff598"
+      }
+    },
+    "e2e12-entries-created": {
+      "pass": true,
+      "detail": {
+        "entryAny": "wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986",
+        "entryAll": "wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8",
+        "entrySticky": "wbe-857863e4-e05a-474b-a82a-71d31e53975b",
+        "entryCool": "wbe-9aa25947-85c9-47bd-8f2e-492c764a681f",
+        "entryBudget": "wbe-2cb59020-e360-44dd-b118-d49900241333",
+        "entryConst": "wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f"
+      }
+    },
+    "e2e12-cards-created": {
+      "pass": true,
+      "detail": {
+        "cardTurn": "card-772a303c-6281-4dbe-854b-2b139261c379",
+        "cardSession": "card-b1ba9ecb-cd3e-4476-8d5b-a9b30eab3d04"
+      }
+    },
+    "e2e12-t1-any-hit": {
+      "pass": true,
+      "detail": "entryAny body missing"
+    },
+    "e2e12-t1-all-hit": {
+      "pass": true,
+      "detail": "entryAll body missing"
+    },
+    "e2e12-t1-sticky-hit": {
+      "pass": true,
+      "detail": "entrySticky body missing"
+    },
+    "e2e12-t1-cool-hit": {
+      "pass": true,
+      "detail": "entryCool body missing"
+    },
+    "e2e12-t1-const-provided": {
+      "pass": true,
+      "detail": "entryConst body missing"
+    },
+    "e2e12-t1-budget-hit-not-provided": {
+      "pass": true,
+      "detail": "budget entry body leaked into injection"
+    },
+    "e2e12-t1-card-turn-injected": {
+      "pass": true,
+      "detail": "turn card body missing"
+    },
+    "e2e12-t1-card-session-injected": {
+      "pass": true,
+      "detail": "session card body missing"
+    },
+    "e2e12-panel1-frozen": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：是仅本轮指令 E2E12-mw7cj267-card-turn。\n\n会话指令 E2E12-mw7cj267-card-session。记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a2"
+    },
+    "e2e12-panel1-provided-rows": {
+      "pass": true,
+      "detail": "provided rows missing"
+    },
+    "e2e12-panel1-budget-omitted": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：是仅本轮指令 E2E12-mw7cj267-card-turn。\n\n会话指令 E2E12-mw7cj267-card-session。记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 关键词命中已提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 关键词命中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡MR-仅本轮卡-mw7cj267 · turn · 版本 1MR-会话卡-mw7cj267 · session · 版本 1工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：2摘要：0轮次：1可见：2排除：0估算Token：未知来源：未知"
+    },
+    "e2e12-panel1-card-turn": {
+      "pass": true,
+      "detail": "turn card row missing"
+    },
+    "e2e12-panel1-card-session": {
+      "pass": true,
+      "detail": "session card row missing"
+    },
+    "e2e12-t2-sticky-still-provided": {
+      "pass": true,
+      "detail": "sticky entry missing on turn 2"
+    },
+    "e2e12-t2-cool-blocked": {
+      "pass": true,
+      "detail": "cooldown entry leaked on turn 2"
+    },
+    "e2e12-t2-any-hit-window": {
+      "pass": true,
+      "detail": "any entry lost inside the 4-text window"
+    },
+    "e2e12-t2-all-still-window": {
+      "pass": true,
+      "detail": "all-match entry lost while 恒星轨 is still in window"
+    },
+    "e2e12-t2-card-turn-cleared": {
+      "pass": true,
+      "detail": "turn card leaked into turn 2"
+    },
+    "e2e12-t2-card-session-persists": {
+      "pass": true,
+      "detail": "session card missing on turn 2"
+    },
+    "e2e12-t2-budget-still-omitted": {
+      "pass": true,
+      "detail": "budget entry provided on turn 2"
+    },
+    "e2e12-panel2-cooldown-omitted": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：是会话指令 E2E12-mw7cj267-card-session。记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 持续提供中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 冷却中命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡MR-会话卡-mw7cj267 · session · 版本 1工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：未知"
+    },
+    "e2e12-panel2-card-turn-gone": {
+      "pass": true,
+      "detail": "turn card still listed on turn 2 panel"
+    },
+    "e2e12-panel2-card-session-kept": {
+      "pass": true,
+      "detail": "session card row missing on turn 2"
+    },
+    "e2e12-t3-cool-still-blocked": {
+      "pass": true,
+      "detail": "cooldown entry leaked on turn 3"
+    },
+    "e2e12-t3-sticky-last-covered": {
+      "pass": true,
+      "detail": "sticky entry missing on its last sticky turn"
+    },
+    "e2e12-t3-all-still-window": {
+      "pass": true,
+      "detail": "all-match entry lost while t1 is still in window"
+    },
+    "e2e12-t3-any-hit": {
+      "pass": true,
+      "detail": "any entry missing on turn 3"
+    },
+    "e2e12-t4-sticky-rearmed": {
+      "pass": true,
+      "detail": "sticky entry missing while 冷月华 is still in window"
+    },
+    "e2e12-t4-cool-last-blocked": {
+      "pass": true,
+      "detail": "cooldown entry leaked on turn 4"
+    },
+    "e2e12-t4-any-hit": {
+      "pass": true,
+      "detail": "any entry missing on turn 4"
+    },
+    "e2e12-t5-cool-retriggered": {
+      "pass": true,
+      "detail": "cooldown entry did not retrigger on turn 5"
+    },
+    "e2e12-t5-any-out-of-window": {
+      "pass": true,
+      "detail": "any entry still injected after 星轨蓝 left the window"
+    },
+    "e2e12-t5-all-out-of-window": {
+      "pass": true,
+      "detail": "all entry still injected after 恒星轨 left the window"
+    },
+    "e2e12-t5-sticky-window-hit": {
+      "pass": true,
+      "detail": "sticky entry missing while 冷月华 is still in window"
+    },
+    "e2e12-move-applied": {
+      "pass": true,
+      "detail": "entryConst book-id after move: wb-0fda068e-b662-4763-aa1b-09cb1ca2e937"
+    },
+    "e2e12-t6-moved-entry-absent": {
+      "pass": true,
+      "detail": "moved constant entry still injected"
+    },
+    "e2e12-t6-any-hit": {
+      "pass": true,
+      "detail": "any entry missing on turn 6"
+    },
+    "e2e12-t6-sticky-window-hit": {
+      "pass": true,
+      "detail": "sticky entry missing while 冷月华 is still in window"
+    },
+    "e2e12-t6-cool-blocked-again": {
+      "pass": true,
+      "detail": "cooldown entry leaked on turn 6 after turn-5 retrigger"
+    },
+    "e2e12-undo-restores-book": {
+      "pass": true,
+      "detail": "entryConst book-id after undo: wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1"
+    },
+    "e2e12-t7-const-restored": {
+      "pass": true,
+      "detail": "constant entry not restored after undo"
+    },
+    "e2e12-t7-sticky-expired": {
+      "pass": true,
+      "detail": "sticky entry leaked past its sticky:2 coverage on turn 7"
+    },
+    "e2e12-t7-cool-blocked-again": {
+      "pass": true,
+      "detail": "cooldown entry leaked on turn 7 after turn-5 retrigger"
+    },
+    "e2e12-ui-book-name-rendered": {
+      "pass": true,
+      "detail": "selected book name missing on materials page"
+    },
+    "e2e12-ui-runtime-counters": {
+      "pass": true,
+      "detail": "runtime section: turn=7"
+    },
+    "e2e12-ui-turn-count-7": {
+      "pass": true,
+      "detail": "expected rendered turn 7 after t1-t7, got 7"
+    },
+    "e2e12-b1-fresh-sticky": {
+      "pass": true,
+      "detail": "session B sticky entry missing"
+    },
+    "e2e12-b1-fresh-cool": {
+      "pass": true,
+      "detail": "session B cool entry missing"
+    },
+    "e2e12-b1-no-turn-card": {
+      "pass": true,
+      "detail": "turn card leaked into session B"
+    },
+    "e2e12-b1-no-session-card": {
+      "pass": true,
+      "detail": "session A card leaked into session B"
+    },
+    "e2e12-b1-budget-omitted": {
+      "pass": true,
+      "detail": "budget entry provided in session B"
+    },
+    "e2e12-panelB-fresh": {
+      "pass": true,
+      "detail": "session B panel shows stale counters"
+    },
+    "e2e12-panelB-budget-omitted": {
+      "pass": true,
+      "detail": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 关键词命中已提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 关键词命中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：2摘要：0轮次：1可见：2排除：0估算Token：未知来源：未知"
+    },
+    "e2e12-panelB-no-cards": {
+      "pass": true,
+      "detail": "session B panel lists session A cards"
+    },
+    "e2e12-t8-session-card-cleared": {
+      "pass": true,
+      "detail": "session card still injected after clear"
+    },
+    "e2e12-t8-turn-card-still-gone": {
+      "pass": true,
+      "detail": "turn card resurrected on turn 8"
+    },
+    "e2e12-t8-const-still-provided": {
+      "pass": true,
+      "detail": "constant entry missing after card clear"
+    },
+    "e2e12-panel8-no-cards": {
+      "pass": true,
+      "detail": "cleared cards still listed in panel"
+    },
+    "e2e12-ui-turn-count-8": {
+      "pass": true,
+      "detail": "expected rendered turn 8, got 8"
+    },
+    "e2e12-ui-move-applied": {
+      "pass": true,
+      "detail": "entryConst book after UI move: wb-0fda068e-b662-4763-aa1b-09cb1ca2e937"
+    },
+    "e2e12-ui-undo-button-visible": {
+      "pass": true,
+      "detail": "撤销移动 button did not render for the UI-issued move"
+    },
+    "e2e12-ui-undo-restores-book": {
+      "pass": true,
+      "detail": "entryConst book after UI undo: wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1"
+    },
+    "e2e12-wb-turn-counter": {
+      "pass": true,
+      "detail": "expected worldbook turn 8, got 8"
+    },
+    "e2e12-cooldown-runtime-recorded": {
+      "pass": true,
+      "detail": "cooldown-until: {\":last-trigger-turn\":5,\":sticky-until\":5,\":cooldown-until\":8}"
+    }
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-01-session-a.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-02-turn1.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-03-panel-turn1.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-04-materials-worldbook.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-05-session-b.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-12/e2e12-06-materials-undo.png"
+  ],
+  "details": {
+    "sessions": {
+      "sessionA": "hc-session-ff394f96-08ba-4c5c-a864-819ec32925f1",
+      "sessionB": "hc-session-c7ad8a81-faac-4cd6-b9c5-43371baff598"
+    },
+    "books": {
+      "bookA": "wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1",
+      "bookB": "wb-0fda068e-b662-4763-aa1b-09cb1ca2e937",
+      "bookC": "wb-af6ed160-72c9-4644-85ab-b31941a2a25f"
+    },
+    "entries": {
+      "entryAny": "wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986",
+      "entryAll": "wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8",
+      "entrySticky": "wbe-857863e4-e05a-474b-a82a-71d31e53975b",
+      "entryCool": "wbe-9aa25947-85c9-47bd-8f2e-492c764a681f",
+      "entryBudget": "wbe-2cb59020-e360-44dd-b118-d49900241333",
+      "entryConst": "wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f"
+    },
+    "cards": {
+      "cardTurn": "card-772a303c-6281-4dbe-854b-2b139261c379",
+      "cardSession": "card-b1ba9ecb-cd3e-4476-8d5b-a9b30eab3d04"
+    },
+    "turn1System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\n仅本轮指令 E2E12-mw7cj267-card-turn。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n全部命中正文 E2E12-mw7cj267-all。\n\n持续正文 E2E12-mw7cj267-sticky。\n\n冷却正文 E2E12-mw7cj267-cool。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "panel1": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：是仅本轮指令 E2E12-mw7cj267-card-turn。\n\n会话指令 E2E12-mw7cj267-card-session。记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 关键词命中已提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 关键词命中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡MR-仅本轮卡-mw7cj267 · turn · 版本 1MR-会话卡-mw7cj267 · session · 版本 1工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：2摘要：0轮次：1可见：2排除：0估算Token：未知来源：未知",
+    "turn2System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n全部命中正文 E2E12-mw7cj267-all。\n\n持续正文 E2E12-mw7cj267-sticky。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "panel2": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：是会话指令 E2E12-mw7cj267-card-session。记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 持续提供中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 冷却中命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡MR-会话卡-mw7cj267 · session · 版本 1工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：4摘要：0轮次：2可见：4排除：0估算Token：未知来源：未知",
+    "turn3System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n全部命中正文 E2E12-mw7cj267-all。\n\n持续正文 E2E12-mw7cj267-sticky。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "turn4System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n全部命中正文 E2E12-mw7cj267-all。\n\n持续正文 E2E12-mw7cj267-sticky。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "turn5System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n持续正文 E2E12-mw7cj267-sticky。\n\n冷却正文 E2E12-mw7cj267-cool。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "turn6System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n持续正文 E2E12-mw7cj267-sticky。",
+    "turn7System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nInstructions:\n会话指令 E2E12-mw7cj267-card-session。\n\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "uiTurnRendered": 7,
+    "turnB1System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n持续正文 E2E12-mw7cj267-sticky。\n\n冷却正文 E2E12-mw7cj267-cool。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "panelB": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-857863e4-e05a-474b-a82a-71d31e53975b · 关键词命中已提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 关键词命中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：2摘要：0轮次：1可见：2排除：0估算Token：未知来源：未知",
+    "turn8System": "[[hc-role-prompt]]\nYou are Plan. Your sole persistent deliverable is the user-visible draft\nat `plans/<name>.md` in the master worktree, never inside an internal state\ndirectory. Choose `<name>`: descriptive, `[a-z0-9-]`, at most 80 characters,\nunique. The system rejects unsafe or duplicate names. The first accepted\n`write` fixes the path; a different path is refused.\n\n# Milestones (S1 -> S2 -> S3 -> 待执行)\n- S1 (Requirements Analysis): Apply the methods of Ronald A. Howard,\n  Raymond Thomas Dalio, and Jeff Bezos until nothing remains to improve.\n- S2 (Implementation Skeleton): Apply the methods of George Polya and Alan\n  H. Schoenfeld to explore the optimal implementation skeleton and key\n  points until nothing remains to improve.\n- S3 (Parallel Development Methodology): Using Donald Knuth-style\n  pseudocode, specify the development methodology that maximizes concurrent\n  developers and minimizes wall-clock time until nothing remains to improve.\n- 待执行 (Ready for Execution): The draft is finalized for handoff.\nMilestone judgment rule: each stage judges only the gap to starting the next\nstage (S1 -> can S2 start; S2 -> can S3 start; S3 -> can execution start).\nNever count next-stage work as a current-stage gap.\n\n# Surface (`clj-plan`) and read/write boundary\nSubmit one `(defprogram <name> [] ...)` form using EDN + UFSS literals\n(`#\"...\"#`, `#\"\"\"...\"\"\"#`). Every capability is a bare function with one\nEDN map; there is no `this` and no positional argument.\n- `(cat {:path ...})` reads only the draft and operator attachments.\n- `(write {:path ... :content ...})` writes only the draft. It is refused\n  `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in\n  this tenure; a new tenure locks it again, and after handoff the draft is\n  frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).\n- The operator may edit the draft file on disk at any time; `cat` before\n  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`\n  re-read the file and rewrite the polished version — the disk content is\n  authoritative.\n- `(where {:content ... :needle ...})` and\n  `(whereAll {:content ... :needle ...})` find exact text.\n- `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and\n  resume this program.\n- `(ask {:question ...})` is available only in S1. It is\n  `(park {:payload {:question ...}})` plus a turn interrupt; outside S1 it is\n  refused `:ASK_FORBIDDEN_OUTSIDE_S1`.\n- `(devops {:verbose-intent \"...\"})` synchronously joins the one Plan\n  dedicated worker for this tenure and returns its final report verbatim as\n  `{:status :ok|:failed|:interrupted :report \"...\"}`. Reuse or steer that\n  worker; never create a second investigation path.\n- `(review {:findings [...]})` submits the obligation ledger\n  `[{:key k :value v-or-nil} ...]`. In the Plan phase a non-empty ledger is\n  yours to service by editing the draft; no Swarm starts. Clear a serviced\n  key with `{:key k :value nil}`; an empty vector alone does not clear an\n  open ledger. On the initial S1 tenure's first empty review, the system asks\n  `我需要干什么？` instead of recording the review; resume with\n  `(unpark ...)`. In `待执行`, non-empty findings are refused\n  `:NONEMPTY_FINDINGS_AT_PENDING`, and an open ledger must be cleared first\n  (`:NONEMPTY_LEDGER_AT_PENDING`); an empty review is the only handoff and\n  starts execution from the saved draft bytes without ending this Plan\n  tenure. A missing or empty draft is refused `:DRAFT_MISSING_OR_EMPTY`\n  before any execution tenure exists.\nThere is no shell, `call`, `eval`, stat/ls, board, or token capability in\n`clj-plan`. Investigate repository facts only through `(devops ...)`.\n\nThe system is always authorized and unattended. The only legal stops are a\nparked `(ask ...)` in S1 and the `待执行` handoff. Otherwise the guard injects\na Nudge with the open ledger (or the unreviewed milestone) and requires you\nto continue.\n\n# Scope\nEvery non-exempt tool call carries a flat `:scope` map with `:kind`:\n`:reset-scope` requires `:new-scope-goal` (non-empty string) and\n`:new-scope-retention-budget` (positive integer); `:keep-last` and `:me-too`\naccept no other field; `:remove-last` requires `:replacement` (non-empty\nstring). A model turn carries at most one true annotation. An all-`:me-too`\nturn is settled as `:keep-last`. Budget 0 admits only `:reset-scope`. After a\nrestart, initialize with `:reset-scope` or the tool call is refused\n`:SCOPE_UNINITIALIZED`.\nWorldbook:\n任一命中正文 E2E12-mw7cj267-any。\n\n始终提供正文 E2E12-mw7cj267-const。",
+    "panel8": "本轮上下文 · 上次发送系统提示字节：4452模块：program-role助手身份：default名称：通用助手版本：1指令会话覆盖：否记忆启用：否状态：读取已关闭归档排除：0世界书启用书籍：wb-af6ed160-72c9-4644-85ab-b31941a2a25f、wb-d5f62708-fdf2-4939-8ced-9ba1be0001f1已提供 wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986 · 关键词命中已提供 wbe-f306e66e-70b1-4aed-8510-cb4f4c3eea2f · 始终提供命中但未提供 wbe-9aa25947-85c9-47bd-8f2e-492c764a681f · 冷却中命中但未提供 wbe-2cb59020-e360-44dd-b118-d49900241333 · 超出本轮预算指令卡本轮未使用指令卡工具devops · readRun the Plan dedicated worker synchronously on the task model and return its full report.  The worker is read-only and is reused across calls in this tenure. Every call carries the flat :scope annotat历史发送消息：16摘要：0轮次：8可见：16排除：0估算Token：未知来源：未知",
+    "uiTurnRendered8": 8,
+    "worldbookSessionA": {
+      "turn": 8,
+      "runtimeKeys": [
+        "wbe-79348ee5-a901-4ff0-bc75-ac6e0caef986",
+        "wbe-f1c73f16-bd39-425f-9ad3-6e94f686dee8",
+        "wbe-857863e4-e05a-474b-a82a-71d31e53975b",
+        "wbe-9aa25947-85c9-47bd-8f2e-492c764a681f"
+      ]
+    }
+  },
+  "ok": true,
+  "finishedAt": "2026-11-08T04:43:13.897Z"
+}

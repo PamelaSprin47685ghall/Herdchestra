@@ -45,40 +45,40 @@
   #{:failed :crashed :error :panic :outcome-unknown})
 
 (def status-labels
-  {:running "Running"
-   :queued "Queued"
-   :joined "Joined"
-   :abandoned "Abandoned"
-   :failed "Failed"
-   :unknown "Status not reported"})
+  {:running "运行中"
+   :queued "排队中"
+   :joined "已合入"
+   :abandoned "已放弃"
+   :failed "失败"
+   :unknown "状态未上报"})
 
 (def task-state-labels
-  {:ready "Ready"
-   :waiting "Waiting"
-   :done "Done"})
+  {:ready "就绪"
+   :waiting "等待中"
+   :done "已完成"})
 
 (def status-details
-  {:running "The swarm is building on its own worktree."
-   :queued "The swarm is admitted but has not started; a dependency or worktree is not ready."
-   :joined "The result was fast-forwarded into master; the worktree is retained until GC."
-   :abandoned "The result was abandoned and did not enter the join queue."
-   :failed "The swarm ended with an error; no join result was produced."
-   :unknown "The server did not report a fleet status for this row; the board records below are the current server state."})
+  {:running "swarm 正在自己的 worktree 上施工。"
+   :queued "swarm 已获准入但尚未开始；依赖或 worktree 尚未就绪。"
+   :joined "结果已快进合入 master；worktree 保留至 GC。"
+   :abandoned "结果已被放弃，未进入合入队列。"
+   :failed "swarm 以错误结束；未产生合入结果。"
+   :unknown "服务器未上报该行的 fleet 状态；下方看板记录为当前服务器状态。"})
 
 (def role-labels
-  {:normal "Worker"
-   :holder "Token holder"})
+  {:normal "工人"
+   :holder "令牌持有者"})
 
 (def life-state-labels
-  {:alive "Alive"
-   :dead "Dead (logical)"
-   :terminated "Terminated"})
+  {:alive "存活"
+   :dead "已退出（逻辑）"
+   :terminated "已终止"})
 
 (def recovery-reason-labels
   "Human labels for the reasons a recovery write barrier reports."
-  {:uncertain-actions "unresolved uncertain action(s)"
-   :write-gate-held "the previous process held W without a proven outcome"
-   :process-restart "the previous process stopped while W was held"})
+  {:uncertain-actions "存在结果未知且未结清的动作"
+   :write-gate-held "上一个进程持有 W 时未给出已证实的结局"
+   :process-restart "上一个进程在持有 W 时停止"})
 
 ;; ---------------------------------------------------------------------------
 ;; Small readers
@@ -137,8 +137,8 @@
   [reason]
   (let [k (status-key reason)]
     (or (get recovery-reason-labels k)
-        (when k (str "unknown recovery reason " (name k)))
-        "unknown recovery reason")))
+        (when k (str "未知恢复原因 " (name k)))
+        "未知恢复原因")))
 
 (defn- id-list
   "Normalize a collection of IDs.  A map is read by its keys, because
@@ -187,11 +187,11 @@
 
 (defn status-label
   [value]
-  (get status-labels (status-key value) "Unknown"))
+  (get status-labels (status-key value) "未知"))
 
 (defn status-detail
   [value]
-  (get status-details (status-key value) "The server reported an unknown status."))
+  (get status-details (status-key value) "服务器上报了未知状态。"))
 
 (defn status-tone
   "A presentation tone.  Text is always rendered too; color is never the only
@@ -207,7 +207,7 @@
 
 (defn task-state-label
   [value]
-  (get task-state-labels (status-key value) "Unknown"))
+  (get task-state-labels (status-key value) "未知"))
 
 (defn task-state-tone
   [value]
@@ -219,11 +219,11 @@
 
 (defn role-label
   [value]
-  (get role-labels (status-key value) "Unknown role"))
+  (get role-labels (status-key value) "未知角色"))
 
 (defn life-state-label
   [value]
-  (get life-state-labels (status-key value) "Unknown life state"))
+  (get life-state-labels (status-key value) "未知生命状态"))
 
 (defn- actor-reason
   [actor]
@@ -239,18 +239,18 @@
     (cond
       (= :alive life)
       {:label (cond
-                (= :holder role) "Alive — token holder"
-                (nil? role) "Alive — role not reported"
-                :else "Alive — worker")
+                (= :holder role) "存活 — 令牌持有者"
+                (nil? role) "存活 — 角色未上报"
+                :else "存活 — 工人")
        :description (cond
                       (= :holder role)
-                      "This agent holds the worktree token. It occupies W only while running a managed shell or applying a commit."
+                      "该个体持有 worktree 令牌。仅在运行托管 shell 或应用提交时才占用 W。"
 
                       (nil? role)
-                      "The agent is alive, but the server did not report its worker/holder role."
+                      "该个体存活，但服务器未上报其工人/持有者角色。"
 
                       :else
-                      "This agent is alive and may claim ordinary tasks. It does not hold the worktree token.")
+                      "该个体存活，可以认领普通任务。它不持有 worktree 令牌。")
        :tone :positive
        :normal? true
        :attention? false}
@@ -258,8 +258,8 @@
       (= :dead life)
       (cond
         (contains? #{:attempt-lost :competition-lost} reason)
-        {:label "Dead — lost token competition"
-         :description "The loser transferred its remaining responsibilities and died in the same board transaction. The slot will spawn a fresh agent-id; this is normal lifecycle rotation."
+        {:label "已退出 — 令牌竞争落败"
+         :description "败者在同一看板事务中转交剩余责任后退出。该槽位将生成新的 agent-id；这是正常的生命周期轮换。"
          :tone :neutral
          :normal? true
          :attention? false}
@@ -267,22 +267,22 @@
         (or (= :holder role)
             (contains? #{:retired-empty-holder :responsibility-empty
                          :holder-retired} reason))
-        {:label "Dead — holder retired"
-         :description "R(holder) became empty, so the holder released the token and died in the same transaction. The slot will spawn a fresh agent-id; this is normal lifecycle rotation."
+        {:label "已退出 — 持有者退役"
+         :description "R(holder) 变为空，持有者在同一事务中释放令牌并退出。该槽位将生成新的 agent-id；这是正常的生命周期轮换。"
          :tone :neutral
          :normal? true
          :attention? false}
 
         (contains? failure-lifecycle-reasons reason)
-        {:label "Dead — failure"
-         :description "The actor ended with an unexpected failure. Inspect the handoff note and the recent board events; do not report the slot as healthy."
+        {:label "已退出 — 失败"
+         :description "该个体以意外失败结束。请查看交接备注与最近的看板事件；不要把该槽位报告为健康。"
          :tone :negative
          :normal? false
          :attention? true}
 
         :else
-        {:label "Dead — normal lifecycle"
-         :description "Logical death; the slot will spawn a fresh agent-id. No crash is implied by the dead state alone."
+        {:label "已退出 — 正常生命周期"
+         :description "逻辑退出；该槽位将生成新的 agent-id。仅凭退出状态并不意味着崩溃。"
          :tone :neutral
          :normal? true
          :attention? false})
@@ -290,29 +290,29 @@
       (= :terminated life)
       (cond
         (contains? failure-lifecycle-reasons reason)
-        {:label "Terminated — failure"
-         :description "Execution ended with an unexpected failure. Inspect the handoff note and recent board events."
+        {:label "已终止 — 失败"
+         :description "执行以意外失败结束。请查看交接备注与最近的看板事件。"
          :tone :negative
          :normal? false
          :attention? true}
 
         (contains? #{:operator-cancel :cancelled :stopped :normal :handoff} reason)
-        {:label "Terminated — deliberate"
-         :description "Execution was stopped deliberately, for example by an operator cancellation. This is not a crash."
+        {:label "已终止 — 主动终止"
+         :description "执行被主动终止，例如操作员取消。这不是崩溃。"
          :tone :warning
          :normal? true
          :attention? false}
 
         :else
-        {:label "Terminated — reason not reported"
-         :description "Execution ended, but the server did not report whether this was deliberate or a failure. Do not label it a crash without evidence."
+        {:label "已终止 — 原因未上报"
+         :description "执行已结束，但服务器未上报这是主动终止还是失败。没有证据不要标为崩溃。"
          :tone :warning
          :normal? false
          :attention? true})
 
       :else
-      {:label "Unknown life state"
-       :description "The server reported a life state this client does not recognize."
+      {:label "未知生命状态"
+       :description "服务器上报了本客户端无法识别的生命状态。"
        :tone :warning
        :normal? false
        :attention? true})))
@@ -361,7 +361,7 @@
   [tasks task seen depth]
   (if (>= depth 32)
     [{:task-id nil
-      :goal "Wait chain truncated"
+      :goal "等待链已截断"
       :state nil
       :missing? false
       :cycle? false
@@ -428,24 +428,24 @@
   (case (status-key (:state node))
     :waiting
     (if (seq (:wait-for node))
-      (str "Waiting on " (count (:wait-for node)) " registered task(s).")
-      "Waiting with no registered wait-for; inspect the board for an inconsistent wait.")
+      (str "等待 " (count (:wait-for node)) " 个已登记任务。")
+      "处于等待但没有已登记的 wait-for；请检查看板中的不一致等待。")
 
     :ready
     (cond
       (seq (:wait-for node))
-      "Ready, but wait-for still lists dependencies. The wait registration is stale; the task is not waiting."
+      "就绪，但 wait-for 仍列有依赖。等待登记已过期；该任务并未处于等待。"
 
       (all-children-done? node)
-      "Wait released — all children are done. This parent is ready for its remaining work and is not automatically done."
+      "等待已解除 — 子任务全部完成。该父任务就绪等待其剩余工作，不会自动标记完成。"
 
       :else
-      "Ready for claim or explicit completion.")
+      "就绪，可认领或显式完成。")
 
     :done
-    "Done — explicitly completed. Child completion never closes a parent automatically."
+    "已完成 — 显式完成。子任务完成不会自动关闭父任务。"
 
-    "Unknown task state."))
+    "未知任务状态。"))
 
 (defn- reachable-task-ids
   [nodes]
@@ -592,15 +592,15 @@
                                       (lifecycle actor)
 
                                       vacant?
-                                      {:label "Vacant"
-                                       :description "No actor currently occupies this fixed slot. The runtime will spawn a fresh agent-id when work is admitted."
+                                      {:label "空缺"
+                                       :description "当前没有个体占用该固定槽位。准入工作时运行时将生成新的 agent-id。"
                                        :tone :neutral
                                        :normal? true
                                        :attention? false}
 
                                       :else
-                                      {:label "Actor state not reported"
-                                       :description "The slot names an agent, but the actor table does not contain its life state. Do not assume the slot is vacant or the agent is alive."
+                                      {:label "个体状态未上报"
+                                       :description "槽位指名了一个个体，但个体表中没有其生命状态。不要假设槽位空缺或该个体存活。"
                                        :tone :warning
                                        :normal? false
                                        :attention? true})]]
@@ -611,7 +611,7 @@
                  :life-state life-state
                  :life-state-label (if life-state
                                      (life-state-label life-state)
-                                     (if vacant? "Vacant" "Not reported"))
+                                     (if vacant? "空缺" "未上报"))
                  :lifecycle lifecycle
                  :handoff-note (:handoff-note (or actor slot-record))
                  :active-action-id (:active-action-id (or actor slot-record))
@@ -632,9 +632,9 @@
               :role :holder
               :role-label (role-label :holder)
               :life-state nil
-              :life-state-label "Not reported"
-              :lifecycle {:label "Holder is not on a reported slot"
-                          :description "The token slot names a holder that is absent from the actor table. Do not assume the holder is alive or that the slot is vacant."
+              :life-state-label "未上报"
+              :lifecycle {:label "持有者不在任何已上报槽位上"
+                          :description "令牌槽位指名的持有者不在个体表中。不要假设持有者存活或槽位空缺。"
                           :tone :warning
                           :normal? false
                           :attention? true}
@@ -694,34 +694,34 @@
            shell-active? responsibility-rows]}]
   (cond
     (nil? holder-id)
-    "No token holder. The token slot is free; the next take-or-die attempt may win."
+    "没有令牌持有者。令牌槽位空闲；下一次 take-or-die 尝试可能胜出。"
 
     (and responsibility-reported? (empty? responsibility))
-    "R(holder) = ∅. The holder should release the token and die in the same transaction. If this state persists, inspect the board; it is an inconsistency."
+    "R(holder) = ∅。持有者应在同一事务中释放令牌并退出。若该状态持续存在，请检查看板；这是一个不一致。"
 
     (and (not responsibility-reported?) (empty? responsibility))
-    "The server did not report R(holder); the board currently shows no unfinished responsibility. This is not proof that the holder may retire."
+    "服务器未上报 R(holder)；看板当前显示没有未完成的责任。这不能证明持有者可以退役。"
 
     shell-active?
-    "The holder is executing a managed shell action and therefore holds W. Holding the token alone does not occupy W."
+    "持有者正在执行托管 shell 动作，因此持有 W。仅持有令牌并不占用 W。"
 
     :else
-    (str "R(holder) is not empty: "
+    (str "R(holder) 不为空："
          (str/join "; "
                    (cond-> []
                      (some #(and (= :task (:kind %))
                                  (not (:needs-token %)))
                            responsibility-rows)
-                     (conj "unfinished ordinary tasks owned by the holder")
+                     (conj "持有者名下未完成的普通任务")
 
                      (some #(and (= :task (:kind %))
                                  (:needs-token %))
                            responsibility-rows)
-                     (conj "unfinished token tasks")
+                     (conj "未完成的令牌任务")
 
                      (some #(= :action (:kind %)) responsibility-rows)
-                     (conj "actions in applying/running/uncertain")))
-         ". Holding the token does not hold W; retirement waits until the full responsibility set is empty.")))
+                     (conj "处于 applying/running/uncertain 的动作")))
+         "。持有令牌不等于持有 W；在全部责任集合清空前，持有者不会退役。")))
 
 (defn holder-view
   "Describe the worktree token slot, its holder, and the complete R(holder).
@@ -760,11 +760,11 @@
         action-count (count (filter #(= :action (:kind %)) rows))
         reasons (cond-> []
                   (pos? ordinary-count)
-                  (conj (str ordinary-count " unfinished ordinary task(s) owned by the holder"))
+                  (conj (str "持有者名下有 " ordinary-count " 个未完成的普通任务"))
                   (pos? token-count)
-                  (conj (str token-count " unfinished token task(s)"))
+                  (conj (str "有 " token-count " 个未完成的令牌任务"))
                   (pos? action-count)
-                  (conj (str action-count " active action(s) in applying/running/uncertain")))]
+                  (conj (str "有 " action-count " 个处于 applying/running/uncertain 的活跃动作")))]
     {:reported? reported?
      :holder-id holder-id
      :term-id term-id
@@ -786,7 +786,7 @@
                                          responsibility-reported?
                                          :responsibility-rows rows
                                          :shell-active? shell-active?})
-                    "The server did not report a token slot for this worktree. Holder, term, and R(holder) are unknown.")}))
+                   "服务器未上报该 worktree 的令牌槽位。持有者、term 与 R(holder) 均未知。")}))
 
 (defn- queue-item
   [actions item]
@@ -879,64 +879,65 @@
                held? :write
                :else :idle)
         mode-label (case mode
-                     :unreported "W state not reported"
-                     :recovery "W held for recovery — unresolved unknown action"
-                     :applying "W held — applying a protected batch"
-                     :shell "W held — managed shell running"
-                     :write "W held — protected write in progress"
-                     :idle "W is free")
+                     :unreported "W 状态未上报"
+                     :recovery "W 为恢复所持 — 存在结果未知动作未结清"
+                     :applying "W 持有中 — 正在应用受保护批次"
+                     :shell "W 持有中 — 托管 shell 运行中"
+                     :write "W 持有中 — 受保护写入进行中"
+                     :idle "W 空闲")
         explanation (case mode
                       :unreported
-                      "The server did not report W for this worktree. Action phases are shown separately; do not infer that W is free."
+                      "服务器未上报该 worktree 的 W。动作阶段单独显示；不要推断 W 空闲。"
 
                       :recovery
-                      (str "W is held by the recovery barrier"
+                      (str "W 被恢复屏障持有"
                            (when (seq recovery-reason-labels)
-                             (str " because "
+                             (str "，原因："
                                   (str/join "; " recovery-reason-labels)))
                            (when (seq recovery-actions)
-                             (str "; unresolved action(s): "
+                             (str "；未结清动作："
                                   (str/join ", " (map str recovery-actions))))
-                           ". New protected writes are refused with :RECOVERY_UNRESOLVED. Inspect the worktree, resolve every uncertain action with explicit evidence, then acknowledge recovery.")
+                           "。新的受保护写入将被 :RECOVERY_UNRESOLVED 拒绝。请检查看板 worktree，用明确证据结清每个结果未知的动作，然后确认恢复。")
 
                       :idle
-                      "W is free. No protected commit or managed shell is currently applying."
+                      "W 空闲。当前没有受保护提交或托管 shell 在应用。"
 
                       :applying
-                      (str "W is held by " (or owner "an unidentified actor")
-                           " while applying a protected batch"
-                           (when-let [id (:action-id current)] (str " (action " id ")"))
-                           ". The board should show :applying; other writers queue FIFO and W is never transferred by timeout.")
+                      (str "W 由 " (or owner "未知个体")
+                           " 在应用受保护批次时持有"
+                           (when-let [id (:action-id current)] (str "（动作 " id "）"))
+                           "。看板应显示 :applying；其他写者按 FIFO 排队，W 绝不因超时转移。")
 
                       :shell
-                      (str "W is held by " (or owner "an unidentified actor")
-                           " for a managed shell"
-                           (when-let [id (:action-id current)] (str " (action " id ")"))
-                           ". Other writers queue FIFO; W is never transferred by timeout.")
+                      (str "W 由 " (or owner "未知个体")
+                           " 为托管 shell 持有"
+                           (when-let [id (:action-id current)] (str "（动作 " id "）"))
+                           "。其他写者按 FIFO 排队；W 绝不因超时转移。")
 
                       :write
-                      (str "W is held by " (or owner "an unidentified actor")
-                           (when-let [id (:action-id current)] (str " for action " id))
-                           (when-let [phase (:phase current)] (str " (phase " (name phase) ")"))
-                           ".")
+                      (str "W 由 " (or owner "未知个体")
+                           " 持有"
+                           (when-let [id (:action-id current)] (str "（动作 " id "）"))
+                           (when-let [phase (:phase current)] (str "（阶段 " (name phase) "）"))
+                           "。")
                       "")
         acknowledgement-text
         (when recovery-acknowledgement
           (str (if (true? (:acknowledged? recovery-acknowledgement))
-                 "Recovery was acknowledged"
-                 "Recovery evidence was reported without acknowledgement")
+                 "恢复已被确认"
+                 "已上报恢复证据但未确认")
                (when-let [actor (:actor-id recovery-acknowledgement)]
-                 (str " by " actor))
+                 (str "，操作员 " actor))
                (when-let [evidence (:evidence recovery-acknowledgement)]
-                 (str " with evidence: " evidence))
+                 (str "，证据：" evidence))
                (when-let [version (:at-version recovery-acknowledgement)]
-                 (str " at board version " version))
+                 (str "，看板版本 " version))
                "."))
         queued-text (cond
-                      (not reported?) "Queue state is unknown."
+                      (not reported?) "队列状态未知。"
                       (pos? queue-count)
-                      (str queue-count " writer(s) waiting in W's FIFO queue.")
-                      :else "No writer is waiting in W's FIFO queue.")
+                      (str "有 " queue-count " 个写者在 W 的 FIFO 队列中等待。")
+                      :else "没有写者在 W 的 FIFO 队列中等待。")
         holder-not-writing? (and reported? holder
                                   (not (and held? (= holder owner))))
         attention? (or (and reported? held? (nil? owner) (nil? current))
@@ -1089,29 +1090,29 @@
   [swarm]
   (cond
     (false? (:fleet-reported? swarm))
-    "Fleet join queue not reported by this server; the board records below are current."
+    "该服务器未上报 fleet 合入队列；下方看板记录为当前状态。"
 
     (nil? (:queued-count swarm))
-    "Join queue count not reported by this server."
+    "合入队列计数未由服务器上报。"
 
     (and (= :joined (:status swarm)) (:report swarm))
-    "Joined; the full report is available below."
+    "已合入；完整报告见下方。"
 
     (and (= :joined (:status swarm)) (nil? (:report swarm)))
-    "Joined, but the server did not include report text."
+    "已合入，但服务器未包含报告文本。"
 
     (= :abandoned (:status swarm))
-    (str "Abandoned; no result entered the join queue."
-         (when-let [reason (:abandon-reason swarm)] (str " Reason: " reason)))
+    (str "已放弃；没有结果进入合入队列。"
+         (when-let [reason (:abandon-reason swarm)] (str " 原因：" reason)))
 
     (= :failed (:status swarm))
-    "Failed; no result entered the join queue."
+    "失败；没有结果进入合入队列。"
 
     (pos? (:queued-count swarm))
-    (str (:queued-count swarm) " completed result(s) waiting in the join queue.")
+    (str "有 " (:queued-count swarm) " 个已完成结果在合入队列中等待。")
 
     :else
-    "No completed result waiting in the join queue."))
+    "合入队列中没有已完成结果等待。"))
 
 (defn swarm-view
   "Project one swarm and its board.  CTX holds the global normalized tables."
@@ -1337,13 +1338,13 @@
         board-only (count (filter #(false? (:fleet-reported? %)) rows))
         queue-text (cond
                      (pos? board-only)
-                     "Fleet join queue not reported by this server."
+                     "该服务器未上报 fleet 合入队列。"
 
                      (pos? unknown-queue)
-                     "Join queue count not reported for some swarms."
+                     "部分 swarm 未上报合入队列计数。"
 
                      :else
-                     (str queued " completed result(s) waiting in the join queue."))]
+                     (str "有 " queued " 个已完成结果在合入队列中等待。"))]
     {:swarms (count rows)
      :running (get by-status :running 0)
      :queued (get by-status :queued 0)
@@ -1359,20 +1360,20 @@
      :join-queue queued
      :join-queue-unknown unknown-queue
      :attention attention
-     :text (str (count rows) " swarm row(s): "
-                (get by-status :running 0) " running, "
-                (get by-status :queued 0) " queued, "
-                (get by-status :joined 0) " joined, "
-                (get by-status :abandoned 0) " abandoned, "
-                (get by-status :failed 0) " failed, "
-                (get by-status :unknown 0) " without a fleet status. "
-                "Root tasks: " (:ready roots) " ready, "
-                (:waiting roots) " waiting, " (:done roots) " done. "
+     :text (str (count rows) " 个 swarm 行："
+                (get by-status :running 0) " 个运行中，"
+                (get by-status :queued 0) " 个排队中，"
+                (get by-status :joined 0) " 个已合入，"
+                (get by-status :abandoned 0) " 个已放弃，"
+                (get by-status :failed 0) " 个失败，"
+                (get by-status :unknown 0) " 个无 fleet 状态。"
+                "根任务：" (:ready roots) " 个就绪，"
+                (:waiting roots) " 个等待中，" (:done roots) " 个已完成。"
                 queue-text
                 (when (pos? board-only)
-                  (str " " board-only " board-only row(s) show synchronized board records without a fleet projection."))
+                  (str " 其中 " board-only " 个仅看板行显示已同步的看板记录，无 fleet 投影。"))
                 (when (pos? attention)
-                  (str " " attention " swarm(s) need attention.")))}))
+                  (str " " attention " 个 swarm 需要关注。")))}))
 
 (defn- board-only-swarm
   "Build a display-only row for the current server shape when the snapshot has
@@ -1392,7 +1393,7 @@
                            (collection (get* input :tasks)))
                      "local")]
     {:swarm-id swarm-id
-     :slice-id "Board only"
+     :slice-id "仅看板"
      :worktree nil
      :status :unknown
      :fleet-reported? false

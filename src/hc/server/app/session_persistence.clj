@@ -65,6 +65,27 @@
   (storage/read-session-view storage
                              {:partition partition :session-id session-id}))
 
+(defn- read-session-record-doc
+  "Read one `:session-record` document by exact key.
+
+  Session records are stored partition-scoped (`session-id` nil, the `_`
+  segment).  Some seeded or migrated stores also carry a session-scoped copy;
+  the partition-scoped record is authoritative because every commit writes
+  it, so it is checked first and the scoped copy is only a fallback.  This
+  point read replaces the full `sessions` partition scan `read-view` performs
+  for every session on every list or preflight pass."
+  [storage session-id]
+  (or (storage/read-document storage
+                              {:partition sessions-partition
+                               :session-id nil
+                               :kind session-kind
+                               :id session-id})
+      (storage/read-document storage
+                              {:partition sessions-partition
+                               :session-id session-id
+                               :kind session-kind
+                               :id session-id})))
+
 (defn- index-ids
   [view]
   (or (some-> (find-record view index-kind index-id) :ids vec)
@@ -90,11 +111,9 @@
     (reify ports/SessionPersistence
       (read-session [_ session-id]
         (try
-          (let [view (read-view storage sessions-partition session-id)
-                session (find-record view session-kind session-id)]
-            (if session
-              {:status :found :session session}
-              {:status :missing}))
+          (if-let [session (read-session-record-doc storage session-id)]
+            {:status :found :session session}
+            {:status :missing})
           (catch clojure.lang.ExceptionInfo t
             (error-status t))))
 

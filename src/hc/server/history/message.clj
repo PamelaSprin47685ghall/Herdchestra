@@ -9,7 +9,8 @@
   The functions here are pure.  They return a new message or session and a
   small result map.  They never touch a blob, a run, or a provider."
   (:require [clojure.string :as str]
-            [hc.server.history.attachments :as attachments]))
+            [hc.server.history.attachments :as attachments]
+            [hc.server.model-port.usage :as model-usage]))
 
 (def message-roles #{:user :assistant :system})
 (def version-sources #{:model :manual :regenerated :branch :imported})
@@ -90,6 +91,11 @@
                    :manual-edit? (boolean (or (:manual-edit? version)
                                               (and (= :assistant (:role message))
                                                    (= :manual source)))))
+      ;; Stored usage is a `model-port.usage` report; conversation surfaces
+      ;; read the flat token+source projection.  The report itself stays
+      ;; under `:usage`/`:sources`.
+      (some? (:usage version))
+      (assoc :usage (model-usage/flat-usage (:usage version)))
       (some? (:created-at version)) (assoc :created-at (:created-at version))
       (nil? (:created-at version)) (assoc :created-at (:created-at message)))))
 
@@ -219,6 +225,7 @@
   (->> (:message-order session)
        (keep #(get-in session [:messages %]))
        (remove #(or (:deleted? %) (:folded? %)))
+       (remove #(or (:nudge? %) (:nudge-id %)))
        (mapv message-view)))
 
 (defn deleted-messages
@@ -233,6 +240,7 @@
   (->> (:message-order session)
        (keep #(get-in session [:messages %]))
        (remove #(or (:deleted? %) (:folded? %)))
+       (remove #(or (:nudge? %) (:nudge-id %)))
        (mapv :message-id)))
 
 (defn- unique-version-id?

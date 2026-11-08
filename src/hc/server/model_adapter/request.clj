@@ -762,6 +762,9 @@
   [message loader path]
   (let [text (context-text message)
         attachments (:attachments message)
+        ;; `context-text` can be blank while attachments carry the payload;
+        ;; contents must still be non-empty so the request keeps an
+        ;; image/audio/pdf part instead of collapsing to an empty string.
         contents (vec
                   (concat
                    (when-not (str/blank? text)
@@ -772,6 +775,9 @@
                        attachment loader
                        (conj path :attachments index)))
                     attachments)))]
+    ;; Blank context text plus attachments still yields a non-empty contents
+    ;; vector, so the compiled request keeps an image/audio/pdf part rather
+    ;; than collapsing to an empty string.
     (if (seq contents)
       (UserMessage/from (vec contents))
       (UserMessage/from (or text "")))))

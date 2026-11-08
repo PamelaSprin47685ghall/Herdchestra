@@ -1,0 +1,177 @@
+{
+  "env": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 12,
+    "totalMemBytes": 66924290048,
+    "chromePath": "/usr/bin/google-chrome",
+    "chromeVersion": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"
+  },
+  "config": {
+    "root": "/tmp/hc-bench3/run5",
+    "port": 4805,
+    "draftChars": 20000,
+    "draftSha256": "d3ca716130bb23ada61ab739c41ebfc142f217b6c04836fbfe2782d72c5080c4"
+  },
+  "draft": {
+    "chars": 20000,
+    "sha256": "d3ca716130bb23ada61ab739c41ebfc142f217b6c04836fbfe2782d72c5080c4"
+  },
+  "thresholds": {
+    "keyLatencyP95Ms": 100,
+    "pasteMs": 500,
+    "undoMs": 100,
+    "peakBytes": 2147483648
+  },
+  "phases": {
+    "appStart": {
+      "ms": 14298,
+      "url": "http://127.0.0.1:4805",
+      "pid": 128244
+    },
+    "chromePid": 128518,
+    "appRestartForBaseline": {
+      "ms": 14391,
+      "url": "http://127.0.0.1:4805",
+      "pid": 128828
+    },
+    "browserOpen": {
+      "ms": 3386,
+      "chromePid": 129060
+    },
+    "paste": {
+      "dispatchToValueMs": 42,
+      "wallMs": 360,
+      "expectedLength": 20000
+    },
+    "keystroke": {
+      "keys": 36,
+      "p50": 3,
+      "p95": 4,
+      "max": 6
+    },
+    "selection": {
+      "selectionMs": 1,
+      "chars": 200,
+      "copyOk": true,
+      "head": "草稿只存在当前浏览器 profile 的"
+    },
+    "undo": {
+      "beforeUndo": 20036,
+      "afterUndo": 20035,
+      "afterRedo": 20036,
+      "undoMs": 303
+    },
+    "draftSaved": {
+      "found": true,
+      "textLength": 20036,
+      "keys": [
+        "hc-session-8239658d-0a8d-4f8a-8f54-f1affdb338ff"
+      ]
+    },
+    "preRestartSha": {
+      "sha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "length": 20036,
+      "head": "快照替换必须先删服务器键再合并，不能复活已折叠记",
+      "tail": "mnopqrstuvwxyz0123456789"
+    },
+    "serverRestarted": {
+      "stoppedPid": 128828
+    },
+    "appRestart": {
+      "ms": 14527,
+      "url": "http://127.0.0.1:4805",
+      "pid": 129327
+    },
+    "browserReopen": {
+      "ms": 3214,
+      "chromePid": 129575
+    },
+    "restored": {
+      "sha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "length": 20036,
+      "head": "快照替换必须先删服务器键再合并，不能复活已折叠记",
+      "tail": "mnopqrstuvwxyz0123456789"
+    }
+  },
+  "checks": {
+    "sessionCreated": {
+      "ok": true,
+      "sessionId": "hc-session-8239658d-0a8d-4f8a-8f54-f1affdb338ff"
+    },
+    "composerMounted": {
+      "ok": true,
+      "sessionId": "hc-session-8239658d-0a8d-4f8a-8f54-f1affdb338ff"
+    },
+    "pasteUnderThreshold": {
+      "ok": true,
+      "pasteMs": 42
+    },
+    "keyLatencyP95": {
+      "ok": true,
+      "keys": 36,
+      "p50": 3,
+      "p95": 4,
+      "max": 6
+    },
+    "selectionCopy": {
+      "ok": true,
+      "selectionMs": 1,
+      "chars": 200,
+      "copyOk": true,
+      "head": "草稿只存在当前浏览器 profile 的"
+    },
+    "undoWorks": {
+      "ok": true,
+      "beforeUndo": 20036,
+      "afterUndo": 20035,
+      "afterRedo": 20036,
+      "undoMs": 303
+    },
+    "draftSaved": {
+      "ok": true,
+      "found": true,
+      "textLength": 20036,
+      "keys": [
+        "hc-session-8239658d-0a8d-4f8a-8f54-f1affdb338ff"
+      ]
+    },
+    "draftRestored": {
+      "ok": true,
+      "expectedSha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "restoredSha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "expectedLength": 20036,
+      "restoredLength": 20036
+    },
+    "peakUnder2GiB": {
+      "ok": true,
+      "combinedRssMiB": 2016,
+      "sumOfHwmsMiB": 2100.4
+    }
+  },
+  "startedAt": "2026-11-07T23:51:45.736Z",
+  "notes": [
+    "session/create 回执 :accepted 后运行时 STATE_DELTA 未送达客户端；重启 app 后 baseline 才含新会话。脚本在建会话后重启 app 绕行，该行为作为产品缺陷记录在案。",
+    "粘贴用 execCommand insertText（触发真实 input 事件，app 草稿同步）；逐键用 keyboard.press 单字符；撤销用 execCommand undo/redo。"
+  ],
+  "sessionId": "hc-session-8239658d-0a8d-4f8a-8f54-f1affdb338ff",
+  "memory": {
+    "server": {
+      "peakHwmMiB": 915.5,
+      "peakRssMiB": 915.5,
+      "samples": 209
+    },
+    "chrome": {
+      "peakHwmMiB": 1184.9,
+      "peakRssMiB": 1184,
+      "samples": 45
+    },
+    "combined": {
+      "peakHwmMiB": 2016.9,
+      "peakRssMiB": 2016
+    }
+  },
+  "finishedAt": "2026-11-07T23:52:52.449Z",
+  "verdict": "PASS"
+}

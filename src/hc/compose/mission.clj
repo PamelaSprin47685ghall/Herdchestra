@@ -32,6 +32,7 @@
 (def model-for-role host/model-for-role)
 (def role-binding host/role-binding)
 (def review-state host/review-state)
+(def draft-reconcile-state host/draft-reconcile-state)
 (def resume-state host/resume-state)
 (def set-draft-state host/set-draft-state)
 (def maybe-relay-state host/maybe-relay-state)

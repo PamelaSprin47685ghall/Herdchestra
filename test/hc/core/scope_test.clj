@@ -1,6 +1,6 @@
 (ns hc.core.scope-test
   "Property and example tests for hc.core.scope (root AGENTS.md §6.2)."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
@@ -1519,3 +1519,107 @@
                {:v 1 :type :keep :turn-id 1 :remaining -1}]]
     (is (thrown? clojure.lang.ExceptionInfo
                  (records/read-cold-state [raw])))))
+
+(deftest runtime-user-message-payload-fields-survive-roundtrip
+  (let [attachments [{:attachment-id "a1"
+                      :name "pixel.png"
+                      :type :image
+                      :send-route :native
+                      :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      :send-mime "image/png"}]
+        quotes [{:message-id "m0" :text "quoted"}]
+        citations [{:label "source one"}]
+        conversation [{:role :user
+                       :text "what is this?"
+                       :attachments attachments
+                       :quotes quotes
+                       :citations citations}]
+        items (runtime/conversation->items conversation)
+        messages (runtime/items->messages items)]
+    (is (= attachments (:attachments (first items))))
+    (is (= quotes (:quotes (first items))))
+    (is (= citations (:citations (first items))))
+    (is (= conversation messages)
+        "attachments, quotes, and citations round-trip unchanged")))
+
+(deftest runtime-items-to-messages-carries-operator-payload
+  (is (= [{:role :user
+           :text "caption"
+           :attachments [{:attachment-id "a1"}]
+           :quotes [{:message-id "m0" :text "q"}]
+           :citations [{:label "c"}]}]
+         (runtime/items->messages
+          [{:kind :message
+            :role :operator
+            :text "caption"
+            :attachments [{:attachment-id "a1"}]
+            :quotes [{:message-id "m0" :text "q"}]
+            :citations [{:label "c"}]}]))))
+
+(deftest runtime-project-conversation-keeps-user-attachments
+  (let [book (scope/new-book)
+        conversation [{:role :user
+                       :text ""
+                       :attachments [{:attachment-id "a1"
+                                      :name "pixel.png"
+                                      :type :image
+                                      :send-route :native
+                                      :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                                      :send-mime "image/png"}]
+                       :quotes [{:message-id "m0" :text "quoted"}]
+                       :citations [{:label "source one"}]}
+                      {:role :assistant :text "an answer"}]
+        messages (runtime/project-conversation book conversation)
+        user (first messages)]
+    (is (vector? messages))
+    (is (= :user (:role user)))
+    (is (= [{:attachment-id "a1"
+             :name "pixel.png"
+             :type :image
+             :send-route :native
+             :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+             :send-mime "image/png"}]
+           (:attachments user)))
+    (is (= [{:message-id "m0" :text "quoted"}] (:quotes user)))
+    (is (= [{:label "source one"}] (:citations user)))))
+
+(deftest runtime-message-items-roundtrip-carries-operator-payload
+  (let [attachments [{:attachment-id "a1"
+                      :name "pixel.png"
+                      :type :image
+                      :send-route :native
+                      :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      :send-mime "image/png"}]
+        quotes [{:message-id "m0" :text "quoted"}]
+        citations [{:label "source one"}]
+        message {:role :user
+                 :text "what is this?"
+                 :attachments attachments
+                 :quotes quotes
+                 :citations citations}
+        items (runtime/message->items message 0)]
+    (is (= 1 (count items)))
+    (is (= {:attachments attachments
+            :quotes quotes
+            :citations citations}
+           (select-keys (first items) [:attachments :quotes :citations])))
+    (is (= message (first (runtime/items->messages items))))
+    (testing "a source-index-free item rebuilds the same message standalone"
+      (is (= {:role :user
+              :text "what is this?"
+              :attachments attachments
+              :quotes quotes
+              :citations citations}
+             (first (runtime/items->messages
+                     [(dissoc (first items) :source-index
+                               :source-role)])))))))
+
+(deftest runtime-message-items-keeps-absent-payload-keys-absent
+  (let [message {:role :user :text "plain"}
+        items (runtime/message->items message 0)
+        rebuilt (first (runtime/items->messages items))]
+    (doseq [key [:attachments :quotes :citations]]
+      (is (not (contains? rebuilt key))
+          (str "plain message must not gain " key)))
+    (is (= message rebuilt)
+        "a plain user message does not gain nil payload keys")))

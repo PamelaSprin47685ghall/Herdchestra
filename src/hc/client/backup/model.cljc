@@ -49,6 +49,61 @@
 
 (def min-password-length 12)
 
+(def target-kind-options
+  "Ordered backup target kinds for the editor select."
+  [[:webdav "WebDAV"] [:s3 "S3"] [:file "本地文件"]])
+
+(def target-field-defs
+  "Editor fields in display order.  Each entry lists the kinds that show
+  it; `:kinds` stays on the row so the view can filter without a second
+  table.  `:secret` is the S3 secret and `:password` the WebDAV password;
+  both always leave the editor empty on edit."
+  [{:key :remote-url :label "服务地址" :input :text
+    :required? true :kinds #{:webdav}}
+   {:key :endpoint :label "端点" :input :text
+    :required? true :kinds #{:s3}}
+   {:key :bucket :label "存储桶" :input :text
+    :required? true :kinds #{:s3}}
+   {:key :region :label "区域" :input :text
+    :required? true :kinds #{:s3}}
+   {:key :access-key :label "访问密钥" :input :text
+    :required? true :kinds #{:s3}}
+   {:key :secret :label "私有密钥" :input :password
+    :required? true :kinds #{:s3}}
+   {:key :prefix :label "路径前缀" :input :text
+    :required? false :kinds #{:s3}}
+   {:key :username :label "用户名" :input :text
+    :required? false :kinds #{:webdav}}
+   {:key :password :label "密码" :input :password
+    :required? false :kinds #{:webdav}}
+   {:key :directory :label "远端目录" :input :text
+    :required? false :kinds #{:webdav :file}}
+   {:key :set-default? :label "设为默认目标" :input :checkbox
+    :required? false :kinds #{:webdav :s3 :file}}])
+
+(def target-editor-fields
+  "All editable target-editor keys, including `:kind`."
+  #{:kind :endpoint :bucket :region :access-key :secret :prefix
+    :remote-url :username :password :directory :set-default?})
+
+(def default-target-editor
+  "Blank backup-target editor form.  `:secret`/`:password` stay empty on
+  edit: an empty value tells the server to keep the stored secret."
+  {:open? false
+   :target-id nil
+   :kind :webdav
+   :endpoint ""
+   :bucket ""
+   :region ""
+   :access-key ""
+   :secret ""
+   :prefix ""
+   :remote-url ""
+   :username ""
+   :password ""
+   :directory ""
+   :set-default? false})
+
 (def default-form
   {:password ""
    :password-confirm ""
@@ -85,6 +140,9 @@
    :last-restore nil
    :verify-result nil
    :transport-available? false
+   :target-editor default-target-editor
+   :target-delete-id nil
+   :target-test {:status :idle :detail nil :kind nil :target-id nil}
    :section :backup})
 
 (defn initial-state
@@ -217,6 +275,9 @@
     :backup/maintenance-restore :backup/maintenance-pending
     :backup/maintenance-status :backup/maintenance-status-pending
     :backup/maintenance-restore-recovery-point :backup/maintenance-pending
+    :backup/save-target :backup/save-target-pending
+    :backup/test-target :backup/test-target-pending
+    :backup/delete-target :backup/delete-target-pending
     :backup/pending))
 
 (defn- submit
@@ -240,6 +301,9 @@
                  :backup/maintenance-restore "正在请求停机恢复；服务器确认停止写入前不会宣布成功。"
                  :backup/maintenance-status "正在核对维护状态…"
                  :backup/maintenance-restore-recovery-point "正在请求停机回退；服务器确认停止写入前不会宣布成功。"
+                 :backup/save-target "正在保存备份目标…"
+                 :backup/test-target "正在测试连接…"
+                 :backup/delete-target "正在删除备份目标…"
                  "正在提交…")
                {:code (progress-code kind)})
       (message state :warning
@@ -501,7 +565,7 @@
         known (get error-contract code)
         standard (standard-error-copy code)
         server-message (or (:message error) (get-in error [:details :message]))]
-    (merge {:kind :error
+    (let [view (merge {:kind :error
             :code code
             :title "操作未完成"
             :text (if server-message
@@ -510,7 +574,14 @@
                     "操作未完成，且没有可用的原因说明。请先核对目标状态，不要自动重试。")
             :action "检查目标状态"}
            (or known {})
-           (or standard {}))))
+           (or standard {}))]
+    (cond-> view
+      (:copy view)
+      (update :title (fn [title]
+                       (str (or (failures/reason-label
+                                 (get-in view [:copy :reason-category]))
+                                "")
+                            title)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Derived view
@@ -583,6 +654,8 @@
                        :endpoint (:endpoint target)
                        :bucket (:bucket target)
                        :prefix (:prefix target)
+                       :region (:region target)
+                       :username (:username target)
                        :path-style? (:path-style? target)
                        :selected? (= (:id target) (or (:id selected)
                                                       selected-id))})
@@ -629,6 +702,128 @@
   snapshot that claims `:online? true` does not reopen that path."
   [_state]
   false)
+
+(defn- target-kind-label
+  [kind]
+  (case (normalize-keyword kind)
+    :webdav "WebDAV"
+    :s3 "S3"
+    :file "本地文件"
+    (name (or (normalize-keyword kind) :unknown))))
+
+(defn- non-blank?
+  [value]
+  (not (str/blank? (str (or value "")))))
+
+(defn- target-config-payload
+  "Map the editor form to the server `:config` map for KIND.  Secrets are
+  forwarded verbatim, including empty strings: the server treats a blank
+  secret on an existing target as \"keep the stored value\"."
+  [editor]
+  (let [kind (normalize-keyword (:kind editor))
+        remote-url (str (or (:remote-url editor) ""))
+        endpoint (str (or (:endpoint editor) ""))
+        directory (str (or (:directory editor) ""))]
+    (case kind
+      :webdav
+      (cond-> {:kind :webdav
+               :remote-url (if (non-blank? remote-url)
+                             remote-url
+                             endpoint)
+               :username (str (or (:username editor) ""))
+               :password (str (or (:password editor) ""))}
+        (non-blank? directory) (assoc :directory directory))
+
+      :s3
+      {:kind :s3
+       :endpoint (if (non-blank? endpoint) endpoint remote-url)
+       :bucket (str (or (:bucket editor) ""))
+       :region (str (or (:region editor) ""))
+       :access-key (str (or (:access-key editor) ""))
+       :secret (str (or (:secret editor) ""))
+       :prefix (str (or (:prefix editor) ""))
+       :path-style? true}
+
+      ;; :file (and any unknown kind) uses the local-directory form.
+      {:kind :file
+       :root (if (non-blank? directory) directory remote-url)})))
+
+(defn- target-test-command-key
+  "Command key that keeps in-flight tests for different drafts/targets from
+  blocking each other.  `:backup/test-target` carries no `:target-id`, so the
+  `command-key` payload slot distinguishes the drafts."
+  [editor]
+  (str "test-" (name (normalize-keyword (:kind editor)))
+       "-" (or (:target-id editor) "new")))
+
+(defn- target-busy?
+  [state]
+  (boolean
+   (some (fn [[_ command]]
+           (and (contains? #{:backup/save-target :backup/test-target
+                             :backup/delete-target}
+                           (:kind command))
+                (contains? #{:queued :submitting :outcome-unknown}
+                           (:status command))))
+         (:commands state))))
+
+(defn- target-required-fields
+  "Field keys that must be non-blank for KIND before save/test.  The file
+  kind accepts either `:directory` or `:remote-url`, and WebDAV accepts
+  `:remote-url` or `:endpoint`; neither has a single required key, so
+  `target-config-ready?` checks those pairs."
+  [kind]
+  (case (normalize-keyword kind)
+    :webdav #{}
+    :s3 #{:endpoint :bucket :region :access-key :secret}
+    :file #{}
+    #{}))
+
+(defn- target-config-ready?
+  [editor]
+  (let [kind (normalize-keyword (:kind editor))
+        editor (assoc editor
+                      :remote-url (str (or (:remote-url editor) ""))
+                      :endpoint (str (or (:endpoint editor) ""))
+                      :directory (str (or (:directory editor) "")))
+        required (target-required-fields kind)]
+    (and (or (seq required)
+             ;; :file needs a directory or a remote URL.
+             (or (non-blank? (:directory editor))
+                 (non-blank? (:remote-url editor))))
+         (every? #(non-blank? (get editor %)) required)
+         ;; WebDAV needs a remote URL or an endpoint; :file needs a
+         ;; directory or a remote URL.
+         (or (not (contains? #{:webdav :file} kind))
+             (case kind
+               :webdav (or (non-blank? (:remote-url editor))
+                           (non-blank? (:endpoint editor)))
+               :file (or (non-blank? (:directory editor))
+                         (non-blank? (:remote-url editor)))
+               true)))))
+
+(defn target-config-view
+  "View model for the backup-target editor.  `:fields` lists every editor
+  input in display order with `:kinds`; the view filters by `:kind`.
+  `:can-save?`/`:can-test?` require the kind's mandatory fields and no
+  in-flight target command."
+  [state]
+  (let [ui (:ui state)
+        editor (or (:target-editor ui) default-target-editor)
+        kind (normalize-keyword (:kind editor))
+        busy? (target-busy? state)
+        ready? (and (target-config-ready? editor) (not busy?))]
+    {:editor editor
+     :open? (true? (:open? editor))
+     :kind kind
+     :kind-label (target-kind-label kind)
+     :fields (vec target-field-defs)
+     :test (:target-test ui)
+     :targets (:targets (target-view state))
+     :delete-id (:target-delete-id ui)
+     :busy? busy?
+     :can-save? ready?
+     :can-test? ready?}))
 
 (def maintenance-terminal-statuses
   "Terminal maintenance statuses.  The three evidence statuses must stop the
@@ -1825,6 +2020,60 @@
     :backup/maintenance-status (apply-maintenance-result state result)
     :backup/maintenance-restore-recovery-point
     (apply-maintenance-result state result)
+    :backup/save-target
+    (-> (refresh-status
+         (cond-> (-> state
+                      (assoc-in [:ui :target-editor]
+                                (assoc default-target-editor :open? false))
+                      (assoc-in [:ui :target-delete-id] nil))
+           (contains? result :targets)
+           (assoc-in [:server :targets] (vec (:targets result)))
+           (contains? result :default-target-id)
+           (assoc-in [:server :default-target-id]
+                     (:default-target-id result))))
+        (message :info "备份目标已保存。"
+                 {:code :BACKUP_TARGET_SAVED}))
+    :backup/test-target
+    (let [probe (or (:probe result) result)
+          ok? (true? (:ok? probe))
+          detail (or (:detail probe) (:message probe))
+          target-id (or (:target-id probe) (:target-id result))
+          kind (or (:kind probe) (:kind result)
+                   (get-in state [:ui :target-editor :kind]))]
+      (-> state
+          (assoc-in [:ui :target-test]
+                    {:status (if ok? :ok :failed)
+                     :detail detail
+                     :kind kind
+                     :target-id target-id})
+          (message (if ok? :info :warning)
+                   (if ok?
+                     (str "连接测试通过"
+                          (when detail (str "：" detail))
+                          "。")
+                     (str "连接测试失败"
+                          (when detail (str "：" detail))
+                          "。表单仍保留，可修改后重试。"))
+                   {:code (if ok? :BACKUP_TARGET_TEST_OK
+                              :BACKUP_TARGET_TEST_FAILED)
+                    :details probe})))
+    :backup/delete-target
+    (message
+     (refresh-status
+      (cond-> (-> state
+                   (assoc-in [:ui :target-delete-id] nil)
+                   (assoc-in [:ui :target-editor]
+                             (cond-> (:target-editor (:ui state))
+                               (= (:target-id (:target-editor (:ui state)))
+                                  (:target-id result))
+                               (assoc :open? false))))
+        (contains? result :targets)
+        (assoc-in [:server :targets] (vec (:targets result)))
+        (contains? result :default-target-id)
+        (assoc-in [:server :default-target-id]
+                  (:default-target-id result))))
+     :info "备份目标已删除。"
+     {:code :BACKUP_TARGET_DELETED})
     (message state :info "服务器已处理该备份命令。")))
 
 (defn- error-available-categories
@@ -1886,6 +2135,15 @@
                 (= :BACKUP_CANCELLED code)
                 (message state :info (:text view) {:code code})
 
+                (contains? #{:backup/save-target :backup/delete-target
+                            :backup/test-target}
+                           (:kind command))
+                (message state :warning (:text view)
+                         {:code code
+                          :title (:title view)
+                          :action (:action view)
+                          :details (:details error)})
+
                 (and (= :BACKUP_CATEGORY_MISSING code)
                      (seq available))
                 (message state :warning
@@ -1906,6 +2164,14 @@
     (case (:kind command)
       (:backup/preview :backup/restore :backup/restore-recovery-point)
       (assoc-in state [:ui :restore-confirm?] false)
+      :backup/test-target
+      (assoc-in state [:ui :target-test]
+                {:status :failed
+                 :detail (str (or (:title view) "")
+                              (when (:title view) "：")
+                              (:text view))
+                 :kind (get-in state [:ui :target-editor :kind])
+                 :target-id (get-in state [:ui :target-editor :target-id])})
       state)))
 
 (defn apply-receipt
@@ -2228,6 +2494,121 @@
                                     :backup-id id :confirm? true})
       (message state :warning "先选择要删除的备份。" {:code :BACKUP_NOT_FOUND}))))
 
+(defn- target-editor-row
+  "Find one `:server :targets` row by id for editor backfill.  Rows keep the
+  projected fields plus any non-secret extras the status projection sent."
+  [state target-id]
+  (some #(when (= target-id (:id %)) %) (:targets (target-view state))))
+
+(defn- target-editor-from-row
+  [row set-default?]
+  (let [kind (normalize-keyword (:kind row))]
+    (-> default-target-editor
+        (assoc :open? true
+               :target-id (:id row)
+               :kind (or kind :webdav)
+               :endpoint (str (or (:endpoint row) ""))
+               :bucket (str (or (:bucket row) ""))
+               :region (str (or (:region row) ""))
+               :access-key (str (or (:access-key row) ""))
+               :prefix (str (or (:prefix row) ""))
+               :remote-url (str (or (:base-url row) (:remote-url row) ""))
+               :username (str (or (:username row) ""))
+               :directory (str (or (:directory row) (:root row) ""))
+               :set-default? (boolean set-default?)))))
+
+(defn- handle-toggle-target-editor
+  [state]
+  (let [editor (get-in state [:ui :target-editor] default-target-editor)
+        opening? (not (true? (:open? editor)))
+        editor (if (and opening? (nil? (:target-id editor)))
+                 default-target-editor
+                 editor)]
+    (assoc-in state [:ui :target-editor]
+              (assoc editor :open? opening?))))
+
+(defn- handle-new-target
+  [state]
+  (-> state
+      (assoc-in [:ui :target-editor] (assoc default-target-editor
+                                            :open? true))
+      (assoc-in [:ui :target-delete-id] nil)
+      (assoc-in [:ui :target-test]
+                {:status :idle :detail nil :kind nil :target-id nil})))
+
+(defn- handle-edit-target
+  [state action]
+  (let [target-id (or (:target-id action)
+                      (get-in state [:ui :target-delete-id]))]
+    (if-let [row (target-editor-row state target-id)]
+      (let [set-default? (or (= target-id
+                                 (get-in state [:server :default-target-id]))
+                            (= target-id (:target-id (:ui state))))]
+        (-> state
+            (assoc-in [:ui :target-editor]
+                      (target-editor-from-row row set-default?))
+            (assoc-in [:ui :target-test]
+                      {:status :idle :detail nil
+                       :kind (:kind row) :target-id target-id})))
+      (message state :warning "找不到该备份目标；请刷新状态后重试。"
+               {:code :BACKUP_TARGET_UNKNOWN}))))
+
+(defn- handle-set-target-field
+  [state action]
+  (let [field (normalize-keyword (:field action))
+        value (:value action)]
+    (if (contains? target-editor-fields field)
+      (update-in state [:ui :target-editor]
+                 (fn [editor]
+                   (cond-> (assoc editor field value)
+                     (= :kind field)
+                     (update :kind normalize-keyword))))
+      state)))
+
+(defn- handle-save-target
+  [state]
+  (let [editor (get-in state [:ui :target-editor] default-target-editor)]
+    (if-not (target-config-ready? editor)
+      (message state :warning
+               "请填写当前类型的必填字段后再保存。"
+               {:code :BACKUP_TARGET_INVALID})
+      (submit state :backup/save-target
+              {:target-id (:target-id editor)
+               :config (target-config-payload editor)
+               :default? (boolean (:set-default? editor))}))))
+
+(defn- handle-test-target
+  [state]
+  (let [editor (get-in state [:ui :target-editor] default-target-editor)]
+    (if-not (target-config-ready? editor)
+      (message state :warning
+               "请填写当前类型的必填字段后再测试连接。"
+               {:code :BACKUP_TARGET_INVALID})
+      (submit state :backup/test-target
+              {:config (target-config-payload editor)
+               :command-key (target-test-command-key editor)}))))
+
+(defn- handle-request-delete-target
+  [state action]
+  (assoc-in state [:ui :target-delete-id]
+            (or (:target-id action)
+                (get-in state [:ui :target-delete-id]))))
+
+(defn- handle-delete-target
+  [state]
+  (let [target-id (get-in state [:ui :target-delete-id])]
+    (if target-id
+      ;; The contract clears the confirmation only once the command is
+      ;; accepted; a refused queue keeps the pending id for a retry.
+      (let [before (count (:outbox state))
+            queued (submit state :backup/delete-target
+                            {:target-id target-id})]
+        (if (> (count (:outbox queued)) before)
+          (assoc-in queued [:ui :target-delete-id] nil)
+          queued))
+      (message state :warning "先选择要删除的备份目标。"
+               {:code :BACKUP_TARGET_UNKNOWN}))))
+
 (defn- handle-recovery-restore
   [state action]
   (let [id (or (:recovery-point-id action)
@@ -2319,6 +2700,33 @@
 
       :backup/select-target
       (result (handle-select-target state action))
+
+      :backup/toggle-target-editor
+      (result (handle-toggle-target-editor state))
+
+      :backup/new-target
+      (result (handle-new-target state))
+
+      :backup/edit-target
+      (result (handle-edit-target state action))
+
+      :backup/set-target-field
+      (result (handle-set-target-field state action))
+
+      :backup/save-target
+      (result (handle-save-target state))
+
+      :backup/test-target
+      (result (handle-test-target state))
+
+      :backup/request-delete-target
+      (result (handle-request-delete-target state action))
+
+      :backup/cancel-delete-target
+      (result (assoc-in state [:ui :target-delete-id] nil))
+
+      :backup/delete-target
+      (result (handle-delete-target state))
 
       :backup/select-section
       (result (assoc-in state [:ui :section]

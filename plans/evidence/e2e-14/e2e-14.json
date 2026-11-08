@@ -1,0 +1,55 @@
+{
+  "test": "E2E 14",
+  "freeze": {
+    "bundleSha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+    "treeSha256": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b"
+  },
+  "checks": {
+    "paneMounted": true,
+    "permissionEnabled": true,
+    "tabOpened": true,
+    "privateReadApproved": true,
+    "step1Observed": true,
+    "agentTyped": true,
+    "step2Reached": true,
+    "operatorPauseDetected": true,
+    "typeButtonWhilePaused": "absent",
+    "agentDisabledWhilePaused": true,
+    "resumeRereadDom": true,
+    "pageCards": 6,
+    "cardSeqsAscending": true,
+    "step3Reached": true,
+    "sensitiveBadge": true,
+    "typeDisabledForSensitive": true,
+    "sensitiveRefused": true,
+    "typeButtonWhileSensitivePaused": "disabled",
+    "agentDisabledWhileSensitivePaused": true,
+    "operatorFilledSensitive": true,
+    "resumedAfterSensitive": true,
+    "sensitiveValueNotLeaked": true,
+    "tabClosedShown": true,
+    "cardsKeptAfterClose": true,
+    "noErrorAfterClose": true,
+    "sessionKept": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/01-pane-mounted.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/02-permission-enabled.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/03-step1-observed.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/04-step2.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/05-paused-manual.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/06-resumed.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/07-page-cards.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/08-sensitive-paused.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/08b-operator-filled.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/09-after-close.png"
+  ],
+  "startedAt": "2026-11-08T04:36:08.877Z",
+  "appUrl": "http://127.0.0.1:45731",
+  "managedChrome": {
+    "port": 42451,
+    "endpoint": "http://127.0.0.1:42451"
+  },
+  "ok": true,
+  "finishedAt": "2026-11-08T04:36:48.149Z"
+}

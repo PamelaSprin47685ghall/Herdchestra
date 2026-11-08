@@ -9,7 +9,8 @@
   returned state first and only then acts on the outbox.  A command is
   accepted through `hc.compose.owner.commands`; an internal message carries
   no client epoch."
-  (:require [clojure.string :as str]
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
             [hc.compose.cancel :as cancel]
             [hc.compose.mission :as mission]
             [hc.compose.mission.actors :as actors]
@@ -21,6 +22,7 @@
             [hc.compose.reports.acceptance :as acceptance]
             [hc.compose.reports.delivery :as delivery]
             [hc.core.relay :as relay]
+            [hc.core.scope.ledger :as scope-ledger]
             [hc.core.ufss :as ufss]))
 
 ;; ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@
     :stop-run
     :answer-ask
     :review/submit
+    :scope/ask-previous
+    :scope/ask-answer
     :plan/write-draft
     :plan/claim-draft
     :plan/release-draft
@@ -133,8 +137,14 @@
     (let [binding (get-in state [:session :model-binding])
           live-fact (when-let [f (:model-tools-supported ctx)]
                       (try (f binding) (catch Throwable _ nil)))
-          binding-supported? (mission-model/supports-tools?
-                               (:capabilities binding))
+          ;; `:model-tools-supported` answers the merged live+binding fact.
+          ;; A non-nil answer is authoritative; nil means neither the live
+          ;; entry nor the binding carried a `:tools` declaration, so the
+          ;; binding's copied declaration is the last resort.
+          binding-supported? (when (and (map? binding)
+                                        (contains? binding :capabilities))
+                               (mission-model/supports-tools?
+                                (:capabilities binding)))
           ;; `:model-tools-supported` already merges the live model entry with
           ;; the binding declaration.  Trust its non-nil answer; a nil fact
           ;; (no resolver, or no live/binding capability at all) falls back to
@@ -145,6 +155,23 @@
       (when (and (mission-model/role-requires-tools? role)
                  binding
                  (not supported?))
+        (let [source-fn (:model-tools-source ctx)
+              resolved-source (when (fn? source-fn)
+                                (try (source-fn binding) (catch Throwable _ nil)))
+              ;; The resolver answers for the merged live+binding fact; a
+              ;; non-nil live fact means the live model entry produced the
+              ;; refusal.  Without either, only the binding (or nothing) was
+              ;; consulted.
+              capabilities-source
+              (cond
+                (some? resolved-source) resolved-source
+                ;; Without a source resolver the merged fact cannot say
+                ;; which declaration produced it; report the binding when it
+                ;; carries capabilities, else :none.
+                (and (map? binding)
+                     (contains? binding :capabilities))
+                :binding
+                :else :none)]
         {:code :MODEL_TOOLS_UNAVAILABLE
          :role role
          :program-role (case role
@@ -154,17 +181,61 @@
          :connection-id (:connection-id binding)
          :model-entry-id (:model-entry-id binding)
          :capabilities (:capabilities binding)
+         :capabilities-source capabilities-source
          :remedy :select-model
-         :draft-preserved? true}))))
+         :draft-preserved? true})))))
 
 (defn- normalize-scope-annotation
   "Model JSON arguments carry enum values as strings; the Scope parser
   expects keyword kinds.  Normalize at the Owner tool-call boundary so a
   valid model call is admitted instead of failing as an unknown kind."
   [annotation]
-  (if (and (map? annotation) (string? (:kind annotation)))
+  (cond
+    (string? annotation)
+    ;; A bare kind name (`"me-too"`) or a small EDN map string is model
+    ;; shorthand for the flat `:scope` map.  Parse it here so a present but
+    ;; loosely-shaped annotation reaches the Scope parser instead of
+    ;; reporting `:SCOPE_ANNOTATION_MISSING`.
+    (let [trimmed (str/trim annotation)
+          parsed (when (str/starts-with? trimmed "{")
+                   (try (edn/read-string trimmed)
+                        (catch Exception _ nil)))]
+      (cond
+        (map? parsed) (normalize-scope-annotation parsed)
+        (some? parsed) parsed
+        :else {:kind (keyword trimmed)}))
+
+    (keyword? annotation)
+    {:kind annotation}
+
+    (and (map? annotation) (string? (:kind annotation)))
     (update annotation :kind keyword)
+
+    :else
     annotation))
+
+(def ^:private scope-required-members
+  "Members whose tool schema declares `:scope` inside `parameters.required`.
+
+  For these a missing annotation is a parameter mistake, not a top-level
+  field mistake; the refusal says so explicitly."
+  #{"devops" "clj-plan" "clj-review" "clj-worker"})
+
+(defn- scope-refusal-message
+  "Attach the parameter-level `:scope` hint when the member's schema
+  requires it inside `parameters`.  Other members keep the parser's
+  generic message."
+  [member admission]
+  (if (and (= :SCOPE_ANNOTATION_MISSING (:code admission))
+           (contains? scope-required-members (str member)))
+    (update admission :message
+            (fn [message]
+              (str message
+                   " `:scope` is a required field inside this tool's "
+                   "`parameters` (the schema `required` list), not a "
+                   "top-level tool-call field; add `:scope {:kind ...}` "
+                   "there and retry.")))
+    admission))
 
 (def ^:private owner-tool-keys
   "Tool-payload keys the Owner derives from committed state.
@@ -298,7 +369,7 @@
             (mission-result state result)))))))
 
 (defn- apply-review
-  [state {:keys [lane tenure-id findings call-id]} _ctx]
+  [state {:keys [lane tenure-id findings call-id draft-disk-content]} _ctx]
   (if (state/mission-completed? state)
     (refused :MISSION_COMPLETED
              "a completed mission accepts no review; an operator message reopens it"
@@ -310,10 +381,204 @@
                    :tenure-id tenure-id
                    :findings findings
                    :call-id call-id
+                   :draft-disk-content draft-disk-content
                    :board-facts (state/board-facts state)})]
       (if (:ok? result)
         (mission-result (state/progress! state) result)
         (mission-result state result)))))
+
+(defn- apply-scope-ask-previous
+  "Record one askPreviousScope receipt.  The answer is never in this
+  synchronous receipt; consult delivery is a separate transition."
+  [state payload ctx]
+  (let [{:keys [state result]}
+        (state/ask-previous-scope-state
+         state
+         (assoc payload :at (:now ctx)))]
+    (if (:ok result)
+      (accepted state (:receipt result)
+                (when (seq (:outbox result)) (:outbox result)))
+      (refused (:code result)
+               (:message result)
+               (:details result)))))
+
+(declare append-terminal)
+
+(defn- deliver-scope-ask-answer
+  "Deliver one ask answer as an agent-attributed operator message.
+
+  A stale generation (a newer reset beat settled after the ask was
+  accepted) marks the ask `:stale` and drops the answer.  A delivered or
+  stale ask refuses a second delivery."
+  [state call-id answer now]
+  (let [ask (get-in state [:scope :asks call-id])
+        beat (peek (scope-ledger/reset-beats (state/scope-book state)))
+        generation (:call-id beat)]
+    (cond
+      (nil? ask)
+      (refused :ASK_NOT_FOUND
+               "no askPreviousScope receipt exists for this call-id"
+               {:call-id call-id})
+
+      (contains? #{:delivered :stale} (:status ask))
+      (refused :ASK_ALREADY_RESOLVED
+               "the ask receipt is already resolved"
+               {:call-id call-id
+                :status (:status ask)})
+
+      (not= (:generation ask) generation)
+      (accepted (assoc-in state [:scope :asks call-id :status] :stale)
+                {:status :accepted
+                 :outcome :stale
+                 :call-id call-id
+                 :generation (:generation ask)
+                 :current-generation generation})
+
+      :else
+      (let [state' (-> state
+                       (assoc-in [:scope :asks call-id :status] :delivered)
+                       (assoc-in [:scope :asks call-id :answer]
+                                 {:text answer :at now})
+                       (update :conversation conj
+                               {:role :user
+                                :text answer
+                                :attribution "agent"
+                                :ask-id call-id
+                                :source :ask-previous-scope
+                                :at now}))]
+        (accepted state'
+                  {:status :accepted
+                   :outcome :delivered
+                   :call-id call-id
+                   :target-call-id (:target-call-id ask)})))))
+
+(defn- apply-scope-ask-answer
+  "Host/operator bypass that injects an ask answer without a consult call.
+
+  This is the P1 delivery channel: until the ephemeral consult guard
+  exists, a trusted caller submits `:scope/ask-answer` with the ask's
+  call-id and the answer text."
+  [state {:keys [call-id answer]} ctx]
+  (if (str/blank? (str answer))
+    (refused :ASK_ANSWER_REQUIRED
+             "ask answer must be a non-blank string"
+             {:call-id call-id})
+    (deliver-scope-ask-answer state call-id answer (:now ctx))))
+
+(defn- fail-scope-ask-consult
+  "Mark the ask's consult failed without delivering an answer.
+
+  A failed or cancelled consult leaves the ask `:status :failed`; the
+  `:scope/ask-answer` command remains the manual delivery channel.  The
+  consult call itself still receives its normal terminal record."
+  [state ask-call-id now]
+  (if (and (some? ask-call-id)
+           (= :consulting (get-in state [:scope :asks ask-call-id :consult]))
+           (= :accepted (get-in state [:scope :asks ask-call-id :status])))
+    (-> state
+        (assoc-in [:scope :asks ask-call-id :status] :failed)
+        (assoc-in [:scope :asks ask-call-id :consult] :failed)
+        (assoc-in [:scope :asks ask-call-id :failed-at] now))
+    state))
+
+(defn- apply-scope-consult-event
+  "Route one model event for a scope-ask consult call.
+
+  The consult is ephemeral: chunks only accumulate on the call record,
+  tool calls are refused (the snapshot carries `:tools []`), and a
+  `:completed` terminal hands its text to `deliver-scope-ask-answer`,
+  which re-checks the generation before appending the agent-attributed
+  steer to the conversation.  A stale generation drops the answer."
+  [state message ctx current attempt-id now]
+  (let [event (:event message)
+        model-call-id (or (:model-call-id event) (:call-id event))
+        ask-call-id (get-in current [:request :snapshot :scope-consult-for])
+        call-attempt (state/normalize-attempt-id (:attempt-id current))
+        event-attempt (state/normalize-attempt-id (:attempt-id event))
+        same-attempt? (and (some? call-attempt)
+                           (= event-attempt call-attempt))]
+    (cond
+      (not same-attempt?)
+      {:state (state/append-diagnostic
+               state
+               {:code :STALE_MODEL_ATTEMPT
+                :call-id model-call-id
+                :attempt-id event-attempt
+                :current-attempt-id (:attempt-id current)
+                :at now})
+       :receipt {:status :ignored :reason :stale-attempt}}
+
+      (= :chunk (:event event))
+      (let [text (or (:text event) "")]
+        {:state (update-in state [:calls model-call-id :output] str text)
+         :receipt {:status :accepted :outcome :chunk
+                   :call-id model-call-id}})
+
+      (= :tool-call (:event event))
+      {:state (state/append-diagnostic
+               state
+               {:code :SCOPE_CONSULT_TOOL_CALL
+                :message "a scope-ask consult call cannot invoke tools"
+                :call-id model-call-id
+                :ask-call-id ask-call-id
+                :at now})
+       :receipt {:status :ignored :reason :consult-read-only}}
+
+      (= :completed (:event event))
+      (let [answer (or (:text event)
+                       (:output current)
+                       (get-in current [:request :snapshot :output]))
+            ;; Delivery first: it owns the ask transition and the
+            ;; conversation append, including the generation re-check.
+            delivered (deliver-scope-ask-answer state ask-call-id
+                                                (str answer) now)
+            ;; `deliver-scope-ask-answer` returns an accepted business
+            ;; result or a bare refusal.  A refusal (unknown or already
+            ;; resolved ask) leaves the Owner state untouched.
+            state (or (:state delivered) state)
+            state (append-terminal
+                   state
+                   {:call-id model-call-id
+                    :attempt-id attempt-id
+                    :status :succeeded
+                    :payload (select-keys event [:text :usage])
+                    :at now})]
+        {:state state
+         :receipt {:status :accepted
+                   :outcome (or (get-in delivered [:receipt :outcome])
+                                :delivered)
+                   :ask-call-id ask-call-id
+                   :call-id model-call-id}})
+
+      (contains? #{:failed :cancelled} (:event event))
+      (let [status (:event event)
+            error (merge {:kind (if (= :failed status)
+                                  :model-error :cancelled)
+                          :message (if (= :failed status)
+                                     "scope-ask consult failed"
+                                     "scope-ask consult cancelled")}
+                         (select-keys event [:partial?]))
+            state (fail-scope-ask-consult state ask-call-id now)
+            state (append-terminal
+                   state
+                   {:call-id model-call-id
+                    :attempt-id attempt-id
+                    :status (if (= :failed status) :failed :cancelled)
+                    :error error
+                    :at now})]
+        {:state state
+         :receipt {:status :accepted
+                   :outcome :terminal-queued
+                   :ask-call-id ask-call-id
+                   :call-id model-call-id}})
+
+      :else
+      {:state (state/append-diagnostic
+               state
+               {:code :UNKNOWN_MODEL_EVENT
+                :event (:event event)
+                :at now})
+       :receipt {:status :ignored :reason :unknown-event}})))
 
 (defn- apply-mission-extension
   "Store one opaque mission extension in the same Owner CAS.
@@ -669,7 +934,8 @@
                                      (select-keys payload
                                                   [:turn-card-ids
                                                    :instruction-values
-                                                   :search :chat?]))))]
+                                                  :search :chat?
+                                                  :temporary-read?]))))]
               (accepted (mirror-outbound-run!
                          (mirror-history-message!
                           state
@@ -725,7 +991,8 @@
                              (central-tenure-id state role)
                              (select-keys payload
                                           [:turn-card-ids :instruction-values
-                                           :search :chat?])))
+                                           :search :chat?
+                                           :temporary-read?])))
                     state)
             state (if (in-swarm? state)
                     (reduce
@@ -1482,8 +1749,14 @@
                      (apply-review state {:lane (keyword (:lane payload))
                                           :tenure-id (:tenure-id payload)
                                           :findings (:findings payload)
-                                          :call-id (:command-id message)}
+                                          :call-id (:command-id message)
+                                          :draft-disk-content
+                                          (:draft-disk-content payload)}
                                    ctx))
+    :scope/ask-previous
+    (apply-scope-ask-previous state payload ctx)
+    :scope/ask-answer
+    (apply-scope-ask-answer state payload ctx)
     :plan/write-draft (apply-plan-draft state payload ctx)
     :plan/claim-draft (apply-plan-draft-claim state payload ctx)
     :plan/release-draft (apply-plan-draft-release state payload ctx)
@@ -1852,6 +2125,14 @@
         id (state/run-id model-call-id attempt-id)
         run (state/run-for-attempt state model-call-id attempt-id)]
     (cond
+      ;; A scope-ask consult call is ephemeral: its chunks never open a run,
+      ;; its tools are refused, and its terminal delivers the answer through
+      ;; `deliver-scope-ask-answer` instead of writing an assistant message.
+      (and current
+           (some? (get-in current [:request :snapshot
+                                   :scope-consult-for])))
+      (apply-scope-consult-event state message ctx current attempt-id now)
+
       (nil? current)
       {:state (state/append-diagnostic
                state
@@ -2076,7 +2357,8 @@
                               (get-in payload [:scope])))
               payload (cond-> payload
                         (some? annotation) (assoc :scope annotation))
-              admission (state/scope-admission-check state member annotation)
+              admission (state/scope-admission-check state member annotation
+                                                   tool-call-id)
               existing (state/call state tool-call-id)]
           (cond
             existing
@@ -2085,7 +2367,8 @@
                        :call-id tool-call-id}}
 
             (false? (:ok admission))
-            (let [state (record-tool-refusal state tenure-id
+            (let [admission (scope-refusal-message member admission)
+                  state (record-tool-refusal state tenure-id
                                              (:agent-id current)
                                              member admission now)
                   refusal (ufss/write-str admission)
@@ -2656,12 +2939,18 @@
     ;; tenure, and agent that the Nudge policy still owes a decision.
     {:state state
      :receipt {:status :ignored :reason :turn-still-unsettled}}
-    {:state (assoc state :turn {:role (keyword (:role message))
-                                :agent-id (:agent-id message)
-                                :tenure-id (:tenure-id message)
-                                :ended? true
-                                :at (:now ctx)})
-     :receipt {:status :accepted :outcome :turn-ended}}))
+    (let [role (keyword (:role message))]
+      {:state (assoc state :turn {:role role
+                                  :agent-id (:agent-id message)
+                                  :tenure-id (:tenure-id message)
+                                  ;; A manually reported end carries no tool
+                                  ;; evidence; the policy decides from the
+                                  ;; tenure ledger whether this was a plain
+                                  ;; stop or still owes a Nudge.
+                                  :failure-outcome :succeeded
+                                  :ended? true
+                                  :at (:now ctx)})
+       :receipt {:status :accepted :outcome :turn-ended}})))
 
 (defn- normalize-business
   "Wrap a command-kind result that was refused without a state.
@@ -2773,7 +3062,8 @@
                     state
                     (apply-review state (select-keys message
                                                      [:lane :tenure-id :findings
-                                                      :call-id])
+                                                      :call-id
+                                                      :draft-disk-content])
                                   ctx))
     :board/command (normalize-business
                     state

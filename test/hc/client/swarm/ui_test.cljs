@@ -22,18 +22,18 @@
 (deftest fleet-overview-renders
   (let [markup (html)]
     (testing "fleet and worktree identity are visible"
-      (is (str/includes? markup "Swarm fleet"))
+      (is (str/includes? markup "Swarm 总览"))
       (is (str/includes? markup "auth-core"))
       (is (str/includes? markup "ui-shell"))
       (is (str/includes? markup "/worktrees/mission/swarm-1"))
-      (is (str/includes? markup "Running"))
-      (is (str/includes? markup "Joined")))
+      (is (str/includes? markup "运行中"))
+      (is (str/includes? markup "已合入")))
     (testing "root counts and master version are visible"
-      (is (str/includes? markup "2 ready"))
-      (is (str/includes? markup "1 waiting"))
-      (is (str/includes? markup "master version")))
+      (is (str/includes? markup "2 个就绪"))
+      (is (str/includes? markup "1 个等待"))
+      (is (str/includes? markup "Master 版本")))
     (testing "the root is a labelled, live status region"
-      (is (str/includes? markup "aria-label=\"Swarm fleet dashboard\""))
+      (is (str/includes? markup "aria-label=\"Swarm fleet 看板\""))
       (is (str/includes? markup "role=\"status\""))
       (is (str/includes? markup "aria-live=\"polite\""))
       (is (str/includes? markup "<section")))
@@ -49,13 +49,13 @@
       (is (str/includes? markup "auth integration test passes"))
       (is (str/includes? markup "Implement token parsing")))
     (testing "a released wait is distinct from a done parent"
-      (is (str/includes? markup "Wait released"))
-      (is (str/includes? markup "not automatically done"))
-      (is (str/includes? markup "Done — explicitly completed")))
+      (is (str/includes? markup "等待已解除"))
+      (is (str/includes? markup "不会自动标记完成"))
+      (is (str/includes? markup "已完成 — 显式完成")))
     (testing "the concrete wait chain is visible"
       (is (str/includes? markup "Wait for parser"))
       (is (str/includes? markup "Deep dependency"))
-      (is (str/includes? markup "Wait chain")))
+      (is (str/includes? markup "等待链")))
     (testing "native disclosure controls provide keyboard access"
       (is (str/includes? markup "<details"))
       (is (str/includes? markup "<summary")))))
@@ -68,20 +68,20 @@
       (is (str/includes? markup "slot-c"))
       (is (str/includes? markup "agent-holder"))
       (is (str/includes? markup "agent-worker"))
-      (is (str/includes? markup "Token holder")))
+      (is (str/includes? markup "令牌持有者")))
     (testing "normal token rotation is not presented as a crash"
-      (is (str/includes? markup "lost token competition"))
-      (is (str/includes? markup "normal lifecycle"))
-      (is (str/includes? markup "Terminated — failure")))
+      (is (str/includes? markup "令牌竞争落败"))
+      (is (str/includes? markup "正常的生命周期轮换"))
+      (is (str/includes? markup "已终止 — 失败")))
     (testing "the holder responsibility set and W are distinguished"
       (is (str/includes? markup "R(holder)"))
       (is (str/includes? markup "action-shell"))
-      (is (str/includes? markup "Workspace write entrance W"))
-      (is (str/includes? markup "managed shell"))
+      (is (str/includes? markup "工作区写入口 W"))
+      (is (str/includes? markup "托管 shell"))
       (is (str/includes? markup "action-edit"))
-      (is (str/includes? markup "waiting in W&#x27;s FIFO queue")
+      (is (str/includes? markup "个写者在 W 的 FIFO 队列中等待")
           "the queued writer is described, not only counted")
-      (is (not (str/includes? markup "aria-label=\"Recovery write barrier\""))
+      (is (not (str/includes? markup "aria-label=\"恢复写屏障\""))
           "a normal W does not show a recovery section"))))
 
 (defn- with-recovery-gate
@@ -106,22 +106,22 @@
                                           :reason :process-restart
                                           :recovered-at 1700000000000}})))]
     (testing "the barrier is a labelled text section, not a color-only signal"
-      (is (str/includes? markup "aria-label=\"Recovery write barrier\""))
-      (is (str/includes? markup "Recovery barrier active"))
-      (is (str/includes? markup "Why W is blocked"))
-      (is (str/includes? markup "unresolved uncertain action(s)"))
+      (is (str/includes? markup "aria-label=\"恢复写屏障\""))
+      (is (str/includes? markup "恢复屏障生效中"))
+      (is (str/includes? markup "W 被阻塞的原因"))
+      (is (str/includes? markup "未结清的动作"))
       (is (str/includes? markup
-                         "the previous process held W without a proven outcome")))
+                         "上一个进程持有 W 时未给出已证实的结局")))
     (testing "unresolved action IDs and old-gate evidence stay visible"
       (is (str/includes? markup "action-recover-1"))
       (is (str/includes? markup "action-recover-2"))
       (is (str/includes? markup "agent-old"))
-      (is (str/includes? markup "2 queued"))
-      (is (str/includes? markup "Previous outcome"))
-      (is (str/includes? markup "unknown; not proven written or not written"))
-      (is (str/includes? markup "abandoned; not replayed"))
+      (is (str/includes? markup "队列 2 个"))
+      (is (str/includes? markup "旧结局"))
+      (is (str/includes? markup "未知；未证实已写或未写"))
+      (is (str/includes? markup "已放弃；未重放"))
       (is (str/includes? markup "1700000000000"))
-      (is (not (str/includes? markup "W is free"))))))
+      (is (not (str/includes? markup "W 空闲"))))))
 
 (deftest acknowledged-recovery-renders-persisted-evidence
   (let [markup (render
@@ -137,23 +137,23 @@
                      :write-gate-held? true
                      :at-version 42}})))]
     (testing "the acknowledged barrier shows the persisted evidence"
-      (is (str/includes? markup "Recovery acknowledged"))
-      (is (str/includes? markup "Recovery acknowledgement"))
+      (is (str/includes? markup "恢复已确认"))
+      (is (str/includes? markup "恢复确认"))
       (is (str/includes? markup "worktree inspected and action resolved"))
       (is (str/includes? markup "operator-7"))
       (is (str/includes? markup "42"))
-      (is (str/includes? markup "W held when acknowledged"))
-      (is (not (str/includes? markup "Recovery barrier active"))))))
+      (is (str/includes? markup "确认时 W 状态"))
+      (is (not (str/includes? markup "恢复屏障生效中"))))))
 
 (deftest join-report-is-rendered-in-full
   (let [markup (html)]
-    (is (str/includes? markup "Join report — full text"))
+    (is (str/includes? markup "合入报告 — 完整文本"))
     (is (str/includes? markup "REPORT-END-9f3c"))
     (is (str/includes? markup "Joined after rebase."))
     (is (str/includes? markup "abc123"))
-    (is (str/includes? markup "Rebase rounds"))
+    (is (str/includes? markup "Rebase 轮次"))
     (testing "the report is in a focusable scroll region"
-      (is (str/includes? markup "aria-label=\"Full join report, scrollable\""))
+      (is (str/includes? markup "aria-label=\"完整合入报告，可滚动\""))
       (is (str/includes? markup "tabindex=\"0\"")))))
 
 (deftest responsive-and-accessible-styles-are-present
@@ -170,7 +170,7 @@
   (let [component-markup
         (rds/renderToStaticMarkup
          (react/createElement ui/SwarmDashboard #js {:db fixture/fixture}))]
-    (is (str/includes? component-markup "Swarm fleet"))
+    (is (str/includes? component-markup "Swarm 总览"))
     (is (str/includes? component-markup "REPORT-END-9f3c"))
     (is (str/includes? component-markup "aria-label"))))
 
@@ -199,28 +199,28 @@
         component-markup
         (rds/renderToStaticMarkup
          (react/createElement ui/SwarmDashboard #js {:db db}))]
-    (is (str/includes? component-markup "Recovery barrier active"))
+    (is (str/includes? component-markup "恢复屏障生效中"))
     (is (str/includes? component-markup
-                       "the previous process held W without a proven outcome"))
+                       "上一个进程持有 W 时未给出已证实的结局"))
     (is (str/includes? component-markup "action-component-1"))
     (is (str/includes? component-markup "old-agent"))))
 
 (deftest actual-server-board-shape-renders
   (let [markup (render (model/dashboard-from-db fixture/server-board-fixture))]
     (testing "the real server shape is shown as a board-only row, not an empty fleet"
-      (is (str/includes? markup "Status not reported"))
-      (is (str/includes? markup "Fleet row not reported"))
+      (is (str/includes? markup "状态未上报"))
+      (is (str/includes? markup "未上报 fleet 行"))
       (is (str/includes? markup "Integrate authentication core"))
       (is (str/includes? markup "Implement token parsing")))
     (testing "unreported token/W/fleet facts stay explicitly unknown"
-      (is (str/includes? markup "Token slot not reported by the server."))
-      (is (str/includes? markup "W state not reported"))
-      (is (str/includes? markup "Queue</dt>"))
-      (is (str/includes? markup "not reported</dd>"))
-      (is (not (str/includes? markup "No writer is waiting")))
-      (is (str/includes? markup "Fleet join queue not reported"))
-      (is (str/includes? markup "Board version"))
-      (is (str/includes? markup "Wait released")))))
+      (is (str/includes? markup "令牌槽位未由服务器上报。"))
+      (is (str/includes? markup "W 状态未上报"))
+      (is (str/includes? markup "队列</dt>"))
+      (is (str/includes? markup "未上报</dd>"))
+      (is (not (str/includes? markup "没有写者在 W 的 FIFO 队列中等待")))
+      (is (str/includes? markup "未上报 fleet 合入队列"))
+      (is (str/includes? markup "看板版本"))
+      (is (str/includes? markup "等待已解除")))))
 
 (deftest declared-counts-render-without-a-board
   (let [markup (render
@@ -229,10 +229,10 @@
                   {"s" {:swarm-id "s" :slice-id "fleet-only"
                         :status :running
                         :root-ready 2 :root-waiting 1 :root-done 3}}}))]
-    (is (str/includes? markup "Root tasks (declared)"))
-    (is (str/includes? markup "2 ready"))
-    (is (str/includes? markup "1 waiting"))
-    (is (str/includes? markup "3 done"))))
+    (is (str/includes? markup "根任务（声明值）"))
+    (is (str/includes? markup "2 个就绪"))
+    (is (str/includes? markup "1 个等待"))
+    (is (str/includes? markup "3 个完成"))))
 
 (deftest unacknowledged-recovery-evidence-is-not-called-acknowledged
   (let [markup (render
@@ -245,23 +245,25 @@
                         :recovery-acknowledgement
                         {:acknowledged? false
                          :evidence "not accepted"}}}}))]
-    (is (str/includes? markup "Recovery evidence reported"))
+    (is (str/includes? markup "已上报恢复证据"))
     (is (not (str/includes? markup
-                            "Recovery acknowledged — the barrier is released")))))
+                            "恢复已确认 — 屏障已解除")))))
 
 (deftest board-only-with-token-and-w-renders
   (let [markup (render (model/dashboard-from-db fixture/server-board-with-token))]
     (testing "real token/W/slot records are shown even without a fleet row"
-      (is (str/includes? markup "W held — managed shell running"))
+      (is (str/includes? markup "W 持有中 — 托管 shell 运行中"))
       (is (str/includes? markup "agent-1"))
       (is (str/includes? markup "slot-d"))
-      (is (str/includes? markup "Vacant"))
-      (is (not (str/includes? markup "Token slot not reported by the server."))))))
+      (is (str/includes? markup "空缺"))
+      (is (not (str/includes? markup "令牌槽位未由服务器上报。"))))))
 
 (deftest unresolved-calls-render-a-check-entry-and-acknowledged-state
   (let [markup (render (model/dashboard-from-db fixture/unresolved-calls))]
     (testing "the open call explains the unknown outcome and offers both checks"
       (is (str/includes? markup "结果待确认"))
+      (is (str/includes? markup "权限被关闭，或执行结果无法确认")
+          "the ten-category reason precedes the concrete copy")
       (is (str/includes? markup "call-1"))
       (is (str/includes? markup "确认已成功"))
       (is (str/includes? markup "确认未发生"))

@@ -279,3 +279,19 @@
                                       :run (:run! runner)})]
     (is (= (count report) (count (get-in result [:receipt :report]))))
     (is (= report (get-in result [:receipt :report])))))
+
+(deftest unconfigured-task-model-returns-failed-report
+  (let [model (scripted-model [])
+        runner (devops/runner {:model model})
+        result ((:run! runner) {:worker-id "plan-worker-1"
+                                :tenure-id "plan-1"
+                                :call-id "devops-no-task"
+                                :model-role :task
+                                :model-id nil
+                                :verbose-intent "inspect"})]
+    (is (= :failed (:status result)))
+    (is (= :ROLE_UNCONFIGURED (get-in result [:error :code])))
+    (is (= :configure-task-model (get-in result [:error :remedy])))
+    (is (string? (:report result)))
+    (is (empty? @(:requests model))
+        "no model start is dispatched without a task model")))

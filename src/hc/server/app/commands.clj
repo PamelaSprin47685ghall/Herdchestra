@@ -53,6 +53,7 @@
             [hc.server.speech :as speech]
             [hc.server.search :as search]
             [hc.server.documents :as documents]
+            [hc.server.history.snapshot :as history-snapshot]
             [hc.server.model-auth.app :as model-auth-app]
             [hc.server.browser :as browser]
             [hc.server.attachments :as attachments]
@@ -121,6 +122,7 @@
 (defn- app-scoped-kind?
   [kind]
   (or (= :session/create kind)
+      (= :session/ensure kind)
       (= :session/create-from-summary kind)
       (= :app/issue-epoch kind)
       (and (keyword? kind)
@@ -139,9 +141,36 @@
         (try (registry/owner-for (:registry router) session-id)
              (catch Throwable _ nil)))))
 
+(defn- ensure-live-owner!
+  "Return the live Owner for SESSION-ID, creating it on first access.
+
+  Startup creates Owners lazily: only the presentation active session gets
+  one eagerly.  Every other committed session is started here the first time
+  a command or metadata request needs it.  The registry's
+  `ensure-owner-for-session!` refuses missing, deleted, or archived sessions
+  and never mutates the record; the router registration makes the new Owner
+  visible to dispatch and the baseline.  Returns the Owner handle, or nil
+  when the session cannot have one."
+  [router session-id]
+  (or (owner-of router session-id)
+      (when-let [factory (get-in @(:state router) [:session-owner-factory])]
+        (let [loaded (try (registry/get-session (:registry router) session-id)
+                          (catch Throwable _ nil))
+              session (when (= :found (:status loaded))
+                        (:session loaded))]
+          (when (and (map? session) factory)
+            (let [ensured (try (registry/ensure-owner-for-session!
+                                (:registry router) session)
+                               (catch Throwable _ nil))]
+              (when (and (:ok? ensured) (:owner ensured))
+                (register-owner! router session-id (:owner ensured))
+                (notify-change! router)
+                (:owner ensured))))))))
+
 (defn- remember-owner!
   [router session-id owner]
-  (swap! (:state router) assoc-in [:owners session-id] owner)
+  (when owner
+    (swap! (:state router) assoc-in [:owners session-id] owner))
   owner)
 
 (defn- reply
@@ -343,23 +372,43 @@
                          :reuse-blank? (if (contains? payload :reuse-blank?)
                                          (:reuse-blank? payload)
                                          false)
+                         :defer-owner? true
                          :config config))]
       (case (:status result)
         :created
         (let [session (:session result)
               session-id (:session-id session)
-              owner (:owner result)]
-          (remember-owner! router session-id owner)
-          (swap! (:state router) assoc :active-session-id session-id)
-          (when-not (:replayed? result)
-            (when-let [f (:on-change router)]
-              (try (f {:type :session-created :session session})
-                   (catch Throwable _ nil))))
-          (reply reply-fn
-                 {:ok? true
-                  :replayed? (boolean (:replayed? result))
-                  :receipt (session-creation-receipt
-                            session (request-creation-identity request))}))
+              ;; `:defer-owner? true` leaves :owner nil; the Owner must exist
+              ;; before this session can accept work, so ensure it here the
+              ;; same way `resolve-command-replay` does for a crash window.
+              ensured (if (:owner result)
+                        {:owner (:owner result)}
+                        (try
+                          (registry/ensure-owner-for-session! registry session)
+                          (catch Throwable t
+                            {:ok? false
+                             :owner nil
+                             :error {:code :OWNER_START_FAILED
+                                     :message (str "session Owner could not start: "
+                                                   (.getMessage t))}})))
+              owner (:owner ensured)]
+          (if-not (or owner (:ok? ensured))
+            (create-error-reply!
+             request
+             (merge result ensured)
+             reply-fn)
+            (do
+              (register-owner! router session-id owner)
+              (swap! (:state router) assoc :active-session-id session-id)
+              (when-not (:replayed? result)
+                (when-let [f (:on-change router)]
+                  (try (f {:type :session-created :session session})
+                       (catch Throwable _ nil))))
+              (reply reply-fn
+                     {:ok? true
+                      :replayed? (boolean (:replayed? result))
+                      :receipt (session-creation-receipt
+                                session (request-creation-identity request))}))))
 
         :error
         (create-error-reply! request result reply-fn)
@@ -368,7 +417,6 @@
                (result-error :SESSION_CREATE_FAILED
                              "session could not be created"
                              {:status (:status result)}))))))
-
 (defn- resolve-command-replay
   "Resolve a crash-left session-creation placeholder from the session store.
 
@@ -439,14 +487,135 @@
                            "session list could not be read"
                            {:status (:status result)})))))
 
+(defn- session-command-epoch
+  "The Owner-issued command epoch for SESSION-ID, or nil."
+  [router session-id]
+  (when-let [owner (owner-of router session-id)]
+    (try
+      (get-in ((:snapshot owner)) [:state :commands :command-epoch])
+      (catch Throwable _ nil))))
+
+(defn- handle-ensure-owner!
+  "Ensure SESSION-ID has a live Owner and return its command epoch.
+
+  This is the lazy-loading seam: a client that opens a session calls it once
+  so the Owner exists before the first history or metadata command.  It never
+  mutates the session record; a missing, deleted, or archived session is
+  refused without creating anything."
+  [router payload reply-fn]
+  (let [session-id (:session-id payload)]
+    (cond
+      (not (non-blank-string? session-id))
+      (reply reply-fn
+             (result-error :SESSION_REQUIRED
+                           "ensuring an Owner needs an explicit :session-id"
+                           {:kind (:kind payload)}))
+
+      :else
+      (let [owner (ensure-live-owner! router session-id)]
+        (if owner
+          (let [epoch (session-command-epoch router session-id)]
+            (reply reply-fn
+                   {:ok? true
+                    :receipt {:status :accepted
+                              :session-id session-id
+                              :command-epoch epoch}}))
+          (reply reply-fn
+                 (result-error :SESSION_OWNER_UNAVAILABLE
+                               "session has no committable Owner"
+                               {:session-id session-id})))))))
+
+(defn- handle-history-window!
+  "Return one page of a session's message entities for lazy history load.
+
+  The baseline publishes only the newest message window per session; older
+  messages are fetched here on demand.  `:before` is the oldest currently
+  loaded message id (exclusive); `:limit` caps the page (default 200, max
+  1000).  The receipt carries the message entities, their order, the full
+  visible id list, and whether older messages remain."
+  [router payload reply-fn]
+  (let [session-id (:session-id payload)
+        loaded (try (registry/get-session (:registry router) session-id)
+                    (catch Throwable _ nil))]
+    (cond
+      (not (non-blank-string? session-id))
+      (reply reply-fn
+             (result-error :SESSION_REQUIRED
+                           "history windows need an explicit :session-id"
+                           {:kind (:kind payload)}))
+
+      (not= :found (:status loaded))
+      (reply reply-fn
+             (result-error :SESSION_NOT_FOUND
+                           "session does not exist"
+                           {:session-id session-id}))
+
+      :else
+      (let [session (:session loaded)
+            before (:before payload)
+            limit (-> (or (:limit payload) 200)
+                      long
+                      (max 1)
+                      (min 1000))
+            probe (history-snapshot/session-history session {})
+            visible-ids (:ordered-ids probe)
+            before-pos (if (and (string? before)
+                                (some #{before} visible-ids))
+                         (.indexOf ^java.util.List (vec visible-ids) before)
+                         (count visible-ids))
+            eligible (subvec (vec visible-ids) 0 before-pos)
+            window-ids (->> eligible
+                            (drop (max 0 (- (count eligible) limit)))
+                            vec)
+            window-set (set window-ids)
+            history (history-snapshot/session-history
+                     session
+                     {:messages-window {:ids window-set}})
+            older-count (max 0 (- before-pos (count window-ids)))]
+        ;; Ensure the Owner exists so its command epoch is published; the
+        ;; fetch itself reads the committed record and never needs it.  The
+        ;; epoch is read after the ensure: a lazily created Owner did not
+        ;; exist when this let binding first ran.
+        (ensure-live-owner! router session-id)
+        (let [epoch (session-command-epoch router session-id)]
+        ;; Record the fetched window so the next baseline keeps publishing
+        ;; these entities instead of dropping them on the next resync.
+        (when-let [windows (get-in @(:state router) [:published-windows])]
+          (swap! windows update session-id
+                 (fn [ids] (into (or ids #{}) window-ids))))
+        (notify-change! router)
+        (reply reply-fn
+               {:ok? true
+                :receipt {:status :accepted
+                          :session-id session-id
+                          :messages (:messages history)
+                          :message-order window-ids
+                          :message-ids visible-ids
+                          :has-older? (pos? older-count)
+                          :command-epoch epoch}}))))))
+
 (defn- handle-metadata!
   [router request payload reply-fn]
   (let [session-id (:session-id payload)]
-    (if-not (non-blank-string? session-id)
+    (cond
+      (not (non-blank-string? session-id))
       (reply reply-fn
              (result-error :SESSION_REQUIRED
                            "a session is required for this metadata command"
                            {:kind (:kind payload)}))
+
+      ;; Metadata commands need a live Owner.  `:session/restore` is the one
+      ;; exception: a deleted session has no Owner by design and the registry
+      ;; applies the restore directly.  Every other kind ensures the Owner
+      ;; first so a lazily-loaded session is not refused with :NO_OWNER.
+      (and (not= :session/restore (:kind payload))
+           (nil? (ensure-live-owner! router session-id)))
+      (reply reply-fn
+             (result-error :SESSION_OWNER_UNAVAILABLE
+                           "no live Owner is registered for this session"
+                           {:session-id session-id}))
+
+      :else
       (let [result (registry/update-session!
                     (:registry router) session-id
                     ;; `update-session!` takes the full Owner envelope and
@@ -512,6 +681,7 @@
     ;; and must not schedule a redundant publish.
     (when (and (contains? #{:settings/save-connection
                             :settings/save-role
+                            :settings/save-assistants
                             :settings/delete-connection}
                           (:kind payload))
                (or (:ok? result)
@@ -735,14 +905,19 @@
                            "branching needs an explicit source :session-id"
                            {:kind (:kind payload)}))
       (let [result (registry/branch-session! (:registry router) source
-                                             (select-keys payload
-                                                          [:before-message-id
-                                                           :title :client-id]))]
+                                             (assoc (select-keys payload
+                                                                 [:before-message-id
+                                                                  :title :client-id])
+                                                    :defer-owner? true))]
         (case (:status result)
           :created
           (let [session (:session result)
                 session-id (:session-id session)
-                owner (:owner result)
+                ;; `:defer-owner? true` leaves :owner nil; the branch Owner
+                ;; must exist so the receipt can carry its command epoch and
+                ;; the client view can register it.
+                owner (or (:owner result)
+                          (ensure-live-owner! router session-id))
                 owner-state (when owner
                               (try (:state ((:snapshot owner)))
                                    (catch Throwable _ nil)))
@@ -785,12 +960,18 @@
                            {:kind (:kind payload)}))
       (let [result (registry/create-summary-session!
                     registry source
-                    (select-keys payload [:compression-id :title :client-id]))]
+                    (assoc (select-keys payload
+                                        [:compression-id :title :client-id])
+                           :defer-owner? true))]
         (case (:status result)
           :created
           (let [session (:session result)
                 session-id (:session-id session)]
-            (remember-owner! router session-id (:owner result))
+            ;; `:defer-owner? true` leaves :owner nil; ensure the Owner so
+            ;; the new session can accept work immediately.
+            (register-owner! router session-id
+                              (or (:owner result)
+                                  (ensure-live-owner! router session-id)))
             (swap! (:state router) assoc :active-session-id session-id)
             (notify-change! router)
             (reply reply-fn
@@ -1094,7 +1275,7 @@
 (defn- handle-owner-command!
   [router request payload reply-fn]
   (let [session-id (:session-id payload)
-        owner (owner-of router session-id)]
+        owner (ensure-live-owner! router (:session-id payload))]
     (cond
       (not (non-blank-string? session-id))
       (reply reply-fn
@@ -1360,6 +1541,8 @@
                                (:message (:error config))
                                (select-keys (:error config) [:cause :action])))))
       (= kind :session/list) (handle-list! router payload reply-fn)
+      (= kind :session/ensure) (handle-ensure-owner! router payload reply-fn)
+      (= kind :history/messages) (handle-history-window! router payload reply-fn)
       (= kind :history/branch) (handle-branch! router payload reply-fn)
       (= kind :session/create-from-summary)
       (handle-create-from-summary! router request payload reply-fn)
@@ -1586,7 +1769,12 @@
         app-store (or dedup-store (command-durable/memory-store))
         app-gate (ensure-app-epoch! (command-durable/gate app-store))
         base (->Router (atom {:owners {}
-                              :active-session-id nil})
+                              :active-session-id nil
+                              ;; Shared with the system publisher when it
+                              ;; installs its own atoms; tests and embedded
+                              ;; routers get working defaults here.
+                              :published-windows (atom {})
+                              :history-window-size (atom 200)})
                        registry settings on-change extensions speech search
                        materials diagnostics backup scheduler-ref session-config
                        documents browser-services attachments-ref model-auth

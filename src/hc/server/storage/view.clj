@@ -53,6 +53,17 @@
                      "the store changed repeatedly during a read"
                      {:attempts attempt :before before :after after}))))))
 
+(defn read-doc
+  "Return one stored document unwrapped, or nil when the key is absent.
+
+  This is the point read for callers that need exactly one document and must
+  not pay the partition scan `session-view` performs.  `session-id` nil
+  addresses the partition-scoped (`_`) record."
+  [engine {:keys [partition session-id kind id]}]
+  (when-let [entry (engine/get-value engine
+                                     (keys/doc-key partition session-id kind id))]
+    (unwrap [nil entry])))
+
 (defn- group-by-kind [entries]
   (group-by (fn [[_ v]] (:storage/kind v)) entries))
 
@@ -79,6 +90,25 @@
                 (when-not (contains? known-kinds kind)
                   [kind (mapv unwrap entries)])))
         grouped))
+
+(defn partition-head
+  "Return `{:version n :state doc}` for one session's owner partition.
+
+  This is the point read behind `state-from-view`'s corruption check: the
+  partition version and the `:owner-state`/`:owner-session` document, without
+  scanning the partition's obligations or board documents."
+  [engine {:keys [partition session-id]}]
+  (let [scoped (fn [session-scope]
+                 (let [grouped (group-by-kind
+                                (engine/scan engine
+                                             (keys/session-doc-prefix partition session-scope)))]
+                   (or (first (docs-of grouped :owner-session))
+                       (first (docs-of grouped :owner-state)))))
+        state-doc (or (scoped session-id) (scoped nil))
+        version (or (engine/get-value engine
+                                      (keys/partition-meta-key partition "version"))
+                    0)]
+    {:version version :state state-doc}))
 
 (def ^:private session-kinds
   #{:session :owner-session :owner-state :message :tenure :ledger :run})

@@ -27,7 +27,11 @@
                                                          :bundle fixture/bundle}})
                          (assoc :tab :bundle))
         bundle-html (render bundle-state)
-        logs-html (render (assoc (fixture/state) :tab :logs))]
+        logs-html (render (assoc (fixture/state) :tab :logs))
+        faq-html (render (assoc (fixture/state) :tab :faq))
+        faq-filtered-html (render (assoc (fixture/state)
+                                         :tab :faq
+                                         :faq-query "图片"))]
     (println "STATS-HTML-LENGTH" (count stats-html))
     (doseq [needle ["用户发送次数"
                     "模型请求次数"
@@ -73,6 +77,17 @@
                     "清空详细日志"
                     "密钥、登录令牌、认证头和密码始终遮蔽"]]
       (check needle (str/includes? logs-html needle)))
+    (println "FAQ-HTML-LENGTH" (count faq-html))
+    (doseq [needle ["常见问题"
+                    "搜索常见问题"
+                    "消息无法发送"
+                    "图片无法发送或不支持"
+                    "账户授权过期"
+                    "后台任务被结束"
+                    "导入失败"]]
+      (check needle (str/includes? faq-html needle)))
+    (check "faq-search-keeps-matching" (str/includes? faq-filtered-html "图片无法发送或不支持"))
+    (check "faq-search-drops-nonmatching" (not (str/includes? faq-filtered-html "消息无法发送")))
     (println "HTML-BEGIN")
     (println stats-html)
     (println "HTML-END")))

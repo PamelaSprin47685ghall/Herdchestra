@@ -57,6 +57,31 @@
   ^Path [root]
   (.resolve (root-path root) "tmp"))
 
+(defn probe
+  "Check one local-directory target without writing backup objects.
+
+  `root` may be nil; the default is `<data-dir>/backups`.  Creates the
+  directory chain and verifies it is writable.  Returns
+  `{:ok? bool :status nil :detail string :url string}`; `:url` is a
+  `file://` URL without credentials."
+  [root data-dir]
+  (let [root (or (not-empty (str root))
+                 (str data-dir "/backups"))]
+    (try
+      (let [^Path dir (root-path root)]
+        (Files/createDirectories dir (make-array FileAttribute 0))
+        (if (.isWritable dir)
+          {:ok? true :status nil
+           :detail "local backup directory is writable"
+           :url (str "file://" dir)}
+          {:ok? false :status nil
+           :detail "local backup directory is not writable"
+           :url (str "file://" dir)}))
+      (catch Throwable t
+        {:ok? false :status nil
+         :detail (or (ex-message t) (str t))
+         :url nil}))))
+
 (defn object-path
   ^Path [root id]
   (.resolve (objects-dir root) (str (assert-id! id) ".hcb")))

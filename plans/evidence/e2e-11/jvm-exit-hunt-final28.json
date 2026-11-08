@@ -1,0 +1,41 @@
+{
+  "test": "e2e-11 JVM-exit hunt (final28 worker w278-jvm-exit)",
+  "recordedAt": "2026-11-08T10:50:00Z",
+  "frozenHashes": {
+    "bundleSha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundleVerified": "sha256sum resources/public/js/main.js unchanged (no client edits)",
+    "sourceTreeSha256Final27b": "43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a",
+    "sourceTreeSha256Now": "154c7a462bfb5eb085fea694cee1e35bf88048f25f01595feeda143d5b597a97",
+    "treeDelta": "test/e2e/support/app.mjs (exit/signal logging + opt-in HC_E2E_SIGTRACE), test/e2e/e2e-04.spec.mjs (D3 rule reorder), src/hc/server/app.clj (HC-ORPHAN-EXIT marker on orphan-watchdog stop)"
+  },
+  "headline": "D-29 'app JVM 60-90s orderly exit' is a MISDIAGNOSIS. The gc,exit block is the normal teardown SIGTERM at test end, not a mid-test death. The JVM stays alive for the whole test; the only network failure in traces is the /chsk reconnect refused AFTER app.close() SIGTERM.",
+  "evidence": [
+    "w277 e2e-04 result.json: startedAt 10:22:38.449Z finishedAt 10:23:57.537Z; jvm-gc-exit-tail.log gc,exit at 18:23:57.554+0800 = 10:23:57.554Z = finishedAt + 17ms -> teardown close() SIGTERM, JVM uptime 93.855s includes ~15s pre-test boot",
+    "Instrumented rerun 1 (unwrapped): server-hc-e2e-Xi1S0p.log '[app-exit] pid=893857 code=143 signal=null at=10:33:06.206Z'; playwright wall 76.94s ending ~10:33:06 -> exit at teardown",
+    "Instrumented rerun 2 (sigtrace v1, no forwarding): wrapper pid 897952 SIGTERMed at teardown, java pid 897953 ORPHANED AND STILL ALIVE minutes later -> JVM never died mid-test; test still failed (badge/rows) proving failure is independent of JVM death",
+    "Instrumented rerun 3 (sigtrace v2, forwarding): server-hc-e2e-6MeKt8.log shows 'wrapper received sig=15, forwarding' then java sig=15 sender_pid=wrapper -> '[sigtrace] child exited code=143' -> '[app-exit] code=143 at=10:40:07.062Z' = teardown; trace.zip 1-trace.network has exactly ONE failure: ws /chsk ERR_CONNECTION_REFUSED at 10:40:06.708Z, ~0.4s before app-exit",
+    "In-app orphan watchdog never fired (no HC-ORPHAN-EXIT in any log; /tmp/hc-e2e-orphan-watchdog.log absent -> node watchdog never fired either)",
+    "Java SIGTERM semantics verified empirically: JVM runs shutdown hooks then exits with code 143 (128+15); node reports code=143 signal=null, matching unwrapped runs"
+  ],
+  "realDefects": [
+    {
+      "id": "E2E11-M1",
+      "summary": "materials badge '材料库已就绪' never appears within 30s (run 3) or appears but normal session shows 0 memory rows (run 2). JVM alive throughout -> server-side materials snapshot (:materials/ready? false path in hc.server.materials.session/snapshot via ensure-loaded) or client timing issue, NOT a connection/JVM problem. Possibly aggravated by the retry/nudge storm (W279 D-30 scope). Needs its own investigation; not fixed here."
+    },
+    {
+      "id": "E2E04-D3-fixed",
+      "summary": "replyScript first-match-wins substring collision FIXED in this tree: branch rules (分支第二轮/分支第三轮) now precede plain 第二轮/第三轮 in test/e2e/e2e-04.spec.mjs. Verified live: rerun reached branchReply2 assertion (previously impossible) and failed only on the now-fixed rule order -> next run should pass that step."
+    },
+    {
+      "id": "E2E04-D1",
+      "summary": "first image message loses text part ~50% of runs (W279 scope, unchanged)"
+    }
+  ],
+  "runs": [
+    {"at": "10:33Z", "spec": "e2e-11", "mode": "unwrapped+exit-log", "result": "FAIL badge-timeout @spec:311", "jvm": "alive until teardown (app-exit=finishedAt)"},
+    {"at": "10:37Z", "spec": "e2e-11", "mode": "sigtrace v1", "result": "FAIL 0-memory-rows @spec:741", "jvm": "java ORPHANED+ALIVE after wrapper teardown kill -> proves no mid-test death"},
+    {"at": "10:40Z", "spec": "e2e-11", "mode": "sigtrace v2", "result": "FAIL badge-timeout @spec:311", "jvm": "alive until teardown; sole network failure = /chsk refused 0.4s before app-exit"},
+    {"at": "10:43Z", "spec": "e2e-04", "mode": "sigtrace v2", "result": "FAIL branchReply2 (D3, now fixed)", "jvm": "alive until teardown; branch phase fully exercised"}
+  ],
+  "conclusion": "No code change can 'prevent' the phantom exit because there is no mid-test exit: the shutdown hook + SIGTERM at app.close() is correct behavior. final28 needs NO JVM-exit fix. Remaining blockers: E2E04-D1 (W279), E2E11-M1 materials readiness (unassigned - recommend investigation under storm-bounded build)."
+}

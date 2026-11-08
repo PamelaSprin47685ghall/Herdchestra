@@ -589,6 +589,85 @@
     (is (= "source" (:ui/selected-session-id result))
         "an untracked legacy receipt is not evidence for a new selection")))
 
+(deftest branch-receipt-normalizes-copied-message-bodies
+  (testing "raw domain messages gain display fields before the snapshot lands"
+    (let [raw-user {:message-id "bm1"
+                    :role :user
+                    :versions [{:version-id "bm1-v1"
+                                :content "分支前的问题"
+                                :created-at 100}]
+                    :current-version 0
+                    :created-at 100}
+          raw-assistant {:message-id "bm2"
+                         :role :assistant
+                         :versions [{:version-id "bm2-v1"
+                                     :content "分支前的回答"
+                                     :created-at 200}]
+                         :current-version 0
+                         :created-at 200}
+          db (-> (base-db)
+                 (assoc :ui/selected-session-id "source"
+                        :ui/selection-seq 1)
+                 (assoc-in [:session/by-id "source"] {:id "source"})
+                 (assoc-in [:ui/command "branch-1"]
+                           {:command-id "branch-1"
+                            :kind :history/branch
+                            :session-id "source"
+                            :selection-seq 1
+                            :status :submitting}))
+          result (:db (events/apply-event
+                       db
+                       {:type "CUSTOM"
+                        :name "hc/command-receipt"
+                        :value {:command-id "branch-1"
+                                :receipt {:status :accepted
+                                          :session-id "branch"
+                                          :session {:session-id "branch"
+                                                    :message-order ["bm1" "bm2"]
+                                                    :messages {"bm1" raw-user
+                                                               "bm2" raw-assistant}}}}}))]
+      (is (= "branch" (:ui/selected-session-id result)))
+      (let [entity (get-in result [:message/by-id "bm1"])]
+        (is (= "bm1" (:id entity)))
+        (is (= "分支前的问题" (:content entity)))
+        (is (= "分支前的问题" (:text entity)))
+        (is (= "branch" (:session-id entity))))
+      (is (= ["分支前的问题" "分支前的回答"]
+             (mapv :content
+                   (model/messages-for-session result "branch")))
+          "the branch timeline shows bodies before the baseline arrives")
+      (is (= "分支前的问题"
+             (:body (timeline/message-view
+                     (get-in result [:message/by-id "bm1"])))))
+      (is (= ["bm1" "bm2"]
+             (get-in result [:message/order]))))))
+
+(deftest branch-receipt-keeps-normalized-entities
+  (testing "entities that already carry :content pass through unchanged"
+    (let [entity {:id "bm9" :message-id "bm9" :session-id "branch"
+                  :role :user :content "已有正文" :text "已有正文"}
+          db (-> (base-db)
+                 (assoc :ui/selected-session-id "source"
+                        :ui/selection-seq 1)
+                 (assoc-in [:session/by-id "source"] {:id "source"})
+                 (assoc-in [:ui/command "branch-1"]
+                           {:command-id "branch-1"
+                            :kind :history/branch
+                            :session-id "source"
+                            :selection-seq 1
+                            :status :submitting}))
+          result (:db (events/apply-event
+                       db
+                       {:type "CUSTOM"
+                        :name "hc/command-receipt"
+                        :value {:command-id "branch-1"
+                                :receipt {:status :accepted
+                                          :session-id "branch"
+                                          :session {:session-id "branch"
+                                                    :message-order ["bm9"]
+                                                    :messages {"bm9" entity}}}}}))]
+      (is (= entity (get-in result [:message/by-id "bm9"]))))))
+
 (deftest restore-click-migrates-the-deleted-row-into-normal-history
   (let [request (session-controls/command-request
                  :restore {:id "s2" :title "Beta" :status :deleted} {})

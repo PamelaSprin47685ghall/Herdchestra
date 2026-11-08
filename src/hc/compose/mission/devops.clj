@@ -403,7 +403,14 @@
 (defn- normalize-calls
   [call-id calls]
   (mapv (fn [index call]
-          (assoc call :id (or (:id call) (str call-id "-tool-" index))))
+          ;; The model adapter's assistant message contract allows only
+          ;; `:id`, `:name`, and `:arguments` on each tool call.  The port
+          ;; event carries bookkeeping fields (`:call-id`, `:output-index`,
+          ;; `:tool-name`) that must not leak into the replayed message;
+          ;; the event's name field is `:tool-name`, not `:name`.
+          {:id (or (:id call) (str call-id "-tool-" index))
+           :name (or (:name call) (:tool-name call))
+           :arguments (:arguments call)})
         (range)
         calls))
 
@@ -550,6 +557,15 @@
 
 (defn- run-effect!
   [runner effect]
+  (let [model-id (:model-id effect)
+        model-role (:model-role effect)]
+    (when (and (or (nil? model-role) (= :task model-role))
+               (or (nil? model-id)
+                   (and (string? model-id) (str/blank? model-id))))
+      (throw (ex-info "the :task model role is not configured; configure :task model to run devops workers"
+                      {:code :ROLE_UNCONFIGURED
+                       :remedy :configure-task-model
+                       :effect effect}))))
   (let [session (existing-session runner effect)
         worker-id (:worker-id session)]
     (locking (:lock session)
@@ -624,8 +640,15 @@
              (try
                (run-effect! runner effect)
                (catch Throwable t
-                 (failure (str "devops worker failed: "
-                               (or (.getMessage t) (str t)))))))
+                 (let [data (ex-data t)
+                       message (or (.getMessage t) (str t))]
+                   (if (= :ROLE_UNCONFIGURED (:code data))
+                     {:status :failed
+                      :report message
+                      :error {:code :ROLE_UNCONFIGURED
+                              :remedy (:remedy data)
+                              :message message}}
+                     (failure (str "devops worker failed: " message)))))))
      :cancel! (fn [{:keys [worker-id call-id] :as request}]
                 (let [session (or (when worker-id
                                     (get-session runner worker-id))

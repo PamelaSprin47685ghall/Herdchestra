@@ -438,6 +438,22 @@
                           (assoc :model (:model snapshot)))
           failure (when (contains? #{:failed :outcome-unknown} outcome)
                     (or error (:last-error call)))
+          ;; A turn that invoked tools is doing task-cycle work; a turn that
+          ;; only produced text is a plain answer.  A `:chat?` call never
+          ;; had tools on its surface, so its stop is plain regardless of
+          ;; run bookkeeping.  Only the succeeded terminal carries the
+          ;; whole turn's tool evidence — a failed attempt may have partial
+          ;; ids, and the policy must still see the failure rather than a
+          ;; clean stop.
+          chat? (or (true? (:chat? call))
+                    (true? (get-in call [:request :snapshot :chat?])))
+          tools? (and (= :succeeded outcome)
+                      (not chat?)
+                      (boolean
+                       (some (fn [run]
+                               (and (= (:call-id call) (:call-id run))
+                                    (seq (:tool-call-ids run))))
+                             (vals (:runs state)))))
           turn {:role (:role call)
                 :agent-id (:agent-id call)
                 :tenure-id (:tenure-id call)
@@ -467,6 +483,7 @@
                                          (= :permanent (:category failure)))
                 :search-degraded? degraded?
                 :search-status (:search-status payload)
+                :tools? tools?
                 :ended? true
                 :at now}
           ;; An ended turn that is still present is one `settle-turn` has not
@@ -1498,6 +1515,28 @@
 
 (declare refusal-limit-for)
 
+(def ^:private scope-required-members
+  "Members whose tool schema declares `:scope` inside `parameters.required`;
+  mirrors `handlers/scope-required-members` for the limit diagnostic."
+  #{"devops" "clj-plan" "clj-review" "clj-worker"})
+
+(defn- refusal-limit-remedy
+  "The stop-call sentence for a `:TOOL_ADMISSION_REFUSED_LIMIT` diagnostic.
+
+  A missing `:scope` on a schema-required member is a parameter mistake:
+  the sentence names the `parameters`/`required` location so the operator
+  (and the model reading the transcript) sees where the field belongs."
+  [member last-code]
+  (cond
+    (not= :SCOPE_ANNOTATION_MISSING last-code)
+    "Fix the request contract or stop calling it; "
+
+    (contains? scope-required-members (str member))
+    "Add the missing :scope annotation inside the tool parameters (the schema required list) or stop calling it; "
+
+    :else
+    "Add the missing :scope annotation or stop calling it; "))
+
 (defn wake-actors-guard
   "P3: sync fixed slots and start one @task model turn per idle slot.
 
@@ -1655,10 +1694,8 @@
                                   " was refused at admission "
                                   (:count limit) " times ("
                                   (:last-code limit) "). "
-                                  (if (= :SCOPE_ANNOTATION_MISSING
+                                  (refusal-limit-remedy (:member limit)
                                          (:last-code limit))
-                                    "Add the missing :scope annotation or stop calling it; "
-                                    "Fix the request contract or stop calling it; ")
                                   "do not repeat the same request.")
                              :remedy :fix-request
                              :role (or role :worker)
@@ -2145,6 +2182,7 @@
   [state _ctx turn]
   (let [role (:role turn)
         agent-id (or (:agent-id turn) role)
+        round-key [(:tenure-id turn) agent-id]
         ;; The turn's terminal failure, or the facts the host classified
         ;; when the call has no raw error of its own (a start refusal P2
         ;; reported as an attempt failure).  The policy classifies permanent
@@ -2159,12 +2197,18 @@
                 :in-flight? (or (state/pending-model-for-agent? state agent-id)
                                 (state/live-call-for-agent? state agent-id))
                 :turn-ended? true
+                ;; `:tools?` stays tri-state: `set-model-turn` proves true or
+                ;; false, while a manually reported `:turn/ended` leaves it
+                ;; nil so the policy cannot mistake unknown for tool-free.
+                :tools? (:tools? turn)
                 :failure failure
                 :failure-outcome (:failure-outcome turn)
                 :permanent-failure? (true? (:permanent-failure? turn))
                 :turn-id (:call-id turn)
                 :session-id (:session-id state)
-                :nudge-seq (inc (:nudge-seq state 0))})]
+                :nudge-seq (inc (:nudge-seq state 0))
+                :round-seq (long (get-in state [:nudge-rounds round-key] 0))
+                :round-budget (:nudge-round-budget (:config state))})]
     (nudge/observation (:relay state) facts)))
 
 (defn- actor-slot-for
@@ -2172,6 +2216,14 @@
   (some (fn [slot]
           (when (= agent-id (:agent-id slot)) slot))
         (actors/slots actors tenure-id)))
+
+(def ^:private nudge-scope-reminder
+  "Scope contract reminder appended to every Nudge system message.
+
+  The Nudge snapshot carries the conversation but not the tool schema;
+  a model that just saw `:SCOPE_ANNOTATION_MISSING` must still know that
+  `:scope` lives inside the tool `parameters`, matching `required`."
+  "\n\nScope 提醒：每个非豁免工具调用必须在其参数 `parameters` 内携带 `:scope {:kind ...}`（与工具 schema 的 `required` 一致），不是 tool call 顶层字段；缺失会被 `:SCOPE_ANNOTATION_MISSING` 拒绝。")
 
 (defn- create-nudge-call
   [state ctx decision observation now]
@@ -2192,11 +2244,15 @@
                       (session-model-identity state)))
         messages (if central?
                    (conj (central-messages state ctx role tenure-id)
-                         {:role :system :text (:message decision)})
+                         {:role :system
+                          :text (str (:message decision)
+                                     nudge-scope-reminder)})
                    (conj (into (skill-messages
                                 (skill-context state ctx role tenure-id))
                                (vec (:context actor-slot)))
-                         {:role :system :text (:message decision)}))
+                         {:role :system
+                          :text (str (:message decision)
+                                     nudge-scope-reminder)}))
         tools (request-tools state ctx role tenure-id)
         snapshot (merge (program-context-for state role tenure-id agent-id)
                         (when central? binding)
@@ -2247,6 +2303,14 @@
                                                 [(or (:at value) 0) id])
                                               all))))))
         (assoc :nudge-seq (:nudge-seq observation))
+        ;; Each committed Nudge call consumes one round for this actor.  The
+        ;; count lives apart from `:nudge-budget` (failure budget) and resets
+        ;; when a turn settles without a Nudge.
+        (update :nudge-rounds
+                (fn [rounds]
+                  (update (or rounds {})
+                          [(:tenure-id tenure) agent-id]
+                          (fnil inc 0))))
         ;; The turn is live while the Nudge call runs.  Its terminal installs
         ;; the next ended turn through `set-model-turn`; leaving the old
         ;; ended turn here would let settle-turn re-decide it.
@@ -2411,6 +2475,10 @@
               (state/actor-call? state (:call-id turn)))
          {:state (-> state
                      (assoc :turn nil)
+                     (update :nudge-rounds
+                             dissoc
+                             [(:tenure-id turn)
+                              (or (:agent-id turn) (:role turn))])
                      (history :actor-owned-turn))}
 
          ;; An operator stop is not a natural stop, so §2.5 owes it no Nudge.
@@ -2421,6 +2489,10 @@
          (state/run-cancelling? state)
          {:state (-> state
                      (assoc :turn nil)
+                     (update :nudge-rounds
+                             dissoc
+                             [(:tenure-id turn)
+                              (or (:agent-id turn) (:role turn))])
                      (history :operator-cancelled))}
 
          (not (state/admission-open? state))
@@ -2429,6 +2501,10 @@
          ;; stops owing a decision here.
          {:state (-> state
                      (assoc :turn nil)
+                     (update :nudge-rounds
+                             dissoc
+                             [(:tenure-id turn)
+                              (or (:agent-id turn) (:role turn))])
                      (history :admission-closed))}
 
          ;; A model that keeps calling a tool without the required `:scope`
@@ -2446,10 +2522,8 @@
                                    (:count refusal) " times ("
                                    (:last-code refusal)
                                    "). "
-                                   (if (= :SCOPE_ANNOTATION_MISSING
-                                          (:last-code refusal))
-                                     "Add the missing :scope annotation or stop calling it; "
-                                     "Fix the request contract or stop calling it; ")
+                                   (refusal-limit-remedy (:member refusal)
+                                                         (:last-code refusal))
                                    "do not repeat the same request.")
                      :remedy :fix-request
                      :role (:role turn)
@@ -2465,7 +2539,8 @@
          {:state (blocked-state state (:diagnostic decision) :blocked)}
 
          :else
-         (let [key [(:tenure-id turn) (:agent-id turn)]
+         (let [key [(:tenure-id turn)
+                    (or (:agent-id turn) (:role turn))]
                failure? (some? (:failure turn))
                budget (get-in state [:nudge-budget key]
                               {:count 0 :progress (:progress-seq state 0)})
@@ -2498,6 +2573,7 @@
                  ;; is level-triggered, never a one-shot.
                  {:state (-> state
                              (assoc :turn nil)
+                            (update :nudge-rounds dissoc key)
                              (history :nudge-suppressed
                                       {:enabled? false
                                        :suppress-reason suppress-reason}))}
@@ -2509,6 +2585,32 @@
                                         :progress (:progress-seq state 0)
                                         :last-failure (:failure turn)})
                              (update state' :nudge-budget dissoc key))})))
+
+             (= nudge/round-boundary-reason (:reason decision))
+             ;; The host round budget is spent: §2.5 still owes the ledger,
+             ;; but the host stops injecting Nudge calls so the session can
+             ;; go idle.  Same commit shape as `:nudge-suppressed`: clear the
+             ;; turn, record the boundary once, and let the next `:turn/ended`
+             ;; or board/ledger change re-enter the judgement.
+             {:state (-> state
+                         (assoc :turn nil)
+                         (update :nudge-rounds dissoc key)
+                         (state/append-outbox
+                          [{:type :owner/round-boundary
+                            :role (:role turn)
+                            :agent-id (:agent-id turn)
+                            :tenure-id (:tenure-id turn)
+                            :round-seq (get-in decision [:details :round-seq])
+                            :round-budget (get-in decision [:details
+                                                            :round-budget])
+                            :at now}])
+                         (history :round-boundary
+                                  {:round-seq (get-in decision [:details
+                                                                :round-seq])
+                                   :round-budget (get-in decision [:details
+                                                                   :round-budget])
+                                   :ledger-keys (get-in decision [:details
+                                                                 :ledger-keys])}))}
 
              (:deferred? decision)
              ;; In-flight work or a due retry keeps the turn eligible.  The
@@ -2531,7 +2633,128 @@
              ;; here and its answer recorded once.
              {:state (-> state
                          (assoc :turn nil)
+                         (update :nudge-rounds dissoc key)
                          (history (:reason decision)))})))))))
+
+;; ---------------------------------------------------------------------------
+;; P3: scope-ask consult
+
+(defn- consult-call-for-ask?
+  "True when CALL is the live consult call serving ASK-CALL-ID."
+  [call ask-call-id]
+  (and (= :model (:kind call))
+       (= ask-call-id (get-in call [:request :snapshot
+                                    :scope-consult-for]))
+       (contains? #{:ready :dispatching :running :retry-wait}
+                  (:state call))))
+
+(defn scope-ask-consult-guard
+  "P3: answer one pending `askPreviousScope` receipt with an ephemeral consult.
+
+  The consult is a model call whose snapshot carries the sealed view of the
+  previous Scope plus the ask's questions.  `:ephemeral? true` and
+  `:attribution \"agent\"` keep Pair Hint from accounting it; `:tools []`
+  keeps it read-only.  Its terminal is routed by `apply-model-event` to
+  `deliver-scope-ask-answer`, never to the conversation as an assistant
+  message.
+
+  Generation rule: an ask whose `:generation` no longer names the newest
+  reset beat is stale.  Stale pending asks are swept to `:stale` in the
+  same transition; only asks whose generation still matches may consult.
+  At most one consult call is in flight at a time."
+  []
+  (scheduler/guard
+   :scope-ask-consult
+   :p3-progress
+   (fn [state _]
+     (let [pending (state/pending-scope-ask-consults state)]
+       (when (seq pending)
+         (cond
+           ;; Sweep first: a stale pending ask blocks nothing but must not
+           ;; wait for a newer consultable ask to be cleaned up.
+           (some :stale? pending)
+           {:kind :sweep}
+
+           (not (state/scope-consult-in-flight? state))
+           (let [consultable (->> pending
+                                  (remove :stale?)
+                                  (sort-by :call-id))]
+             (when-let [{:keys [call-id]} (first consultable)]
+               {:kind :consult :call-id call-id}))
+
+           :else nil))))
+    (fn [state ctx work _]
+     (let [now (:now ctx)
+           ;; Every transition sweeps stale pending asks first, whether or
+           ;; not this round also creates a consult call.
+           swept (state/mark-scope-ask-stale state)
+           state (:state swept)]
+       (if-not (= :consult (:kind work))
+         ;; A sweep-only transition: stale asks are marked, nothing else
+         ;; changes.  `validate-plan` accepts it because state changed.
+         {:state state}
+         (let [ask-call-id (:call-id work)
+               ask (get-in state [:scope :asks ask-call-id])
+               in-flight? (some (fn [call]
+                                  (consult-call-for-ask? call ask-call-id))
+                                (vals (:calls state)))
+               generation-ok? (= (:generation ask)
+                                 (state/latest-reset-call-id state))]
+           (cond
+             (or (nil? ask) (not= :pending (:consult ask))
+                 (not= :accepted (:status ask)) in-flight?
+                 (not generation-ok?))
+             ;; The ask resolved or went stale between enabled? and
+             ;; prepare; the sweep above already recorded any staleness.
+             {:state state}
+
+             :else
+             (let [view (state/sealed-scope-view
+                         state (:target-call-id ask))]
+               (if-not (:ok? view)
+                 {:state (state/append-diagnostic
+                          state
+                          {:code (or (:code view) :SEALED_VIEW_FAILED)
+                           :message (or (:message view)
+                                        "the sealed scope view could not be rebuilt")
+                           :ask-call-id ask-call-id
+                           :at now})}
+                 (let [question-text
+                       (str "上一 Scope 的封存上下文如下。请只依据这些内容回答：\n"
+                            (:questions ask))
+                       messages (into (:messages view)
+                                      [{:role :user :text question-text}])
+                       snapshot (merge
+                                (session-model-identity state)
+                                {:messages messages
+                                 :role :main
+                                 :ephemeral? true
+                                 :attribution "agent"
+                                 :scope-consult? true
+                                 :scope-consult-for ask-call-id
+                                 :tools []
+                                 :session-id (:session-id state)})
+                       [state' call]
+                       (state/create-call
+                        state
+                        {:kind :model
+                         :role :main
+                         :agent-id (str "scope-ask:" ask-call-id)
+                         :request {:snapshot snapshot
+                                   :required-capabilities #{}}
+                         :created-at now})
+                       state' (-> state'
+                                  (assoc-in [:calls (:call-id call)
+                                             :scope-consult?] true)
+                                  (assoc-in [:scope :asks ask-call-id
+                                             :consult] :consulting)
+                                  (assoc-in [:scope :asks ask-call-id
+                                             :consult-call-id]
+                                             (:call-id call))
+                                  (assoc-in [:scope :asks ask-call-id
+                                             :consult-view-digest]
+                                             (:digest view)))]
+                   {:state state'}))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Catalog
@@ -2565,6 +2788,7 @@
     [(wake-actors-guard)
      (open-successor-run-guard)
      (open-user-turn-guard)
+     (scope-ask-consult-guard)
      (claim-model-request-guard)
      (claim-tool-call-guard)
      (settle-turn-guard)]}))

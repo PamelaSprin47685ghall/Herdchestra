@@ -152,6 +152,7 @@
   (->> (:message-order session)
        (keep #(get-in session [:messages %]))
        (remove #(or (:deleted? %) (:folded? %)))
+       (remove #(or (:nudge? %) (:nudge-id %)))
        (mapv message-view)))
 
 (defn initial-user-input
@@ -240,6 +241,7 @@
   (->> (:message-order session)
        (keep #(get-in session [:messages %]))
        (remove #(or (:deleted? %) (:folded? %)))
+       (remove #(or (:nudge? %) (:nudge-id %)))
        (mapv :message-id)))
 
 ;; ---------------------------------------------------------------------------
@@ -390,7 +392,9 @@
           candidate (-> session
                         (acknowledge-committed-drafts
                          (or (:updated-at session) 0))
-                        (assoc :persisted-revision (:revision session)))]
+                        (assoc :persisted-revision (:revision session))
+                        (assoc :visible-message-count
+                               (count (visible-messages session))))]
       (try
         (let [result (ports/commit-session! persistence expected candidate)]
           (case (:status result)
@@ -427,7 +431,8 @@
   transition retried after an Owner-store conflict."
   [session]
   (when (map? session)
-    (dissoc session :revision :persisted-revision :updated-at)))
+    (dissoc session :revision :persisted-revision :updated-at
+            :visible-message-count)))
 
 (defn- acknowledge-committed-drafts
   "Mark pending drafts saved because the enclosing session commit succeeded.
@@ -1073,6 +1078,7 @@
                                :message-id message-id
                                :message-ids (:message-ids outbound)
                                :context (:context outbound)
+                               :temporary-read? (:temporary-read? payload)
                                :now now})]
                 (if-not (:ok? recorded)
                   (business-fail session
@@ -1187,6 +1193,7 @@
                                            :model-binding (:model-binding session')
                                            :message-ids (:message-ids outbound)
                                            :context (:context outbound)
+                                           :temporary-read? (:temporary-read? payload)
                                            :policy (or (:policy payload) {})
                                            :language (:language session')
                                            :now now})]
@@ -1739,9 +1746,23 @@
             session'' (cond
                         target-version (:session target-version)
                         new-message-id (append-message* session'
-                                                         (new-message new-message-id
-                                                                      :assistant
-                                                                      content [] [] [] now)
+                                                         (let [message (new-message
+                                                                       new-message-id
+                                                                       :assistant
+                                                                       content [] [] [] now)]
+                                                           ;; The terminal event's
+                                                           ;; usage report belongs
+                                                           ;; to this first
+                                                           ;; version; dropping it
+                                                           ;; here loses the only
+                                                           ;; record of provider
+                                                           ;; token counts.
+                                                           (cond-> message
+                                                             (some? (:usage event))
+                                                             (update-in [:versions 0]
+                                                                        assoc
+                                                                        :usage
+                                                                        (:usage event))))
                                                          now)
                         :else session')
             session''' (bump session'' now)
@@ -1790,7 +1811,15 @@
                    :updated-at now)
       (:run-id message)
       (-> (assoc :origin-run-id (:run-id message))
-          (dissoc :run-id)))))
+          (dissoc :run-id))
+      ;; Call and attempt identifiers belong to the source turn's runtime
+      ;; machinery; the branch starts with no calls or attempts, so the
+      ;; copied message must not keep pointers into records that do not
+      ;; exist there.  Nudge markers stay: the history projection filters
+      ;; nudge messages by `:nudge?`/`:nudge-id`, and stripping them would
+      ;; make internal nudges visible in the branch.
+      true
+      (-> (dissoc :call-id :attempt-id)))))
 
 (defn branch-session
   "Create an independent session from SOURCE before a branch point.
@@ -2081,7 +2110,11 @@
    ;; changed `:context/compressions`) survives every publish.
    :revision (:revision session)
    :updated-at (:updated-at session)
-   :message-count (count (visible-messages session))
+   ;; `:visible-message-count` is stored on the committed record so summary
+   ;; reads can skip the message bodies.  Records written before the field
+   ;; existed fall back to counting the live messages.
+   :message-count (or (:visible-message-count session)
+                      (count (visible-messages session)))
    :has-draft? (boolean (some #(not (drafts/blank? %))
                               (vals (:drafts session))))
    :origin-session-id (:origin-session-id session)

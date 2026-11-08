@@ -286,3 +286,56 @@
        (request/compile-request
         (assoc snapshot :tools [] :tool-choice :required)
         {:model-id "fallback"}))))
+
+(defn- image-attachment []
+  {:attachment-id "a2"
+   :name "pixel.png"
+   :type :image
+   :send-route :native
+   :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   :send-mime "image/png"})
+
+(defn- image-loader [_]
+  {:bytes (byte-array [1 2 3]) :mime "image/png"})
+
+(deftest image-only-user-message-keeps-nonempty-contents
+  (testing "blank context text with an attachment still produces contents"
+    (let [compiled (request/compile-request
+                    {:messages [{:role :user
+                                 :text ""
+                                 :attachments [(image-attachment)]}]}
+                    {:model-id "fallback"}
+                    {:attachment-loader image-loader})
+          message (first (.messages compiled))
+          contents (.contents message)]
+      (is (instance? UserMessage message))
+      (is (seq contents) "contents must not be empty")
+      (is (= 1 (count contents)))
+      (is (instance? ImageContent (first contents)))
+      (is (not-any? #(instance? TextContent %) contents)
+          "no empty text part is emitted"))))
+
+(deftest image-with-text-user-message-keeps-text-then-image
+  (let [compiled (request/compile-request
+                  {:messages [{:role :user
+                               :text "what is this?"
+                               :attachments [(image-attachment)]}]}
+                  {:model-id "fallback"}
+                  {:attachment-loader image-loader})
+        message (first (.messages compiled))
+        contents (.contents message)]
+    (is (= 2 (count contents)))
+    (is (instance? TextContent (first contents)))
+    (is (= "what is this?" (.text ^TextContent (first contents))))
+    (is (instance? ImageContent (second contents)))))
+
+(deftest text-only-user-message-compiles-to-one-text-part
+  (let [compiled (request/compile-request
+                  {:messages [{:role :user :text "plain question"}]}
+                  {:model-id "fallback"})
+        message (first (.messages compiled))
+        contents (.contents message)]
+    (is (instance? UserMessage message))
+    (is (= 1 (count contents)))
+    (is (instance? TextContent (first contents)))
+    (is (= "plain question" (.text ^TextContent (first contents))))))

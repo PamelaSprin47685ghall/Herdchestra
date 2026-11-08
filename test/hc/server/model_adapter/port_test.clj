@@ -736,6 +736,53 @@
       (finally
         (adapter/stop-port! port)))))
 
+(deftest task-role-is-unconfigured-when-only-main-exists
+  (let [called? (atom false)
+        model (support/streaming-model
+               (fn [_ handler]
+                 (reset! called? true)
+                 (.onCompleteResponse handler
+                                      (support/response {:text "main"}))))
+        port (adapter/create-model-port
+              {:connections [{:id "local"
+                              :kind :custom
+                              :implicit-retries 0
+                              :models [{:id "main-model"
+                                        :capabilities #{:tools :streaming}
+                                        :streaming-chat-model model}]}]
+               :roles {:main {:connection "local" :model "main-model"}}
+               :executor-threads 2})]
+    (try
+      (let [rec (support/receiver)]
+        (contract/start! port
+                         (request "task-unconfigured" (assoc snapshot :role :task))
+                         (:receiver rec))
+        (let [result (failed rec)]
+          (is (some? result))
+          (is (= :role-unconfigured (get-in result [:error :kind])))
+          (is (= :permanent (get-in result [:error :category])))
+          (is (= :configure-task-model
+                 (get-in result [:error :remedy])))
+          (is (= :task (get-in result [:error :role])))))
+      (let [rec (support/receiver)]
+        (contract/start! port
+                         (request "bogus-role" (assoc snapshot :role :bogus))
+                         (:receiver rec))
+        (let [result (failed rec)]
+          (is (some? result))
+          (is (= :unknown-role (get-in result [:error :kind])))
+          (is (nil? (get-in result [:error :remedy])))))
+      (let [rec (support/receiver)]
+        (contract/start! port
+                         (request "main-still-works" (assoc snapshot :role :main))
+                         (:receiver rec))
+        (let [result (completed rec)]
+          (is (some? result))
+          (is (= "main" (:text result)))
+          (is (true? @called?))))
+      (finally
+        (adapter/stop-port! port)))))
+
 (deftest empty-configuration-is-explicitly-not-configured
   (is (false? (adapter/model-configured? {})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo

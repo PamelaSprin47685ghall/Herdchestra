@@ -180,6 +180,99 @@
   (or (:session-id command)
       (get-in command [:payload :session-id])))
 
+(defn- receipt-session-id
+  "Session a receipt belongs to.  App-scoped commands (`:session/ensure`,
+  `:history/messages`) carry no top-level `:session-id`; the id lives in the
+  payload, and the Owner receipt repeats it."
+  [command inner receipt]
+  (or (command-session-id command)
+      (model/field inner :session-id)
+      (model/field receipt :session-id)
+      (model/field inner :sessionId)
+      (model/field receipt :sessionId)))
+
+(defn- receipt-command-epoch
+  "The Owner command epoch an `:session/ensure` receipt publishes.  It may
+  sit on the receipt envelope or the inner receipt."
+  [receipt inner]
+  (or (model/field inner :command-epoch)
+      (model/field receipt :command-epoch)
+      (model/field inner :commandEpoch)
+      (model/field receipt :commandEpoch)))
+
+(defn- history-message-entities
+  "Index a `:history/messages` receipt's entity vector by message id.
+  Server entities carry both `:id` and `:message-id`; either may key the
+  `:message/by-id` table."
+  [messages]
+  (into {}
+        (keep (fn [message]
+                (when (map? message)
+                  (let [id (or (model/field message :id)
+                               (model/field message :message-id))]
+                    (when (non-blank-string id)
+                      [id message])))))
+        (or messages [])))
+
+(defn- branch-message-entities
+  "Index a `:history/branch` receipt's copied messages by display id.
+
+  The receipt carries the branch's raw domain session record: `:messages`
+  is a map of `:message-id` -> stored message whose text lives only inside
+  `:versions`.  Merging those records verbatim leaves `:message/by-id`
+  entries with no top-level `:content`/`:text`, so the timeline body renders
+  empty until the next snapshot replaces them.  Project each stored message
+  into the same display shape the server history projection emits: `:id`,
+  the current version's `:content`/`:text`, and the branch `:session-id`.
+  Already-normalized entities pass through unchanged."
+  [messages session-id]
+  (let [normalize (fn [message]
+                    (when (map? message)
+                      (let [id (or (model/field message :id)
+                                   (model/field message :message-id)
+                                   (model/field message :message/id))
+                            versions (model/field message :versions)
+                            versions (if (sequential? versions)
+                                       (vec versions)
+                                       [])
+                            current (let [index (model/field message
+                                                                 :current-version)]
+                                      (if (and (integer? index)
+                                               (<= 0 index (dec (count versions))))
+                                        (nth versions index nil)
+                                        (first versions)))
+                            current (when (map? current) current)
+                            content (or (model/field current :content)
+                                        (model/field message :content)
+                                        (model/field message :message/content))
+                            text (or (model/field current :text)
+                                     (model/field message :text)
+                                     (model/field message :message/text))]
+                        (cond-> (cond-> message
+                                  (non-blank-string id)
+                                  (assoc :id id)
+                                  (non-blank-string id)
+                                  (assoc :message-id id))
+                          (nil? (model/field message :content))
+                          (assoc :content (or content ""))
+                          (nil? (model/field message :text))
+                          (assoc :text (or text content ""))
+                          (and (non-blank-string session-id)
+                               (nil? (model/field message :session-id))
+                               (nil? (model/field message :message/session-id))
+                               (nil? (model/field message :session)))
+                          (assoc :session-id session-id)))))]
+    (into {}
+          (keep (fn [message]
+                  (when-let [entity (normalize message)]
+                    (when-let [id (model/field entity :id)]
+                      (when (non-blank-string id)
+                        [id entity])))))
+          (cond
+            (map? messages) (vals messages)
+            (sequential? messages) messages
+            :else []))))
+
 (defn- command-draft-version [command]
   (or (:draft-version command)
       (get-in command [:payload :draft-version])))
@@ -369,15 +462,18 @@
                                    (get-in inner [:result :session]))
                 branch-messages (or (model/field inner :messages)
                                     (get-in inner [:result :messages])
-                                    (:messages branch-session))
+                                    (model/field branch-session :messages))
                 branch-order (or (model/field inner :message-order)
                                  (get-in inner [:result :message-order])
-                                 (:message-order branch-session))]
+                                 (model/field branch-session :message-order))]
             (cond-> (select-created! db new-session-id)
               (map? branch-session)
               (assoc-in [:session/by-id new-session-id] branch-session)
-              (map? branch-messages)
-              (update :message/by-id merge branch-messages)
+              (seq branch-messages)
+              (update :message/by-id
+                      merge
+                      (branch-message-entities branch-messages
+                                               new-session-id))
               (sequential? branch-order)
               (update :message/order
                       (fn [order]
@@ -415,6 +511,66 @@
               (update :ui/selected-session-id
                       (fn [selected]
                         (when-not (= selected session-id) selected))))
+
+          ;; A history window receipt carries older message entities plus the
+          ;; session's full visible id list.  Merge the entities into
+          ;; `:message/by-id`, extend the global order, and record the visible
+          ;; ids on both the display row and the `:session/history` entry so
+          ;; `model/message-order` keeps working after a windowed baseline.
+          (and (= :history/messages (:kind command))
+               (contains? #{:accepted :applied} status))
+          (let [sid (receipt-session-id command inner receipt)
+                entities (history-message-entities
+                          (or (model/field inner :messages)
+                              (model/field receipt :messages)))
+                window-order (or (model/field inner :message-order)
+                                 (model/field receipt :message-order))
+                visible-ids (or (model/field inner :message-ids)
+                                (model/field receipt :message-ids))
+                has-older? (or (model/field inner :has-older?)
+                               (model/field receipt :has-older?))
+                epoch (receipt-command-epoch receipt inner)]
+            (cond-> db
+              (seq entities)
+              (update :message/by-id merge entities)
+              (sequential? window-order)
+              (update :message/order
+                      (fn [order]
+                        (vec (distinct
+                              (concat (or order []) window-order)))))
+              (and (some? sid) (sequential? visible-ids))
+              (assoc-in [:session/history sid :message-ids]
+                        (vec visible-ids))
+              (and (some? sid) (sequential? visible-ids))
+              (assoc-in [:session/history sid :has-older?]
+                        (boolean has-older?))
+              (and (some? sid) epoch)
+              (assoc-in [:session/history sid :command-epoch] epoch)
+              (and (some? sid)
+                   (sequential? visible-ids)
+                   (contains? (or (:session/by-id db) {}) sid))
+              (-> (assoc-in [:session/by-id sid :message-ids]
+                             (vec visible-ids))
+                  (assoc-in [:session/by-id sid :has-older?]
+                            (boolean has-older?)))
+              (and (some? sid) epoch
+                   (contains? (or (:session/by-id db) {}) sid))
+              (assoc-in [:session/by-id sid :command-epoch] epoch)))
+
+          ;; `:session/ensure` publishes the lazily-created Owner's command
+          ;; epoch.  Store it on the display row (and the history entry) so
+          ;; `model/session-command-epoch` can authorize the next session
+          ;; command.  A session with no `:session/by-id` row yet waits for
+          ;; the baseline; nothing is invented here.
+          (and (= :session/ensure (:kind command))
+               (contains? #{:accepted :applied} status))
+          (let [sid (receipt-session-id command inner receipt)
+                epoch (receipt-command-epoch receipt inner)]
+            (cond-> db
+              (and (some? sid) epoch (contains? (or (:session/by-id db) {}) sid))
+              (assoc-in [:session/by-id sid :command-epoch] epoch)
+              (and (some? sid) epoch)
+              (assoc-in [:session/history sid :command-epoch] epoch)))
 
           ;; A stop receipt closes the optimistic freeze.  It only applies to
           ;; the stream that asked for the stop; a newer run must keep its

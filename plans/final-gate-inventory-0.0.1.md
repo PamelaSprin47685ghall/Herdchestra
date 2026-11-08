@@ -1,5 +1,21 @@
 # 0.0.1 最终门禁预演清单
 
+## final28 冻结（2026-11-08，v0.0.2 候选）
+
+- **最终冻结**：bundle `fd5e1f9003535d9e4dfed2bf358a8055376c233786238c293c40671babd63d39`（3,089,772 B，2026-11-08 22:19:01；CSS `e06ece29…`；manifest `e0ef5e1b…`）+ 源码树 `77d92bc2`（PRE=POST，1060 files）。
+- **全量**：3929 tests / 25571 assertions / 0F / 0E / exit 0（`/tmp/hc-full-test-final28.log`）；app-check `:ok true` / `0.0.1`（`/tmp/hc-app-check-final28.log`）；meta `plans/evidence/final28-freeze-meta.json`。
+- **末尾修复**：W280–W286（message->items 携带 attachments/quotes/citations、`:plain-response`/`:tools?` 三态、sente dispatcher+closeRingHandler、composer-snapshot 文本竞态、publish-run-events! 首见基线）。
+- **历史**：final27b（`92d18d8f`+`43431535`）、final26/27 及更旧作废；E2E/视觉证据双记 `fd5e1f90` + `77d92bc2`。
+- **commit subject 口径说明**：commit subject 使用 en_US.utf8 排序得到 `956136d0`；规范口径为 `LC_ALL=C` 排序下的 `77d92bc2`（1060 files）；二者实测为同一棵树（首个排序分歧：`appearance.cljs` vs `appearance/AGENTS.md`，`.`=0x2E < `/`=0x2F）。
+- **git 权威值**：annotated tag **v0.0.2**，tag message「Herdchestra 0.0.2 — final28 bundle fd5e1f90 (3,089,772 B) / tree 77d92bc2 (1060 files); 3929 tests 25571 assertions 0F/0E; app-check :ok true 0.0.1; E2E 22/22 PASS」；`git status` 0、未 push。台账内 git 标识为发布时快照；权威以 `git rev-parse HEAD` 与 `git rev-parse 'v0.0.2^{}'` 为准；树 hash 口径 = `find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum`（LC_ALL=C 按字节序）。`76ceb3f`/`c814e69`（并发中途）已作废。
+
+### final28 前收口（2026-11-08）
+
+- **E2E 22/22 全部 PASS**：E2E04 42/42 checks（3 连 PASS）、E2E11 30/30；E2E04 根因 publisher 首见 session 把分支复制的 3 条 assistant 全文当流式 delta 广播 → 客户端 `:streaming? true` → composer `:needs-decision` → 第二轮永不发出；修复 `publish-run-events!` 首见基线。
+- **D-29 证伪**（teardown SIGTERM，非中途自退）并删除；**D-30 修复**（runtime message->items 携带 attachments/quotes/citations + composer-snapshot 文本竞态）并删除。
+- **final28**：W287 clean release rebuild + 全量 + app-check 进行中；之后重冻结并准备 commit/tag **v0.0.2**。
+- **DEBT 统计**：开放 12 条。
+
 - 日期：2026-11-06 10:10 CST；11:30 更新 DEBT 对账（D-09 关闭、D-12 开放、master 14/6/2）；12:18 W5 重建 `8b210896` 并成为最终冻结（替换 `55e4e8ea`、`dd968793`）；12:00 新增 D-15（text/plain 附件）；12:10 D-15 代码/单测已修（W8），待 UI 回归；12:26 **最终冻结树全量 PASS**（3746/24286/0F/0E/exit 0/365 s，PRE=POST `3fae6313`），app-check 与版本五处复验通过（W35）；**13:02 冻结失效告警：13:00–13:01 的 4 个 src 改动不在 `8b210896`；13:03 W33 宣布 `ea9e5732`（13:02:42，3,010,646 B；CSS `332f9fd3` 未变）为新最终冻结；W35 13:04:16–13:10:21 全量 PASS（3748/24306/0F/0E/exit 0/365 s，单树 `52547df2`）；13:14:32 D-17 修复后 `52547df2` 基线失效；13:29:02 `main.cljs` 写入使 final5 成混合树；13:37:25 W5 重建并 W33 宣布新冻结 `0c05b7d1`（3,011,096 B；CSS `332f9fd3`；src/test `7667323a`），`ea9e5732` 作废；W35 final6 13:39–13:52 运行中。`8b210896`/`3fae6313` 作废。**
 - 范围：当前未关闭 DEBT、发布阻断、门禁命令与预计可跑时间。
 - **final7 结果（14:00:12）**：树 `a97c68f7` + bundle `072587a4` 单树全量 **PASS**：3749 tests / 24310 assertions / 0F / 0E / exit 0 / 380 s（13:53:52–14:00:12；PRE=POST、`hs_err` 9、bundle 未变、峰值 1.97 GiB、354 ns）；app-check exit 0/16 s/`:ok true`/0.0.1。final6（`0c05b7d1`/`7667323a`）仅历史；final4 1F、final5 混合树亦仅历史。

@@ -28,6 +28,7 @@
             [hc.client.conversation.surface :as surface]
             [hc.client.generated-card.view :as generated-card]
             [hc.client.preview.view :as preview]
+            [hc.client.render :as render]
             [hc.client.search.model :as search-model]
             [hc.client.search.view :as search-view]
             [hc.client.speech.playback :as speech-playback]
@@ -61,7 +62,7 @@
 .hc-process-item .hc-process-status{color:var(--f7-label-color,#555)}
 .hc-code,.hc-table,.hc-math{margin:8px 0;border:1px solid var(--f7-list-item-border-color,#d8d8dc);border-radius:10px;overflow-x:auto;background:var(--f7-card-bg-color,#fafafa)}
 .hc-code pre,.hc-math pre{margin:0;padding:10px 12px;overflow-x:auto;white-space:pre}
-.hc-code-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--f7-list-item-border-color,#d8d8dc);font-size:.78rem}
+.hc-code-head,.hc-math-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--f7-list-item-border-color,#d8d8dc);font-size:.78rem;color:var(--f7-label-color,#555)}
 .hc-table table{border-collapse:collapse;min-width:100%}
 .hc-table th,.hc-table td{border:1px solid var(--f7-list-item-border-color,#d8d8dc);padding:6px 8px;text-align:left;vertical-align:top}
 .hc-composer{position:sticky;bottom:0;z-index:20;display:flex;flex-direction:column;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--f7-list-item-border-color,#d8d8dc);background:var(--f7-page-bg-color,#fff)}
@@ -72,6 +73,7 @@
 .hc-button-primary{background:var(--f7-color-primary,#0a84ff);border-color:var(--f7-color-primary,#0a84ff);color:#fff}
 .hc-button[disabled],.hc-button[aria-disabled=true]{opacity:.55;cursor:not-allowed}
 .hc-composer-hint,.hc-composer-save{font-size:.78rem;color:var(--f7-label-color,#555)}
+.hc-reason{font-size:.8rem;font-weight:600;color:var(--f7-label-color,#555)}
 .hc-attachments,.hc-quotes,.hc-ask-answers{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
 .hc-chip{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:6px 8px;border:1px solid var(--f7-list-item-border-color,#d8d8dc);border-radius:8px;font-size:.82rem}
 .hc-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 16px;padding:8px 10px;border-radius:10px;border:1px solid var(--f7-list-item-border-color,#d8d8dc);font-size:.88rem}
@@ -107,7 +109,7 @@
 .hc-stream-status,.hc-process,.hc-code,.hc-table,.hc-math,.hc-context-panel,.hc-ask{background:var(--wb-surface,var(--f7-card-bg-color,#fafafa));border-color:var(--wb-line,var(--f7-list-item-border-color,#d8d8dc))}
 .hc-message-body{background:var(--wb-surface-2,var(--f7-card-bg-color,#f7f7f9));color:var(--wb-ink,inherit)}
 .hc-message-out .hc-message-body{background:var(--wb-accent,var(--f7-color-primary,#0a84ff));color:var(--wb-accent-ink,#fff)}
-.hc-code-head,.hc-table th,.hc-table td{border-color:var(--wb-line,var(--f7-list-item-border-color,#d8d8dc))}
+.hc-code-head,.hc-math-head,.hc-table th,.hc-table td{border-color:var(--wb-line,var(--f7-list-item-border-color,#d8d8dc))}
 .hc-composer{background:var(--wb-bg,var(--f7-page-bg-color,#fff))}
 .hc-composer textarea,.hc-find-input,.hc-button{background:var(--wb-surface,var(--f7-card-bg-color,#fff));border-color:var(--wb-line,var(--f7-list-item-border-color,#c8c8cc));color:var(--wb-ink,inherit)}
 .hc-button-primary{background:var(--wb-accent,var(--f7-color-primary,#0a84ff));border-color:var(--wb-accent,var(--f7-color-primary,#0a84ff));color:var(--wb-accent-ink,#fff)}
@@ -199,7 +201,6 @@
       :PINNED_ATTACHMENT_MISSING
       "有固定附件已缺失；请检查附件列表"
       (or (:message warning)
-          (some-> (:code warning) name)
           "上下文警告"))))
 
 (defn- clip-views
@@ -224,6 +225,57 @@
                :text (str label (when summary (str "：" summary)))}))
           entries)))
 
+;; ---------------------------------------------------------------------------
+;; Token labels
+;;
+;; Internal keywords (`:reported`, `:read-write`, `:file`, tool statuses)
+;; must never reach the DOM as English words.  Each helper maps the server
+;; vocabulary to Chinese and falls back to "未知" for unrecognized values.
+
+(defn- usage-source-label
+  "Provenance of a usage figure.  Unknown values never leak an English
+  token into the message meta line."
+  [source]
+  (case (some-> source keyword)
+    :reported "实测"
+    :estimated "估算"
+    :unknown "未知"
+    :model "模型"
+    :manual "手动"
+    :regenerated "重新生成"
+    :branch "分支"
+    :imported "导入"
+    "未知"))
+
+(defn- estimate-kind-label
+  [value]
+  (case (some-> value keyword)
+    :estimated "估算"
+    :tokens "token 估算"
+    :chars "字符估算"
+    :unknown "未知"
+    "未知"))
+
+(defn- late-result-status-label
+  "A late tool result keeps its honest status; the status word is localized
+  so `failed` never reaches the message list as an English token."
+  [status]
+  (case (some-> status keyword)
+    :succeeded "已完成"
+    :success "已完成"
+    :completed "已完成"
+    :complete "已完成"
+    :done "已完成"
+    :failed "失败"
+    :error "失败"
+    :cancelled "已取消"
+    :canceled "已取消"
+    :outcome-unknown "结果未确认"
+    :unknown "结果未确认"
+    :running "执行中"
+    :pending "执行中"
+    "未知状态"))
+
 (defn- usage-label
   "Display only what the server actually reported.  An absent token count is
   `未知`, never `0`."
@@ -235,10 +287,7 @@
       (when (or (some? input) (some? output))
         (str "用量 " (or input "未知") " / " (or output "未知")
              (when source
-               (str "（" (if (or (keyword? source) (symbol? source))
-                           (name source)
-                           (str source))
-                    "）")))))))
+               (str "（" (usage-source-label source) "）")))))))
 
 (defn- session-status-label
   "User-visible session state.  `active` and `idle` are the normal working
@@ -410,7 +459,11 @@
                                                    (dom/td {:key (str "c-" index "-" cell-index)} cell)))))))))))
 
 (def ^:private inline-markdown-pattern
-  #"`([^`]+)`|!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]*)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_")
+  ;; Group 1 is inline math `$…$`; the rest follow the original order so
+  ;; code spans keep winning over formula delimiters inside backticks.
+  ;; The `$…$` alternative mirrors `hc.client.render/inline-math-pattern`:
+  ;; digit guards skip currency, dollar guards skip `$$…$$` display math.
+  #"(?<!\d)(?<!\$)\$([^\s$](?:[^$]*[^\s$])?)\$(?!\d)(?!\$)|`([^`]+)`|!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]*)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_")
 
 (defn- inline-nodes
   "Render conservative inline Markdown.  Anything the pattern does not
@@ -429,30 +482,36 @@
                 group (fn [n] (get match n))
                 key (str key-prefix "-i" index)
                 node (cond
+                       ;; Groups: 1 math, 2 code, 3-4 image, 5-6 link,
+                       ;; 7-8 strong, 9-10 emphasis.
                        (some? (group 1))
-                       (dom/code {:className "hc-inline-code" :key key} (group 1))
+                       (dom/code {:className "hc-inline-code hc-inline-math" :key key}
+                                 (group 1))
 
-                       (some? (group 3))
+                       (some? (group 2))
+                       (dom/code {:className "hc-inline-code" :key key} (group 2))
+
+                       (some? (group 4))
                        (dom/img {:className "hc-inline-image" :key key
-                                 :src (group 3) :alt (or (group 2) "")
+                                 :src (group 4) :alt (or (group 3) "")
                                  :loading "lazy"})
 
-                       (some? (group 5))
-                       (dom/a {:className "hc-link" :key key
-                               :href (group 5) :target "_blank" :rel "noreferrer"}
-                              (group 4))
-
                        (some? (group 6))
-                       (dom/strong {:key key} (group 6))
+                       (dom/a {:className "hc-link" :key key
+                               :href (group 6) :target "_blank" :rel "noreferrer"}
+                              (group 5))
 
                        (some? (group 7))
                        (dom/strong {:key key} (group 7))
 
                        (some? (group 8))
-                       (dom/em {:key key} (group 8))
+                       (dom/strong {:key key} (group 8))
 
                        (some? (group 9))
                        (dom/em {:key key} (group 9))
+
+                       (some? (group 10))
+                       (dom/em {:key key} (group 10))
 
                        :else nil)
                 nodes (cond-> nodes
@@ -580,8 +639,8 @@
 
       (apply dom/p props nodes))))
 
-(defn- segment-block
-  [segment index]
+(defn- segment-block-plain
+  [segment index target kind]
   (case (:type segment)
     :code
     (dom/div {:className "hc-code" :key (str "code-" index)}
@@ -589,7 +648,7 @@
                       (dom/span nil (or (not-empty (:lang segment)) "代码"))
                       (dom/button {:className "hc-button"
                                    :type "button"
-                                   :style (style {:minHeight 32 :minWidth 32})
+                                   :style (style {:minHeight target :minWidth target})
                                    :onClick #(copy-text! (:content segment))}
                                   "复制代码"))
              (dom/pre nil (dom/code nil (:content segment)))
@@ -600,12 +659,7 @@
 
     :math
     (dom/div {:className "hc-math" :key (str "math-" index)}
-             (dom/pre nil (:content segment))
-             (dom/button {:className "hc-button"
-                          :type "button"
-                          :style (style {:minHeight 32 :minWidth 32})
-                          :onClick #(copy-text! (:content segment))}
-                         "复制公式原文"))
+             (dom/pre nil (:content segment)))
 
     :table
     (if (:closed? segment)
@@ -627,8 +681,26 @@
                    :style (style {:whiteSpace "pre-wrap" :margin "0 0 8px"})}]
         (apply dom/p props nodes)))))
 
+(defn- segment-block
+  [segment index target]
+  (let [kind (render/block-kind segment)]
+    (if (#{:mermaid :math} kind)
+      (let [label (render/block-label kind)
+            class-name (if (= :math kind) "hc-math" "hc-code")]
+        (dom/div {:className class-name :key (str "special-" kind "-" index)}
+                 (dom/div {:className (str class-name "-head")}
+                          (dom/span nil label)
+                          (dom/button {:className "hc-button"
+                                       :type "button"
+                                       :style (style {:minHeight target
+                                                      :minWidth target})
+                                       :onClick #(copy-text! (:content segment))}
+                                    (render/copy-label kind)))
+                 (dom/pre nil (dom/code nil (:content segment)))))
+      (segment-block-plain segment index target kind))))
+
 (defn- process-block
-  [process]
+  [process target]
   (when (seq process)
     (dom/details {:className "hc-process"}
                  (dom/summary nil (str "过程 · " (count process) " 项"))
@@ -652,6 +724,8 @@
                                                  "先核对目标状态；确认后只结清记录，不自动重放。")
                                        (dom/button {:className "hc-button"
                                                     :type "button"
+                                                   :style (style {:minHeight target
+                                                                  :minWidth target})
                                                     :onClick (fn [_]
                                                                (when (exists? js/window)
                                                                  (set! (.-hash js/window.location)
@@ -659,7 +733,7 @@
                                                    "去看板核对并结清"))))))))
 
 (defn- attachment-list
-  [attachments {:keys [callbacks session-id pinned-ids]}]
+  [attachments {:keys [callbacks session-id pinned-ids target]}]
   (when (seq attachments)
     (dom/div {:className "hc-attachment-stack"}
              (dom/ul {:className "hc-attachments"}
@@ -698,7 +772,7 @@
                                      (dom/button
                                       {:className "hc-button"
                                        :type "button"
-                                       :style (style {:minHeight 32 :minWidth 32})
+                                       :style (style {:minHeight target :minWidth target})
                                        :aria-pressed (if pinned? "true" "false")
                                        :aria-label (str (if pinned? "取消固定 " "固定 ")
                                                         (:name attachment))
@@ -714,7 +788,7 @@
                               :source-label (:name attachment)})))))
 
 (defn- version-selector
-  [message callbacks session-id]
+  [message callbacks session-id target]
   (let [versions (vec (or (:versions message) []))]
     (when (and (> (count versions) 1)
                (fn? (:history/select-version! callbacks)))
@@ -728,6 +802,7 @@
                                              "hc-version-current"))
                    :type "button"
                    :key (str (:id message) "-version-" index)
+                   :style (style {:minHeight target :minWidth target})
                    :aria-pressed (if (= index (:current-version message))
                                    "true" "false")
                    :onClick #(do
@@ -919,14 +994,41 @@
   "A user-readable label for a keyword reason; strings pass through."
   [value fallback]
   (cond
-    (keyword? value) (name value)
+    (keyword? value)
+    ;; Memory categories (server `materials/memory.clj`), scopes, and
+    ;; epistemic kinds.  An unrecognized keyword must not leak its English
+    ;; name; the caller's fallback is the honest label.
+    (or (case value
+          :identity-background "身份与背景"
+          :working-style "工作方式"
+          :expression-preference "表达偏好"
+          :long-term-requirement "长期要求"
+          :global "全局"
+          :assistant "助手"
+          :project "项目"
+          :turn "本轮"
+          :session "本会话"
+          :fact "事实"
+          :preference "偏好"
+          :requirement "要求"
+          :assumption "假设"
+          :unknown "未知"
+          fallback)
+        fallback)
     (string? value) value
     :else fallback))
 
 (defn- round-scope-label
   [scope]
   (cond
-    (keyword? scope) (round-label scope "范围未知")
+    (keyword? scope)
+    (case scope
+      :global "全局"
+      :assistant "助手"
+      :project "项目"
+      :turn "本轮"
+      :session "本会话"
+      "范围未知")
     (map? scope) (case (:kind scope)
                    :global "全局"
                    :assistant (str "助手 " (or (:assistant-id scope) "未知"))
@@ -946,6 +1048,7 @@
     :sticky "持续提供中"
     :keyword "关键词命中"
     :constant "始终提供"
+    :always "始终提供"
     :delay "尚未到延迟轮次"
     :disabled "已停用"
     :unbound "未绑定当前助手"
@@ -1032,7 +1135,7 @@
                                   (if (seq cards)
                                     (for [card cards]
                                       (dom/div {:className "hc-round-item" :key (str (:name card) "-" (:scope card))}
-                                               (str (:name card) " · " (round-label (:scope card) "turn")
+                                               (str (:name card) " · " (name (or (:scope card) :turn))
                                                     " · 版本 " (if (= :unknown (:version card)) "未知" (:version card)))))
                                     (dom/div {:className "hc-round-item wb-muted"} "本轮未使用指令卡"))))
                    (when (seq tools)
@@ -1082,10 +1185,10 @@
                                   (round-fact "Token"
                                               (if (= :unknown (:tokens estimates))
                                                 "未知" (:tokens estimates)))
-                                  (round-fact "来源" (name (or (:kind estimates) :unknown)))))))))
+                                  (round-fact "来源" (estimate-kind-label (:kind estimates)))))))))
 
 (defn- context-panel
-  [session session-id callbacks messages search-state offer!]
+  [session session-id callbacks messages search-state secondary-target offer!]
   (let [context (or (:context session) {})
         outbound (:outbound context)
         compressions (let [value (:compressions context)]
@@ -1186,7 +1289,9 @@
   queue.  Removing an item drops only its reference from the new version;
   the original version and every stored file remain intact."
   [props]
-  (let [{:keys [message callbacks session-id commands]} (component-props props)
+  (let [{:keys [message callbacks session-id commands
+                secondary-target]} (component-props props)
+        secondary-target (or secondary-target 44)
         [editing? set-editing!] (react/useState false)
         [draft set-draft!] (react/useState (or (:body message) ""))
         [attachments set-attachments!] (react/useState [])
@@ -1198,7 +1303,17 @@
         rejected? (contains? #{:rejected :failed :refused} status)
         rejection-label (or (:message pending-command)
                             (get-in pending-command [:error :message])
-                            (some-> (get-in pending-command [:error :code]) name)
+                            (when-let [code (get-in pending-command [:error :code])]
+                              ;; Contract codes get their shared copy; an
+                              ;; unrecognized code falls through to the
+                              ;; honest generic label below.
+                              (let [copy (failures/failure-copy
+                                          {:code code :context {:saved? false}})]
+                                (when (and copy
+                                           (not= "无法确定具体原因" (:title copy)))
+                                  (str (:title copy)
+                                       (when-let [body (:body copy)]
+                                         (str "：" body))))))
                             "编辑未送达，编辑内容仍在")
         attachment-rows (history-edit/attachment-rows attachments)
         edit-state {:content draft :attachments attachments}]
@@ -1219,7 +1334,8 @@
              (when-not editing?
                (dom/button {:className "hc-button"
                             :type "button"
-                            :style (style {:minHeight 32 :minWidth 32})
+                           :style (style {:minHeight secondary-target
+                                          :minWidth secondary-target})
                             :onClick (fn [_]
                                        (let [initial (history-edit/initial-state message)]
                                          (set-draft! (:content initial))
@@ -1255,7 +1371,8 @@
                                                      (dom/button
                                                       {:className "hc-button"
                                                        :type "button"
-                                                       :style (style {:minHeight 32 :minWidth 32})
+                                                      :style (style {:minHeight secondary-target
+                                                                     :minWidth secondary-target})
                                                        :disabled (boolean pending)
                                                        :aria-label (:remove-label row)
                                                        :onClick (fn [_]
@@ -1298,7 +1415,9 @@
   "Explicit regeneration.  Disabled while the tracked command is pending; the
   server appends a real version, never client-generated content."
   [props]
-  (let [{:keys [message callbacks session-id commands]} (component-props props)
+  (let [{:keys [message callbacks session-id commands
+                secondary-target]} (component-props props)
+        secondary-target (or secondary-target 44)
         [pending set-pending!] (react/useState nil)
         status (when pending (get-in commands [pending :status]))
         done? (contains? #{:accepted :rejected} status)]
@@ -1314,7 +1433,8 @@
                    :type "button"
                    :disabled (boolean pending)
                    :aria-label (if pending "重新生成中" "重新生成")
-                   :style (style {:minHeight 32 :minWidth 32})
+                   :style (style {:minHeight secondary-target
+                                  :minWidth secondary-target})
                    :onClick (fn [_]
                               (let [result ((or (:history/regenerate! callbacks)
                                                 (:regenerate! callbacks))
@@ -1327,11 +1447,13 @@
 (defn- message-item
   [message {:keys [callbacks session-id commands selected? on-select!
                    pinned-ids draft-selection draft-text on-replace
-                   search-state last-assistant? next-message-id]}]
+                   search-state last-assistant?
+                   secondary-target]}]
   (let [role (:role message)
         out? (= :user role)
         callbacks (or callbacks {})
         copy! (or (:copy! callbacks) copy-text!)
+        secondary-target (or secondary-target 44)
         replace-capable? (or (fn? (:replace-transcript! callbacks))
                              (fn? (:edit-draft! callbacks)))]
     (dom/div {:className (class-names "hc-message"
@@ -1348,13 +1470,13 @@
                              (if (number? version) (inc version) version)))
                       (when-let [usage (usage-label (:usage message))]
                         (str " · " usage)))
-             (version-selector message callbacks session-id)
+             (version-selector message callbacks session-id secondary-target)
              (when-let [status (:status-label message)]
                (dom/div {:className "hc-message-status"} status))
-             (process-block (:process message))
+             (process-block (:process message) secondary-target)
              (dom/div {:className "hc-message-body"}
                       (for [[index segment] (map-indexed vector (:segments message))]
-                        (segment-block segment index)))
+                        (segment-block segment index secondary-target)))
              ;; The display projection drops identity and provenance fields.
              ;; The raw references keep the saved-copy marker, page results and
              ;; workspace provenance the history row must show.
@@ -1362,7 +1484,8 @@
                                   (:attachments message))
                               {:callbacks callbacks
                                :session-id session-id
-                               :pinned-ids pinned-ids})
+                               :pinned-ids pinned-ids
+                               :target secondary-target})
              (search-view/source-cards
               (or (seq (search-model/message-sources message))
                   (when last-assistant?
@@ -1377,11 +1500,12 @@
                (for [late (:late-tool-results message)]
                  (dom/div {:className "hc-late-result" :key (str "late-" (:tool-call-id late))}
                           (str (:label late) " · " (or (:tool-call-id late) "工具")
-                               (when-let [status (:status late)] (str " · " (name status)))))))
+                               (when-let [status (:status late)]
+                                 (str " · " (late-result-status-label status)))))))
              (dom/div {:className "hc-message-actions"}
                       (dom/label {:className "hc-message-select"
                                   :style (style {:display "flex" :alignItems "center"
-                                                 :gap 6 :minHeight 32})}
+                                                 :gap 6 :minHeight secondary-target})}
                                  (dom/input {:type "checkbox"
                                              :checked (boolean selected?)
                                              :aria-label (str "选择消息 " (:id message))
@@ -1393,7 +1517,8 @@
                                  "选择")
                       (dom/button {:className "hc-button"
                                    :type "button"
-                                   :style (style {:minHeight 32 :minWidth 32})
+                                   :style (style {:minHeight secondary-target
+                                                  :minWidth secondary-target})
                                    :onClick #(copy! (:copy-text message))}
                                   "复制")
                       (when (= :assistant role)
@@ -1433,7 +1558,8 @@
                        regenerate-control
                        #js {:key (str "regen-" (:id message))
                             :props {:message message :callbacks callbacks
-                                    :session-id session-id :commands commands}})
+                                    :session-id session-id :commands commands
+                                    :secondary-target secondary-target}})
                       (let [branch! (:history/branch! callbacks)
                             legacy-branch! (:branch! callbacks)]
                         ;; A branch is a readable conversation path, so it
@@ -1442,28 +1568,31 @@
                         ;; persisted history does not contain, and the server
                         ;; would refuse it as `:MESSAGE_NOT_FOUND`.
                         ;;
-                        ;; `:before-message-id` names the first message the
-                        ;; branch must NOT copy.  Passing the selected id
-                        ;; itself excluded the selected message, so branching
-                        ;; from the first message produced an empty session.
-                        ;; Pass the next readable message instead; nil copies
-                        ;; the whole path when the selected message is last.
+                        ;; `:before-message-id` nil copies the whole path:
+                        ;; the branch keeps every readable message of the
+                        ;; source session, including the clicked one and
+                        ;; every later turn, then continues independently.
+                        ;; The clicked position is still recorded through
+                        ;; the legacy message-id path when that callback is
+                        ;; the only one wired.
                         (when (and (contains? #{:user :assistant} role)
                                    (or (fn? branch!) (fn? legacy-branch!)))
                           (dom/button {:className "hc-button"
                                        :type "button"
-                                       :style (style {:minHeight 32 :minWidth 32})
+                                       :style (style {:minHeight secondary-target
+                                                      :minWidth secondary-target})
                                        :onClick (fn [_]
                                                   (if (fn? branch!)
                                                     (branch! {:session-id session-id
-                                                              :before-message-id next-message-id})
+                                                              :before-message-id nil})
                                                     (legacy-branch! {:session-id session-id
                                                                      :message-id (:id message)})))}
                                       "从此处分支")))
                       (when (fn? (:history/set-boundary! callbacks))
                         (dom/button {:className "hc-button"
                                      :type "button"
-                                     :style (style {:minHeight 32 :minWidth 32})
+                                     :style (style {:minHeight secondary-target
+                                                    :minWidth secondary-target})
                                      :onClick #((:history/set-boundary! callbacks)
                                                 {:session-id session-id
                                                  :message-id (:id message)})}
@@ -1475,7 +1604,8 @@
                          #js {:key (str "edit-" (:id message)
                                         "-" (:current-version message))
                               :props {:message message :callbacks callbacks
-                                      :session-id session-id :commands commands}}))))))
+                                      :session-id session-id :commands commands
+                                      :secondary-target secondary-target}}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Composer
@@ -1498,13 +1628,31 @@
                               :version :turn-card-ids :instruction-values
                               :temporary-read? :turn-selection-version]))
 
+(defn- composer-snapshot
+  "Snapshot the composer the operator can actually see.
+
+  The textarea is uncontrolled.  Input reaches the reducer synchronously,
+  but a click that arrives before the next render still reads the previous
+  `props`, whose draft text can be empty while the field already shows the
+  typed body.  The field value is the authority for what the operator is
+  looking at, so it overwrites the snapshot text.  Without this, a fast
+  type-then-send (or paste-then-send) with a ready attachment submits an
+  attachment-only message."
+  [props textarea-ref]
+  (let [snapshot (draft-snapshot (:draft props))
+        node (when textarea-ref (.-current textarea-ref))
+        value (when node (.-value node))]
+    (if (string? value)
+      (assoc snapshot :text value)
+      snapshot)))
+
 (defn- call!
   [callbacks key value]
   (when-let [callback (get callbacks key)]
     (when (ifn? callback) (callback value))))
 
 (defn- request-send!
-  [props view-model local-decision set-local-decision!]
+  [props view-model local-decision set-local-decision! textarea-ref]
   (let [callbacks (or (:callbacks props) {})
         session-id (:session-id view-model)
         intent (get-in view-model [:composer :send :intent])
@@ -1524,7 +1672,7 @@
 
       (fn? (:send! callbacks))
       ((:send! callbacks) {:session-id session-id
-                           :snapshot (draft-snapshot (:draft props))})
+                           :snapshot (composer-snapshot props textarea-ref)})
 
       :else nil)))
 
@@ -1672,6 +1820,7 @@
         session-id (:session-id view-model)
         send (:send composer)
         stop (:stop composer)
+        secondary-target (or (get-in view-model [:a11y :secondary-target]) 44)
         decision (or local-decision
                      (when (get-in composer [:decision :visible?])
                        (get-in composer [:decision :options])))
@@ -1680,7 +1829,8 @@
                                 (not (fn? (:fix! callbacks)))))
         on-send (fn [event]
                   (when event (.preventDefault event))
-                  (request-send! props view-model local-decision set-local-decision!))
+                  (request-send! props view-model local-decision
+                                 set-local-decision! textarea-ref))
         on-stop (fn [event]
                   (when event (.preventDefault event))
                   (let [sid (or session-id (:session-id props))]
@@ -1693,7 +1843,8 @@
                            (when event (.preventDefault event))
                            (when (fn? (:stop! callbacks))
                              (set-pending-send! {:session-id session-id
-                                                 :snapshot (draft-snapshot (:draft props))})
+                                                 :snapshot (composer-snapshot
+                                                            props textarea-ref)})
                              ((:stop! callbacks) {:session-id session-id})
                              (set-local-decision! nil)))
         on-continue (fn [event]
@@ -1720,7 +1871,8 @@
                                  (dom/span nil (:status-label attachment))
                                  (dom/button {:className "hc-button"
                                               :type "button"
-                                              :style (style {:minHeight 32 :minWidth 32})
+                                             :style (style {:minHeight secondary-target
+                                                            :minWidth secondary-target})
                                               :aria-label (:remove-label attachment)
                                               :onClick #(call! callbacks :remove-attachment!
                                                                {:session-id session-id
@@ -1734,7 +1886,8 @@
                                            (or (:text quote) "引用"))
                                  (dom/button {:className "hc-button"
                                               :type "button"
-                                              :style (style {:minHeight 32 :minWidth 32})
+                                             :style (style {:minHeight secondary-target
+                                                            :minWidth secondary-target})
                                               :aria-label (:remove-label quote)
                                               :onClick #(call! callbacks :remove-quote!
                                                                {:session-id session-id
@@ -1821,7 +1974,11 @@
                                                     (case (:action decision)
                                                       :send (do
                                                               (.preventDefault event)
-                                                              (request-send! props view-model local-decision set-local-decision!))
+                                                              (request-send!
+                                                               props view-model
+                                                               local-decision
+                                                               set-local-decision!
+                                                               textarea-ref))
                                                       :newline nil
                                                       :ime-candidate nil
                                                       :ignore nil)))
@@ -1836,8 +1993,32 @@
                                                     :minWidth (:target-size stop)})
                                      :onClick on-stop}
                                     (:label stop)))
+                      ;; R-05/B-03: with no bound model the send button is
+                      ;; disabled; the repair entry sits beside it so the
+                      ;; operator always has a visible way forward.
+                      (let [model-entry (get send :model-entry)]
+                       (when (:visible? model-entry)
                       (dom/button {:className "hc-button hc-button-primary"
                                    :type "button"
+                                      :disabled (:disabled? model-entry)
+                                      :aria-label (:primary-label model-entry)
+                                      :aria-disabled (boolean (:disabled? model-entry))
+                                      :title (:reason model-entry)
+                                   :style (style {:minHeight (:target-size send)
+                                                  :minWidth (:target-size send)})
+                                      :onClick (fn [_]
+                                                 (cond
+                                                   (fn? (:fix! callbacks))
+                                                   ((:fix! callbacks)
+                                                    {:session-id session-id
+                                                     :intent :select-model})
+                                                   (fn? (:settings! callbacks))
+                                                   ((:settings! callbacks)
+                                                    {:session-id session-id})
+                                                   :else nil))}
+                                 (:primary-label model-entry))))
+                      (dom/button {:className "hc-button hc-button-primary"
+                                  :type "button"
                                    :disabled send-disabled?
                                    :aria-label (:aria-label send)
                                    :aria-disabled (boolean send-disabled?)
@@ -1846,12 +2027,33 @@
                                                   :minWidth (:target-size send)})
                                    :onClick on-send}
                                   (:label send)))
+                      (let [model-entry (get send :model-entry)]
+                       (when (:defer? model-entry)
+                        (dom/button {:className "hc-button"
+                                      :type "button"
+                                      :aria-label (:defer-label model-entry)
+                                   :style (style {:minHeight (:target-size send)
+                                                  :minWidth (:target-size send)})
+                                      :onClick (fn [_]
+                                                 (when (fn? (:settings! callbacks))
+                                                   ((:settings! callbacks)
+                                                    {:session-id session-id})))}
+                                  (:defer-label model-entry))))
              (dom/div {:className "hc-composer-hint" :id "hc-composer-hint"}
                       (:hint composer)
                       (when-let [reason (:reason send)]
                         (str " · " reason)))
              (when-let [save-label (get-in composer [:save :label])]
-               (dom/div {:className "hc-composer-save" :role "status"} save-label)))))
+               (dom/div {:className "hc-composer-save" :role "status"} save-label))
+             (when-let [command-reason
+                        (:reason (get composer :command))]
+               (when-let [reason-label
+                          (:label (some #(when (= (:id %)
+                                                   command-reason)
+                                              %)
+                                            failures/failure-reason-categories))]
+                 (dom/div {:className "hc-reason hc-composer-save" :role "status"}
+                          reason-label))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Ask card
@@ -2025,6 +2227,10 @@
   (let [props (if (map? props) props (js->clj props :keywordize-keys true))
         callbacks (or (:callbacks props) {})
         view-model (surface/surface props)
+        ;; Secondary controls keep a 44px touch target on :medium/:compact
+        ;; and may shrink to 32px only on :wide desktop.  The value comes
+        ;; from the same a11y table the surface exposes.
+        secondary-target (or (get-in view-model [:a11y :secondary-target]) 44)
         messages-ref (react/useRef nil)
         textarea-ref (react/useRef nil)
         restored-session-ref (react/useRef nil)
@@ -2415,7 +2621,8 @@
                                  (if (fn? settings!)
                                    (dom/button {:type "button"
                                                 :className "hc-button"
-                                                :style (style {:minHeight 32 :minWidth 32
+                                               :style (style {:minHeight secondary-target
+                                                              :minWidth secondary-target
                                                                :padding "2px 8px"})
                                                 :aria-label "打开设置选择模型"
                                                 :onClick (fn [_] (settings! {}))}
@@ -2445,7 +2652,8 @@
                                          :id (str "hc-header-action-"
                                                   (name (:id action)))
                                          :aria-label (:aria-label action)
-                                         :style (style {:minHeight 32 :minWidth 32})
+                                         :style (style {:minHeight secondary-target
+                                                        :minWidth secondary-target})
                                          :onClick (fn [_] (callback {}))}
                                         (:label action))))))
              (for [banner (:banners view-model)]
@@ -2456,6 +2664,13 @@
                                                    "hc-banner-info"))
                          :role (if (= :error (:kind banner)) "alert" "status")
                          :key (str (:kind banner) "-" (:text banner))}
+                        (when-let [reason-label
+                                   (:label (some #(when (= (:id %)
+                                                            (:reason banner))
+                                                   %)
+                                                 failures/failure-reason-categories))]
+                          (dom/div {:className "hc-reason"}
+                                   reason-label))
                         (dom/span nil (:text banner))
                         (for [action (:actions banner)]
                           (let [local-action? (contains? #{:copy-draft :export-draft
@@ -2473,7 +2688,8 @@
                               (dom/button {:className "hc-button"
                                            :type "button"
                                            :key (:id action)
-                                           :style (style {:minHeight 32 :minWidth 32})
+                                           :style (style {:minHeight secondary-target
+                                                          :minWidth secondary-target})
                                            :onClick (fn [_]
                                                       (case (:id action)
                                                         :copy-draft (copy-text! (get-in view-model [:composer :value]))
@@ -2554,6 +2770,7 @@
                                       "清除选择"))))
              (context-panel session session-id callbacks (:messages view-model)
                             (:search-state props)
+                           secondary-target
                             (fn [text filename mime]
                               (offer-download! text filename mime
                                                set-export-error!)))
@@ -2566,11 +2783,19 @@
                           stream-status)))
              (when-let [blocked (:blocked view-model)]
                (dom/div {:className "hc-blocked" :role "alert"}
-                        (dom/strong nil (str "运行受阻：" (or (:code blocked) "未知原因")))
+                       (when-let [reason-label
+                                  (:label (some #(when (= (:id %)
+                                                           (:reason blocked))
+                                                      %)
+                                                    failures/failure-reason-categories))]
+                         (dom/div {:className "hc-reason"} reason-label))
+                        (dom/strong nil (str "运行受阻："
+                                             (or (:code blocked) "未知原因")))
                         (dom/div nil
                                  (str "成员 " (or (:member blocked) "—")
                                       " · 次数 " (or (:count blocked) "—")
-                                      " · 最后错误 " (or (:last-code blocked) "—")))
+                                      " · 最后错误 "
+                                      (or (:last-code blocked) "—")))
                         (dom/div nil (or (:remedy blocked) "请检查工具准入配置后重试。"))))
              (when find-open?
                (dom/div {:className "hc-find"
@@ -2701,21 +2926,6 @@
                                             :draft-text draft-text
                                             :on-replace replace-translation!
                                             :search-state (:search-state props)
-                                            ;; The branch point includes the
-                                            ;; selected readable message.  The
-                                            ;; server copies everything before
-                                            ;; `:before-message-id`, so skip
-                                            ;; process rows and name the next
-                                            ;; user/assistant message; nil
-                                            ;; means "copy the whole path".
-                                            :next-message-id
-                                            (some (fn [candidate]
-                                                    (when (contains?
-                                                           #{:user :assistant}
-                                                           (:role candidate))
-                                                      (:id candidate)))
-                                                  (drop (+ start position 1)
-                                                        all-messages))
                                             :last-assistant? (= (:id message)
                                                                 last-assistant-id)
                                             :selected? (contains? selected-messages (:id message))
@@ -2723,10 +2933,36 @@
                                                           (set-selected-messages!
                                                            (if checked?
                                                              (conj selected-messages message-id)
-                                                             (disj selected-messages message-id))))})))
+                                                             (disj selected-messages message-id))))
+                                            :secondary-target secondary-target})))
                           [(dom/div {:className "hc-message-meta"
                                      :style (style {:padding "24px 0"})}
-                                    "还没有消息。输入内容开始。")]))))
+                                    "还没有消息。输入内容开始。")
+                             ;; R-12: an empty conversation with no bound model
+                           ;; gets the same repair entry as the composer, so
+                           ;; the first screen is not a dead end.
+                           (when (and (empty? all-messages)
+                                      (= :select-model
+                                         (get-in view-model [:composer :send :intent]))
+                                      (get-in view-model
+                                              [:composer :send :model-entry :visible?]))
+                             [(dom/div {:className "hc-message-actions"
+                                        :style (style {:justifyContent "center"})}
+                                       (dom/button
+                                        {:className "hc-button hc-button-primary"
+                                         :type "button"
+                                         :aria-label "连接模型"
+                                         :onClick (fn [_]
+                                                    (cond
+                                                      (fn? (:fix! callbacks))
+                                                      ((:fix! callbacks)
+                                                       {:session-id session-id
+                                                        :intent :select-model})
+                                                      (fn? (:settings! callbacks))
+                                                      ((:settings! callbacks)
+                                                       {:session-id session-id})
+                                                      :else nil))}
+                                  "连接模型"))])]))))
              (when jump-visible?
                (dom/button {:className "hc-button hc-jump"
                             :type "button"
@@ -2760,11 +2996,19 @@
 (defn- unwrap-props
   [props]
   (cond
+    ;; A ClojureScript map must be returned whole: `js->clj` cannot see its
+    ;; namespaced message keys (`:message/by-id`) and would silently drop
+    ;; every message the surface is asked to render.
     (and (map? props) (contains? props :props)) (:props props)
     (map? props) props
     (and (object? props) (some? (.-props props)))
     (let [inner (.-props props)]
-      (if (map? inner) inner (js->clj props :keywordize-keys true)))
+      (cond
+        ;; React hands the element props as a plain JS object; when the
+        ;; caller passed a ClojureScript map through `#js {:props map}`,
+        ;; `inner` is already that map and must not be converted.
+        (map? inner) inner
+        :else (js->clj props :keywordize-keys true)))
     :else (js->clj props :keywordize-keys true)))
 
 (defn conversation-page

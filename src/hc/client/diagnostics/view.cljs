@@ -1370,7 +1370,7 @@
              (dom/section {:className "hc-diag-panel"}
                           (dom/h2 {} "请求详情口径")
                           (dom/p {:className "hc-diag-muted"}
-                                 "本页只管理记录策略；详细条目不会在这里直接展开。需要查看条目时，在“诊断包”中显式包含日志材料并审阅其脱敏预览。已存储条目在进入预览前会遮蔽密钥、登录令牌、认证头和密码；内容未被记录时不会根据当前设置重建一份冒充当时请求的材料。")))))
+                                 "本页只管理记录策略；详细条目不会在这里直接展开。需要查看条目时，在“诊断包”中显式包含日志材料并审阅其脱敏预览。已存储条目在进入预览前会遮蔽密钥、登录令牌、认证头和密码；密钥、登录令牌、认证头和密码始终遮蔽；内容未被记录时不会根据当前设置重建一份冒充当时请求的材料。")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Bundle tab
@@ -1691,13 +1691,87 @@
                                  "发送前请确认草稿不含你不想分享的内容。诊断附件需要你单独选择并导出。")))))
 
 ;; ---------------------------------------------------------------------------
+;; FAQ tab
+
+(def faq-entries
+  [{:title "消息无法发送"
+    :keywords ["消息" "发送" "失败" "发不出" "回复" "模型" "额度"]
+    :steps ["确认已经选中模型：在发送区或会话设置里查看当前模型，未选模型时发送会被拒绝。"
+            "检查模型连接状态：服务未启用、凭据无效或额度不足都会让发送失败；去设置页检查该服务的状态。"
+            "查看诊断页“用量与费用”或“详细日志”：最近一次失败请求会带结果与原因分类。"
+            "额度不足与授权过期不同：额度问题去补充额度或更换模型；授权问题重新登录或刷新令牌。"]}
+   {:title "图片无法发送或不支持"
+    :keywords ["图片" "附件" "照片" "不支持" "上传" "发送失败"]
+    :steps ["确认当前模型与服务支持图片输入：部分模型或手动连接没有声明图片能力，服务端会返回“附件类型不支持”。"
+            "检查附件格式与大小：服务限制单条消息的附件类型与大小；超出限制时先压缩或换一种格式再发送。"
+            "查看失败原因分类“附件类型不支持”或“输入超出容量”：前者换模型或去掉附件，后者缩短文本或减少附件。"
+            "临时会话不会记录详细日志；需要排查时先在正常会话复现，再到诊断页开启详细日志。"]}
+   {:title "账户授权过期"
+    :keywords ["账户" "授权" "过期" "登录" "令牌" "token" "重新登录" "凭据"]
+    :steps ["到设置页检查该服务的连接状态：授权过期会显示为凭据或授权类失败，而不是额度问题。"
+            "重新登录或刷新该服务的授权令牌：多数服务重新授权后即可恢复发送。"
+            "若是 API 密钥而非 OAuth 授权，检查密钥是否被轮换或撤销，并在服务商控制台更新密钥。"
+            "额度不足与授权过期不同：授权过期先解决登录，额度不足去补充额度，两者不要混为一谈。"]}
+   {:title "后台任务被结束"
+    :keywords ["后台" "任务" "被结束" "终止" "停止" "定时" "计划" "错过时间"]
+    :steps ["查看失败原因分类：应用关闭、系统休眠或计划错过时间都可能让后台任务被结束。"
+            "检查任务计划与“错过时间”策略：错过的定时任务默认不会自动补跑，需要手动重新触发。"
+            "确认应用在任务应运行的时间段内保持运行：桌面端被完全退出或系统休眠时，任务无法执行。"
+            "任务被结束不影响已保存的用量与消息；重新安排任务或手动重发即可恢复。"]}
+   {:title "导入失败"
+    :keywords ["导入" "备份" "恢复" "文件" "失败" "格式" "迁移"]
+    :steps ["确认导入文件来自本应用的导出：诊断包、聊天备份或配置文件都有各自的格式，不能混用。"
+            "检查文件版本：版本过新的文件不能强行导入，需要先升级应用再导入；旧版本文件按提示升级或选择兼容模式。"
+            "查看失败原因分类：“导入格式不支持”“恢复发生冲突”“备份密码不正确”“版本过新”分别对应不同处理。"
+            "备份需要密码时确认密码正确；恢复冲突时先备份当前数据，再选择合并或覆盖策略。"]}])
+
+(defn- faq-query-matches?
+  [query entry]
+  (let [needle (str/lower-case (str/trim (str query)))
+        haystack (str/lower-case
+                  (str/join " "
+                            (concat [(:title entry)]
+                                    (:keywords entry)
+                                    (:steps entry))))]
+    (or (str/blank? needle)
+        (str/includes? haystack needle))))
+
+(defn- faq-tab
+  [state dispatch]
+  (let [query (:faq-query state)
+        entries (filterv #(faq-query-matches? query %) faq-entries)]
+    (dom/div {}
+             (dom/section {:className "hc-diag-panel" :aria-labelledby "hc-diag-faq-title"}
+                          (dom/h2 {:id "hc-diag-faq-title"} "常见问题")
+                          (dom/p {:className "hc-diag-muted"}
+                                 "五类常见问题的自助排查；搜索会按标题、关键词与排查步骤过滤。")
+                          (text-field "搜索常见问题" query
+                                      (on-value dispatch
+                                                {:type :diagnostics/set-faq-query})
+                                      {:placeholder "例如：图片、授权、导入"})
+                          (if (seq entries)
+                            (for [{:keys [title keywords steps]} entries]
+                              (dom/details {:className "hc-diag-turn" :key title}
+                                           (dom/summary {}
+                                                        (dom/strong {} title)
+                                                        (dom/span {:className "hc-diag-muted"}
+                                                                  (str "关键词："
+                                                                       (str/join "、" keywords))))
+                                           (dom/ol {}
+                                                 (for [step steps]
+                                                   (dom/li {:key step} step)))))
+                            (empty-panel "没有匹配的问题"
+                                         "换个关键词试试，或清空搜索框查看全部常见问题。"))))))
+
+;; ---------------------------------------------------------------------------
 ;; Root
 
 (def tabs
   [{:id :statistics :label "用量与费用"}
    {:id :logs :label "详细日志"}
    {:id :bundle :label "诊断包"}
-   {:id :feedback :label "反馈草稿"}])
+   {:id :feedback :label "反馈草稿"}
+   {:id :faq :label "常见问题"}])
 
 (defn- header-description
   [state]
@@ -1759,6 +1833,7 @@
                    :logs (logs-tab state dispatch)
                    :bundle (bundle-tab state dispatch)
                    :feedback (feedback-tab state dispatch)
+                   :faq (faq-tab state dispatch)
                    (statistics-tab state dispatch)))))
 
 (defn DiagnosticsView

@@ -133,6 +133,52 @@
       (is (str/includes? markup "会遮蔽密钥、登录令牌、认证头和密码"))
       (is (str/includes? markup "不会根据当前设置重建")))))
 
+(deftest logs-buttons-follow-policy-state-test
+  (testing "nil policy keeps enable actions but reports missing status"
+    (let [markup (render (-> (fixture/state)
+                             (assoc :tab :logs :log nil)))]
+      (is (str/includes? markup "服务器尚未提供详细日志状态"))))
+  (testing "paused policy renders paused and enables resume"
+    (let [markup (render (-> (fixture/state)
+                             (assoc :tab :logs
+                                    :log {:enabled? true
+                                          :paused? true
+                                          :capturing? false
+                                          :mode :timed
+                                          :retention-days 7
+                                          :entry-count 3})))]
+      (is (str/includes? markup "已暂停")))))
+
+(deftest faq-render-test
+  (let [markup (render (assoc (fixture/state) :tab :faq))]
+    (testing "five searchable categories render"
+      (is (str/includes? markup "常见问题"))
+      (is (str/includes? markup "搜索常见问题"))
+      (is (str/includes? markup "消息无法发送"))
+      (is (str/includes? markup "图片无法发送或不支持"))
+      (is (str/includes? markup "账户授权过期"))
+      (is (str/includes? markup "后台任务被结束"))
+      (is (str/includes? markup "导入失败")))
+    (testing "answers give concrete directions"
+      (is (str/includes? markup "附件类型不支持"))
+      (is (str/includes? markup "额度不足与授权过期不同"))
+      (is (str/includes? markup "版本过新的文件不能强行导入")))))
+
+(deftest faq-search-filter-test
+  (let [markup (render (assoc (fixture/state)
+                              :tab :faq
+                              :faq-query "导入"))]
+    (testing "the query keeps only matching entries"
+      (is (str/includes? markup "导入失败"))
+      (is (not (str/includes? markup "消息无法发送")))
+      (is (not (str/includes? markup "账户授权过期"))))
+    (testing "an unmatched query shows the empty state"
+      (let [empty-markup (render (assoc (fixture/state)
+                                         :tab :faq
+                                         :faq-query "不存在的关键词xyz"))]
+        (is (str/includes? empty-markup "没有匹配的问题"))
+        (is (not (str/includes? empty-markup "消息无法发送")))))))
+
 (deftest bundle-render-test
   (let [markup (render (bundle-state))]
     (testing "the preview is local-only and not uploaded"

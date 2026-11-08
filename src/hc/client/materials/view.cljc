@@ -88,26 +88,51 @@
   [draft suffix]
   (str (or (:nonce draft) "draft") "-" (name suffix)))
 
+(defn- assistant-label
+  "Display name for an assistant id.  `assistant-options` already carries
+  the server-published label (name plus the id suffix when needed); fall
+  back to the bare id so an unknown assistant still shows something
+  stable instead of disappearing."
+  [assistant-id state]
+  (let [option (some #(when (= assistant-id (:id %)) %)
+                     (model/assistant-options state))]
+    (if option
+      (let [label (text (:label option))
+            suffix (str "（" assistant-id "）")]
+        ;; The option label already embeds the id; strip the suffix so
+        ;; lists show "主助手" rather than "主助手（a-1）（a-1）".
+        (if (and (> (count label) (count suffix))
+                 (str/ends-with? label suffix))
+          (subs label 0 (- (count label) (count suffix)))
+          label))
+      (text assistant-id))))
+
 (defn- select
   ([value options event]
    (select value options event nil))
   ([value options event attrs]
-   (el :select (merge {:class "hc-mat-select" :value (name (or value ""))}
-                      attrs
-                      {:events event})
-       (for [[option-label option-value] options]
-         (el :option {:value (name option-value)
-                      :key (name option-value)}
-             option-label)))))
+   (apply el :select
+          (merge {:class "hc-mat-select" :value (name (or value ""))}
+                 attrs
+                 {:events event})
+          (mapv (fn [[option-label option-value]]
+                  (el :option {:value (name option-value)
+                               :key (name option-value)}
+                      (text option-label)))
+                options))))
 
 (defn- checkbox
-  [label checked? event]
-  (el :label {:class "hc-mat-check"}
-      (el :input {:type "checkbox"
-                  :checked (boolean checked?)
-                  :class "hc-mat-checkbox"
-                  :events event})
-      (el :span {} label)))
+  ([label checked? event]
+   (checkbox label checked? event nil))
+  ([label checked? event disabled?]
+   (el :label {:class "hc-mat-check"}
+       (el :input {:type "checkbox"
+                   :checked (boolean checked?)
+                   :disabled (boolean disabled?)
+                   :title (when disabled? "选择命令待确认，请稍候")
+                   :class "hc-mat-checkbox"
+                   :events event})
+       (el :span {} label))))
 
 (defn- error-line [message]
   (when message
@@ -146,6 +171,15 @@
       (str (subs body 0 157) "…")
       body)))
 
+(defn- memory-scope-label
+  "Scope label for a memory row; resolves the assistant id to its display
+  name when the model's `:assistants` projection knows one."
+  [scope state]
+  (if (= :assistant (get scope :kind))
+    (str "助手 "
+         (assistant-label (get scope :assistant-id) state))
+    (model/scope-label scope)))
+
 (defn- session-note [state]
   (let [session (:session state)
         temporary? (:temporary? session)]
@@ -159,7 +193,9 @@
 
           :else
           (str "当前会话：" (or (:session-id session) "未知")
-               "；助手范围 " (or (:assistant-id session) "未声明")
+               "；助手范围 " (if (model/non-blank-string? (:assistant-id session))
+                               (assistant-label (:assistant-id session) state)
+                               "未声明")
                "；项目范围 " (or (:project-id session) "未声明") ".")))))
 
 (defn- temporary-read-control [state]
@@ -225,6 +261,12 @@
                      :events (on-click :materials/memory-filter :filter status)}
             (if (= status :all) "全部" (model/status-label status))))))
 
+(defn- skip-reason-label [reason]
+  (case reason
+    :empty "空候选"
+    :category-filtered "类别不匹配"
+    (name (or reason :unknown))))
+
 (defn- memory-suggest-summary [state]
   (when-let [result (:memory-suggest-result state)]
     (el :div {:class "hc-mat-note" :role "status"}
@@ -233,7 +275,8 @@
         (when (seq (:skipped-reasons result))
           (el :small {}
               (str "跳过原因："
-                   (str/join "、" (map (fn [[k v]] (str (name k) " " v))
+                   (str/join "、" (map (fn [[k v]]
+                                         (str (skip-reason-label k) " " v))
                                        (:skipped-reasons result))))))
         (when (pos? (long (or (:dropped-message-count result) 0)))
           (el :small {} (str " · 超出字符预算丢弃 " (:dropped-message-count result) " 条"))))))
@@ -279,7 +322,7 @@
                               (el :small {:class "hc-mat-source hc-memory-source"}
                                   (str "来源片段：" (memory-excerpt excerpt))))
                             (el :small {:class "wb-muted hc-memory-meta"}
-                                (str "范围 " (model/scope-label (:scope memory))
+                                (str "范围 " (memory-scope-label (:scope memory) state)
                                      " · "
                                      (model/epistemic-label (:epistemic memory))
                                      (when (:always? memory) " · 总是提供")
@@ -412,6 +455,7 @@
       (temporary-read-control state)
       (memory-toolbar state)
       (memory-stats state)
+      (memory-suggest-summary state)
       (el :div {:class "hc-mat-split"}
           (memory-list state)
           (memory-editor state))))
@@ -419,9 +463,6 @@
 (defn- book-list [state]
   (let [books (model/book-items state)]
     (el :div {:class "hc-mat-pane"}
-        (el :div {:class "hc-mat-editor-head"}
-            (el :h3 {} "世界书")
-            (action-button "新建" :materials/book-new))
         (if (seq books)
           (el :ul {:class "wb-list hc-mat-list"}
               (for [book books]
@@ -444,7 +485,9 @@
                                 (str (or (:description book) "无说明")
                                      " · 绑定 "
                                      (if (seq (:assistant-ids book))
-                                       (str/join ", " (sort (:assistant-ids book)))
+                                       (str/join ", "
+                                                 (map #(assistant-label % state)
+                                                      (sort (:assistant-ids book))))
                                        "无"))))))))
           (empty-state "没有世界书"
                        "创建一本书后再添加条目。未绑定的世界书不会进入任何助手。")))))
@@ -455,6 +498,15 @@
         edit? (= :edit (:mode draft))
         assistant-options (model/assistant-options state)
         assistant-id (model/selected-book-assistant-id state)
+        ;; The bind select acts on a selectable assistant; unbind falls back
+        ;; to an already-bound id so a book can still be detached when the
+        ;; assistant list is empty.
+        bind-assistant-id (if (seq assistant-options)
+                            assistant-id
+                            (->> (:assistant-ids book)
+                                 (filter model/non-blank-string?)
+                                 sort
+                                 first))
         bound? (boolean (seq (:assistant-ids book)))]
     (el :div {:class "hc-mat-pane hc-mat-editor"}
         (el :div {:class "hc-mat-editor-head"}
@@ -475,46 +527,47 @@
                   (:enabled? draft)
                   (on-checked :materials/book-edit-field :field :enabled?))
         (error-line (:error draft))
+        (when edit?
+          (el :div {:class "wb-row hc-mat-bind"}
+              (select assistant-id
+                      (if (seq assistant-options)
+                        (for [option assistant-options]
+                          [(:label option) (:id option)])
+                        [["先创建/选择助手" ""]])
+                      (on-change :materials/book-edit-field
+                                 :field :assistant-id)
+                      {:aria-label "绑定助手"
+                       :disabled (not (seq assistant-options))
+                       :title (when-not (seq assistant-options)
+                                "当前没有可选择的助手；先创建助手，或在会话中选择助手。")})
+              (if (seq assistant-options)
+                (action-button "绑定" :materials/book-bind
+                               :assistant-id assistant-id)
+                (el :button {:type "button"
+                             :class "wb-button wb-button-small"
+                             :disabled true}
+                    "绑定"))
+              (if bound?
+                (action-button "解绑" :materials/book-unbind
+                               :assistant-id (or bind-assistant-id assistant-id))
+                (el :button {:type "button"
+                             :class "wb-button wb-button-small"
+                             :disabled true}
+                    "解绑"))
+              (el :small {:class "wb-muted"}
+                  (str "已绑定："
+                       (if bound?
+                         (str/join ", "
+                                   (map #(assistant-label % state)
+                                        (sort (:assistant-ids book))))
+                         "无")
+                       "。绑定/解绑是独立操作。"))))
+          (when (and edit? (empty? assistant-options))
+            (el :p {:class "wb-muted hc-mat-note"}
+                "当前没有可绑定的助手：先创建助手，或在会话中选择助手后再绑定世界书。"))
         (el :div {:class "hc-mat-actions"}
             (primary-button (if edit? "保存世界书" "创建世界书")
                             :materials/book-save)
-            (when edit?
-              (el :div {:class "wb-row"}
-                  (if (seq assistant-options)
-                    (field "绑定助手"
-                           (select assistant-id
-                                   (for [option assistant-options]
-                                     [(:label option) (:id option)])
-                                   (on-change :materials/book-edit-field
-                                              :field :assistant-id)
-                                   {:aria-label "绑定助手"})
-                           (str "已绑定："
-                                (if bound?
-                                  (str/join ", " (sort (:assistant-ids book)))
-                                  "无")
-                                "。绑定/解绑是独立操作。"))
-                    (field "绑定助手"
-                           (select ""
-                                   [["先创建/选择助手" ""]]
-                                   (on-change :materials/book-edit-field
-                                              :field :assistant-id)
-                                   {:aria-label "绑定助手"
-                                    :disabled true})
-                           "当前没有可选择的助手；先创建助手，或在会话中选择助手。"))
-                  (if (seq assistant-options)
-                    (action-button "绑定" :materials/book-bind
-                                   :assistant-id assistant-id)
-                    (el :button {:type "button"
-                                 :class "wb-button wb-button-small"
-                                 :disabled true}
-                        "绑定"))
-                  (if bound?
-                    (action-button "解绑" :materials/book-unbind
-                                   :assistant-id assistant-id)
-                    (el :button {:type "button"
-                                 :class "wb-button wb-button-small"
-                                 :disabled true}
-                        "解绑"))))
             (when edit?
               (if (:confirm-delete? draft)
                 (el :div {:class "wb-row"}
@@ -570,9 +623,6 @@
   (let [book (model/selected-book state)
         entries (if book (model/entry-items state (:id book)) [])]
     (el :div {:class "hc-mat-pane"}
-        (el :div {:class "hc-mat-editor-head"}
-            (el :h3 {} "条目")
-            (action-button "新建条目" :materials/entry-new))
         (if (seq entries)
           (el :ul {:class "wb-list hc-mat-list"}
               (for [entry entries]
@@ -605,7 +655,10 @@
 (defn- entry-editor [state]
   (let [draft (:entry-draft state)
         edit? (= :edit (:mode draft))
-        books (model/book-items state)]
+        books (model/book-items state)
+        move-books (if edit?
+                     (vec (remove #(= (:id %) (:book-id draft)) books))
+                     books)]
     (el :div {:class "hc-mat-pane hc-mat-editor"}
         (el :div {:class "hc-mat-editor-head"}
             (el :h3 {} (if edit? "编辑条目" "新建条目"))
@@ -679,11 +732,12 @@
                              [(model/position-kind-label kind) kind])
                            (on-change :materials/entry-edit-field
                                       :field :position-kind)))
-            (field "位置深度"
-                   (text-input (:position-depth draft)
-                               (on-input :materials/entry-edit-field
-                                         :field :position-depth)
-                               {:key (draft-key draft :position-depth)})))
+            (when (= :between-recent (:position-kind draft))
+              (field "位置深度"
+                     (text-input (:position-depth draft)
+                                 (on-input :materials/entry-edit-field
+                                           :field :position-depth)
+                                 {:key (draft-key draft :position-depth)}))))
         (checkbox "关键条目（上下文不足时优先）"
                   (:key? draft)
                   (on-checked :materials/entry-edit-field :field :key?))
@@ -698,11 +752,12 @@
               (el :div {:class "wb-row"}
                   (field "移动到"
                          (select (:move-book-id draft)
-                                 (for [book books]
-                                   [(text (:name book)) (:id book)])
+                                 (cons ["选择目标世界书" ""]
+                                       (for [book move-books]
+                                         [(text (:name book)) (:id book)]))
                                  (on-change :materials/entry-edit-field
                                             :field :move-book-id))
-                         "移动是独立操作，计数器随条目移动。")
+                         "移动是独立操作，计数器随条目移动；当前书不在列表中。")
                   (action-button "移动" :materials/entry-move)
                   (when (:last-move state)
                     (action-button "撤销移动" :materials/entry-undo-move))
@@ -740,9 +795,6 @@
         session-selected (set (model/session-card-ids state))
         turn-selected (set (model/turn-card-ids state))]
     (el :div {:class "hc-mat-pane"}
-        (el :div {:class "hc-mat-editor-head"}
-            (el :h3 {} "指令卡")
-            (action-button "新建" :materials/card-new))
         (if (seq cards)
           (el :ul {:class "wb-list hc-mat-list"}
               (for [card cards]
@@ -765,23 +817,25 @@
                                 (when (contains? turn-selected (:id card))
                                   (badge "本轮已选" :warn))
                                 (when-let [format (:output-format card)]
-                                  (badge (name format) :neutral)))
+                                  (badge (model/format-label format) :neutral)))
                             (el :small {}
                                 (or (:description card)
                                     (memory-excerpt (:body card)))))))))
           (empty-state "没有指令卡"
                        "指令卡是显式选择的库对象；它不会自行获得工具权限。")))))
 
-(defn- mode-button [mode current label description]
+(defn- mode-button [mode current label description & [disabled?]]
   (el :button {:type "button"
                :class "wb-button wb-button-small"
+               :disabled (boolean disabled?)
+               :title (when disabled? "选择命令待确认，请稍候")
                :data-active (if (= mode current) "true" "false")
                :aria-pressed (if (= mode current) "true" "false")
                :events (on-click :materials/instruction-mode :mode mode)}
       label
       (el :small {:class "wb-muted"} (str " · " description))))
 
-(defn- card-checklist [state ids toggle-type]
+(defn- card-checklist [state ids toggle-type & [disabled?]]
   (let [cards (filter :enabled? (model/card-items state))
         selected (set ids)]
     (if (seq cards)
@@ -790,14 +844,15 @@
             (el :li {:key (:id card)}
                 (checkbox (str (:name card)
                                (when-let [format (:output-format card)]
-                                 (str " · " (name format)))
+                                 (str " · " (model/format-label format)))
                                (when (seq (model/required-placeholder-keys card))
                                  " · 含必填占位符"))
                           (contains? selected (:id card))
-                          (on-checked toggle-type :card-id (:id card))))))
+                          (on-checked toggle-type :card-id (:id card))
+                          disabled?))))
       (el :p {:class "wb-muted"} "没有启用的指令卡。"))))
 
-(defn- placeholder-inputs [state]
+(defn- placeholder-inputs [state pending?]
   (let [cards (model/effective-cards state)
         rows (for [card cards
                    placeholder (:placeholders card)
@@ -810,7 +865,8 @@
                       (text-input value
                                   (on-input :materials/instruction-value
                                             :key key)
-                                  {:key (str (:id card) "-" key)})
+                                  (cond-> {:key (str (:id card) "-" key)}
+                                    pending? (assoc :disabled true)))
                       (when (:required? placeholder)
                         "缺值时服务器拒绝本轮；值只随本轮提交。")))]
     (when (seq rows)
@@ -818,43 +874,50 @@
           (el :h4 {} "占位符值")
           rows))))
 
-(defn- turn-selection-panel [state]
+(defn- turn-selection-panel [state pending?]
   (el :div {:class "hc-mat-turn-selection"}
       (el :p {:class "wb-muted"}
           "仅本轮：随下一条用户消息一次性发送；发送成功后清除。占位符值只随本轮提交，不写入会话选择。")
       (el :div {:class "hc-mat-actions"}
-          (action-button "清空本轮" :materials/turn-card-clear))
+          (let [button (action-button "清空本轮" :materials/turn-card-clear)]
+            (if pending?
+              (assoc-in button [:attrs :disabled] true)
+              button)))
       (card-checklist state (model/turn-card-ids state)
-                      :materials/turn-card-toggle)
-      (placeholder-inputs state)))
+                      :materials/turn-card-toggle pending?)
+      (placeholder-inputs state pending?)))
 
-(defn- session-selection-panel [state]
+(defn- session-selection-panel [state pending?]
   (el :div {:class "hc-mat-session-selection"}
       (el :p {:class "wb-muted"}
           "本会话持续应用：选择会持久化到当前会话；不携带占位符值。")
       (el :div {:class "hc-mat-actions"}
-          (action-button "清空选择" :materials/card-clear-selection))
+          (let [button (action-button "清空选择" :materials/card-clear-selection)]
+            (if pending?
+              (assoc-in button [:attrs :disabled] true)
+              button)))
       (card-checklist state (model/session-card-ids state)
-                      :materials/card-toggle-selection)))
+                      :materials/card-toggle-selection pending?)))
 
 (defn- card-selection [state]
   (let [mode (or (:instruction-mode state) :turn)
         conflict (model/selection-format-conflict state)
-        missing (model/missing-required-placeholders state)]
+        missing (model/missing-required-placeholders state)
+        pending? (model/instruction-selection-pending? state)]
     (el :div {:class "hc-mat-pane hc-mat-selection"}
         (el :div {:class "hc-mat-editor-head"}
             (el :h3 {} "指令卡应用方式"))
         (el :div {:class "hc-mat-mode" :role "group"
                   :aria-label "指令卡应用方式"}
-            (mode-button :turn mode "仅本轮" "默认")
-            (mode-button :session mode "本会话持续" "持久选择"))
+            (mode-button :turn mode "仅本轮" "默认" pending?)
+            (mode-button :session mode "本会话持续" "持久选择" pending?))
         (if (= :session mode)
-          (session-selection-panel state)
-          (turn-selection-panel state))
+          (session-selection-panel state pending?)
+          (turn-selection-panel state pending?))
         (when conflict
           (el :div {:class "hc-mat-warning" :role "alert"}
               (str "格式冲突：已选卡片声明了不同输出格式（"
-                   (str/join ", " (map name conflict))
+                   (str/join ", " (map model/format-label conflict))
                    "）。发送前必须只保留一种格式。")))
         (when (seq missing)
           (el :div {:class "hc-mat-warning" :role "alert"}
@@ -867,13 +930,16 @@
                      "。本会话持续模式不携带占位符值；请切换到仅本轮并填写。"
                      "。服务器在上下文组装时会拒绝本轮。")))))))
 
-(defn- card-editor [state]
+(defn- card-editor [state pending?]
   (let [draft (:card-draft state)
         edit? (= :edit (:mode draft))]
     (el :div {:class "hc-mat-pane hc-mat-editor"}
         (el :div {:class "hc-mat-editor-head"}
             (el :h3 {} (if edit? "编辑指令卡" "新建指令卡"))
-            (action-button "新建" :materials/card-new))
+            (let [button (action-button "新建" :materials/card-new)]
+              (if pending?
+                (assoc-in button [:attrs :disabled] true)
+                button)))
         (field "名称"
                (text-input (:name draft)
                            (on-input :materials/card-edit-field :field :name)
@@ -897,15 +963,16 @@
                          {:key (draft-key draft :placeholders-text)
                           :rows 3})
                "正文使用 {{key}}；必填占位符缺值时服务器拒绝应用。")
-        (field "输出格式（留空表示未声明）"
-               (text-input (:output-format draft)
-                           (on-input :materials/card-edit-field
-                                     :field :output-format)
-                           {:key (draft-key draft :output-format)
-                            :placeholder "text / markdown / json"}))
+        (field "输出格式"
+               (select (:output-format draft)
+                       (model/instruction-output-options)
+                       (on-change :materials/card-edit-field
+                                  :field :output-format))
+               "留空表示未声明；仅允许文本 / Markdown / JSON。")
         (checkbox "启用"
                   (:enabled? draft)
-                  (on-checked :materials/card-edit-field :field :enabled?))
+                  (on-checked :materials/card-edit-field :field :enabled?)
+                  pending?)
         (error-line (:error draft))
         (el :div {:class "hc-mat-actions"}
             (primary-button (if edit? "保存指令卡" "创建指令卡")
@@ -928,7 +995,8 @@
           (card-list state)
           (el :div {:class "hc-mat-stack"}
               (card-selection state)
-              (card-editor state)))))
+              (card-editor state
+                           (model/instruction-selection-pending? state))))))
 
 (defn panel-tree
   [state section]

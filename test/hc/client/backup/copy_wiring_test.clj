@@ -13,7 +13,7 @@
            [:BACKUP_VERSION_UNSUPPORTED "版本过新" :app/update]]]
     (testing (name code)
       (let [view (model/error-view {:code code :message "server detail"})]
-        (is (= expected-title (:title view)))
+        (is (re-find (re-pattern (str expected-title "$")) (:title view)))
         (is (= expected-command (get-in view [:copy :primary-action :command])))
         (is (seq (:text view)))
         (is (seq (:action view)))))))

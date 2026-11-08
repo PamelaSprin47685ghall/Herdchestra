@@ -2,18 +2,30 @@
   "test": "mock-services",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-06T02:28:31.589Z",
+  "startedAt": "2026-11-07T14:38:11.369Z",
+  "sourceTreeSha256": "6bea9de030ead6574f8001da98ecffde9a15ab303f7835a057bf5e0392cde2c8",
   "endpoints": {
-    "oauth": "http://127.0.0.1:39433",
-    "webdav": "http://127.0.0.1:44167",
-    "s3": "http://127.0.0.1:41671"
+    "oauth": "http://127.0.0.1:33257",
+    "webdav": "http://127.0.0.1:39569",
+    "s3": "http://127.0.0.1:41865",
+    "search": "http://127.0.0.1:44123"
   },
   "checks": {
     "oauthWellKnown": true,
-    "oauthDeviceCode": true,
-    "oauthDeviceToken": true,
+    "oauthAuthorizeRedirect": true,
+    "oauthPkceRejectsBadVerifier": true,
+    "oauthRedirectMismatch": true,
+    "oauthAuthorizationCodeToken": true,
+    "oauthCodeSingleUse": true,
     "oauthUserInfo": true,
-    "oauthCallbackFlow": true,
+    "oauthDeviceAuthorization": true,
+    "oauthDevicePending": true,
+    "oauthDeviceConfirmPage": true,
+    "oauthDeviceSlowDown": true,
+    "oauthDeviceToken": true,
+    "oauthDeviceDenied": true,
+    "oauthRevoke": true,
+    "oauthRevokeEffective": true,
     "webdavPut": true,
     "webdavGet": true,
     "webdavPropfind": true,
@@ -21,8 +33,148 @@
     "s3Put": true,
     "s3Get": true,
     "s3ListBucket": true,
+    "s3HeadNoBody": true,
+    "searchBrave": true,
+    "searchSearxng": true,
     "markedMock": true
   },
+  "mockState": {
+    "oauth": {
+      "mock": true,
+      "requests": [
+        {
+          "at": "2026-11-07T14:38:11.401Z",
+          "method": "GET",
+          "path": "/.well-known/oauth-authorization-server"
+        },
+        {
+          "at": "2026-11-07T14:38:11.407Z",
+          "method": "GET",
+          "path": "/authorize"
+        },
+        {
+          "at": "2026-11-07T14:38:11.409Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.411Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.412Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.413Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.413Z",
+          "method": "GET",
+          "path": "/userinfo"
+        },
+        {
+          "at": "2026-11-07T14:38:11.414Z",
+          "method": "POST",
+          "path": "/device_authorization"
+        },
+        {
+          "at": "2026-11-07T14:38:11.415Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.416Z",
+          "method": "POST",
+          "path": "/device/confirm"
+        },
+        {
+          "at": "2026-11-07T14:38:11.417Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.417Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.418Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.419Z",
+          "method": "POST",
+          "path": "/device_authorization"
+        },
+        {
+          "at": "2026-11-07T14:38:11.419Z",
+          "method": "POST",
+          "path": "/device/confirm"
+        },
+        {
+          "at": "2026-11-07T14:38:11.420Z",
+          "method": "POST",
+          "path": "/token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.420Z",
+          "method": "POST",
+          "path": "/revoke"
+        },
+        {
+          "at": "2026-11-07T14:38:11.421Z",
+          "method": "GET",
+          "path": "/userinfo"
+        },
+        {
+          "at": "2026-11-07T14:38:11.430Z",
+          "method": "GET",
+          "path": "/__mock/state"
+        }
+      ],
+      "codes": 0,
+      "deviceCodes": 2,
+      "tokens": 3,
+      "revoked": 1,
+      "devicePollsBeforeSuccess": 2
+    },
+    "search": {
+      "mock": true,
+      "mode": "both",
+      "requests": [
+        {
+          "at": "2026-11-07T14:38:11.428Z",
+          "path": "/res/v1/web/search",
+          "query": "herdchestra",
+          "params": {
+            "q": "herdchestra",
+            "count": "4"
+          },
+          "subscriptionToken": "mock-token"
+        },
+        {
+          "at": "2026-11-07T14:38:11.429Z",
+          "path": "/search",
+          "query": "herdchestra",
+          "params": {
+            "q": "herdchestra",
+            "format": "json"
+          },
+          "subscriptionToken": null
+        }
+      ],
+      "queries": [
+        "herdchestra",
+        "herdchestra"
+      ]
+    }
+  },
   "ok": true,
-  "finishedAt": "2026-11-06T02:28:31.678Z"
+  "finishedAt": "2026-11-07T14:38:11.434Z"
 }

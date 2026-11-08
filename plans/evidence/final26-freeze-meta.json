@@ -1,0 +1,98 @@
+{
+  "freeze": "final26",
+  "date": "2026-11-08",
+  "timezone": "CST",
+  "purpose": "final26: freeze candidate after M1 nine-slice + P-SESSION + V-* + W240 branch nil/sessions copy-message strip + W244 nudge projection exclusion + W245 backup :backup exclusion + W251 extensions_bridge assistants-from-db + W252 view wiring memory-suggest-summary + W258 extensions sync refresh/json-safe + W259 scheduler seed/regression + W265 speech onstop/silent-wav-blob + W117 unwrap-receipt remediation. Supersedes final25 (tree 76cf2fd0, bundle 45f11529).",
+  "fixes": {
+    "M1_nine_slices": "all nine slice fixes landed in src",
+    "P_SESSION_lazy_owner": "lazy owner/history-live paths; 4/104 + 13/252 + 20/169+7/42 0F/0E",
+    "V_fixes": "V-MAT/V-BOARD/V-OPS/V-RENDER sibling slices; materials 68/290, backup 49/419 0F/0E",
+    "W240_branch_nil_sessions_copy": "branch before-message-id nil handling + sessions copy-message strip",
+    "W244_nudge_projection": "nudge projection exclusion in view layer",
+    "W245_backup_exclude": "backup excludes :backup key",
+    "W251_assistants_from_db": "src/hc/client/workbench/extensions_bridge.cljs assistants-from-db wired",
+    "W252_memory_suggest_summary": "src/hc/client/materials/view.cljc memory-suggest-summary wired",
+    "W258_extensions_sync_json_safe": "extensions sync refresh + settings util json-safe",
+    "W259_scheduler_seed": "scheduler seed/regression fixes",
+    "W265_speech_onstop_silent_wav": "src/hc/client/speech/ui.cljs onstop + silent-wav-blob",
+    "W117_unwrap_receipt": "unwrap-receipt in model_auth/settings/materials paths"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "4f5b6ec340ae480256d49d1192b4aee36dd6e572abdb8088fedea1b59bf68629",
+    "bundle-sha256": "2458e3d3d4eaa4a38e2725b8e20fa0a21ece04f4132ac586faa61137ce46d332 (pre-rebuild bundle, mtime 2026-11-08 14:51:15 +0800, size 19187951 - unminified runtime build)",
+    "manifest-edn-sha256": "7273d5f54129654753acac0bee40fc6567b1b355302f3ae96de95d7c9d874212",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "snapshot": "2026-11-08T15:43:27+08:00"
+  },
+  "stability-check": {
+    "snap-a": "2026-11-08T15:43:27+08:00",
+    "snap-b": "2026-11-08T15:45:28+08:00",
+    "tree-hash-both": "4f5b6ec340ae480256d49d1192b4aee36dd6e572abdb8088fedea1b59bf68629",
+    "result": "PASS - tree hash identical across 120s window"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-build.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 26,
+    "note": "513 files; pre-existing infer warnings (undeclared-var % in views/session.cljs:514-515 CLJS analyzer noise; build completed)",
+    "bundle-sha256-after": "1e0bd45818bdd6c1960afd65ec9ac66a745e384145fc258daae708ab17f52f63",
+    "bundle-size-after": 3086250,
+    "bundle-mtime-after": "2026-11-08 15:46:09.669587073 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b"
+  },
+  "bundle-verification": {
+    "method": "grep on resources/public/js/cljs-runtime/*.js (unminified release modules; main.js is the closure bootstrap) for emitted identifiers; source maps carry kebab-case names",
+    "findings": [
+      "hc.client.materials.model/unwrap_receipt defined (materials/model.js:2001) + 5 call sites",
+      "hc.client.model_auth + settings/commands unwrap_receipt present",
+      "hc.client.workbench.materials_bridge/current_with_local defined (materials_bridge.js:152) + 4 call sites",
+      "hc.client.workbench.extensions_bridge/assistants_from_db defined (extensions_bridge.js:45) + 2 call sites",
+      "hc.client.materials.view/memory_suggest_summary defined (view.js:813) + wired in section render",
+      "hc.client.speech.ui/silent_wav_blob defined (ui.js:285) + used in onstop path (ui.js:542)",
+      "hc.client.settings.util/json_safe + json_safe_node defined (util.js:295-384), used by settings_bridge",
+      "before-message-id keyword present in commands.js:407-410 branch_session_BANG_ params map and views/session.cljs branch call site (before_message_id extracted from props, passed through; nil handled server-side in sessions.clj branch-session which copies all messages when nil)"
+    ],
+    "verdict": "PASS"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final26.log",
+    "exit": 0,
+    "tests": 3908,
+    "assertions": 25478,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 358,
+    "start-epoch": 1794124022,
+    "end-epoch": 1794124380
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final26.log",
+    "exit": 0,
+    "wall-seconds": 15,
+    "ok": true,
+    "version": "0.0.1",
+    "start-epoch": 1794124467,
+    "end-epoch": 1794124482
+  },
+  "post": {
+    "tree-hash-src-test": "5af6757fb2c805044bf087957edc90a0308e322c7f62ba8a8887ce092c02c6ba",
+    "tree-hash-note": "pre tree hash 4f5b6ec3 changed to 5af6757f at 15:47:11+08:00 during the test run; only changed file: test/e2e/e2e-13.spec.mjs (sibling E2E13 worker W266 edit, mtime 1794124031). E2E spec is not part of the Clojure test suite and does not affect the compiled bundle (bundle hash identical pre/post). Hash stable across post snapshots (5af6757f twice).",
+    "bundle-sha256": "1e0bd45818bdd6c1960afd65ec9ac66a745e384145fc258daae708ab17f52f63",
+    "bundle-size": 3086250,
+    "bundle-mtime": "2026-11-08 15:46:09.669587073 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "git-status-porcelain-count": 284,
+    "snapshot": "2026-11-08T15:53:33+08:00"
+  },
+  "result": "PASS - final26 freeze candidate bundle 1e0bd458 + post tree 5af6757f (pre 4f5b6ec3; delta = sibling W266 e2e-13.spec.mjs edit only); clean rebuild exit 0 (26s); full suite 3908 tests/25478 assertions 0F/0E (exit 0, 358s); app-check ok:true version 0.0.1 (exit 0, 15s)"
+}

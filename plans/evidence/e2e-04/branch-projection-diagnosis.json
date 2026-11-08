@@ -1,0 +1,40 @@
+{
+  "test": "e2e-04 branch-projection diagnosis and fix",
+  "recordedAt": "2026-11-08T05:28:49Z",
+  "frozenBundle": {
+    "sha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+    "sourceTreeSha256": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b"
+  },
+  "currentBundleSha256Prefix": "bd3bbc8b",
+  "note": "resources/public/js/main.js was rebuilt at 2026-11-08T05:22Z (sha256 prefix bd3bbc8b), after the failing runs (03:55-04:03Z) and before the final client fix below. The bundle no longer matches src; a rebuild (final26) is required before rerunning the Playwright spec.",
+  "rootCause": {
+    "summary": "Client computed a non-nil :before-message-id for the '从此处分支' button. The server copies only messages strictly before that id, so the branch received a truncated prefix instead of the whole readable path.",
+    "evidence": [
+": diag ws frame 461 sent :before-message-id \"assistant-call-10-attempt-52ac83c0-27ff-4677-9f8d-c979019ea22d--30\" (assistant reply 2) for a click on the FIRST user row (user-cmd-a315ab60).",
+      "Server prefix before that id = [user1, assistant1, user2]; branch session-history showed exactly 3 message-ids (hc-message-85dae732, hc-message-1fbbc0fe, hc-message-6571f337) = 2 user + 1 assistant visible.",
+      "Spec test/e2e/e2e-04.spec.mjs clicks firstRow (first .hc-message-out = edited user1) and requires all 6 source messages (3 user + 3 assistant incl. E2E04-REPLY-1 and E2E04-REPLY-3) in the branch. Only before-message-id=nil (copy whole :message-order) satisfies that.",
+      "Global client :message/order in frame 462 was correct and contiguous; the defect is purely the client-chosen boundary id, not ordering or projection."
+    ]
+  },
+  "changes": [
+    {
+      "file": "src/hc/client/conversation/view.cljs",
+      "what": "Branch button now sends :before-message-id nil (whole-path copy). Removed the :branch-before-id successor computation, its message-item destructure entry, and the per-row prop. Legacy :branch! path already effectively sent nil (it passes :message-id which the callback ignores).",
+      "semantics": "从此处分支 on any user/assistant row branches the entire readable path; the clicked position remains visible via the branch banner/origin link. This matches the spec expectation that branching from the first message retains all source turns."
+    },
+    {
+      "file": "src/hc/server/sessions.clj",
+      "what": "copy-message now also dissocs :call-id and :attempt-id from copied messages (in addition to the existing :run-id -> :origin-run-id rename). Nudge markers :nudge?/:nudge-id are intentionally kept so the history projection still filters copied nudge rows."
+    }
+  ],
+  "verification": {
+    "clojure": "clojure -X:compose:server:test :nses '[hc.server.sessions.sessions-test hc.server.history-live-smoke-test]' -> Ran 50 tests, 346 assertions, 0 failures, 0 errors (17.6s)",
+    "compileCheck": "clojure -M -e \"(require 'hc.server.sessions)\" -> :ok",
+    "playwright": "NOT RUN: requires client bundle rebuild (final26). Frozen bundle 45f11529 predates the fix; current bundle bd3bbc8b also predates the final view.cljs edit."
+  },
+  "pending": [
+    "Rebuild client bundle (final26) so resources/public/js/main.js includes the nil :before-message-id change.",
+    "Rerun: CHROME_PATH=/usr/bin/google-chrome npx playwright test --config test/e2e/playwright.config.mjs test/e2e/e2e-04.spec.mjs",
+    "Record dual hashes (bundle + tree) in the rerun evidence."
+  ]
+}

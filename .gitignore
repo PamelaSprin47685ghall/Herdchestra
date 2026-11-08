@@ -29,6 +29,8 @@ chrome-profile/
 mbdbg.*/
 *.log
 hs_err_pid*.log
+*.tmp.mjs
+test-results/
 !plans/evidence/**/*.log
 
 # Release-prep exclusions (user ruling 2026-11-06)

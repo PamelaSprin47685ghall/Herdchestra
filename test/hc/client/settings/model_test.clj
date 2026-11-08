@@ -506,13 +506,13 @@
         tested (assoc-in with-main [:tests "a"] {:status :complete})
         disabled-model (assoc-in connected [:server :models "a" 0 :enabled?]
                                  false)]
-    (is (= :connection (:step (model/onboarding-status empty-state))))
-    (is (= :done (:step (model/onboarding-status connected)))
+    (is (= :connection-type (:checklist-step (model/onboarding-status empty-state))))
+    (is (= :done (:checklist-step (model/onboarding-status connected)))
         "a saved connection with an enabled chat model completes setup")
-    (is (= :done (:step (model/onboarding-status with-main))))
-    (is (= :done (:step (model/onboarding-status tested))))
+    (is (= :done (:checklist-step (model/onboarding-status with-main))))
+    (is (= :done (:checklist-step (model/onboarding-status tested))))
     (is (:complete? (model/onboarding-status tested)))
-    (is (= :model (:step (model/onboarding-status disabled-model)))
+    (is (= :model (:checklist-step (model/onboarding-status disabled-model)))
         "a disabled model is not enough")
     (is (not (:complete? (model/onboarding-status disabled-model))))))
 

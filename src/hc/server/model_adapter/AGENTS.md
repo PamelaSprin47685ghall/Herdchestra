@@ -114,6 +114,11 @@ The application owns connections and secrets. The adapter accepts:
   request snapshot must carry `:role :main` or `:role :task`; otherwise the
   attempt fails `:role-required`. This prevents a task worker from silently
   borrowing the main model. A single-role configuration defaults to that role.
+- A `:task` request against a port that only configured `:main` fails
+  `:role-unconfigured` (`:category :permanent`,
+  `:remedy :configure-task-model`): the role vocabulary exists but the
+  binding does not. Any other missing role, including `:bogus`, stays
+  `:unknown-role`.
 - Capabilities may be a set/sequence of keywords, or the client's map form
   such as `{:tools true :vision :unknown}`; only truthy, non-`:unknown`
   entries become declared capabilities. The adapter honours `:tools`,

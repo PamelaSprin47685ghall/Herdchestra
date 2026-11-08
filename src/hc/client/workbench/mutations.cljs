@@ -119,17 +119,18 @@
 
 (m/defmutation toggle-sidebar
   "Toggle the navigation drawer.  When opening, remember which control did it
-  so closing the drawer can return focus there."
+  so closing the drawer can return focus there.  In the drawer layout a
+  second overlay may not cover the first: opening the navigation closes the
+  details drawer."
   [{:keys [trigger-id]}]
   (action [env]
     (let [{:keys [state]} env]
       (swap! state
              (fn [db]
                (let [open? (not (:ui/sidebar-open db))
+                     drawer? (a11y/overlay-layout? (:ui/viewport-width db))
                      db' (cond-> (assoc db :ui/sidebar-open open?)
-                           (and open?
-                                (a11y/overlay-layout?
-                                 (:ui/viewport-width db)))
+                           (and open? drawer?)
                            (assoc :ui/aux-open false)
                            (and open? trigger-id)
                            (assoc :ui/sidebar-return-id trigger-id))]
@@ -144,7 +145,9 @@
 
   `:open? true` makes the conversation header's \"open\" action idempotent;
   `:open? false` is the panel's close control.  `:trigger-id` is recorded
-  only when the panel opens, so the close path knows where to return focus."
+  only when the panel opens, so the close path knows where to return focus.
+  In the drawer layout the details drawer and the navigation drawer are
+  mutually exclusive: opening one closes the other."
   [{:keys [trigger-id open?]}]
   (action [env]
     (let [{:keys [state]} env]
@@ -154,10 +157,9 @@
                      next-open? (if (some? open?)
                                   (boolean open?)
                                   (not was-open?))
+                     drawer? (a11y/overlay-layout? (:ui/viewport-width db))
                      db' (cond-> (assoc db :ui/aux-open next-open?)
-                           (and next-open?
-                                (a11y/overlay-layout?
-                                 (:ui/viewport-width db)))
+                           (and next-open? drawer?)
                            (assoc :ui/sidebar-open false)
                            (and next-open? trigger-id)
                            (assoc :ui/aux-return-id trigger-id))]
@@ -304,14 +306,27 @@
       (swap! state assoc :ui/font-scale scale))))
 
 (m/defmutation set-appearance
-  [{:keys [theme font-scale contrast reduced-motion?]}]
+  [{:keys [theme font-scale contrast reduced-motion?
+           language background bubble]}]
   (action [env]
     (let [{:keys [state]} env]
-      (swap! state assoc
-             :ui/theme theme
-             :ui/font-scale font-scale
-             :ui/contrast contrast
-             :ui/reduced-motion reduced-motion?))))
+      (swap! state
+             (fn [db]
+               (-> db
+                   (assoc :ui/theme theme
+                          :ui/font-scale font-scale
+                          :ui/contrast contrast
+                          :ui/reduced-motion reduced-motion?)
+                   ;; Language, background, and bubble presets live in the
+                   ;; settings slice so `appearance-model/from-db` reads one
+                   ;; place; they are local browser preferences, not server
+                   ;; state.
+                   (update :ui/settings
+                           (fn [settings]
+                             (cond-> (or settings {})
+                               (some? language) (assoc :language language)
+                               (some? background) (assoc :background background)
+                               (some? bubble) (assoc :bubble bubble))))))))))
 
 (m/defmutation set-tab
   [{:keys [group tab]}]

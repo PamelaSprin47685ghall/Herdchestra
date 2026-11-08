@@ -198,8 +198,12 @@
 
 (defn- config-remainder
   [config]
+  ;; `:backup` holds this device's backup-target configuration (including
+  ;; remote credentials).  It is device-local like launch provenance: a
+  ;; restored device must not inherit the source device's targets, so the
+  ;; key never enters the portable remainder.
   (dissoc config :assistants :connections :connection-order :role-bindings
-          :revision :created-at :updated-at))
+          :backup :revision :created-at :updated-at))
 
 (defn- appearance-items
   [export]
@@ -808,7 +812,8 @@
                ;; contain; a merge keeps the local remainder.  The target's
                ;; launch provenance is re-attached in both modes.
                (merge (apply dissoc base
-                             (keys (config-remainder current)))
+                             (keys (dissoc (config-remainder current)
+                                           :backup)))
                       (or remainder {})
                       provenance)
 

@@ -524,7 +524,11 @@
             ;; later `flock -w` start times out against an unreachable
             ;; second instance.  The watchdog runs the same stop path so the
             ;; lock is released for the next start.
-            (start-orphan-watchdog! stop-once!)
+            (start-orphan-watchdog!
+             (fn []
+               (println "HC-ORPHAN-EXIT: orphan watchdog fired, stopping")
+               (flush)
+               (stop-once!)))
             (.addShutdownHook
              (Runtime/getRuntime)
              (Thread. ^Runnable stop-once! "hc-shutdown"))

@@ -1,0 +1,96 @@
+{
+  "freeze": "final27",
+  "date": "2026-11-08",
+  "timezone": "CST",
+  "purpose": "final27: freeze candidate after W271/W274 branch-message-entities + events test paren fix + W272 temporary-read select-keys + W273 temporary-read passthrough (sessions/runs/run_port/system) + W265 speech onstop/silent-wav-blob + all final26 fixes. Supersedes final26 (tree 5af6757f post / 4f5b6ec3 pre, bundle 1e0bd458).",
+  "fixes": {
+    "W271_W274_branch_message_entities": "src/hc/client/workbench/events.cljc branch-message-entities (branch receipt message normalization with :message/* key fallback); test/hc/client/workbench/events_test.clj paren fix 46/174 0F/0E",
+    "W272_temporary_read_select_keys": "src/hc/compose/owner/handlers.clj user-message pending-turn select-keys includes :temporary-read?; handlers_test 65/290 0F/0E",
+    "W273_temporary_read_passthrough": "src/hc/server/sessions.clj, runs.clj, history/run_port.clj, app/system.clj pass :temporary-read? into run input-snapshot and request snapshot; unit 92 tests 0F/0E",
+    "W265_speech_ui": "src/hc/client/speech/ui.cljs onstop duration + silent-wav-blob",
+    "carried_from_final26": "M1 nine slices, P-SESSION, V-*, W240, W244, W245, W251 assistants-from-db, W252 memory-suggest-summary, W258 extensions sync json-safe, W259 scheduler, W117 unwrap-receipt"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "f12affd2eb25c705bc02b69aa64d62f484238d22e1551185b5eae526a79b7dd9",
+    "bundle-sha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723 (pre-rebuild bundle main.js 19194008 bytes, mtime 2026-11-08 17:06 - dev/unminified runtime build)",
+    "manifest-edn-sha256": "7273d5f54129654753acac0bee40fc6567b1b355302f3ae96de95d7c9d874212",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "snapshot": "2026-11-08T17:35:32+08:00"
+  },
+  "stability-check": {
+    "snap-a": "2026-11-08T17:35:32+08:00",
+    "snap-b": "2026-11-08T17:37:35+08:00",
+    "tree-hash-both": "f12affd2eb25c705bc02b69aa64d62f484238d22e1551185b5eae526a79b7dd9",
+    "result": "PASS - tree hash identical across 120s window"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-build.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 24,
+    "note": "pre-existing infer warnings in views/session.cljs emitted (undeclared-var % analyzer noise); build completed",
+    "bundle-sha256-after": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundle-size-after": 3087081,
+    "bundle-mtime-after": "2026-11-08 17:37:01.795592097 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b"
+  },
+  "bundle-verification": {
+    "method": "grep on resources/public/js/cljs-runtime/*.js for emitted identifiers; source maps carry kebab-case names",
+    "findings": [
+      "branch_message_entities defined in hc.client.workbench.events.js (+ branch-message-entities in .map)",
+      "temporary_read / temporary-read present in materials/model.js, materials/view.js, conversation/draft.js, conversation.js, conversation.view.js",
+      "silent_wav_blob defined in hc.client.speech.ui.js",
+      "unwrap_receipt in materials/model.js, model_auth.js, settings/commands.js",
+      "current_with_local in workbench/materials_bridge.js",
+      "assistants_from_db in workbench/extensions_bridge.js",
+      "memory_suggest_summary in materials/view.js",
+      "json_safe/json_safe_node in settings/util.js, settings/draft.js, workbench/settings_bridge.js"
+    ],
+    "verdict": "PASS"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final27.log",
+    "exit": 1,
+    "tests": 3914,
+    "assertions": 25498,
+    "failures": 5,
+    "errors": 0,
+    "wall-seconds": 376,
+    "failures-detail": [
+      {
+        "ns": "hc.server.history-regenerate-live-test",
+        "test": "regenerate-uses-real-model-http-terminal",
+        "assertions": "history_regenerate_live_test.clj:189,191,192,193,196",
+        "count": 5,
+        "root-cause": "run state :failed; attempt error {:reason :unknown-field :unknown [:temporary-read?] :kind :unknown-field} - the live stub HTTP model server schema rejects the new :temporary-read? key now propagated into the request snapshot (W273 regression). input-snapshot itself contains :temporary-read? false correctly."
+      }
+    ]
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final27.log",
+    "exit": 0,
+    "wall-seconds": 16,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "f12affd2eb25c705bc02b69aa64d62f484238d22e1551185b5eae526a79b7dd9",
+    "bundle-sha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundle-size": 3087081,
+    "bundle-mtime": "2026-11-08 17:37:01.795592097 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "git-status-porcelain-count": 299,
+    "snapshot": "2026-11-08T17:43:51+08:00",
+    "tree-hash-note": "pre and post tree hash identical f12affd2 (stable across rebuild+test+app-check)"
+  },
+  "result": "BLOCKED - final27 freeze candidate bundle 92d18d8f + tree f12affd2 stable; clean rebuild exit 0 (24s); app-check ok:true (exit 0, 16s); BUT full suite 3914 tests/25498 assertions has 5 failures / 0 errors (exit 1, 376s) in hc.server.history-regenerate-live-test/regenerate-uses-real-model-http-terminal: stub HTTP model rejects :temporary-read? key in request snapshot (:unknown-field). W273 propagation regressed the live HTTP path; needs schema/stub update before freeze."
+}

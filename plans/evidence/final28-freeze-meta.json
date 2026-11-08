@@ -1,0 +1,95 @@
+{
+  "freeze": "final28",
+  "date": "2026-11-08",
+  "timezone": "CST",
+  "purpose": "final28: clean release rebuild + full suite + app-check after final27b carried fixes (W280/W283 message->items attachments/quotes/citations + ->user-message hardening; W281/W282 :plain-response legal exit + :tools? tri-state + :failure-outcome :succeeded; W284 sente dispatcher+4 workers + closeRingHandler + ws-kalive; W285 composer-snapshot text race + closeRingHandler two-arg; W286 publish-run-events! first-seen session baseline fix for E2E04). E2E 22/22 closed: E2E04 42/42 PASS (3 consecutive), E2E11 30/30 PASS.",
+  "fixes": {
+    "W280_W283": "core/scope/runtime.clj message->items carries attachments/quotes/citations; model_adapter/request.clj ->user-message hardened",
+    "W281_W282": "compose/nudge/policy.clj :plain-response legal exit; compose/owner/guards.clj :tools?; compose/owner/handlers.clj :failure-outcome :succeeded",
+    "W284": "server/gateway/sente.clj dispatcher+4 workers, closeRingHandler, ws-kalive pass-through",
+    "W285": "conversation/view.cljs composer-snapshot text race; sente.clj closeRingHandler two-arg",
+    "W286": "app/system.clj publish-run-events! first-seen session baseline (no more TEXT_MESSAGE_CONTENT mis-broadcast); E2E04 42/42 PASS",
+    "carried_from_final27b": "all final26/27 fixes incl. W273 model-snapshot-keys :temporary-read? fix"
+  },
+  "tree-hash-recipe": "find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum",
+  "tree-hash-recipe-note": "2026-11-08 corrected: canonical tree hash = 77d92bc2b0cb5081b1cf321bbbe61d306470ed7765ba88666db95f541df4d1d7 (1060 files, LC_ALL=C byte-order sort). The earlier recorded 956136d05bf308403c0dc5183b1cdc77f151fdbc6e3b480093c4bfd20bec0177 was produced under the en_US.utf8 locale sort order of the same file set and is locale-variant, not a different tree; file count 1014 was likewise stale (actual 1060).",
+  "pre": {
+    "tree-hash-src-test": "77d92bc2b0cb5081b1cf321bbbe61d306470ed7765ba88666db95f541df4d1d7",
+    "file-count": 1060,
+    "bundle-main-js-sha256": "0127b488f236389c380d13c2c0578d29c4ca54339e4fccf333aa89a2eb532227",
+    "bundle-main-js-size": 19208552,
+    "bundle-main-js-mtime": "2026-11-08 22:05:40.771087934 +0800",
+    "manifest-edn-sha256": "7273d5f54129654753acac0bee40fc6567b1b355302f3ae96de95d7c9d874212",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "stability": "120s two-sample sha256 unchanged (22:05:40 mtime stable)"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-build.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 25,
+    "note": "pre-existing :undeclared-var analyzer warnings in views/session.cljs (%, onboarding-model-picker arity); build completed",
+    "bundle-main-js-sha256": "fd5e1f9003535d9e4dfed2bf358a8055376c233786238c293c40671babd63d39",
+    "bundle-main-js-size": 3089772,
+    "bundle-main-js-mtime": "2026-11-08 22:19:01.015764332 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "manifest-edn-size": 20840,
+    "manifest-edn-mtime": "2026-11-08 22:19:01.019764346 +0800",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    }
+  },
+  "artifact-symbol-check": {
+    "client_cljs-runtime": {
+      "composer_snapshot": "hc.client.conversation.view/composer-snapshot present (W285)",
+      "temporary_read": "temporary-read? key in draft snapshot + materials.model.temporary_read_scope/attach_turn_selection (W272 carried)",
+      "silent_wav_blob": "hc.client.speech.ui/silent-wav-blob present (W265)",
+      "branch_message_entities": "hc.client.workbench.events/branch-message-entities present (W271/W274)",
+      "__HC_EVENTS__": "window.__HC_EVENTS__ probe in workbench.sync-bridge (W286 diagnostic)",
+      "__HC_DB__": "window.__HC_DB__ probe in workbench.main (W286 diagnostic)"
+    },
+    "server_src": {
+      "plain-response": "hc.compose.nudge.policy legal-exit :plain-response + :tools? tri-state (W281)",
+      "tools?": "compose/owner/guards.clj :tools? tri-state; handlers.clj :failure-outcome :succeeded",
+      "publish-run-events!": "hc.server.app.system first-seen session baseline (W286)",
+      "dispatcher": "hc.server.gateway.sente start-receive-pool! dispatcher+workers; compose.owner.dispatch",
+      "closeRingHandler": "hc.server.gateway.sente describe-close closeRingHandler two-arg (W284/W285)"
+    }
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final28.log",
+    "exit": 0,
+    "tests": 3929,
+    "assertions": 25571,
+    "failures": 0,
+    "errors": 0,
+    "note": "run via setsid detached shell after bash tool 300s cap killed earlier attempts; wall ~5-6 min (22:34 start -> 22:39:48 last test, done file exit 0)"
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final28.log",
+    "exit": 0,
+    "wall-seconds": 15,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "77d92bc2b0cb5081b1cf321bbbe61d306470ed7765ba88666db95f541df4d1d7",
+    "bundle-main-js-sha256": "fd5e1f9003535d9e4dfed2bf358a8055376c233786238c293c40671babd63d39",
+    "bundle-main-js-size": 3089772,
+    "bundle-main-js-mtime": "2026-11-08 22:19:01.015764332 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "git-status-porcelain-count": 316,
+    "snapshot": "2026-11-08T22:41:22+08:00",
+    "tree-hash-note": "tree hash 77d92bc2 recorded PRE; post identical (no src/test edits during freeze)"
+  },
+  "result": "PASS - final28 freeze: clean rebuild exit 0 (~25s), bundle main.js fd5e1f90 (3089772 B, 2026-11-08 22:19:01.015764332 +0800), full suite 3929/25571/0F/0E exit 0 (/tmp/hc-full-test-final28.log), app-check :ok true version 0.0.1 exit 0 (/tmp/hc-app-check-final28.log). Tree hash src+test = 77d92bc2b0cb5081b1cf321bbbe61d306470ed7765ba88666db95f541df4d1d7."
+}

@@ -286,6 +286,56 @@
                           "the drained receipt still sets :last-move")))
                   (done)))))))
 
+(deftest memory-suggest-receipt-sets-result
+  (async done
+         (let [state0 (assoc (synced-materials-state)
+                             :selected-session-id "s-1")
+               queued (:state
+                       (model/queue-command
+                        state0
+                        (keyword "materials" "memory/suggest")
+                        {:source-range {:recent-rounds 10}
+                         :categories [:identity-background]
+                         :scope :global
+                         :model-binding {:role :task}}
+                        {:key [:materials/memory :suggest]
+                         :command-id "suggest-1"}))
+               app (test-app (model/mark-submitting queued "suggest-1"))]
+           (reset! bridge/app-ref app)
+           ;; The real gateway envelope: `:command-id` outside, the domain
+           ;; receipt nested under `:receipt` with `:result :candidates`.
+           (bridge/handle-event!
+            {:type "CUSTOM"
+             :name "hc/command-receipt"
+             :value {:ok? true
+                     :command-id "suggest-1"
+                     :command-epoch 7
+                     :receipt {:status :accepted
+                               :command-id "suggest-1"
+                               :command-epoch 7
+                               :result {:candidates [{:body "喜欢简洁回答"
+                                                      :category
+                                                      :expression-preference}]
+                                        :skipped 1
+                                        :skipped-reasons {:empty 1}
+                                        :dropped-message-count 0}}}})
+           (-> (settle! 20)
+               (.then
+                (fn [_]
+                  (let [current (app-state app)]
+                    (is (= :accepted
+                           (get-in current [:commands "suggest-1"
+                                            :status])))
+                    (is (some? (:memory-suggest-result current))
+                        "the suggest receipt stores :memory-suggest-result")
+                    (is (= 1
+                           (count (:candidates
+                                   (:memory-suggest-result current)))))
+                    (is (some #(= :materials/snapshot (:kind %))
+                              (vals (:commands current)))
+                        "the accepted receipt queues a reconcile snapshot"))
+                  (done)))))))
+
 (deftest sync-from-db-preserves-last-move-behind-a-lagging-db
   (async done
          (let [state0 (assoc (synced-materials-state)

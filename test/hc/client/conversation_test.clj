@@ -996,6 +996,19 @@
   (is (= "发送未送达，草稿已恢复"
          (surface/command-label {:kind :send :status :rejected}))))
 
+(deftest command-reason-exposes-the-ten-category
+  (is (= :permission-or-outcome-unknown
+         (surface/command-reason {:kind :send
+                                  :status :unconfirmed})))
+  (is (= :permission-or-outcome-unknown
+         (surface/command-reason {:kind :send
+                                  :status :rejected
+                                  :error {:code :receipt-lost}})))
+  (is (nil? (surface/command-reason {:kind :send
+                                     :status :rejected})))
+  (is (nil? (surface/command-reason {:kind :send
+                                     :status :pending}))))
+
 (deftest display-label-is-not-a-model-binding
   (is (= "尚未选择模型"
          (composer/session-model {:model-label "尚未选择模型"})))

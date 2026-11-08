@@ -1,0 +1,1325 @@
+{
+  "test": "E2E 04",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-08T14:12:21.813Z",
+  "marker": "E2E04-1794147127001",
+  "appUrl": "http://127.0.0.1:45695",
+  "mockUrl": "http://127.0.0.1:44975",
+  "chromeVersion": "157.0.8103.38",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-08T14:05:40.771Z",
+    "sha256": "0127b488f236389c380d13c2c0578d29c4ca54339e4fccf333aa89a2eb532227"
+  },
+  "sourceTreeSha256": "77d92bc2b0cb5081b1cf321bbbe61d306470ed7765ba88666db95f541df4d1d7",
+  "checks": {
+    "modelBound": true,
+    "reply1": true,
+    "reply2": true,
+    "reply3": true,
+    "firstRowHasImage": true,
+    "imageChipVisible": true,
+    "editAttachmentRemoved": true,
+    "newVersionHasNoImage": true,
+    "editedTextShown": true,
+    "v1KeepsImage": true,
+    "v1KeepsOriginalText": true,
+    "blobUrlPresent": true,
+    "blobReadable": true,
+    "branchBannerShowsSource": true,
+    "branchHasEditedFirst": true,
+    "branchHasPrompt2": true,
+    "branchHasPrompt3": true,
+    "branchHasReply1": true,
+    "branchHasReply3": true,
+    "branchNoBranchRepliesYet": true,
+    "branchReply2": true,
+    "branchReply3": true,
+    "branchUserOrder": true,
+    "branchRepliesPresent": true,
+    "branchExportHasEdited": true,
+    "branchExportHasBranchTurns": true,
+    "branchExportHasBranchReplies": true,
+    "branchExportNoImageNote": true,
+    "branchExportNoSourceOnlyText": true,
+    "branchRenamed": true,
+    "sourceTraceableAfterRename": true,
+    "srcOrderUnchanged": true,
+    "srcNoBranchReplies": true,
+    "srcV1ImageKept": true,
+    "sourceExportHasEdited": true,
+    "sourceExportHasThreeTurns": true,
+    "sourceExportHasSourceReplies": true,
+    "sourceExportNoBranchTurns": true,
+    "sourceExportNoBranchReplies": true,
+    "sourceExportNoImage": true,
+    "sourceExportNoV1Text": true,
+    "mockRequests": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-01-three-turns.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-02-edited-version.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-03-original-version.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-04-branch-created.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-05-branch-two-turns.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-06-branch-renamed.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-07-source-back.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/e2e04-08-source-exported.png"
+  ],
+  "browserEvents": [
+    "2026-11-08T14:12:22.558Z console-error Warning: Each child in a list should have a unique \"key\" prop.%s%s See https://reactjs.org/link/warning-keys for more information.%s \n\nCheck the render method of `hc.client.workbench.app/Root`.  \n    at dt\n    at hc.client.workbench.app/Root\n    at com$fulcrologic$fulcro$application$FulcroRootWrappe",
+    "2026-11-08T14:12:22.558Z console-error Warning: Unsupported style property %s. Did you mean %s?%s font-size fontSize \n    at p\n    at nav\n    at div\n    at div\n    at div\n    at require (http://127.0.0.1:45695/js/cljs-runtime/module$node_modules$framework7_react$components$page.js:21:10)\n    at div\n    at require (http://127.0.0.1:45695/",
+    "2026-11-08T14:12:22.677Z console-error Warning: Each child in a list should have a unique \"key\" prop.%s%s See https://reactjs.org/link/warning-keys for more information.%s \n\nCheck the render method of `hc$client$workbench$views$session$ConversationWithAttachments`.  \n    at div\n    at hc$client$workbench$views$session$ConversationWithAtt"
+  ],
+  "wsCloses": [
+    {
+      "at": "2026-11-08T14:12:22.573Z",
+      "event": "opened",
+      "url": "ws://127.0.0.1:45695/chsk?client-id=4061cdec-2638-46b9-9dd2-d0a7a7657e6f"
+    }
+  ],
+  "modelLabel": "模型：Mock Vision",
+  "reply1": "E2E04-REPLY-1 E2E04-1794147127001 图片已收到。",
+  "reply2": "E2E04-REPLY-2 E2E04-1794147127001 第二轮完成。",
+  "reply3": "E2E04-REPLY-3 E2E04-1794147127001 第三轮完成。",
+  "chipCountBefore": 1,
+  "editChipCount": 0,
+  "chipCountAfterEdit": 0,
+  "firstMessageId": "user-cmd-99bf4c75-1f92-48ba-a837-c1279160cf11",
+  "chipCountV1": 1,
+  "blobUrl": "/blobs/sha256-1e48098528f0143f0358f50efd6fbf74f91816988161585e8c66cc6910f98bc4?filename=e2e04-image.png",
+  "blobStatus": 200,
+  "blobSha256": "1e48098528f0143f0358f50efd6fbf74f91816988161585e8c66cc6910f98bc4",
+  "blobSize": 76,
+  "branchBannerText": "分支\n来源会话：New session",
+  "branchUsers": [
+    "E2E04 第一轮已编辑 E2E04-1794147127001：移除图片，只保留文字。",
+    "E2E04 第二轮 E2E04-1794147127001：请只回复第二。",
+    "E2E04 第三轮 E2E04-1794147127001：请只回复第三。"
+  ],
+  "branchAssistants": [
+    "E2E04-REPLY-1 E2E04-1794147127001 图片已收到。",
+    "E2E04-REPLY-2 E2E04-1794147127001 第二轮完成。",
+    "E2E04-REPLY-3 E2E04-1794147127001 第三轮完成。"
+  ],
+  "branchSyncBeforeSend": {
+    "epoch": 1,
+    "phase": "synced",
+    "transport-status": "open",
+    "reason": null,
+    "transport-open": true,
+    "last-outcome": {
+      "kind": "state-delta",
+      "result": "applied",
+      "epoch": 1,
+      "seq": 23
+    },
+    "subscription-id": 1,
+    "transport-last-error": null,
+    "seq": 23
+  },
+  "branchEventsBeforeSend": [
+    {
+      "at": 1794147142696,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147142696,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147142697,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147142804,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147142844,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143033,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143033,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143034,
+      "type": "RUN_STARTED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-1",
+      "status": null
+    },
+    {
+      "at": 1794147143280,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143316,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143359,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143394,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143433,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143433,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": "not-found"
+    },
+    {
+      "at": 1794147143466,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147143467,
+      "type": "RUN_FINISHED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-1",
+      "status": "succeeded"
+    },
+    {
+      "at": 1794147146396,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147146430,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147146844,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147146844,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147146844,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147146877,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147151845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147151845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147151845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147151879,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147156845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147156845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147156846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147156879,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147161845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147161846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147161846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147161879,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147166845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147166845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147166845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147166879,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167327,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167327,
+      "type": "RUN_STARTED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-2",
+      "status": null
+    },
+    {
+      "at": 1794147167327,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167447,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167481,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167539,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167573,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147167655,
+      "type": "RUN_FINISHED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-2",
+      "status": "succeeded"
+    },
+    {
+      "at": 1794147167691,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147170732,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147170765,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171845,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147171879,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147176881,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181846,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147181880,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147186881,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191635,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191636,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191636,
+      "type": "RUN_STARTED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-3",
+      "status": null
+    },
+    {
+      "at": 1794147191762,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191796,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191828,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191829,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191829,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191829,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191829,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191830,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191830,
+      "type": "TEXT_MESSAGE_CONTENT",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191863,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147191985,
+      "type": "RUN_FINISHED",
+      "session-id": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "run-id": "call-3",
+      "status": "succeeded"
+    },
+    {
+      "at": 1794147192027,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147196881,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147201883,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206850,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206850,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206850,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147206891,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211850,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211850,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147211889,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216281,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216315,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216480,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216514,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216847,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216848,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216849,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147216887,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217115,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217156,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217606,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217606,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217653,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    },
+    {
+      "at": 1794147217654,
+      "type": "CUSTOM",
+      "session-id": null,
+      "run-id": null,
+      "status": null
+    }
+  ],
+  "branchReply2": "E2E04-BRANCH-REPLY-2 E2E04-1794147127001 分支第二轮完成。",
+  "branchSyncAfterReply": {
+    "epoch": 1,
+    "phase": "synced",
+    "transport-status": "open",
+    "reason": null,
+    "transport-open": true,
+    "last-outcome": {
+      "kind": "state-delta",
+      "result": "applied",
+      "epoch": 1,
+      "seq": 29
+    },
+    "subscription-id": 1,
+    "transport-last-error": null,
+    "seq": 29
+  },
+  "branchReply3": "E2E04-BRANCH-REPLY-3 E2E04-1794147127001 分支第三轮完成。",
+  "branchUserOrder": [
+    "edited",
+    "src2",
+    "src3",
+    "br2",
+    "br3"
+  ],
+  "branchExportFile": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/herdchestra-branch.txt",
+  "branchBannerAfterRename": "分支\n来源会话：New session",
+  "srcUsers": [
+    "E2E04 第一轮已编辑 E2E04-1794147127001：移除图片，只保留文字。",
+    "E2E04 第二轮 E2E04-1794147127001：请只回复第二。",
+    "E2E04 第三轮 E2E04-1794147127001：请只回复第三。"
+  ],
+  "srcAssistants": [
+    "E2E04-REPLY-1 E2E04-1794147127001 图片已收到。",
+    "E2E04-REPLY-2 E2E04-1794147127001 第二轮完成。",
+    "E2E04-REPLY-3 E2E04-1794147127001 第三轮完成。"
+  ],
+  "srcDbProbe": {
+    "selected": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+    "sessionIds": [
+      "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d"
+    ],
+    "sessionMessageIds": {
+      "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a": [
+        "user-cmd-99bf4c75-1f92-48ba-a837-c1279160cf11",
+        "assistant-call-1-attempt-c76082c5-159b-42bb-9615-55391674c1ab--2",
+        "user-cmd-64976798-f5be-46c4-8e23-d360497d6811",
+        "assistant-call-2-attempt-c76082c5-159b-42bb-9615-55391674c1ab--7",
+        "user-cmd-9138dc4e-7af9-44ad-b48f-a1f6662011aa",
+        "assistant-call-3-attempt-c76082c5-159b-42bb-9615-55391674c1ab--12"
+      ],
+      "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d": [
+        "hc-message-e50862af-ea33-4839-acaa-43d9c8c896a5",
+        "hc-message-974aaaf7-db4b-4856-a730-4ebc875f21c0",
+        "hc-message-5fcad467-9391-4a5a-beac-9f35d2974381",
+        "hc-message-bbfd10cc-cc79-4243-84b3-2c3cecdcc401",
+        "hc-message-b39985a3-cd9c-4371-ada9-1484ba822c84",
+        "hc-message-3308c155-8f89-40a8-bd54-09814e7a113a",
+        "user-cmd-2849a524-3ae9-4680-96da-00c36172fafd",
+        "assistant-call-1-attempt-26eb1fd3-84da-4882-814a-ec65dfc46620--2",
+        "user-cmd-2b42ee95-28a3-4e3c-a99e-8415425c16e3",
+        "assistant-call-2-attempt-26eb1fd3-84da-4882-814a-ec65dfc46620--7"
+      ]
+    },
+    "messageSessions": {
+      "user-cmd-99bf4c75-1f92-48ba-a837-c1279160cf11": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "user-cmd-2849a524-3ae9-4680-96da-00c36172fafd": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "user-cmd-9138dc4e-7af9-44ad-b48f-a1f6662011aa": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "hc-message-b39985a3-cd9c-4371-ada9-1484ba822c84": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "assistant-call-3-attempt-c76082c5-159b-42bb-9615-55391674c1ab--12": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "assistant-call-1-attempt-26eb1fd3-84da-4882-814a-ec65dfc46620--2": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "user-cmd-2b42ee95-28a3-4e3c-a99e-8415425c16e3": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "hc-message-974aaaf7-db4b-4856-a730-4ebc875f21c0": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "assistant-call-2-attempt-26eb1fd3-84da-4882-814a-ec65dfc46620--7": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "user-cmd-64976798-f5be-46c4-8e23-d360497d6811": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "hc-message-5fcad467-9391-4a5a-beac-9f35d2974381": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "assistant-call-2-attempt-c76082c5-159b-42bb-9615-55391674c1ab--7": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "hc-message-e50862af-ea33-4839-acaa-43d9c8c896a5": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "hc-message-3308c155-8f89-40a8-bd54-09814e7a113a": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d",
+      "assistant-call-1-attempt-c76082c5-159b-42bb-9615-55391674c1ab--2": "hc-session-8a2df84a-67aa-4064-acd2-e1925497306a",
+      "hc-message-bbfd10cc-cc79-4243-84b3-2c3cecdcc401": "hc-session-9793c0b9-7c62-45a6-8956-5b3c34846f4d"
+    }
+  },
+  "sourceExportFile": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-04/herdchestra-branch.txt",
+  "mockState": {
+    "model": {
+      "mock": true,
+      "requests": 5,
+      "chatCompletions": 5,
+      "toolCallsIssued": 0,
+      "active": 0,
+      "aborted": 5,
+      "config": {
+        "reply": "Mock 模型回复：这是一条可复制的固定回复。E2E-MOCK-REPLY",
+        "chunkSize": 24,
+        "chunkDelayMs": 90,
+        "errorStatus": null,
+        "failAfterChunks": null,
+        "forceToolCall": false,
+        "replyScript": [
+          {
+            "match": "第一轮",
+            "reply": "E2E04-REPLY-1 E2E04-1794147127001 图片已收到。"
+          },
+          {
+            "match": "分支第二轮",
+            "reply": "E2E04-BRANCH-REPLY-2 E2E04-1794147127001 分支第二轮完成。"
+          },
+          {
+            "match": "分支第三轮",
+            "reply": "E2E04-BRANCH-REPLY-3 E2E04-1794147127001 分支第三轮完成。"
+          },
+          {
+            "match": "第二轮",
+            "reply": "E2E04-REPLY-2 E2E04-1794147127001 第二轮完成。"
+          },
+          {
+            "match": "第三轮",
+            "reply": "E2E04-REPLY-3 E2E04-1794147127001 第三轮完成。"
+          },
+          {
+            "reply": "E2E04-FALLBACK E2E04-1794147127001"
+          }
+        ]
+      },
+      "last": {
+        "at": "2026-11-08T14:14:02.378Z",
+        "path": "/v1/chat/completions",
+        "model": "mock-vision",
+        "stream": true,
+        "messageCount": 14,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ],
+          [
+            null
+          ]
+        ],
+        "user": "E2E04 分支第三轮 E2E04-1794147127001：请只回复分支第三。"
+      },
+      "log": [
+        {
+          "at": "2026-11-08T14:12:23.131Z",
+          "path": "/v1/chat/completions",
+          "model": "mock-vision",
+          "stream": true,
+          "messageCount": 4,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "[object Object],[object Object]"
+        },
+        {
+          "at": "2026-11-08T14:12:47.301Z",
+          "path": "/v1/chat/completions",
+          "model": "mock-vision",
+          "stream": true,
+          "messageCount": 8,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ],
+          "user": "E2E04 第二轮 E2E04-1794147127001：请只回复第二。"
+        },
+        {
+          "at": "2026-11-08T14:13:11.611Z",
+          "path": "/v1/chat/completions",
+          "model": "mock-vision",
+          "stream": true,
+          "messageCount": 12,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ],
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ],
+          "user": "E2E04 第三轮 E2E04-1794147127001：请只回复第三。"
+        },
+        {
+          "at": "2026-11-08T14:13:37.905Z",
+          "path": "/v1/chat/completions",
+          "model": "mock-vision",
+          "stream": true,
+          "messageCount": 10,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "E2E04 分支第二轮 E2E04-1794147127001：请只回复分支第二。"
+        },
+        {
+          "at": "2026-11-08T14:14:02.378Z",
+          "path": "/v1/chat/completions",
+          "model": "mock-vision",
+          "stream": true,
+          "messageCount": 14,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ],
+          "user": "E2E04 分支第三轮 E2E04-1794147127001：请只回复分支第三。"
+        }
+      ],
+      "bodies": []
+    }
+  },
+  "ok": true,
+  "finishedAt": "2026-11-08T14:14:28.547Z"
+}

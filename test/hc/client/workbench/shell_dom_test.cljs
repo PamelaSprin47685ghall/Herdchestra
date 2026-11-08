@@ -219,6 +219,74 @@
       (finally
         (unmount! container root)))))
 
+(deftest aux-panel-is-a-labeled-nav-landmark
+  (let [{:keys [container root]}
+        (mount! (base-db {:ui/viewport-width 1440
+                          :ui/aux-open true}))]
+    (try
+      (let [navs (vec (.querySelectorAll container "nav"))]
+        (is (= 2 (count navs))
+            "the shell owns exactly the navigation drawer and the details panel")
+        (is (some? (q container "#wb-nav-drawer")))
+        (let [aux (q container "#wb-aux")]
+          (is (= "NAV" (.-tagName aux)))
+          (is (= "上下文详情"
+                 (.getAttribute aux "aria-label")))))
+      (finally
+        (unmount! container root)))))
+
+(deftest drawers-are-mutually-exclusive
+  (let [{:keys [app container root]}
+        (mount! (base-db {:ui/route :sessions
+                          :ui/viewport-width 800
+                          :ui/aux-open false
+                          :ui/sidebar-open false}))]
+    (try
+      (click! (q container "#wb-aux-toggle"))
+      (is (true? (:ui/aux-open (application/current-state app))))
+      (render! root app)
+      (click! (q container "#wb-menu"))
+      (let [db (application/current-state app)]
+        (is (true? (:ui/sidebar-open db)))
+        (is (false? (:ui/aux-open db))
+            "opening the navigation drawer closes the details drawer"))
+      (click! (q container "#wb-aux-toggle"))
+      (let [db (application/current-state app)]
+        (is (true? (:ui/aux-open db)))
+        (is (false? (:ui/sidebar-open db))
+            "opening the details drawer closes the navigation drawer"))
+      (finally
+        (unmount! container root)))))
+
+(deftest session-row-localizes-status-and-timestamp
+  (let [{:keys [container root]}
+        (mount! (base-db {:ui/route :sessions
+                          :ui/viewport-width 1280
+                          :ui/sidebar-open false
+                          :ui/aux-open false
+                          :ui/selected-session-id nil
+                          :session/by-id
+                          {"s1" {:id "s1"
+                                 :title "Alpha"
+                                 :status :streaming
+                                 :updated-at "2026-11-05T08:00:00Z"}}
+                          :message/by-id {}
+                          :message/order []}))]
+    (try
+      (let [row (q container ".wb-session-item")
+            text (.-textContent row)]
+        (is (.includes text "进行中")
+            "the internal :streaming status shows a Chinese label")
+        (is (not (.includes text "streaming"))
+            "the internal status keyword never reaches the list")
+        (is (or (.includes text "2026/11/05")
+                (.includes text "2026-11-05"))
+            "the ISO timestamp renders as a localized date")
+        (is (not (.includes text "2026-11-05T08:00:00Z"))
+            "the raw ISO timestamp never reaches the list"))
+      (finally
+        (unmount! container root)))))
+
 (deftest one-overlay-closes-per-request
   (let [{:keys [app container root]}
         (mount! (base-db {:ui/viewport-width 800

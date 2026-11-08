@@ -51,10 +51,14 @@
 
 (deftest db-roundtrip-test
   (let [state {:theme :dark :font-scale 180 :contrast :high
-               :reduced-motion :reduce}
+               :reduced-motion :reduce
+               :language :zh-CN :background :light :bubble :compact}
         db (model/to-db state)]
     (is (= {:ui/theme :dark :ui/font-scale 180 :ui/contrast :high
-            :ui/reduced-motion :reduce}
+            :ui/reduced-motion :reduce
+            :ui/settings {:language :zh-CN
+                          :background :light
+                          :bubble :compact}}
            db))
     (is (= state (model/from-db db)))))
 

@@ -85,6 +85,45 @@
   []
   (report {:coverage :partial :source :unknown :usage {}}))
 
+(def ^:private display-fields
+  "Token fields the conversation usage label reads."
+  [:input-tokens :output-tokens])
+
+(defn- display-source
+  "One provenance for the displayed pair.
+
+  Mirrors `aggregate-field`: an estimated displayed field marks the pair
+  estimated, a reported one marks it reported, and a pair with no known
+  provenance stays unknown."
+  [sources]
+  (let [known (keep #(get sources %) display-fields)]
+    (cond
+      (empty? known) :unknown
+      (some #{:estimated} known) :estimated
+      (some #{:reported} known) :reported
+      :else :unknown)))
+
+(defn flat-usage
+  "Project one stored usage value onto the flat shape conversation
+  surfaces read.
+
+  A `report`-shaped map keeps its report under `:usage`/`:sources`/
+  `:coverage` and additionally carries each token field at top level —
+  `:unknown` becomes nil so labels can render 未知 — plus one `:source`
+  summarizing the displayed pair's provenance.  Values that are not
+  report-shaped pass through unchanged, so hand-written or legacy usage
+  maps round-trip byte-for-byte."
+  [usage]
+  (if (and (map? usage) (map? (:usage usage)))
+    (let [inner (:usage usage)
+          flat (into {}
+                     (map (fn [field]
+                            [field (let [value (get inner field)]
+                                     (if (= :unknown value) nil value))]))
+                     token-fields)]
+      (merge usage flat {:source (display-source (:sources usage))}))
+    usage))
+
 (defn merge-report
   "Merge a later report over an earlier report for the same attempt.
 

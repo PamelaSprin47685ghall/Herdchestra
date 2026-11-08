@@ -33,6 +33,27 @@
    :error (cond-> {:code code :message message}
             (some? details) (assoc :details details))})
 
+(defn- task-model-missing?
+  "True when MODELS is a map that names :main but leaves :task blank.
+
+  A fleet whose configuration only binds the :main role must stop before
+  any @task slot is registered; the blank :task id is the dispatch-side
+  signal that the role is unconfigured."
+  [models]
+  (and (map? models)
+       (some? (:main models))
+       (or (nil? (:task models))
+           (and (string? (:task models))
+                (str/blank? (:task models))))))
+
+(defn- unconfigured-task-model
+  "The pre-dispatch failure for a :main-only model map."
+  [models]
+  {:error {:code :TASK_MODEL_UNCONFIGURED
+           :message "the :task model role is not configured; configure :task model to run fleet workers"
+           :remedy :configure-task-model
+           :models models}})
+
 (defn- tenure-id
   [swarm-id]
   (str "fleet-" swarm-id))
@@ -392,15 +413,22 @@
           board (runtime/board runtime)
           state (or state {})
           persisted-models (or models (get-in state [:mission :models]))
-          validated (try
-                      (model/new-models persisted-models)
-                      (catch Throwable t
-                        {:error {:code :INVALID_MODELS
-                                 :message (or (.getMessage t) (str t))}}))]
+          validated (if (task-model-missing? persisted-models)
+                      {:error {:code :TASK_MODEL_UNCONFIGURED
+                               :message "the :task model role is not configured; configure :task model to run fleet workers"
+                               :remedy :configure-task-model
+                               :models persisted-models}}
+                      (try
+                        (model/new-models persisted-models)
+                        (catch Throwable t
+                          {:error {:code :INVALID_MODELS
+                                   :message (or (.getMessage t) (str t))}})))]
       (if (:error validated)
         (fail (get-in validated [:error :code])
               (get-in validated [:error :message])
-              {:models persisted-models})
+              (cond-> {:models persisted-models}
+                (:remedy (:error validated))
+                (assoc :remedy (:remedy (:error validated)))))
         (let [mission (normalize-mission (:mission state) runtime validated)
               actors (assoc (or (:actors state)
                                 (mission-actors/new-state
@@ -531,7 +559,12 @@
   [{:keys [runtime models slot-ids]
     :or {slot-ids [:slot-a :slot-b]}}]
   (let [validated (try
-                    (model/new-models models)
+                    (if (task-model-missing? models)
+                      {:error {:code :TASK_MODEL_UNCONFIGURED
+                               :message "the :task model role is not configured; configure :task model to run fleet workers"
+                               :remedy :configure-task-model
+                               :models models}}
+                      (model/new-models models))
                     (catch Throwable t
                       {:error {:code :INVALID_MODELS
                                :message (or (.getMessage t) (str t))}}))]
@@ -542,7 +575,9 @@
       (:error validated)
       (fail (get-in validated [:error :code])
             (get-in validated [:error :message])
-            {:models models})
+            (cond-> {:models models}
+              (:remedy (:error validated))
+              (assoc :remedy (:remedy (:error validated)))))
 
       :else
       (let [tid (tenure-id (:swarm-id runtime))

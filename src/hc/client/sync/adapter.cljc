@@ -624,6 +624,8 @@
      :settings/by-id
      :settings/models
      :settings/roles
+     :settings/assistants
+     :settings/assistant-order
      :materials/ready?
      :materials/error
      :materials/revision

@@ -24,6 +24,8 @@
    :restore-conflict :format-too-new :export-cancelled])
 
 (declare normalize-code)
+(declare failure-copy)
+(declare failure-copy-impl)
 
 (def failure-reason-categories
   "The ten non-delivery reason categories from AGENTS.md §7.4 第 8 段.
@@ -118,6 +120,49 @@
   (let [id (failure-category code)]
     (or (some #(when (= (:id %) id) %) failure-reason-categories)
         indeterminate-reason)))
+
+(defn failure-reason-card
+  "Project one failure CODE (or `{:code :context}` map) into a single
+  non-delivery card:
+
+    {:category-id   reason category keyword
+     :number         Chinese category number, nil for :indeterminate
+     :label          category label
+     :explanation    category-level explanation
+     :member-kinds   every copy key in the category
+     :copy           the concrete kind's `failure-copy` result}
+
+  Views render the category first (`:number`/`:label`/`:explanation`),
+  then the concrete kind's `:copy` title/body/action.  Unknown codes get
+  the `:indeterminate` category and the honest fallback copy."
+  ([code-or-map]
+   (failure-reason-card code-or-map nil))
+  ([code-or-map context]
+  (let [{:keys [code context]}
+        (cond
+          (map? code-or-map) (merge code-or-map
+                                   {:context (or context (:context code-or-map))})
+          (nil? context) {:code code-or-map :context {}}
+          :else {:code code-or-map :context context})
+        context (or context {})
+        reason (failure-reason code)]
+    {:category-id (:id reason)
+     :number (:number reason)
+     :label (:label reason)
+     :explanation (:explanation reason)
+     :member-kinds (vec (:kinds reason))
+     :copy (failure-copy-impl {:code code :context context})})))
+
+(defn reason-label
+  "One-line category prefix for inline failure text, e.g.
+  \"（八）权限被关闭，或执行结果无法确认 · \".  Returns nil when the code
+  matches no category, so callers can omit the prefix entirely."
+  ([code-or-map]
+   (reason-label code-or-map nil))
+  ([code-or-map context]
+   (let [card (failure-reason-card code-or-map context)]
+     (when (and (seq (:number card)) (seq (:label card)))
+       (str "（" (:number card) "）" (:label card) " · ")))))
 
 (def ^:private copies
   {:no-model
@@ -349,12 +394,9 @@
   (when (true? (:unknown-usage? context))
     "用量未知，不按零计算。"))
 
-(defn failure-copy
-  "Return the stable copy for one failure CODE.
-
-  CONTEXT keys used here: `:saved?`, `:unknown-usage?`.  Unknown codes fall
-  back to a deliberately non-specific copy; they never borrow another
-  category's cause."
+(defn- failure-copy-impl
+  "Concrete-kind copy without the `:reason` card; `failure-reason-card`
+  calls this so the two projections never recurse."
   [{:keys [code context]}]
   (let [kind (normalize-code code)
         context (or context {})
@@ -384,3 +426,15 @@
             (dissoc :draft?)
             (assoc :body body
                    :reason-category reason-id))))))
+
+(defn failure-copy
+  "Return the stable copy for one failure CODE.
+
+  CONTEXT keys used here: `:saved?`, `:unknown-usage?`.  Unknown codes fall
+  back to a deliberately non-specific copy; they never borrow another
+  category's cause.  The result carries `:reason`, the ten-category card
+  from `failure-reason-card`, so views can render the category before the
+  concrete kind without a second lookup."
+  [{:keys [code context]}]
+  (let [copy (failure-copy-impl {:code code :context context})]
+    (assoc copy :reason (failure-reason-card {:code code :context context}))))

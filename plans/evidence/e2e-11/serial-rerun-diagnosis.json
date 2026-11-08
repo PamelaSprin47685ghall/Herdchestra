@@ -1,0 +1,36 @@
+{
+  "test": "e2e-11 serial low-load rerun (final27b)",
+  "worker": "w277-e2e04-11-final27b",
+  "recordedAt": "2026-11-08T10:30:00Z",
+  "frozenHashes": {
+    "bundleSha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "sourceTreeSha256": "43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a",
+    "note": "e2e-11-result.json records treeSha256Dual=43431535... and clientBundle.sha256=92d18d8f...; its sourceTreeSha256 field is a different composite (git-tree + spec file), not the tree hash"
+  },
+  "runs": [
+    {"at": "10:14Z", "result": "FAIL@final-step", "error": "locator.waitFor .hc-mat-badge '材料库已就绪' 30s timeout at spec:739 openMaterialsMemory", "checks": "30/30 recorded checks PASS"},
+    {"at": "10:16Z", "result": "FAIL@final-step", "error": "identical timeout at spec:739", "checks": "30/30 recorded checks PASS"}
+  ],
+  "result": {
+    "ok": false,
+    "checksTotal": 30,
+    "checksPassed": 30,
+    "failedCheck": "normal-session-memory-visible (never reached: openMaterialsMemory badge wait threw first)",
+    "keyChecks": {
+      "temp-read-injected": "PASS",
+      "temp-read-not-persistent": "PASS",
+      "temp-write-refused": "PASS",
+      "temp-read-control-present": "PASS",
+      "normal-session-reselected": "PASS"
+    }
+  },
+  "rootCause": "Same app-JVM clean-exit defect as E2E04-D2: ~60-80s into the run the server process exits orderly (client ws reconnect -> net::ERR_CONNECTION_REFUSED; error-context shows 连接状态：连接中断 + 材料库未就绪). Server log ends after startup banner with no error; mock stayed alive (mockFinal fetched OK at teardown: 15 requests, 12 main + 3 task calls). The final 'normal session memory visible' step needs the materials panel which requires a live server.",
+  "evidenceFiles": {
+    "resultJson": "plans/evidence/e2e-11/e2e-11-result.json",
+    "screenshots": ["01-defaults-off.png","02-switches-on.png","03-candidate-pending.png","04-review-done.png","05-rescope-approved.png","06-injection.png","07-archive.png","08-temp-session.png","09-temp-read.png","e2e-11-error.png"],
+    "serverLog": "plans/evidence/e2e-11/server-hc-e2e-iSppG0.log (latest run; ends after startup banner)",
+    "runLogs": ["run1.log", "run2.log"],
+    "playwrightArtifacts": "plans/evidence/e2e-auto/playwright-artifacts/e2e-11--e2e-E2E-11-memory--66bfa-hive-and-temporary-sessions/ (error-context.md + trace.zip; trace.network shows single ERR_CONNECTION_REFUSED on /chsk reconnect)"
+  },
+  "constraintsRespected": "no src/ writes, no git writes, no rebuild, serial execution only"
+}

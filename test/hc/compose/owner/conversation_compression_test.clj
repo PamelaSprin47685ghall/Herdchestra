@@ -8,6 +8,9 @@
   commit it), and mirrored messages keep their stable `:message-id`, so the
   projection can substitute applied ranges itself."
   (:require [clojure.test :refer [deftest is testing]]
+            [hc.compose.owner.guards :as guards]
+            [hc.core.scope.annotation :as annotation]
+            [hc.core.scope.ledger :as ledger]
             [hc.compose.owner.state :as state]))
 
 (defn- conversation-state
@@ -113,3 +116,30 @@
 
 (deftest initial-conversation-empty-by-default
   (is (= [] (:conversation (state/initial-state {:session-id "plain"})))))
+
+(defn- conversation-tail
+  "The private guards helper that freezes the outbound conversation tail."
+  [s]
+  (#'guards/conversation-tail s))
+
+(deftest conversation-tail-keeps-operator-payload-on-projection
+  (let [attachment {:attachment-id "a1"
+                    :name "pixel.png"
+                    :type :image
+                    :send-route :native
+                    :send-blob-id "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    :send-mime "image/png"}
+        s (assoc (state/initial-state {:session-id "tail-payload"})
+                 :conversation
+                 [{:role :user
+                   :text "what is this?"
+                   :attachments [attachment]
+                   :quotes [{:message-id "m0" :text "quoted"}]
+                   :citations [{:label "source one"}]}
+                  {:role :assistant :text "an answer"}])
+        tail (conversation-tail s)
+        user (first tail)]
+    (is (= :user (:role user)))
+    (is (= [attachment] (:attachments user)))
+    (is (= [{:message-id "m0" :text "quoted"}] (:quotes user)))
+    (is (= [{:label "source one"}] (:citations user)))))

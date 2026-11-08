@@ -100,3 +100,4 @@
 - **影响**：用户看不到“上一次实际发送”的注入上下文；E2E12 多轮/世界书“上次发送”断言不可达，属发布阻断。
 - **建议**：按产品缺口修——UI 发送路径在 session doc 写入该轮 `:run-order`/`:runs[:input-snapshot :context]`（或让 `frozen-outbound` 在无 run 时以最近一次用户消息 + 当前投影生成 `:source :last-run`，但需明确语义）；**不**改 E2E12 断言口径。修后 src 变化，需重建新冻结并重跑全量。归 W47/W5；W47 疑似卡死、修复未开始，待 Main 改派 W48/W5 或授权 W35。final12（`72de4f9a`/`7dfcf0d7`）在改动人声明前仍有效。
 - **修复（W35，待 E2E12 复跑）**：`src/hc/server/sessions/runs.clj` 新增 `record-outbound`；`sessions.clj` 新增 `:session/record-outbound`；`commands.clj` 登记 metadata kind；`handlers.clj` 在 accepted send 后调用 `mirror-outbound-run!`。单测新增 +2 tests/+11 assertions，相关 ns 0F/0E；final13 全量 **3795/24596/0F/0E/exit 0/356 s**（bundle `72de4f9a` + 树 `36fddd6d`，PRE=POST）。UI 发送后面板 `:source :last-run`；E2E12「上次发送」待真实 UI 复跑确认后关闭本条。
+

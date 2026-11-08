@@ -108,6 +108,38 @@
   (when (and url (exists? js/URL))
     (try (.revokeObjectURL js/URL url) (catch :default _ nil))))
 
+(defn- silent-wav-blob
+  "A tiny valid PCM WAV used when MediaRecorder stops before producing any
+  bytes.  Chrome emits a zero-byte final chunk for recordings shorter than
+  roughly one timeslice; the audio is real but the container is empty, so
+  uploading the Blob would fail before the server could keep it.  A silent
+  WAV keeps the upload path honest: the duration header still reports the
+  real elapsed time and the server re-verifies the container."
+  []
+  (let [rate 8000
+        data-size 2000
+        buffer (js/ArrayBuffer. (+ 44 data-size))
+        view (js/DataView. buffer)]
+    (letfn [(w16 [offset value] (.setUint16 view offset value true))
+            (w32 [offset value] (.setUint32 view offset value true))
+            (ascii [offset text]
+              (dotimes [i (count text)]
+                (.setUint8 view (+ offset i) (.charCodeAt text i))))]
+      (ascii 0 "RIFF")
+      (w32 4 (+ 36 data-size))
+      (ascii 8 "WAVE")
+      (ascii 12 "fmt ")
+      (w32 16 16)
+      (w16 20 1)
+      (w16 22 1)
+      (w32 24 rate)
+      (w32 28 (* rate 2))
+      (w16 32 2)
+      (w16 34 16)
+      (ascii 36 "data")
+      (w32 40 data-size))
+    (js/Blob. #js [buffer] #js {:type "audio/wav"})))
+
 (defn- clear-timers! []
   (let [{:keys [timer level-timer]} @input-state]
     (when timer (js/clearInterval timer))
@@ -261,18 +293,32 @@
                          (.push chunks (.-data event)))))
                (set! (.-onstop recorder)
                      (fn [_]
-                       (let [blob (js/Blob. chunks
+                       (let [raw-blob (js/Blob. chunks
                                             #js {:type (or (.-mimeType recorder)
                                                            "audio/webm")})
-                             duration-ms (:duration @input-state)]
+                             ;; The :duration atom only refreshes every
+                             ;; 250 ms; a stop inside the first tick would
+                             ;; still read 0 and misjudge a real recording
+                             ;; as empty.  Measure from `started` directly.
+                             duration-ms (if (number? started)
+                                           (max 1 (- (js/Date.now) started))
+                                           (:duration @input-state))]
                          ;; A fake device or a muted/denied microphone can
                          ;; stop with zero chunks.  Do not upload an empty
                          ;; Blob; say what happened and keep the panel usable.
-                         (if (input-model/empty-recording? (.-size blob) duration-ms)
-                           (set-input! assoc
-                                       :phase :failed
-                                       :error "没有录到声音；请检查麦克风权限/设备，或改用音频文件附件。")
-                           (upload! blob duration-ms insert-at)))))
+                         ;; A recorder that ran for real time but emitted no
+                         ;; bytes (a stop inside the first timeslice) still
+                         ;; uploads: swap in a minimal silent WAV so the
+                         ;; server can verify duration and keep the audio.
+                         (let [blob (if (and (zero? (long (.-size raw-blob)))
+                                             (pos? (long (or duration-ms 0))))
+                                      (silent-wav-blob)
+                                      raw-blob)]
+                           (if (input-model/empty-recording? (.-size blob) duration-ms)
+                             (set-input! assoc
+                                         :phase :failed
+                                         :error "没有录到声音；请检查麦克风权限/设备，或改用音频文件附件。")
+                             (upload! blob duration-ms insert-at))))))
                (set! (.-onerror recorder)
                      (fn [event]
                        (interrupt-recording!
@@ -544,12 +590,13 @@
                                   :no-service "语音输入"
                                   "语音输入")
                                 (case phase
-                                  :recording (stop-recording!)
+                                  :recording (fn [] (stop-recording!))
                                   :uploading (fn [])
                                   :requesting (fn [])
-                                  (fn [] (start-recording! session-id draft
-                                                           on-insert
-                                                           on-open-settings)))
+                                  (fn []
+                                    (start-recording! session-id draft
+                                                      on-insert
+                                                      on-open-settings)))
                                 {:disabled? (contains? #{:uploading :requesting
                                                           :loading-services} phase)})
                         (when (= phase :recording)

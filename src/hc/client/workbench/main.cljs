@@ -7,6 +7,7 @@
   (:require [com.fulcrologic.fulcro.application :as application]
             [com.fulcrologic.fulcro.components :as comp]
             [hc.client.appearance :as appearance]
+            [hc.client.appearance.model :as appearance-model]
             [hc.client.conversation.a11y :as a11y]
             [hc.client.conversation.draft :as draft]
             [hc.client.backup.ui :as backup-ui]
@@ -46,10 +47,7 @@
 
 (defn- apply-appearance!
   [db]
-  (appearance/apply! {:theme (:ui/theme db)
-                      :font-scale (:ui/font-scale db)
-                      :contrast (:ui/contrast db)
-                      :reduced-motion? (:ui/reduced-motion db)}))
+  (appearance/apply! (appearance-model/from-db db)))
 
 (defn- scroll-map
   "The persisted reading offset per session.  Only measured offsets are kept;
@@ -67,6 +65,9 @@
    (:ui/font-scale db)
    (:ui/contrast db)
    (:ui/reduced-motion db)
+   (get-in db [:ui/settings :language])
+   (get-in db [:ui/settings :background])
+   (get-in db [:ui/settings :bubble])
    (storage/draft-signature (:ui/draft db))
    (scroll-map db)])
 
@@ -93,8 +94,7 @@
                        (:ui/draft db))
         signature (persist-signature db)
         result (storage/save! (:ui/draft db)
-                              (select-keys db [:ui/theme :ui/font-scale
-                                               :ui/contrast :ui/reduced-motion])
+                              (appearance-model/to-storage db)
                               (scroll-map db))]
     (if (:ok? result)
       (do
@@ -153,6 +153,12 @@
                            (not= (:ui/font-scale old) (:ui/font-scale new))
                            (not= (:ui/contrast old) (:ui/contrast new))
                            (not= (:ui/reduced-motion old) (:ui/reduced-motion new))
+                           (not= (get-in old [:ui/settings :language])
+                                 (get-in new [:ui/settings :language]))
+                           (not= (get-in old [:ui/settings :background])
+                                 (get-in new [:ui/settings :background]))
+                           (not= (get-in old [:ui/settings :bubble])
+                                 (get-in new [:ui/settings :bubble]))
                            (not= (:ui/draft old) (:ui/draft new))
                            (not= (scroll-map old) (scroll-map new)))
                    (let [signature (persist-signature new)]
@@ -366,6 +372,23 @@
                     :sessionIds (mapv name (keys sessions))
                     :activeId (get db :session/active-id)
                     :dashboard (contains? db :swarm/dashboard)
+                    ;; E2E diagnostics: which session each message entity
+                    ;; claims and the per-session visible id lists.  Ids and
+                    ;; ownership only; no message text or draft content.
+                    :selectedSessionId (get db :ui/selected-session-id)
+                    :sessionMessageIds
+                    (into {}
+                          (map (fn [[id summary]]
+                                 [id (or (get summary :message-ids)
+                                         (get summary :messages))]))
+                          sessions)
+                    :messageSessions
+                    (into {}
+                          (map (fn [[id message]]
+                                 [id (or (get message :session-id)
+                                         (get message :message/session-id)
+                                         (get message :session))]))
+                          (get db :message/by-id))
                     :workerPrograms
                     (into {}
                           (map (fn [[id summary]]

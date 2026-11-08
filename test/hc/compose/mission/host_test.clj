@@ -1048,3 +1048,62 @@
                         :ledger])]
     (is (= "Original obligation" (get ledger "k1"))
         "reopen restores the Reviewer's obligation, not the replacement goal")))
+
+(deftest draft-reconcile-adopts-disk-content-test
+  (let [h (support/host)
+        plan-id (support/plan-tenure-id h)
+        asked (support/review! h :plan plan-id [])
+        resumed (mission/resume! h {:lane :plan :tenure-id plan-id})
+        r1 (support/review! h :plan (support/plan-tenure-id h) [])
+        r2 (support/review! h :plan (support/plan-tenure-id h) [])
+        written (mission/set-draft! h {:path "plans/reconcile.md"
+                                       :content "Program draft."
+                                       :tenure-id (support/plan-tenure-id h)})
+        r3 (support/review! h :plan (support/plan-tenure-id h) [])
+        r4 (support/review! h :plan (support/plan-tenure-id h) [])
+        state (mission/snapshot h)
+        draft (get-in state [:relay :draft])]
+    (is (= :ask (get-in asked [:receipt :outcome])))
+    (is (:ok? resumed))
+    (is (:ok? written) (pr-str written))
+    (is (= :pending (get-in state [:relay :lanes :plan :milestone])))
+    (testing "divergent disk content wins and marks the draft user-edited"
+      (let [result (ok! (mission/review!
+                         h {:lane :plan
+                            :tenure-id (support/plan-tenure-id h)
+                            :call-id "reconcile-1"
+                            :findings []
+                            :draft-disk-content "User edited on disk."}))
+            effect (first (:effects result))
+            draft' (get-in (mission/snapshot h) [:relay :draft])]
+        (is (= :execution-started (get-in result [:receipt :outcome])))
+        (is (= "User edited on disk." (:draft effect))
+            "the execution/start effect carries the disk version")
+        (is (= :user (:source draft')))
+        (is (true? (:user-edited? draft')))
+        (is (= (inc (:version draft)) (:version draft')))))
+    (testing "identical disk content is a no-op"
+      (let [state2 (mission/snapshot h)
+            reconciled (mission/draft-reconcile-state
+                        state2 {:disk-content "User edited on disk."})]
+        (is (false? (:changed? reconciled)))
+        (is (= (:version (get-in state2 [:relay :draft]))
+               (:version (get-in (:state reconciled) [:relay :draft]))))))
+    (testing "a missing file keeps the relay draft"
+      (let [reconciled (mission/draft-reconcile-state
+                        (mission/snapshot h) {:disk-content nil})]
+        (is (false? (:changed? reconciled)))
+        (is (true? (:missing? reconciled)))))))
+
+(deftest review-without-disk-content-skips-reconcile-test
+  (let [h (support/host)
+        _ (support/drive-plan-to-pending! h)
+        plan-id (support/plan-tenure-id h)
+        ;; No :draft-disk-content key: the review must not touch the draft.
+        result (ok! (mission/review! h {:lane :plan
+                                        :tenure-id plan-id
+                                        :call-id "no-disk-1"
+                                        :findings []}))]
+    (is (= :execution-started (get-in result [:receipt :outcome])))
+    (is (= "Draft body for the smoke test."
+           (get-in (mission/snapshot h) [:relay :draft :content])))))

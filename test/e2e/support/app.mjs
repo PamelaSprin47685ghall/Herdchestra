@@ -11,15 +11,35 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '../../..');
 const PIXI_CLOJURE = path.join(REPO_ROOT, '.pixi/envs/default/bin/clojure');
 const MAX_LOG_CHARS = 2 * 1024 * 1024;
-const JVM_OPTS = ['-J-Xmx768m', '-J-XX:MaxDirectMemorySize=512m',
-                  '-J-XX:+ExitOnOutOfMemoryError'];
+// Heap is capped at 384m so the whole app JVM (heap + direct + metaspace +
+// native) stays under the 512 MiB per-app RSS budget (plans/0.0.2-s2-perf.md).
+const JVM_OPTS = ['-J-Xmx384m', '-J-XX:MaxDirectMemorySize=192m',
+                  '-J-XX:MaxMetaspaceSize=384m', '-J-Xss512k',
+                  '-J-XX:+ExitOnOutOfMemoryError',
+                  // taoensso.nippy.io/read_typed is a 6084-byte method that
+                  // intermittently SIGSEGVs inside C2-compiled code on both
+                  // JDK 21 (rattler) and JDK 27 (hs_err_pid*.log, see
+                  // HACK.md §16).  Excluding it keeps Datalevin/KV reads on
+                  // the interpreter+C1 path.  Inner classes use `$` and the
+                  // JDK 21 parser wants `class.method` form (no wildcards in
+                  // the class part).  All three AFn entry points are excluded.
+                  '-J-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic',
+                  '-J-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke',
+                  '-J-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim'];
+// Diagnostic escape hatches for crash hunts: HC_E2E_KEEP_TEMP keeps the
+// temp root after close, HC_E2E_JVM_OPTS appends raw -J options.
+const EXTRA_JVM_OPTS = (process.env.HC_E2E_JVM_OPTS || '')
+  .split(/\s+/).filter(Boolean);
 
 function startOrphanWatchdog(child) {
   if (process.platform === 'win32' || !child.pid) return null;
   const parentPid = process.pid;
   const childPid = child.pid;
+  const watchdogLog = process.env.HC_E2E_WATCHDOG_LOG
+    || path.join(os.tmpdir(), 'hc-e2e-orphan-watchdog.log');
   const script = [
     `while kill -0 ${parentPid} 2>/dev/null; do sleep 2; done`,
+    `echo "[orphan-watchdog] fired parent=${parentPid} child=${childPid} at=$(date -Is) cmd=$(ps -p ${childPid} -o command= 2>/dev/null | head -c 120)" >> ${JSON.stringify(watchdogLog)}`,
     `if ps -p ${childPid} -o command= 2>/dev/null | grep -q 'hc.server.app'; then`,
     `  kill -TERM ${childPid} 2>/dev/null`,
     `  sleep 5`,
@@ -57,6 +77,37 @@ function ednKeyword(value) {
   return `:${value}`;
 }
 
+// Serialize a plain JS value to EDN.  Maps become {:k v}, sequences [v],
+// sets #{v}; strings are quoted; numbers/booleans/nil pass through;
+// keywords use the :name form.  Only the shapes the config generators emit
+// are supported — anything else throws instead of silently mis-encoding.
+function ednValue(value) {
+  if (value === null || value === undefined) return 'nil';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`ednValue: non-finite number ${value}`);
+    return String(value);
+  }
+  // Strings that already carry a ':' prefix (produced by callers marking
+  // EDN keywords, e.g. defaultTargetId) are emitted as keywords.
+  if (typeof value === 'string' && value.startsWith(':')) return value;
+  if (typeof value === 'string') return ednString(value);
+  if (typeof value === 'bigint') return `${value}N`;
+  if (value instanceof Date) return `#inst ${ednString(value.toISOString())}`;
+  if (Array.isArray(value)) return `[${value.map(ednValue).join(' ')}]`;
+  if (value instanceof Set) return `#{${[...value].map(ednValue).join(' ')}}`;
+  if (typeof value === 'object') {
+    const entries = Object.entries(value).map(([k, v]) => {
+      // kebabKeys may already have produced ':keyword' strings; plain keys
+      // become keywords.
+      const key = k.startsWith(':') ? k : `:${k}`;
+      return `${key} ${ednValue(v)}`;
+    });
+    return `{${entries.join(' ')}}`;
+  }
+  throw new Error(`ednValue: unsupported type ${typeof value}`);
+}
+
 function connectionEdn(connection) {
   const models = (connection.models || []).map((model) => {
     const fields = [
@@ -87,6 +138,62 @@ function modelsEdn(models) {
   const roles = Object.entries(models.roles || {}).map(([role, binding]) =>
     `:${role} {:connection ${ednString(binding.connection)} :model ${ednString(binding.model)}}`).join(' ');
   return `{:connections [${connections}] :roles {${roles}}}`;
+}
+
+// `:model-auth` section.  `options.modelAuth` is a plain map matching the
+// EDN shape in hc.server.model-auth.provider/provider-keys, e.g.
+//   { providers: { local: { id: 'local', name: 'Local OAuth',
+//       authorizationEndpoint: 'http://127.0.0.1:PORT/authorize', ... } } }
+// JS camelCase keys are converted to kebab-case EDN keywords.
+function kebab(key) {
+  return key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+}
+
+function kebabKeys(value) {
+  if (Array.isArray(value)) return value.map(kebabKeys);
+  if (value instanceof Set) return new Set([...value].map(kebabKeys));
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [kebab(k), kebabKeys(v)]));
+  }
+  return value;
+}
+
+function modelAuthEdn(modelAuth) {
+  if (!modelAuth) return 'nil';
+  return ednValue(kebabKeys(modelAuth));
+}
+
+// `:backup` section: { targets: { webdav: {...}, s3: {...} },
+//                      defaultTargetId: ':webdav' }.
+function backupEdn(backup) {
+  if (!backup) return 'nil';
+  const normalized = { ...backup };
+  if (normalized.defaultTargetId !== undefined && typeof normalized.defaultTargetId === 'string'
+      && !normalized.defaultTargetId.startsWith(':')) {
+    normalized.defaultTargetId = `:${normalized.defaultTargetId}`;
+  }
+  return ednValue(kebabKeys(normalized));
+}
+
+// `:search` section: { services: [...], defaultServiceId: 'id' }.
+// Service entries are plain maps; credentials may carry :api-key inline or
+// :api-key-env references.
+function searchEdn(search) {
+  if (!search) return 'nil';
+  return ednValue(kebabKeys(search));
+}
+
+// `:clock` is a runtime hook in hc.server.app, not a parsed EDN value.  The
+// generator still emits the section so a future consumer can pick it up;
+// a numeric option records a fixed epoch-ms and `true` records "use real
+// clock".  Absent means the app default.
+function clockEdn(clock) {
+  if (clock === undefined || clock === null) return 'nil';
+  if (clock === true) return '{}';
+  if (typeof clock === 'number' && Number.isFinite(clock)) {
+    return `{:fixed-ms ${clock}}`;
+  }
+  throw new Error(`clock option must be true or a finite epoch-ms number, got ${JSON.stringify(clock)}`);
 }
 
 function writeWorkspace(root, files = {}) {
@@ -153,7 +260,10 @@ async function health(url, timeoutMs = 60000) {
 }
 
 export async function startApp(options = {}) {
-  const tempRoot = options.root || fs.mkdtempSync(path.join(os.tmpdir(), 'hc-e2e-'));
+  const tempRoot = options.root
+    || (process.env.HC_E2E_KEEP_TEMP
+        ? fs.mkdtempSync(path.join(os.tmpdir(), 'hc-e2e-keep-'))
+        : fs.mkdtempSync(path.join(os.tmpdir(), 'hc-e2e-')));
   const dataDir = path.join(tempRoot, 'data');
   const workspaceRoot = path.join(tempRoot, 'workspace');
   const blobRoot = path.join(tempRoot, 'blobs');
@@ -174,23 +284,34 @@ export async function startApp(options = {}) {
  :worktree-root ${ednString(worktreeRoot)}
  :artifact-root ${ednString(artifactRoot)}
  :static-root ${ednString(path.join(REPO_ROOT, 'resources/public'))}
- :log-level :warn
+ :log-level ${ednKeyword(process.env.HC_E2E_LOG_LEVEL || 'warn')}
  :model-stream? true
  :fleet {:preflight? false :gc-run-immediately? false}
- :models ${modelsEdn(options.models)}}`;
+${options.nudgeRoundBudget ? ` :nudge-round-budget ${Number(options.nudgeRoundBudget)}` : ''}
+ :models ${modelsEdn(options.models)}
+ :model-auth ${modelAuthEdn(options.modelAuth)}
+ :backup ${backupEdn(options.backup)}
+ :search ${searchEdn(options.search)}
+ :clock ${clockEdn(options.clock)}}`;
   fs.writeFileSync(configPath, config);
 
   const logPath = options.evidenceDir
     ? path.join(options.evidenceDir, `server-${path.basename(tempRoot)}.log`)
     : null;
   if (logPath) fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  const child = spawn(clojureCommand(),
-    [...JVM_OPTS, `-J-Djava.io.tmpdir=${runtimeTmp}`, '-M:server', '-m', 'hc.server.app', '--config', configPath],
-    {
-      cwd: REPO_ROOT,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+  // HC_E2E_SIGTRACE wraps the launcher in a ptrace tracer that logs the
+  // sender pid of every delivered signal; used to identify who SIGTERMs
+  // the app JVM mid-test.  The traced child keeps the same pid, so
+  // child.pid, the orphan watchdog and close() are unaffected.
+  const sigtrace = process.env.HC_E2E_SIGTRACE;
+  const launchArgv = [
+    ...JVM_OPTS, ...EXTRA_JVM_OPTS,
+    `-J-Djava.io.tmpdir=${runtimeTmp}`, '-M:server', '-m', 'hc.server.app', '--config', configPath];
+  const child = sigtrace
+    ? spawn(sigtrace, [clojureCommand(), ...launchArgv],
+            { cwd: REPO_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] })
+    : spawn(clojureCommand(), launchArgv,
+            { cwd: REPO_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '';
   const appendLog = (chunk) => {
     const text = chunk.toString();
@@ -201,6 +322,13 @@ export async function startApp(options = {}) {
   };
   child.stdout.on('data', appendLog);
   child.stderr.on('data', appendLog);
+  // Record the exit status for the whole run, not only during startup:
+  // a mid-test JVM death previously left no trace in the server log, which
+  // made signal-vs-System/exit indistinguishable.
+  child.on('exit', (code, signal) => {
+    appendLog(Buffer.from(
+      `[app-exit] pid=${child.pid} code=${code} signal=${signal} at=${new Date().toISOString()}\n`));
+  });
   const watchdog = startOrphanWatchdog(child);
 
   try {
@@ -209,6 +337,7 @@ export async function startApp(options = {}) {
     return {
       url,
       port: Number(new URL(url).port),
+      pid: child.pid,
       tempRoot,
       dataDir,
       workspaceRoot,
@@ -229,13 +358,13 @@ export async function startApp(options = {}) {
           new Promise((resolve) => setTimeout(() => resolve(false), 15000)),
         ]);
         if (!exited) child.kill('SIGKILL');
-        if (!options.keepTemp) fs.rmSync(tempRoot, { recursive: true, force: true });
+        if (!options.keepTemp && !process.env.HC_E2E_KEEP_TEMP) fs.rmSync(tempRoot, { recursive: true, force: true });
       },
     };
   } catch (error) {
     stopOrphanWatchdog(watchdog);
     child.kill('SIGKILL');
-    if (!options.keepTemp) fs.rmSync(tempRoot, { recursive: true, force: true });
+    if (!options.keepTemp && !process.env.HC_E2E_KEEP_TEMP) fs.rmSync(tempRoot, { recursive: true, force: true });
     throw error;
   }
 }

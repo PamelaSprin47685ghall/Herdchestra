@@ -909,13 +909,47 @@
 ;; ---------------------------------------------------------------------------
 ;; Review, resume, and relay retry
 
+(defn draft-reconcile-state
+  "Reconcile the relay draft cache against the on-disk bytes.
+
+  The disk file `plans/<name>.md` is the single source of truth; the relay
+  `:draft` is only its cache.  DISK-CONTENT is the caller-read file bytes:
+  `nil` means the file could not be read or does not exist, in which case
+  the relay draft is left untouched and `:missing?` is reported.  When the
+  bytes differ, the disk version wins: content is replaced, `:source` is
+  `:user`, `:user-edited?` is set, and `:version` advances by one.  An
+  identical file is a no-op so a repeated review does not churn the
+  version counter."
+  [state {:keys [disk-content]}]
+  (let [draft (get-in state [:relay :draft])
+        relay-content (get draft :content)]
+    (cond
+      (nil? disk-content)
+      {:state state :changed? false :missing? true}
+
+      (or (nil? draft) (= disk-content relay-content))
+      {:state state :changed? false}
+
+      :else
+      {:state (assoc-in state [:relay :draft]
+                        (assoc draft
+                               :content disk-content
+                               :source :user
+                               :user-edited? true
+                               :version (inc (or (:version draft) 0))))
+       :changed? true
+       :previous-length (some-> relay-content count)
+       :disk-length (count disk-content)})))
+
 (defn review-state
   "Submit a Plan or Reviewer review through the mission host.
 
   The relay state, the swarm board root-task mirror, the new execution
   board, and the successor role bindings commit together.  `:board-facts`
   supplies host-owned quiescence facts for execution reviews."
-  [state {:keys [lane tenure-id call-id findings board-facts]}]
+  [state {:keys [lane tenure-id call-id findings board-facts
+                 draft-disk-content]
+          :as command}]
   (let [lane (normalize-lane lane)
         executions (relay/execution-tenures (:relay state))
         tenure-id (or tenure-id
@@ -926,6 +960,16 @@
     (let [board* (when (= lane :execution)
                    (get-in state [:boards tenure-id]))
           snapshot (when board* (board-snapshot board* board-facts))
+            ;; Reconcile the relay draft cache against the disk bytes the
+            ;; caller read before this command.  `review` must see the
+            ;; reconciled state so an `:execution/start` effect carries the
+            ;; disk version, not the stale cache.  A command that carries
+            ;; no `:draft-disk-content` key skips the read entirely.
+            state (if (and (= lane :plan)
+                           (contains? command :draft-disk-content))
+                     (:state (draft-reconcile-state
+                              state {:disk-content draft-disk-content}))
+                     state)
             tenure (relay/tenure-by-id (:relay state) tenure-id)
             ;; A reopened tenure is not the initial Reviewer and has already
             ;; had its first review window.  An empty review is the
@@ -963,6 +1007,10 @@
                                   :lane lane
                                   :tenure-id tenure-id
                                   :findings findings
+                                  :draft-source (get-in state
+                                                       [:relay :draft :source])
+                                  :draft-user-edited?
+                                  (get-in state [:relay :draft :user-edited?])
                                   :board snapshot}))]
       (if-not (:ok? result)
         (relay-failure state result)
@@ -2037,6 +2085,9 @@
                          :role :reviewer
                          :from-tenure-id (:tenure-id completed)
                          :operator-input user-input
+                        :draft-source (get-in state [:relay :draft :source])
+                        :draft-user-edited?
+                        (get-in state [:relay :draft :user-edited?])
                          :reviewer-binding binding
                          :board-version (:board-version board)}
                 effect {:type :execution/start
@@ -2048,6 +2099,13 @@
                         :draft-length (count (str (get-in state
                                                           [:relay :draft
                                                            :content])))
+                        ;; Reopen does not reconcile against the disk; the
+                        ;; markers record which draft version the frozen
+                        ;; handoff carried so a later reconcile can tell a
+                        ;; user edit from a program write.
+                        :draft-source (get-in state [:relay :draft :source])
+                        :draft-user-edited?
+                        (get-in state [:relay :draft :user-edited?])
                         :milestone :execution
                         :reviewer-binding binding
                         :board-version (:board-version board)

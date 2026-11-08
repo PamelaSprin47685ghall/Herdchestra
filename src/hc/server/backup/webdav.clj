@@ -127,6 +127,60 @@
           (recur next-path (rest remaining)))
         true))))
 
+(defn- safe-url-fn
+  "Local URL redaction for probe results: scheme, host, port and path only."
+  [^URI uri]
+  (try
+    (str (.getScheme uri) "://" (.getRawAuthority uri)
+         (or (.getRawPath uri) ""))
+    (catch Exception _ nil)))
+
+(defn- propfind-body
+  []
+  (.getBytes
+   (str "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+        "<d:propfind xmlns:d=\"DAV:\"><d:prop>"
+        "<d:getcontentlength/><d:getlastmodified/>"
+        "</d:prop></d:propfind>")
+   StandardCharsets/UTF_8))
+
+(defn probe
+  "Check one WebDAV target without writing backup objects.
+
+  Accepts a target config map or an existing `WebDavTarget`.  Creates the
+  configured collection chain (MKCOL, tolerant of servers that answer 405)
+  and issues a Depth:0 PROPFIND against the directory URI.  Returns
+  `{:ok? bool :status int|nil :detail string :url string}`; credentials are
+  never included in the detail."
+  [target-or-config]
+  (try
+    (let [target (if (instance? WebDavTarget target-or-config)
+                   target-or-config
+                   (target target-or-config))
+          uri (directory-uri target)
+          safe (safe-url-fn uri)]
+      (try
+        (ensure-collections! target)
+        (catch Throwable _ nil))
+      (let [response (request target :propfind uri
+                              {"depth" "0"
+                               "content-type" "application/xml; charset=utf-8"}
+                              (propfind-body))
+            status (long (:status response))
+            excerpt (http/response-excerpt (:body response) 200)]
+        (if (<= 200 status 299)
+          {:ok? true :status status
+           :detail (str "WebDAV directory reachable (HTTP " status ")")
+           :url safe}
+          {:ok? false :status status
+           :detail (str "WebDAV PROPFIND failed (HTTP " status ")"
+                        (when excerpt (str ": " excerpt)))
+           :url safe})))
+    (catch Throwable t
+      {:ok? false :status nil
+       :detail (or (ex-message t) (str t))
+       :url nil})))
+
 (defn- conflict!
   [id]
   (err/fail! :BACKUP_OBJECT_CONFLICT

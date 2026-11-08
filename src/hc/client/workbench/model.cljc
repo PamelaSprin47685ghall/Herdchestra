@@ -625,16 +625,48 @@
   "True when a visible session advertises messages but the normalized table
   has none for it.
 
-  A complete baseline carries every visible session's history.  This predicate
-  detects the inconsistent or pruned case so the view can request one fresh
-  baseline instead of rendering a false empty conversation.  A session with
-  an explicit zero message count is not considered missing."
+  With a windowed baseline this means the session has no loaded message
+  entities at all even though its summary advertises messages — the
+  inconsistent or pruned case, fixed by one `:history/messages` fetch (or a
+  resync when even that cannot help).  A partially loaded session is normal:
+  the baseline publishes only the newest window and `:message-ids` keeps the
+  full visible list, so `messages-for-session` returns the loaded subset and
+  this predicate stays false.  A session with an explicit zero message count
+  is not considered missing."
   [db session-id]
   (let [summary (some-> (session-by-id db session-id) session-summary)]
     (boolean
      (and summary
           (pos? (long (or (:message-count summary) 0)))
           (empty? (messages-for-session db session-id))))))
+
+(defn session-messages-unloaded?
+  "True when a session has loaded message entities but fewer than its
+  summary's `:message-count`.
+
+  Windowed baselines make this the normal state for long sessions: the
+  newest window is loaded and older messages are fetched on demand through
+  `:history/messages`.  It is a display hint for a \"load earlier\" entry,
+  never a resync trigger."
+  [db session-id]
+  (let [summary (some-> (session-by-id db session-id) session-summary)
+        expected (long (or (:message-count summary) 0))
+        loaded (count (messages-for-session db session-id))]
+    (boolean (and (pos? expected) (< loaded expected)))))
+
+(defn has-older-messages?
+  "True/false/nil for whether a session has messages older than the loaded
+  window.
+
+  The `:history/messages` receipt records `:has-older?` on the
+  `:session/history` entry (and on the `:session/by-id` row when one
+  exists).  Nil means no fetch has reported yet; callers should fall back
+  to `session-messages-unloaded?`."
+  [db session-id]
+  (let [history (get (field db :session/history) session-id)
+        row (session-by-id db session-id)]
+    (or (field history :has-older?)
+        (field row :has-older?))))
 
 (defn swarm-summary
   [swarm]

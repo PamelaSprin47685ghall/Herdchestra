@@ -129,7 +129,7 @@
       (is (= "auth-core" (:slice-id (swarm "swarm-1"))))
       (is (= "/worktrees/mission/swarm-1" (:worktree (swarm "swarm-1"))))
       (is (= :running (:status (swarm "swarm-1"))))
-      (is (= "Running" (:status-label (swarm "swarm-1"))))
+      (is (= "运行中" (:status-label (swarm "swarm-1"))))
       (is (= 7 (:master-version (swarm "swarm-1"))))
       (is (= 0 (:queued-count (swarm "swarm-1")))))
     (testing "summary counts"
@@ -149,12 +149,12 @@
       (is (= :done (-> root :children first :state))))
     (testing "a ready parent whose children are done is not auto-done"
       (is (= :ready (:state root)))
-      (is (str/includes? (:state-detail root) "Wait released"))
-      (is (not (str/includes? (:state-detail root) "Done —"))))
+      (is (str/includes? (:state-detail root) "等待已解除"))
+      (is (not (str/includes? (:state-detail root) "已完成 —"))))
     (testing "waiting tasks expose a concrete wait chain"
       (let [waiting (some #(when (= "task-waiting" (:task-id %)) %) (:tasks s))]
         (is (= :waiting (:state waiting)))
-        (is (str/includes? (:state-detail waiting) "Waiting on 1"))
+        (is (str/includes? (:state-detail waiting) "等待 1 个"))
         (is (= "task-deep" (-> waiting :wait-chain first :task-id)))
         (is (= :ready (-> waiting :wait-chain first :state)))))))
 
@@ -166,7 +166,7 @@
                     :state :done :remaining-work "none" :done-when "child"}}
         tree (model/task-tree tasks)]
     (is (= :ready (-> tree first :state)))
-    (is (str/includes? (-> tree first :state-detail) "not automatically done"))))
+    (is (str/includes? (-> tree first :state-detail) "不会自动标记完成"))))
 
 (deftest missing-and-cycle-nodes-remain-visible
   (let [tasks {"p" {:task-id "p" :goal "Parent" :state :waiting
@@ -193,27 +193,27 @@
       (let [worker (get by-slot "slot-b")]
         (is (= :dead (:life-state worker)))
         (is (false? (get-in worker [:lifecycle :attention?])))
-        (is (str/includes? (get-in worker [:lifecycle :description])
-                           "normal lifecycle"))))
+        (is (str/includes? (get-in worker [:lifecycle :label])
+                           "令牌竞争落败"))))
     (testing "a failed actor is surfaced for attention"
       (let [failed (get by-slot "slot-c")]
         (is (true? (get-in failed [:lifecycle :attention?])))
-        (is (str/includes? (get-in failed [:lifecycle :description])
-                           "unexpected failure"))))
+        (is (str/includes? (get-in failed [:lifecycle :label])
+                           "已终止 — 失败"))))
     (testing "a terminated actor without a reason is not called deliberate"
       (let [row (first (model/slot-rows
                         [{:agent-id "agent-x" :slot-id "slot-x"
                           :role :normal :life-state :terminated}]
                         nil))]
-        (is (= "Terminated — reason not reported"
+        (is (= "已终止 — 原因未上报"
                (get-in row [:lifecycle :label])))
         (is (true? (get-in row [:lifecycle :attention?])))
         (is (str/includes? (get-in row [:lifecycle :description])
-                           "did not report"))))
+                           "未上报"))))
     (testing "an explicit vacant slot is still shown"
       (let [vacant (get by-slot "slot-d")]
         (is (true? (:vacant? vacant)))
-        (is (= "Vacant" (:life-state-label vacant)))))
+        (is (= "空缺" (:life-state-label vacant)))))
     (testing "the holder is shown on its live slot"
       (let [holder (get by-slot "slot-a")]
         (is (= "agent-holder" (:agent-id holder)))
@@ -227,7 +227,7 @@
       (is (= 4 (:term-id holder)))
       (is (= #{"action-shell"} (:responsibility holder)))
       (is (true? (:shell-active? holder)))
-      (is (str/includes? (:explanation holder) "managed shell")))
+      (is (str/includes? (:explanation holder) "托管 shell")))
     (testing "the holder is not retired while responsibility remains"
       (is (false? (:empty? holder)))
       (is (false? (:inconsistent? holder))))
@@ -244,7 +244,7 @@
         (is (false? (:empty? view)))
         (is (false? (:inconsistent? view)))
         (is (true? (:computed? view)))
-        (is (str/includes? (:explanation view) "did not report R(holder)"))))))
+        (is (str/includes? (:explanation view) "未上报 R(holder)"))))))
 
 (deftest declared-counts-are-shown-without-a-task-table
   (let [dashboard (model/dashboard
@@ -267,7 +267,7 @@
               {} nil)]
     (is (= :none (:recovery-state view)))
     (is (str/includes? (:explanation view)
-                       "without acknowledgement"))))
+                       "已上报恢复证据但未确认"))))
 
 (deftest wait-chain-truncation-and-raw-id-cycle
   (let [tasks (into {}
@@ -294,7 +294,7 @@
                                     nil))]
     (is (false? (:vacant? row)))
     (is (= "agent-x" (:agent-id row)))
-    (is (= "Not reported" (:life-state-label row)))
+    (is (= "未上报" (:life-state-label row)))
     (is (true? (:attention? row)))))
 
 (deftest write-gate-distinguishes-holder-from-w
@@ -317,8 +317,8 @@
         (is (false? (:holder-not-writing? view)))
         (is (contains? view :recovery-blocked?))
         (is (contains? view :recovery-acknowledgement))
-        (is (str/includes? (:explanation view) "did not report W"))
-        (is (str/includes? (:explanation view) "Queue state is unknown"))))
+        (is (str/includes? (:explanation view) "未上报该 worktree 的 W"))
+        (is (str/includes? (:explanation view) "队列状态未知"))))
     (testing "applying is distinct from a shell"
       (let [view (model/write-gate-view
                   {:held? true :owner "h"
@@ -326,14 +326,14 @@
                                     :kind :edit :phase :applying}}
                   {} {:holder-id "h"})]
         (is (= :applying (:mode view)))
-        (is (str/includes? (:mode-label view) "applying"))))
+        (is (str/includes? (:mode-label view) "应用受保护批次"))))
     (testing "a free W with a token holder is reported honestly"
       (let [view (model/write-gate-view
                   {:held? false :queue []}
                   {} {:holder-id "h"})]
         (is (= :idle (:mode view)))
         (is (true? (:holder-not-writing? view)))
-        (is (str/includes? (:explanation view) "W is free"))))))
+        (is (str/includes? (:explanation view) "W 空闲"))))))
 
 (deftest write-gate-projects-the-recovery-barrier
   (testing "keyword IDs lose their leading colon at the identity boundary"
@@ -356,13 +356,13 @@
     (is (= ["action-1"] (:recovery-actions view)))
     (is (= [:uncertain-actions] (:recovery-reasons view)))
     (is (= :blocked (:recovery-state view)))
-    (is (= ["unresolved uncertain action(s)"]
+    (is (= ["存在结果未知且未结清的动作"]
            (:recovery-reason-labels view)))
     (is (= "agent-1" (get-in view [:recovery-write-gate :owner])))
     (is (= :process-restart (get-in view [:recovery-write-gate :reason])))
     (is (true? (:attention? view)))
-    (is (str/includes? (:mode-label view) "recovery"))
-    (is (str/includes? (:explanation view) "unresolved uncertain action(s)"))
+    (is (str/includes? (:mode-label view) "恢复"))
+    (is (str/includes? (:explanation view) "存在结果未知且未结清的动作"))
     (is (str/includes? (:explanation view) ":RECOVERY_UNRESOLVED")))
   (let [view (model/write-gate-view
               {:held? false
@@ -382,7 +382,7 @@
     (is (= "agent-1"
            (get-in view [:recovery-acknowledgement :actor-id])))
     (is (= 9 (get-in view [:recovery-acknowledgement :at-version])))
-    (is (str/includes? (:explanation view) "Recovery was acknowledged"))
+    (is (str/includes? (:explanation view) "恢复已被确认"))
     (is (str/includes? (:explanation view) "verified"))
     (is (false? (:attention? view)))))
 
@@ -411,9 +411,9 @@
     (is (= :blocked (:recovery-state view)))
     (is (= ["action-9"] (:recovery-actions view)))
     (is (= [:write-gate-held] (:recovery-reasons view)))
-    (is (= ["the previous process held W without a proven outcome"]
+    (is (= ["上一个进程持有 W 时未给出已证实的结局"]
            (:recovery-reason-labels view)))
-    (is (= "unknown recovery reason mystery"
+    (is (= "未知恢复原因 mystery"
            (model/recovery-reason-label :mystery)))
     (is (= "old-agent" (get-in view [:recovery-write-gate :owner])))
     (is (= 2 (get-in view [:recovery-write-gate :queue])))
@@ -471,7 +471,7 @@
     (is (str/ends-with? (:report report) "TAIL-MARKER-7f21\n"))
     (is (= "abc123" (:ff-commit report)))
     (is (= 2 (:rebase-rounds report)))
-    (is (str/includes? (:join-queue-text s) "full report"))))
+    (is (str/includes? (:join-queue-text s) "完整报告"))))
 
 (deftest declared-root-count-mismatch-is-visible
   (let [s (swarm "swarm-1")]
@@ -563,31 +563,31 @@
       (is (= 1 (count (:swarms d))))
       (is (false? (:fleet-reported? row)))
       (is (= :unknown (:status row)))
-      (is (= "Status not reported" (:status-label row)))
+      (is (= "状态未上报" (:status-label row)))
       (is (nil? (:master-version row)))
       (is (= 7 (:board-version row)))
       (is (= {:ready 2 :waiting 1 :done 0 :total 3} (:root-counts row)))
-      (is (str/includes? (:join-queue-text row) "not reported"))
+      (is (str/includes? (:join-queue-text row) "未上报"))
       (is (false? (get-in row [:holder :reported?])))
-      (is (str/includes? (get-in row [:holder :explanation]) "did not report a token slot"))
-      (is (str/includes? (:state-detail (some #(when (= "task-root" (:task-id %)) %) (:tasks row))) "Wait released"))
+      (is (str/includes? (get-in row [:holder :explanation]) "未上报该 worktree 的令牌槽位"))
+      (is (str/includes? (:state-detail (some #(when (= "task-root" (:task-id %)) %) (:tasks row))) "等待已解除"))
       (is (= 1 (get-in d [:summary :board-only])))
       (is (= 1 (get-in d [:summary :unknown])))
-      (is (str/includes? (get-in d [:summary :text]) "board-only"))
+      (is (str/includes? (get-in d [:summary :text]) "仅看板"))
       (is (false? (get-in row [:write-gate :reported?])))
       (is (false? (get-in row [:write-gate :holder-not-writing?])))
-      (is (str/includes? (get-in row [:write-gate :explanation]) "Queue state is unknown"))
+      (is (str/includes? (get-in row [:write-gate :explanation]) "队列状态未知"))
       (is (not (str/includes? (get-in row [:write-gate :explanation])
-                              "No writer is waiting"))))))
+                              "没有写者在 W 的 FIFO 队列中等待"))))))
 
 (deftest unreported-w-never-claims-a-free-queue-or-holder-relation
   (let [view (model/write-gate-view nil {} {:holder-id "holder-1"})]
     (is (false? (:reported? view)))
     (is (= :unreported (:mode view)))
     (is (false? (:holder-not-writing? view)))
-    (is (str/includes? (:explanation view) "did not report W"))
-    (is (str/includes? (:explanation view) "Queue state is unknown"))
-    (is (not (str/includes? (:explanation view) "No writer is waiting")))))
+    (is (str/includes? (:explanation view) "未上报该 worktree 的 W"))
+    (is (str/includes? (:explanation view) "队列状态未知"))
+    (is (not (str/includes? (:explanation view) "没有写者在 W 的 FIFO 队列中等待")))))
 
 (deftest board-only-with-real-token-w-and-slots
   (let [d (model/dashboard-from-db fixture/server-board-with-token)
@@ -606,7 +606,7 @@
     (is (= "action-shell" (get-in row [:write-gate :current-action-id])))
     (is (some? slot-d))
     (is (true? (:vacant? slot-d)))
-    (is (= "Vacant" (:life-state-label slot-d)))))
+    (is (= "空缺" (:life-state-label slot-d)))))
 
 (deftest unknown-calls-are-projected-with-acknowledgement
   (let [d (model/dashboard-from-db fixture/unresolved-calls)

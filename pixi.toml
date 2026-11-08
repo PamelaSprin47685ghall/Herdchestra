@@ -14,6 +14,9 @@ nodejs = "22.*"
 [tasks]
 # Property tests: clojure.test.check runs inside clojure.test namespaces.
 test = "clojure -X:test:compose:server:client"
+# Four-JVM sharded full suite; see scripts/test-sharded.sh and
+# scripts/test-shards.edn (plans/0.0.2-s2-perf.md).
+test-sharded = "scripts/test-sharded.sh"
 test-compose = "clojure -X:test:compose"
 test-server = "clojure -X:test:server"
 test-app = "clojure -M:test:server -n hc.server.app.system-test"

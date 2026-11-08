@@ -1,0 +1,45 @@
+CompileCommand: exclude taoensso/nippy/io$read_typed.invokeStatic intx exclude = 1111
+CompileCommand: exclude taoensso/nippy/io$read_typed.invoke intx exclude = 1111
+CompileCommand: exclude taoensso/nippy/io$read_typed.invokePrim intx exclude = 1111
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+Herdchestra listening on http://127.0.0.1:44643/
+workspace: /tmp/hc-e2e-ctTd75/workspace
+store:     /tmp/hc-e2e-ctTd75/data/db
+Sun Nov 08 21:04:29 CST 2026 [hc-shutdown] ERROR - on close handler
+java.util.concurrent.RejectedExecutionException
+	at java.base/java.util.concurrent.ThreadPerTaskExecutor.ensureNotShutdown(ThreadPerTaskExecutor.java:87)
+	at java.base/java.util.concurrent.ThreadPerTaskExecutor.submit(ThreadPerTaskExecutor.java:261)
+	at java.base/java.util.concurrent.ThreadPerTaskExecutor.submit(ThreadPerTaskExecutor.java:270)
+	at org.httpkit.server.RingHandler.clientClose(RingHandler.java:362)
+	at org.httpkit.server.RingHandler.clientClose(RingHandler.java:353)
+	at org.httpkit.server.HttpServer.closeKey(HttpServer.java:198)
+	at org.httpkit.server.HttpServer.stop(HttpServer.java:488)
+	at org.httpkit.server$eval99076$fn__99082.invoke(server.clj:31)
+	at org.httpkit.server$eval99035$fn__99036$G__99026__99043.invoke(server.clj:20)
+	at org.httpkit.server$server_stop_BANG_.invokeStatic(server.clj:46)
+	at org.httpkit.server$server_stop_BANG_.invoke(server.clj:34)
+	at hc.server.app.http$start_BANG_$stop_BANG___99300.invoke(http.clj:42)
+	at hc.server.app.system$stop_BANG_$fn__104915.invoke(system.clj:4996)
+	at hc.server.app.system$stop_one_BANG_.invokeStatic(system.clj:4917)
+	at hc.server.app.system$stop_one_BANG_.invoke(system.clj:4914)
+	at hc.server.app.system$stop_BANG_.invokeStatic(system.clj:4989)
+	at hc.server.app.system$stop_BANG_.invoke(system.clj:4964)
+	at hc.server.app.restore_supervisor$stop_current_BANG_$fn__105364.invoke(restore_supervisor.clj:548)
+	at hc.server.app.restore_supervisor$stop_current_BANG_.invokeStatic(restore_supervisor.clj:547)
+	at hc.server.app.restore_supervisor$stop_current_BANG_.invoke(restore_supervisor.clj:542)
+	at hc.server.app$run_primary_BANG_$stop_once_BANG___105791.invoke(app.clj:518)
+	at clojure.lang.AFn.run(AFn.java:22)
+	at java.base/java.lang.Thread.run(Thread.java:1527)
+[app-exit] pid=1036125 code=143 signal=null at=2026-11-08T13:04:29.962Z

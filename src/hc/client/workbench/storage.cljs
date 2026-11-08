@@ -9,6 +9,10 @@
 
 (def storage-key "hc.workbench.v1")
 
+(def ^:private settings-keys
+  [:theme :font-scale :contrast :reduced-motion
+   :language :background :bubble])
+
 (defonce storage-status
   (atom :unknown))
 
@@ -46,7 +50,7 @@
                              (when (number? top)
                                [(str session-id) (max 0 (long top))])))
                      (:scroll payload))
-       :settings (select-keys (:settings payload) [:theme :font-scale :contrast :reduced-motion])
+       :settings (select-keys (:settings payload) settings-keys)
        :status :available})))
 
 (defn- serializable-draft
@@ -97,7 +101,7 @@
                                             (when (number? top)
                                               [(str session-id) (max 0 (long top))])))
                                     (or scroll {}))
-                      :settings (select-keys settings [:theme :font-scale :contrast :reduced-motion])
+                      :settings (select-keys settings settings-keys)
                       :saved-at (str (js/Date.))}]
          (.setItem js/localStorage storage-key (js/JSON.stringify (clj->js payload)))
          (reset! storage-status :available)

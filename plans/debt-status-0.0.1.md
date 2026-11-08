@@ -1,5 +1,23 @@
 # DEBT 状态（0.0.1）
 
+## final28 冻结（2026-11-08，v0.0.2 候选）
+
+- **最终冻结**：bundle `fd5e1f9003535d9e4dfed2bf358a8055376c233786238c293c40671babd63d39`（3,089,772 B，2026-11-08 22:19:01；CSS `e06ece29…`；manifest `e0ef5e1b…`）+ 源码树 `77d92bc2`（PRE=POST，1060 files）。
+- **全量**：3929 tests / 25571 assertions / 0F / 0E / exit 0（`/tmp/hc-full-test-final28.log`）；app-check `:ok true` / `0.0.1`（`/tmp/hc-app-check-final28.log`）；meta `plans/evidence/final28-freeze-meta.json`。
+- **末尾修复**：W280–W286（message->items 携带 attachments/quotes/citations、`:plain-response`/`:tools?` 三态、sente dispatcher+closeRingHandler、composer-snapshot 文本竞态、publish-run-events! 首见基线）。
+- **历史**：final27b（`92d18d8f`+`43431535`）、final26/27 及更旧作废；E2E/视觉证据双记 `fd5e1f90` + `77d92bc2`。
+- **commit subject 口径说明**：commit subject 使用 en_US.utf8 排序得到 `956136d0`；规范口径为 `LC_ALL=C` 排序下的 `77d92bc2`（1060 files）；二者实测为同一棵树（首个排序分歧：`appearance.cljs` vs `appearance/AGENTS.md`，`.`=0x2E < `/`=0x2F）。
+- **git 权威值**：annotated tag **v0.0.2**，tag message「Herdchestra 0.0.2 — final28 bundle fd5e1f90 (3,089,772 B) / tree 77d92bc2 (1060 files); 3929 tests 25571 assertions 0F/0E; app-check :ok true 0.0.1; E2E 22/22 PASS」；`git status` 0、未 push。台账内 git 标识为发布时快照；权威以 `git rev-parse HEAD` 与 `git rev-parse 'v0.0.2^{}'` 为准；树 hash 口径 = `find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum`（LC_ALL=C 按字节序）。`76ceb3f`/`c814e69`（并发中途）已作废。
+
+### final28 前收口（2026-11-08）
+
+- **D-29 证伪并删除**：app JVM“约 60–90 s 有序退出”实为 teardown SIGTERM，非中途自停；`gc,exit` 日志 uptime 93.855 s、堆健康、无 hprof，孤儿 watchdog 已排除。已从 `DEBT.md` 删除。
+- **D-30 修复并删除**：`runtime message->items` 携带 attachments/quotes/citations + composer-snapshot 文本竞态修复；含图消息文本 part 稳定；E2E04 42/42 checks、3 连 PASS。已从 `DEBT.md` 删除。
+- **E2E04 根因**：publisher 首见 session 误把分支复制的 3 条 assistant 全文当流式 delta 广播 → 客户端 `:streaming? true` → composer `:needs-decision` → 分支第二轮永不发出；修复 `publish-run-events!` 首见基线。
+- **E2E 状态**：**22/22 全部 PASS**（E2E04 42/42、E2E11 30/30）。
+- **final28**：W287 clean release rebuild + 全量 + app-check 进行中；待其 hash 后重冻结并准备 commit/tag **v0.0.2**。
+- **DEBT 统计**：开放 12 条（D-01/D-03/D-04/D-11/D-12/D-13/D-17/D-18/D-19/D-20/D-22/D-23）。
+
 - 日期：2026-11-05，更新 2026-11-07（**最终冻结 bundle `c9cbfdf6`（3,018,831 B，18:12:03；CSS `332f9fd3`/manifest `c2158f6b` 未变）+ 源码树 `1e824c83`（clean rebuild 确定性）；全量 3824/24735/0F/0E/exit 0/354 s，app-check `:ok true`/0.0.1/`:component-errors {}`；final21 `0fbddd3c`+`319f035f`、final20 `87b0dee4`+`5e301ce4` 及更早全部作废/前冻结**；**E2E 22 条 final22 全 PASS：E2E12 48/48（断言口径修正后，`e2e12-c9cbfdf6-final22-assertfix.json`）、E2E11 25/25（`e2e11-c9cbfdf6-final22.json`）、E2E05 42/42（D-24/D-25/D-28 修复不回归撤销段）**，证据统一双记 `c9cbfdf6` + `1e824c83`；**D-27/D-28 已关闭并从 `DEBT.md` 删除，D-07 子项清零一并关闭删除**；E2E 统计 **22 PASS / 0 PARTIAL / 0 BLOCKED**）。历史：final15 PASS 3808/24669（已前冻结）；final14 3805/24650（历史基线）。
 - 基准：根 `AGENTS.md` §8.1 第 4 条（`DEBT.md` 只记缺口、关闭即删、AI 以它为工作队列）、§7.4 八段旅程、§8.5 E2E 01–22。
 - 规则：编号不重排、不复用；已关闭条目从 `DEBT.md` 删除，在本表留状态与证据。

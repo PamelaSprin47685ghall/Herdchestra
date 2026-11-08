@@ -21,6 +21,7 @@
   (:require [com.fulcrologic.fulcro.components :refer [defsc]]
             [com.fulcrologic.fulcro.dom :as dom]
             [hc.client.swarm.model :as model]
+            [hc.client.copy.failures :as failures]
             ["react" :as react]
             ["framework7-react" :as f7]))
 (def ^:private BlockTitle (.-BlockTitle f7))
@@ -454,12 +455,12 @@
                :key (str "wait-" (:task-id node))
                :data-task-id (:task-id node)}
           (dom/span #js {:className "hc-task__goal"}
-                    (or (:goal node) (str "Task " (:task-id node))))
+                    (or (:goal node) (str "任务 " (:task-id node))))
           (dom/span #js {:className "hc-task__meta"}
                     (cond
-                      (:truncated? node) " — chain truncated; inspect the board"
-                      (:missing? node) " — missing task"
-                      (:cycle? node) " — cycle detected; not followed"
+                      (:truncated? node) " — 等待链已截断；请检查看板"
+                      (:missing? node) " — 任务缺失"
+                      (:cycle? node) " — 检测到循环；不再继续跟随"
                       :else (str " — " (model/task-state-label (:state node)))))
           (when (seq (:children node))
             (dom/ul #js {:className "hc-wait-tree"}
@@ -472,14 +473,14 @@
         tone (model/task-state-tone status)
         missing? (:missing? node)
         title (if missing?
-                (str "Missing task " (:task-id node))
+                (str "缺失任务 " (:task-id node))
                 (:goal node))
         meta (cond
-               missing? "The task is referenced but not present in the snapshot."
-               (:cycle? node) "Cycle detected; children are not followed again."
-               (:cycle-root? node) "Unreachable cycle root; inspect the board."
-               (:orphan? node) "Parent is missing; shown as a root."
-               (:truncated? node) "Depth limit reached; children are not followed further."
+               missing? "该任务被引用但不在快照中。"
+               (:cycle? node) "检测到循环；子任务不再继续展开。"
+               (:cycle-root? node) "不可达的循环根；请检查看板。"
+               (:orphan? node) "父任务缺失；作为根任务显示。"
+               (:truncated? node) "已达深度上限；子任务不再继续展开。"
                :else nil)]
     (dom/li #js {:className "hc-task"
                  :key (str "task-" (:task-id node))
@@ -495,29 +496,29 @@
                                         (status-element status status-label tone))
                                       (dom/span #js {:className "hc-task__meta"}
                                                 (str (if (:needs-token node)
-                                                       "Token task"
-                                                       "Ordinary task")
+                                                       "令牌任务"
+                                                       "普通任务")
                                                      (when-let [owner (:owner-id node)]
-                                                       (str " · owner " owner))
+                                                       (str " · 持有者 " owner))
                                                      (when-let [claim (:claim-id node)]
-                                                       (str " · claim " claim))
+                                                       (str " · 认领 " claim))
                                                      (when-let [ledger (:ledger-key node)]
-                                                       (str " · review ledger " ledger))))
+                                                       (str " · 评审台账 " ledger))))
                                       (when meta
                                         (attention-element meta)))
                          (dom/div #js {:className "hc-task__body"}
                                   (dom/dl #js {:className "hc-task__facts"}
-                                          (fact "Remaining work" (:remaining-work node))
-                                          (fact "Done when" (:done-when node))
-                                          (fact "State" status-label)
-                                          (fact "Wait-for" (if (seq (:wait-for node))
-                                                             (str (count (:wait-for node)) " registered")
-                                                             "none")))
+                                          (fact "剩余工作" (:remaining-work node))
+                                          (fact "完成条件" (:done-when node))
+                                          (fact "状态" status-label)
+                                          (fact "等待依赖" (if (seq (:wait-for node))
+                                                             (str (count (:wait-for node)) " 个已登记")
+                                                             "无")))
                                   (dom/p #js {:className "hc-task__detail"}
                                          (:state-detail node))
                                   (when (seq (:wait-chain node))
                                     (dom/div nil
-                                             (dom/strong nil "Wait chain")
+                                             (dom/strong nil "等待链")
                                              (dom/ul #js {:className "hc-wait-tree"}
                                                      (mapv wait-node-element (:wait-chain node)))))
                                   (when (seq (:children node))
@@ -528,18 +529,18 @@
   [tasks]
   (if (seq tasks)
     (dom/ul #js {:className "hc-task-tree"
-                 :aria-label "Root tasks and child task hierarchy"}
+                 :aria-label "根任务与子任务层级"}
             (mapv task-node-element tasks))
-    (dom/p #js {:className "hc-empty"} "No board tasks have been reported for this worktree.")))
+    (dom/p #js {:className "hc-empty"} "该 worktree 尚未上报任何看板任务。")))
 
 (defn- slot-element
   [slot]
-  (let [title (str "Slot " (or (:slot-id slot) "unknown"))
+  (let [title (str "槽位 " (or (:slot-id slot) "未知"))
         after (str (:role-label slot) " · " (:life-state-label slot))
         lifecycle (:lifecycle slot)
         footer (str (:description lifecycle)
                     (when-let [note (:handoff-note slot)]
-                      (str " Handoff: " note)))]
+                      (str " 交接：" note)))]
     (f7 F7ListItem
         {:key (str "slot-" (or (:slot-id slot) (:agent-id slot)))
          :title title
@@ -549,15 +550,15 @@
          :aria-label (str title ", " after ". " (:label lifecycle) ". " footer)
          :data-slot-id (or (:slot-id slot) "unknown")}
         (when (:attention? slot)
-          (attention-element "Needs attention")))))
+          (attention-element "需要关注")))))
 
 (defn- slots-element
   [slots]
   (if (seq slots)
     (f7 F7List {:className "hc-slot-list"
-              :aria-label "Fixed running slots"}
+              :aria-label "固定运行槽"}
         (mapv slot-element slots))
-    (dom/p #js {:className "hc-empty"} "No slot state has been reported for this worktree.")))
+    (dom/p #js {:className "hc-empty"} "该 worktree 尚未上报槽位状态。")))
 
 (defn- responsibility-element
   [row]
@@ -565,46 +566,46 @@
                :key (str "responsibility-" (:id row))}
           (case (:kind row)
             :task
-            (str "Task " (:task-id row)
+            (str "任务 " (:task-id row)
                  " — " (model/task-state-label (:state row))
-                 (when (:needs-token row) " (token)")
+                 (when (:needs-token row) "（令牌）")
                  (when-let [goal (:goal row)] (str ": " goal)))
 
             :action
-            (str "Action " (:action-id row)
-                 " — " (name (or (:phase row) :unknown))
+            (str "动作 " (:action-id row)
+                 " — " (or (some-> (:phase row) name) "未知")
                  (when-let [kind (:action-kind row)] (str " " (name kind)))
-                 (when-let [task (:task-id row)] (str " for task " task)))
+                 (when-let [task (:task-id row)] (str "（任务 " task "）")))
 
-            (str "Unknown responsibility " (:id row)))))
+            (str "未知责任 " (:id row)))))
 
 (defn- holder-element
   [holder]
   (let [reported? (:reported? holder)]
     (dom/div #js {:className "hc-holder"}
              (dom/dl #js {:className "hc-holder-facts"}
-                     (fact "Holder" (if reported?
-                                      (or (:holder-id holder) "none")
-                                      "not reported"))
-                     (fact "Term" (if reported? (:term-id holder) "not reported"))
-                     (fact "Token state" (if reported?
-                                           (or (some-> (:state holder) name) "unknown")
-                                           "not reported"))
+                     (fact "持有者" (if reported?
+                                      (or (:holder-id holder) "无")
+                                      "未上报"))
+                     (fact "Term" (if reported? (:term-id holder) "未上报"))
+                     (fact "令牌状态" (if reported?
+                                           (or (some-> (:state holder) name) "未知")
+                                           "未上报"))
                      (fact "R(holder)" (if reported?
                                          (str (:responsibility-count holder)
-                                              " item(s)"
-                                              (when (:computed? holder) ", computed from board"))
-                                         "not reported")))
+                                              " 项"
+                                              (when (:computed? holder) "（由看板推算）"))
+                                         "未上报")))
              (dom/p #js {:className (when (:inconsistent? holder) "hc-attention")}
                     (:explanation holder))
              (cond
                (not reported?)
                (dom/p #js {:className "hc-empty"}
-                      "Token slot not reported by the server.")
+                      "令牌槽位未由服务器上报。")
 
                (seq (:responsibility-rows holder))
                (dom/ul #js {:className "hc-responsibility-list"
-                            :aria-label "Complete holder responsibility set"}
+                            :aria-label "持有者完整责任集合"}
                        (mapv responsibility-element (:responsibility-rows holder)))
 
                :else
@@ -615,10 +616,10 @@
   (dom/li #js {:className "hc-queue-item"
                :key (str "queue-" (or (:action-id item) "unknown"))}
           (if (:missing? item)
-            (str "Unknown queued action " (:action-id item))
-            (str "Action " (:action-id item)
-                 " — " (name (or (:phase item) :unknown))
-                 (when-let [agent (:agent-id item)] (str " · agent " agent))
+            (str "未知排队动作 " (:action-id item))
+            (str "动作 " (:action-id item)
+                 " — " (or (some-> (:phase item) name) "未知")
+                 (when-let [agent (:agent-id item)] (str " · 个体 " agent))
                  (when-let [kind (:kind item)] (str " · " (name kind)))))))
 
 (defn- recovery-reason-element
@@ -643,90 +644,90 @@
         old-gate (:recovery-write-gate write-gate)]
     (when (or blocked? acknowledgement (seq reasons) (seq actions) old-gate)
       (dom/section #js {:className "hc-recovery"
-                        :aria-label "Recovery write barrier"
+                        :aria-label "恢复写屏障"
                         :data-recovery-state
                         (name (or (:recovery-state write-gate) :unknown))}
                    (dom/h5 nil
                            (cond
                              blocked?
-                             "Recovery barrier active — new protected writes are refused"
+                             "恢复屏障生效中 — 新的受保护写入被拒绝"
 
                              acknowledged?
-                             "Recovery acknowledged — the barrier is released"
+                             "恢复已确认 — 屏障已解除"
 
                              :else
-                             "Recovery evidence reported"))
+                             "已上报恢复证据"))
                    (dom/dl #js {:className "hc-recovery-facts"}
-                           (fact "State"
+                           (fact "状态"
                                  (case (:recovery-state write-gate)
-                                   :blocked "Blocked"
-                                   :acknowledged "Acknowledged"
-                                   "Reported"))
-                           (fact "Unresolved actions"
+                                   :blocked "已阻塞"
+                                   :acknowledged "已确认"
+                                   "已上报"))
+                           (fact "未结清动作"
                                  (if (seq actions)
-                                   (str (count actions) " reported")
-                                   "none reported"))
+                                   (str (count actions) " 个已上报")
+                                   "无"))
                            (when old-gate
                              (dom/div #js {:className "hc-recovery-old-gate"}
-                                      (fact "Previous W"
-                                            (str (if (:held? old-gate) "held" "free")
+                                      (fact "旧 W"
+                                            (str (if (:held? old-gate) "持有中" "空闲")
                                                  (when-let [owner (:owner old-gate)]
-                                                   (str " by " owner))
+                                                   (str "，持有者 " owner))
                                                  (when (number? (:queue old-gate))
-                                                   (str ", " (:queue old-gate) " queued"))))
-                                      (fact "Previous outcome"
+                                                   (str "，队列 " (:queue old-gate) " 个"))))
+                                      (fact "旧结局"
                                             (if (:outcome-unknown? old-gate)
-                                              "unknown; not proven written or not written"
-                                              "not recorded as unknown"))
-                                      (fact "Previous queue"
+                                              "未知；未证实已写或未写"
+                                              "未记录为未知"))
+                                      (fact "旧队列"
                                             (if (:queue-abandoned? old-gate)
-                                              "abandoned; not replayed"
-                                              "no abandoned queue"))
-                                      (fact "Previous evidence"
+                                              "已放弃；未重放"
+                                              "无已放弃队列"))
+                                      (fact "旧证据"
                                             (if-let [reason (:reason old-gate)]
                                               (model/recovery-reason-label reason)
-                                              "not reported"))
-                                      (fact "Recovered at"
+                                              "未上报"))
+                                      (fact "恢复于"
                                             (if-let [recovered-at (:recovered-at old-gate)]
-                                              (str recovered-at " ms since epoch")
-                                              "not reported")))))
+                                              (str recovered-at " ms（自纪元起）")
+                                              "未上报")))))
                    (when (seq reasons)
                      (dom/div nil
-                              (dom/strong nil "Why W is blocked")
+                              (dom/strong nil "W 被阻塞的原因")
                               (dom/ul #js {:className "hc-recovery-reasons"
-                                           :aria-label "Recovery barrier reasons"}
+                                           :aria-label "恢复屏障原因"}
                                       (mapv recovery-reason-element reasons))))
                    (when (and blocked? (empty? reasons))
                      (dom/p #js {:className "hc-empty"}
-                            "The server reported a recovery barrier without a reason."))
+                            "服务器上报了恢复屏障但未给出原因。"))
                    (when (seq actions)
                      (dom/div nil
-                              (dom/strong nil "Unresolved action IDs")
+                              (dom/strong nil "未结清动作 ID")
                               (dom/ul #js {:className "hc-recovery-actions"
-                                           :aria-label "Unresolved recovery actions"}
+                                           :aria-label "未结清恢复动作"}
                                       (mapv recovery-action-element actions))))
                    (when acknowledgement
                      (dom/div nil
-                              (dom/strong nil "Recovery acknowledgement")
+                              (dom/strong nil "恢复确认")
                               (dom/dl #js {:className "hc-recovery-facts"}
-                                      (fact "Acknowledged"
+                                      (fact "已确认"
                                             (if (:acknowledged? acknowledgement)
-                                              "yes"
-                                              "not reported"))
-                                      (fact "Evidence"
+                                              "是"
+                                              "未上报"))
+                                      (fact "证据"
                                             (or (:evidence acknowledgement)
-                                                "not reported"))
-                                      (fact "Actor"
+                                                "未上报"))
+                                      (fact "操作员"
                                             (or (:actor-id acknowledgement)
-                                                "unknown"))
-                                      (fact "Board version"
+                                                "未知"))
+                                      (fact "看板版本"
                                             (or (:at-version acknowledgement)
-                                                "not reported"))
-                                      (fact "W held when acknowledged"
+                                                "未上报"))
+                                      (fact "确认时 W 状态"
                                             (case (:write-gate-held? acknowledgement)
-                                              true "yes"
-                                              false "no"
-                                              "not reported")))))))))
+                                              true "持有中"
+                                              false "空闲"
+                                              "未上报")))))))))
 
 (defn- write-gate-element
   [write-gate]
@@ -734,44 +735,44 @@
                 :data-w-state (name (:mode write-gate))}
            (dom/dl #js {:className "hc-write-gate-facts"}
                    (fact "W" (:mode-label write-gate))
-                   (fact "Owner" (if (:reported? write-gate)
-                                   (or (:owner write-gate) "none")
-                                   "not reported"))
-                   (fact "Current action" (if (:reported? write-gate)
-                                            (or (:current-action-id write-gate) "none")
-                                            "not reported"))
-                   (fact "Queue" (if (:reported? write-gate)
-                                   (str (:queued-count write-gate) " waiting")
-                                   "not reported")))
+                   (fact "持有者" (if (:reported? write-gate)
+                                   (or (:owner write-gate) "无")
+                                   "未上报"))
+                   (fact "当前动作" (if (:reported? write-gate)
+                                            (or (:current-action-id write-gate) "无")
+                                            "未上报"))
+                   (fact "队列" (if (:reported? write-gate)
+                                   (str (:queued-count write-gate) " 个等待")
+                                   "未上报")))
            (dom/p nil (:explanation write-gate))
            (recovery-element write-gate)
            (when (:holder-not-writing? write-gate)
              (dom/p #js {:className "hc-task__meta"}
-                    (str "Token holder " (:holder-id write-gate)
-                         " is not the current W owner. Holding the token does not occupy W; this is legal.")))
+                    (str "令牌持有者 " (:holder-id write-gate)
+                         " 不是当前 W 持有者。持有令牌不占用 W；这是合法的。")))
            (when (seq (:queue write-gate))
              (dom/ul #js {:className "hc-queue-list"
-                          :aria-label "Actions waiting for the workspace write entrance"}
+                          :aria-label "等待工作区写入口的动作"}
                      (mapv queue-element (:queue write-gate))))))
 
 (defn- report-element
   [report]
   (when report
     (dom/details #js {:className "hc-join-report"}
-                 (dom/summary nil "Join report — full text")
+                 (dom/summary nil "合入报告 — 完整文本")
                  (dom/dl #js {:className "hc-report-facts"}
                          (fact "Swarm" (:swarm-id report))
-                         (fact "Slice" (:slice-id report))
-                         (fact "Fast-forward commit" (or (:ff-commit report) "not reported"))
-                         (fact "Rebase rounds" (:rebase-rounds report)))
+                         (fact "切片" (:slice-id report))
+                         (fact "快进提交" (or (:ff-commit report) "未上报"))
+                         (fact "Rebase 轮次" (:rebase-rounds report)))
                  (if (:report-present? report)
                    (dom/pre #js {:className "hc-join-report__text"
                                  :tabIndex 0
                                  :role "region"
-                                 :aria-label "Full join report, scrollable"}
+                                 :aria-label "完整合入报告，可滚动"}
                             (:report report))
                    (dom/p #js {:className "hc-empty"}
-                          "The server did not include report text for this joined swarm.")))))
+                          "服务器未为该已合入 swarm 提供报告文本。")))))
 
 (defn- swarm-row-element
   [swarm selected-id]
@@ -803,60 +804,60 @@
                                                (status-element status status-label
                                                                (:status-tone swarm))
                                                (when (:attention? swarm)
-                                                 (attention-element "Needs attention")))
+                                                 (attention-element "需要关注")))
                                       (dom/dl #js {:className "hc-swarm-facts"}
-                                              (fact "Worktree" (:worktree swarm))
+                                              (fact "工作区" (:worktree swarm))
                                               (fact (if declared?
-                                                      "Root tasks (declared)"
-                                                      "Root tasks")
-                                                    (str (:ready counts) " ready · "
-                                                         (:waiting counts) " waiting · "
-                                                         (:done counts) " done"))
+                                                      "根任务（声明值）"
+                                                      "根任务")
+                                                    (str (:ready counts) " 个就绪 · "
+                                                         (:waiting counts) " 个等待 · "
+                                                         (:done counts) " 个完成"))
                                               (fact (if (:fleet-reported? swarm)
-                                                      "Master version"
-                                                      "Board version")
+                                                      "Master 版本"
+                                                      "看板版本")
                                                     (if (:fleet-reported? swarm)
                                                       (:master-version swarm)
                                                       (:board-version swarm)))
-                                              (fact "Join queue" (:join-queue-text swarm))))
+                                              (fact "合入队列" (:join-queue-text swarm))))
                          (dom/div #js {:className "hc-swarm-row__body"}
                                   (dom/p nil (:status-detail swarm))
                                   (when (false? (:fleet-reported? swarm))
                                     (dom/p #js {:className "hc-task__meta"}
-                                           "Fleet row not reported; showing the current board records for this workspace. Join queue, reports, and worktree identity are unknown."))
+                                           "未上报 fleet 行；正在显示该工作区当前的看板记录。合入队列、报告与 worktree 身份均未知。"))
                                   (when (:root-count-mismatch? swarm)
                                     (dom/p #js {:className "hc-attention"}
-                                           (str "The declared root counts differ from the board tree: declared "
+                                           (str "声明的根任务计数与看板树不一致：声明 "
                                                 (pr-str (:declared-root-counts swarm))
-                                                ", computed " (pr-str (:root-counts swarm)) ".")))
+                                                "，计算值 " (pr-str (:root-counts swarm)) "。")))
                                   (dom/div #js {:className "hc-board-columns"}
                                            (dom/div #js {:className "hc-board-main"}
-                                                    (dom/h4 nil "Root tasks and child hierarchy")
+                                                    (dom/h4 nil "根任务与子任务层级")
                                                     (task-tree-element (:tasks swarm)))
                                            (dom/div #js {:className "hc-board-side"}
-                                                    (dom/h4 nil "Fixed running slots")
+                                                    (dom/h4 nil "固定运行槽")
                                                     (slots-element (:slots swarm))
-                                                    (dom/h4 nil "Token holder")
+                                                    (dom/h4 nil "令牌持有者")
                                                     (holder-element (:holder swarm))
-                                                    (dom/h4 nil "Workspace write entrance W")
+                                                    (dom/h4 nil "工作区写入口 W")
                                                     (write-gate-element (:write-gate swarm))))
                                   (when-let [report (:join-report swarm)]
                                     (report-element report))
                                   (when-let [reason (:abandon-reason swarm)]
                                     (dom/details #js {:className "hc-join-report"}
-                                                 (dom/summary nil "Abandon reason")
+                                                 (dom/summary nil "放弃原因")
                                                  (dom/pre #js {:className "hc-join-report__text"
                                                                :tabIndex 0
                                                                :role "region"
-                                                               :aria-label "Abandon reason"}
+                                                               :aria-label "放弃原因"}
                                                           reason)))
                                   (when-let [error (:error swarm)]
                                     (dom/details #js {:className "hc-join-report"}
-                                                 (dom/summary nil "Failure detail")
+                                                 (dom/summary nil "失败详情")
                                                  (dom/pre #js {:className "hc-join-report__text"
                                                                :tabIndex 0
                                                                :role "region"
-                                                               :aria-label "Failure detail"}
+                                                               :aria-label "失败详情"}
                                                           (if (string? error) error (pr-str error)))))))))))
 
 (defn- unresolved-call-element
@@ -866,17 +867,20 @@
                 :data-call-id (:call-id call)
                 :data-outcome-unknown (if (:ack call) "false" "true")}
            (dom/div #js {:className "hc-unresolved-call__title"}
-                    (str (or (:call-id call) "unknown call")
-                         " · " (or (:kind call) "unknown")
+                    (str (or (:call-id call) "未知调用")
+                         " · " (or (:kind call) "未知")
                          (when-let [role (:role call)]
                            (str " · " role))))
            (dom/div #js {:className "hc-unresolved-call__meta"}
-                    (str "阶段 " (or (:phase call) "unknown")
-                         " · 最后已知 " (or (:last-known-stage call) "unknown")
+                    (str "阶段 " (or (:phase call) "未知")
+                         " · 最后已知 " (or (:last-known-stage call) "未知")
                          (when-let [task (:task-id call)]
                            (str " · 任务 " task))
                          (when-let [agent (:agent-id call)]
                            (str " · 个体 " agent))))
+           (let [reason-label (failures/reason-label :receipt-lost {})]
+             (when reason-label
+               (dom/p #js {:className "hc-reason"} reason-label)))
            (if-let [label (:ack-label call)]
              (dom/p #js {:className "hc-unresolved-call__ack"}
                     (str label
@@ -935,8 +939,8 @@
                 :data-job-id (:job-id program)
                 :data-status (or (:program-status program) "unknown")}
            (dom/div #js {:className "hc-protected-program__title"}
-                    (str (or (:task-id program) "task")
-                         " · " (or (:claim-id program) "claim")
+                    (str (or (:task-id program) "任务")
+                         " · " (or (:claim-id program) "认领")
                          " · " (or (:label program) "结果未报告")))
            (when-let [path (:file-path program)]
              (dom/div #js {:className "hc-protected-program__meta"}
@@ -996,27 +1000,29 @@
         summary (:summary dashboard)
         selected-id (:selected-swarm-id dashboard)]
     (dom/section #js {:className "hc-swarm-dashboard"
-                      :aria-label "Swarm fleet dashboard"}
+                      :aria-label "Swarm fleet 看板"}
         (dom/style #js {:key "hc-swarm-dashboard-style"} dashboard-css)
         (dom/header nil
                     (f7 BlockTitle {:className "hc-swarm-dashboard__title"}
-                        "Swarm fleet")
+                        "Swarm 总览")
                     (when-not (:empty? dashboard)
-                      (dom/p #js {:className "hc-swarm-dashboard__summary"
-                                  :role "status"
-                                  :aria-live "polite"}
-                             (:text summary))
-                      (dom/p #js {:className "hc-swarm-dashboard__summary"}
-                             (str "Fleet master version："
-                                  (or (:master-version dashboard) "未报告")
-                                  "。选择 swarm 行查看看板。父任务不会因子任务完成而自动标记完成。"))))
+                      [(dom/p #js {:className "hc-swarm-dashboard__summary"
+                                   :key "swarm-dashboard-summary"
+                                   :role "status"
+                                   :aria-live "polite"}
+                              (:text summary))
+                       (dom/p #js {:className "hc-swarm-dashboard__summary"
+                                    :key "swarm-dashboard-master"}
+                              (str "Fleet master 版本："
+                                   (or (:master-version dashboard) "未报告")
+                                   "。选择 swarm 行查看看板。父任务不会因子任务完成而自动标记完成。"))]))
         (worker-programs-element dashboard)
         (unresolved-calls-element dashboard)
         (if (:empty? dashboard)
           (dom/p #js {:className "hc-empty"}
                  "尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。")
           (dom/div #js {:className "hc-swarm-fleet"
-                        :aria-label "Fleet swarms"}
+                        :aria-label "Fleet swarm 列表"}
                    (mapv #(swarm-row-element % selected-id)
                          (:swarms dashboard)))))))
 

@@ -13,6 +13,7 @@
             [com.fulcrologic.fulcro.mutations :as m]
             [hc.client.settings :as settings-api]
             [hc.client.settings.draft :as draft]
+            [hc.client.settings.util :as settings-util]
             [hc.client.workbench.commands :as commands]
             [hc.client.workbench.model :as model]
             [hc.client.workbench.mutations :as mutations]
@@ -108,7 +109,11 @@
         (throw (ex-info "draft export still contains a secret"
                         {:reason :secret-leak})))
       (.setItem js/localStorage storage-key
-                (js/JSON.stringify (clj->js payload))))
+                ;; `export-drafts` already removes secrets; `json-safe`
+                ;; additionally breaks any reference cycle or non-data
+                ;; value a draft may carry so `JSON.stringify` cannot
+                ;; throw `Converting circular structure to JSON`.
+                (js/JSON.stringify (clj->js (settings-util/json-safe payload)))))
     (dispatch! {:type :settings/set-draft-storage-status :status :saved})
     (notify! :info "设置草稿已保存到本浏览器。")
     (catch :default e
@@ -225,6 +230,48 @@
     (appearance/apply! state)
     state))
 
+(defn- assistant-references
+  "Count worldbook and session references per assistant id.
+
+  The workbench database publishes `:session/by-id` summaries and the
+  materials `:worldbook/by-id` table.  A deleted session is absent from the
+  adapter's confirmed table, so only live references count."
+  [db]
+  (let [assistant-id-str
+        (fn [value]
+          (cond
+            (string? value) (let [v (str/trim value)]
+                              (when-not (str/blank? v) v))
+            (keyword? value) (name value)
+            (number? value) (str value)
+            :else nil))]
+    (let [session-refs
+          (reduce (fn [acc session]
+                    (if-let [id (assistant-id-str
+                                 (model/field session :assistant-id))]
+                      (update acc id (fnil conj [])
+                              (or (model/id-of session) id))
+                      acc))
+                  {}
+                  (vals (or (model/field db :session/by-id) {})))
+          worldbook-refs
+          (reduce (fn [acc book]
+                    (reduce (fn [acc2 assistant-id]
+                              (if-let [id (assistant-id-str assistant-id)]
+                                (update acc2 id (fnil conj [])
+                                        (or (model/id-of book) id))
+                                acc2))
+                            acc
+                            (model/field book :assistant-ids)))
+                  {}
+                  (vals (or (model/field db :worldbook/by-id) {})))
+          ids (into #{} (concat (keys session-refs) (keys worldbook-refs)))]
+      (into {}
+            (map (fn [id]
+                   [id {:sessions (vec (distinct (get session-refs id [])))
+                         :worldbooks (vec (distinct (get worldbook-refs id [])))}]))
+            ids))))
+
 (defn dispatch!
   "Apply one settings action, handle its effects, and submit queued commands.
 
@@ -329,6 +376,14 @@
                    (map? (model/field db :settings/roles))
                    (assoc :settings/roles (model/field db :settings/roles))
 
+                   (map? (model/field db :settings/assistants))
+                   (assoc :settings/assistants
+                          (model/field db :settings/assistants))
+
+                   (sequential? (model/field db :settings/assistant-order))
+                   (assoc :settings/assistant-order
+                          (model/field db :settings/assistant-order))
+
                    (map? (model/field db :session/by-id))
                    (assoc :session/by-id (model/field db :session/by-id))
 
@@ -348,6 +403,7 @@
                    (and (nil? settings-by-id)
                         (map? legacy-connections))
                    (assoc :server {:connections legacy-connections}))]
+        snapshot (assoc snapshot :assistant-refs (assistant-references db))
     (transact-projection! snapshot)))
 
 (defn settings-element

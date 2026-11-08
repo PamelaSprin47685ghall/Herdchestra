@@ -84,6 +84,7 @@
   (let [section (get-in state [:ui :section] :providers)
         tabs [[:providers "供应商与连接"]
               [:models "模型与角色"]
+              [:assistants "助手"]
               [:data "数据中心"]
               [:appearance "外观"]]]
     (el :nav {:class "hc-tabs" :aria-label "设置分区"}
@@ -633,6 +634,29 @@
         (el :h4 {} "模型详情与有效配置")
         (el :p {:class "hc-note"}
             "留空表示未知或使用默认；数字 0 是真实值，不等同于未设置。")
+        (let [preview (model/price-preview state row)
+              preview-input (fn [field value]
+                              (input {:type "number"
+                                      :min "0"
+                                      :step "1"
+                                      :value (number-text value)
+                                      :aria-label (str "价格预估"
+                                                       (if (= :input field)
+                                                         "输入 token 数"
+                                                         "输出 token 数"))
+                                      :on-input
+                                      (ev-value
+                                       (act :settings/edit-price-preview-input
+                                            :connection-id (:connection-id row)
+                                            :model-id (:model-id row)
+                                            :field field))}))]
+          (el :div {:class "hc-price-preview" :aria-label "价格预估"}
+              (field "输入 token 数" (preview-input :input (:input preview)))
+              (field "输出 token 数" (preview-input :output (:output preview)))
+              (el :p {:class (str "hc-price-preview__result"
+                                  (when-not (:known? preview)
+                                    " hc-price-preview__result--unknown"))}
+                  (str "估算费用：" (:text preview)))))
         (el :table {:class "hc-table hc-model-detail__table"}
             (el :thead {}
                 (el :tr {}
@@ -735,7 +759,41 @@
                                  (:label option)))
                            reasoning-options))
                  "模型声明/用户设置"
-                 "仅离散档位；不能关闭时显示最低可用"))))))
+                 "仅离散档位；不能关闭时显示最低可用")))
+        (el :div {:class "hc-price-preview"}
+            (el :h5 {} "价格预览")
+            (el :p {:class "hc-note"}
+                "按示例 token 数估算一次请求费用；价格或单位未知时显示“无法估算”，不代表免费。")
+            (el :div {:class "hc-price-preview__inputs"}
+                (el :label {:class "hc-field"}
+                    (el :span {:class "hc-field__label"} "输入 tokens")
+                    (input {:type "number"
+                            :min "0"
+                            :step "1"
+                            :value (str (or (:input (model/price-preview state row)) 1000))
+                            :aria-label "预览输入 tokens"
+                            :on-input (ev-value
+                                       (act :settings/edit-price-preview-input
+                                            :connection-id (:connection-id row)
+                                            :model-id (:model-id row)
+                                            :field :input))}))
+                (el :label {:class "hc-field"}
+                    (el :span {:class "hc-field__label"} "输出 tokens")
+                    (input {:type "number"
+                            :min "0"
+                            :step "1"
+                            :value (str (or (:output (model/price-preview state row)) 500))
+                            :aria-label "预览输出 tokens"
+                            :on-input (ev-value
+                                       (act :settings/edit-price-preview-input
+                                            :connection-id (:connection-id row)
+                                            :model-id (:model-id row)
+                                            :field :output))})))
+            (let [preview (model/price-preview state row)]
+              (el :p {:class (str "hc-price-preview__result"
+                                  (when-not (:known? preview)
+                                    " hc-price-preview__result--unknown"))}
+                  (str "示例估算：" (:text preview))))))))
 
 (defn- model-row
   [state group row selected-role can-submit?]
@@ -1065,59 +1123,344 @@
                       (act :settings/cancel-test :draft-id (:draft-id draft))
                       {:class "hc-button hc-button--quiet"}))))))
 
+(defn- onboarding-step-rows
+  "Return the three wizard steps with their completion flags.
+
+  `wizard-step` is the operator's current position; `checklist-step` is the
+  derived configuration state used for ready? markers."
+  [wizard-step checklist-step connection-count has-enabled-chat-model? has-draft?]
+  (let [idx (fn [candidate]
+              (case candidate
+                :connection-type 0
+                :connection-details 1
+                :model 2
+                3))
+        current (idx wizard-step)]
+    (mapv (fn [[id label ready?]]
+            {:id id
+             :label label
+             :ready? (if (= id checklist-step) true ready?)
+             :current? (= current (idx id))})
+          [[:connection-type "1 选择连接路径"
+            (pos? connection-count)]
+           [:connection-details "2 连接信息"
+            (or has-draft? (pos? connection-count))]
+           [:model "3 模型"
+            has-enabled-chat-model?]])))
+
+(defn- onboarding-fields-editor
+  "Compact connection form inside the wizard.
+
+  The form edits the draft's `:fields` map through
+  `:settings/onboarding-edit-field`, so the values the operator typed are
+  exactly what `:settings/save-connection` persists later."
+  [state draft]
+  (let [fields (get draft :fields {})
+        edit (fn [field]
+               (ev-value
+                (act :settings/onboarding-edit-field
+                     :field field
+                     :draft-id (:draft-id draft))))
+        text-field (fn [label field placeholder]
+                     (field label
+                            (input {:type "text"
+                                    :value (str (get fields field ""))
+                                    :placeholder placeholder
+                                    :on-input (edit field)})))
+        path-value (or (:service-kind fields) :cloud-key)]
+    (el :div {:class "hc-onboarding__fields"}
+        (text-field "显示名称" :name "例如 我的网关")
+        (field "基础地址"
+               (input {:type "url"
+                       :value (str (get fields :base-url ""))
+                       :placeholder "https://api.example.com/v1"
+                       :on-input (edit :base-url)}))
+        (text-field "密钥环境变量" :api-key-env "例如 OPENAI_API_KEY；不要填写密钥本身")
+        (text-field "账号标识" :account-label "账号、组织或地址；不要填写密钥")
+        (field "连接路径"
+               (select {:value (name path-value)
+                        :on-change (edit :path)}
+                       (mapv (fn [[kind label]]
+                               [kind label])
+                             new-connection-actions)))
+        (when (= :account-login (util/normalize-keyword path-value))
+          (el :p {:class "hc-note"}
+              "账号登录使用 OAuth 令牌；不会使用 API 密钥或多密钥轮询。")))))
+
+(defn- onboarding-model-picker
+  "Model step of the first-run wizard: pick the main model plus an optional
+  generation-switch model."
+  [state can-submit?]
+  (let [groups (:onboarding-model-groups state)
+        selected-role :main]
+    (el :div {:class "hc-onboarding__models"}
+        (el :p {:class "hc-muted"}
+            "选择一个已启用的模型作为主模型；生成中切换只用于下一轮。")
+        (if (empty? groups)
+          (el :p {:class "hc-warning"}
+              "尚未配置连接；请先在上一步保存连接，或手动填写模型标识。")
+          (mapv (fn [group]
+                  (el :section {:class "hc-model-group hc-onboarding__model-group"
+                                :key (:group-key group)}
+                      (el :header {:class "hc-model-group__header"}
+                          (el :h3 {} (:connection-name group))
+                          (el :p {:class "hc-muted"} (:source-label group)))
+                      (el :div {:class "hc-model-list"}
+                          (mapv #(model-row state group % selected-role
+                                             can-submit?)
+                                (:rows group)))))))
+                groups)))
 (defn- onboarding-panel
-  [state]
-  (let [{:keys [step complete? dismissed? completed? has-enabled-chat-model?
-                tested?]}
+  "Three-step first-run wizard: connection type, connection details, model.
+
+  The wizard edits one draft; stepping back keeps every field.  It hides
+  once dismissed or completed, and also when the checklist reports setup
+  complete so a finished install is not nagged."
+  [state can-submit? draft]
+  (let [{:keys [wizard-step checklist-step complete? dismissed? completed?
+                has-enabled-chat-model? draft-id]}
         (model/onboarding-status state)
-        visible? (not (or dismissed? completed? complete?))]
+        visible? (not (or dismissed? completed? complete?))
+        groups (model/model-groups state)
+        connection-count (count (get-in state [:server :connections]))
+        steps (onboarding-step-rows wizard-step checklist-step connection-count
+                                    has-enabled-chat-model?
+                                    (some? draft-id))
+        step-index (fn [s] (first (keep-indexed (fn [i row] (when (= s (:id row)) i)) steps)))
+        current-idx (or (step-index wizard-step) 0)
+        last-idx (dec (count steps))]
     (when visible?
       (el :section {:class "hc-onboarding" :aria-labelledby "hc-onboarding-title"}
           (el :h2 {:id "hc-onboarding-title"} "首次配置")
           (el :p {:class "hc-muted"}
-              "无需注册本产品云账号；未配置模型时仍可浏览界面、编写草稿。草稿在进出设置页后保留。首次启动会在会话页显示连接引导；测试成功只是证据，不代替已启用模型。")
+              "无需注册本产品云账号；未配置模型时仍可浏览界面、编写草稿。草稿在进出设置页后保留。")
           (el :ol {:class "hc-onboarding__steps"}
-              (mapv (fn [[id label ready?]]
-                      (el :li {:key (name id)
+              (mapv (fn [row]
+                      (el :li {:key (:id row)
                                :class (str "hc-onboarding__step"
-                                           (when (= step id) " hc-onboarding__step--current")
-                                           (when ready? " hc-onboarding__step--done"))}
-                          (el :strong {} label)
+                                           (when (:current? row)
+                                             " hc-onboarding__step--current")
+                                           (when (:ready? row)
+                                             " hc-onboarding__step--done"))}
+                          (el :strong {} (:label row))
                           (el :span {}
-                              (if ready? "已完成" "待完成"))))
-                    [[:connection "1 选择连接路径" (pos? (count (get-in state [:server :connections])))]
-                     [:model "2 选择并启用聊天模型" has-enabled-chat-model?]
-                     [:test "3 测试连接（可选证据）" tested?]
-                     [:done "4 完成" complete?]]))
-          (el :div {:class "hc-actions"}
-              (case step
-                :connection
+                              (if (:ready? row) "已完成" "待完成"))))
+                    steps))
+          (case wizard-step
+            :connection-type
+            (el :div {:class "hc-onboarding__step-body"}
+                (el :p {:class "hc-muted"} "选择连接方式；每次新建都打开一份独立草稿。")
                 (el :div {:class "hc-actions"}
                     (mapv (fn [[kind label]]
                             (button label
-                                    (act :settings/new-connection :path kind)
+                                    (act :settings/onboarding-choose-connection
+                                         :path kind)
                                     {:key (name kind)
                                      :class (if (= :cloud-key kind)
                                               "hc-button"
                                               "hc-button hc-button--quiet")}))
-                          new-connection-actions))
+                          new-connection-actions)))
 
-                :model
-                (button "打开模型选择"
-                        (act :settings/select-section :section :models))
+            :connection-details
+            (if-not draft-id
+              (el :div {:class "hc-onboarding__step-body"}
+                  (el :p {:class "hc-warning"}
+                      "还没有连接草稿；请返回上一步选择连接方式。")
+                  (button "返回上一步"
+                          (act :settings/onboarding-back)
+                          {:class "hc-button hc-button--quiet"}))
+              (el :div {:class "hc-onboarding__step-body"}
+                  (onboarding-fields-editor state draft)
+                  (when draft
+                    (el :p {:class "hc-muted"}
+                        (str "草稿状态：" (draft/status-label draft)
+                             "（版本 " (:version draft) "）。")))
+                  (el :div {:class "hc-actions"}
+                      (button "保存连接"
+                              (act :settings/save-connection
+                                   :draft-id draft-id)
+                              {:disabled (or (not can-submit?)
+                                             (not (draft/dirty? draft)))}))))
 
-                :test
-                (button "打开连接测试"
-                        (act :settings/select-section :section :providers))
+            :model
+            (el :div {:class "hc-onboarding__step-body"}
+                (onboarding-model-picker state groups can-submit?)
+                (when (and (pos? connection-count)
+                           (not has-enabled-chat-model?))
+                  (el :p {:class "hc-warning"}
+                      "还没有启用的聊天模型；保存连接并启用一个模型后才能完成配置。")))
 
-                :done
+            :done
+            (el :div {:class "hc-onboarding__step-body"}
+                (el :p {:class "hc-muted"}
+                    "配置已完成；之后可以在“设置与数据中心”里调整连接、模型与外观。"))
+
+            nil)
+          (el :div {:class "hc-actions"}
+              (when (pos? current-idx)
+                (button "上一步"
+                        (act :settings/onboarding-back)
+                        {:class "hc-button hc-button--quiet"}))
+              (when (< current-idx last-idx)
+                (button "下一步"
+                        (act :settings/onboarding-next)
+                        {:class "hc-button hc-button--quiet"
+                         :disabled (and (= :connection-details wizard-step)
+                                        (nil? draft-id))}))
+              (when (= :done wizard-step)
                 (button "完成配置"
-                        (act :settings/finish-onboarding))
-
-                nil)
+                        (act :settings/finish-onboarding)))
               (button "稍后配置"
                       (act :settings/dismiss-onboarding)
                       {:class "hc-button hc-button--quiet"}))))))
+
+(defn- assistant-editor
+  "Inline editor for one assistant draft or saved record."
+  [state card can-submit?]
+  (let [assistant-id (:id card)
+        draft (get-in state [:ui :assistant-drafts assistant-id])
+        editing? (or (:editing? card) (some? draft))
+        groups (model/model-groups state)
+        default-model (or (:default-model draft) (:default-model card))
+        model-options
+        (mapcat (fn [group]
+                  (mapv (fn [row]
+                          [[:connection-id (:connection-id row)
+                            :model-id (:model-id row)]
+                           (str (:connection-name group) " · "
+                                (:display-name row))])
+                        (:rows group)))
+                groups)]
+    (if-not editing?
+      (el :div {:class "hc-actions"}
+          (button "编辑"
+                  (act :settings/edit-assistant-field
+                       :assistant-id assistant-id
+                       :field :name
+                       :value (:name card))
+                  {:class "hc-button hc-button--quiet"})
+          (button "删除"
+                  (act :settings/request-delete-assistant
+                       :assistant-id assistant-id)
+                  {:class "hc-button hc-button--danger hc-button--quiet"}))
+      (el :div {:class "hc-assistant-editor"}
+          (field "显示名称"
+                 (input {:type "text"
+                         :value (str (or (:name draft) (:name card)))
+                         :on-input (ev-value
+                                    (act :settings/edit-assistant-field
+                                         :assistant-id assistant-id
+                                         :field :name))}))
+          (field "助手标识"
+                 (input {:type "text"
+                         :value (str (or (:id draft) assistant-id))
+                         :disabled (not (:is-new? draft))
+                         :on-input (ev-value
+                                    (act :settings/edit-assistant-field
+                                         :assistant-id assistant-id
+                                         :field :id))})
+                 "新建后不可修改；已被世界书或会话引用的标识不能重命名。")
+          (let [enabled-value (not (false? (or (:enabled? draft)
+                                               (:enabled? card))))]
+            (el :label {:class "hc-check"}
+                (input {:type "checkbox"
+                        :checked enabled-value
+                        :on-change (ev-checked
+                                    (act :settings/edit-assistant-field
+                                         :assistant-id assistant-id
+                                         :field :enabled?
+                                         :value enabled-value))})
+                "启用"))
+          (el :div {:class "hc-field"}
+              (el :span {:class "hc-field__label"} "默认模型")
+              (el :div {:class "hc-assistant-model-pick"}
+                  (select {:value (str (or (:connection-id default-model) ""))
+                           :aria-label "默认模型连接"
+                           :on-change (ev-value
+                                       (act :settings/edit-assistant-field
+                                            :assistant-id assistant-id
+                                            :field :default-model-connection))}
+                          (into [["" "选择连接"]]
+                                (mapv (fn [group]
+                                        [(str (:connection-id group))
+                                         (str (:connection-name group))])
+                                      groups)))
+                  (select {:value (str (or (:model-id default-model) ""))
+                           :aria-label "默认模型"
+                           :disabled (str/blank? (str (:connection-id default-model)))
+                           :on-change (ev-value
+                                       (act :settings/edit-assistant-field
+                                            :assistant-id assistant-id
+                                            :field :default-model-model))}
+                          (into [["" "选择模型"]]
+                                (when-let [group (some #(when (= (str (:connection-id default-model))
+                                                                   (str (:connection-id %)))
+                                                         %)
+                                                       groups)]
+                                  (mapv (fn [row]
+                                          [(str (:model-id row))
+                                           (str (:display-name row))])
+                                        (:rows group))))))
+              (el :small {:class "hc-field__hint"}
+                  "留空表示新会话使用角色绑定；已存在的会话保留创建时的模型。"))
+          (el :div {:class "hc-actions"}
+              (button "保存助手"
+                      (act :settings/save-assistant
+                           :assistant-id assistant-id)
+                      {:disabled (not can-submit?)})
+              (button "取消"
+                      (act :settings/select-assistant
+                           :assistant-id nil)
+                      {:class "hc-button hc-button--quiet"}))))))
+
+(defn- assistants-section
+  [state can-submit?]
+  (let [cards (model/assistant-cards state)
+        confirm-id (get-in state [:ui :confirm-delete-assistant-id])]
+    (el :section {:class "hc-panel hc-assistants" :aria-labelledby "hc-assistants-title"}
+        (el :h2 {:id "hc-assistants-title"} "助手")
+        (el :p {:class "hc-muted"}
+            "助手是会话的身份与默认模型绑定；世界书和指令卡按助手标识引用。内置“通用助手”不能删除。")
+        (el :div {:class "hc-actions"}
+            (button "新建助手"
+                    (act :settings/new-assistant)
+                    {:class "hc-button hc-button--quiet"}))
+        (if (empty? cards)
+          (el :p {:class "hc-muted"} "尚无助手；新建助手后可在此编辑。")
+          (el :ul {:class "hc-assistant-list"}
+              (mapv (fn [card]
+                      (el :li {:key (:id card)
+                               :class (str "hc-assistant-item"
+                                           (when (:selected? card)
+                                             " hc-assistant-item--selected"))}
+                          (el :div {:class "hc-assistant-summary"}
+                              (el :strong {} (:name card))
+                              (el :span {:class "hc-muted"}
+                                  (str " · " (:id card)
+                                       " · 修订 " (:revision card)
+                                       (when-not (:enabled? card) " · 已停用")
+                                       (when-let [label (:default-model-label card)]
+                                         (str " · 默认：" label)))))
+                          (let [{:keys [sessions worldbooks]}
+                                (:reference-counts card)
+                                total (+ (or sessions 0) (or worldbooks 0))]
+                            (when (pos? total)
+                              (el :p {:class "hc-muted hc-assistant-refs"}
+                                  (str "引用：会话 " sessions
+                                       "，世界书 " worldbooks
+                                       "；删除后这些引用保留原助手标识。"))))
+                          (assistant-editor state card can-submit?)
+                          (when (= confirm-id (:id card))
+                            (el :div {:class "hc-confirm" :role "alert"}
+                                (el :p {} "再次确认删除该助手？引用它的世界书与会话保留原标识。")
+                                (button "确认删除"
+                                        (act :settings/confirm-delete-assistant
+                                             :assistant-id (:id card))
+                                        {:class "hc-button hc-button--danger"})
+                                (button "取消"
+                                        (act :settings/cancel-delete-assistant)
+                                        {:class "hc-button hc-button--quiet"})))))
+                    cards))))))
 
 (defn- appearance-section
   [state]
@@ -1151,7 +1494,7 @@
         (message-banner state)
         (section-tabs state)
         (when (contains? #{:providers :models} section)
-          (onboarding-panel state))
+          (onboarding-panel state can-submit? draft))
         (case section
           :providers
           (el :div {:class "hc-settings__body"}
@@ -1186,6 +1529,10 @@
           (el :div {:class "hc-settings__body"}
               (models-section state groups can-submit?)
               (roles-section state can-submit?))
+
+          :assistants
+          (el :div {:class "hc-settings__body"}
+              (assistants-section state can-submit?))
 
           :data nil
 

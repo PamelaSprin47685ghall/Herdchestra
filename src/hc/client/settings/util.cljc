@@ -173,3 +173,89 @@
   "Build one successful value."
   ([value] {:ok? true :value value})
   ([value extra] (merge {:ok? true :value value} extra)))
+
+#?(:cljs
+   (defn- json-safe-js-object?
+     "True for plain JavaScript objects created by `#js`/`clj->js` or JSON.
+     DOM nodes, class instances, and opaque host objects are not safe:
+     their own enumerable properties may reference their owner graph."
+     [value]
+     (let [ctor (.-constructor value)]
+       (or (nil? ctor)
+           (identical? ctor js/Object)
+           (identical? (.-prototype ctor) js/Object.prototype)))))
+
+#?(:cljs
+   (defn- json-safe-node
+     [node seen]
+     (cond
+       ;; Already visited: report a marker instead of recursing forever.
+       (or (identical? node (first seen))
+           (some #(identical? node %) seen))
+       "[circular]"
+
+       ;; Data values pass through unchanged.
+       (or (nil? node) (string? node) (number? node) (boolean? node))
+       node
+
+       ;; Functions cannot appear in JSON; keep a marker so the payload
+       ;; still says where the value was rather than dropping it silently.
+       (fn? node)
+       "[function]"
+
+       ;; JavaScript objects must be handled before `map?`: a `#js` literal
+       ;; satisfies the IMap protocol in ClojureScript, so the map branch
+       ;; would iterate it as entries and lose the object identity that
+       ;; `clj->js` preserves — the exact cycle source this scrub exists
+       ;; to break.  The result is a plain Clojure map with string keys;
+       ;; the caller's `clj->js` turns it back into a JSON object.
+       (object? node)
+       (if (json-safe-js-object? node)
+         (into {}
+               (keep (fn [k]
+                       (when-not (re-find #"^__proto__$" (str k))
+                         [(str k) (json-safe-node (aget node k)
+                                                  (conj seen node))])))
+               (js-keys node))
+         (str node))
+
+       ;; Persistent maps/records become plain objects with string keys.
+       (map? node)
+       (into {}
+             (map (fn [[k v]]
+                    [(cond
+                       (keyword? k) (name k)
+                       (symbol? k) (name k)
+                       :else (str k))
+                     (json-safe-node v (conj seen node))]))
+             node)
+
+       (set? node)
+       (mapv #(json-safe-node % (conj seen node)) (seq node))
+
+       (sequential? node)
+       (mapv #(json-safe-node % (conj seen node)) node)
+
+       ;; Dates, RegExps, boxed values, and anything else opaque.
+       :else
+       (str node))))
+
+;; `json-safe` scrubs a value into plain JSON-serializable data before
+;; `clj->js` + `JSON.stringify`.  On Clojure it is the identity: the
+;; server never persists these drafts.
+(defn json-safe
+  "Return VALUE as a plain JSON-serializable structure.
+
+  `clj->js` preserves JavaScript object identity, so a draft that ever
+  carries a `#js` value or a shared reference makes `JSON.stringify`
+  throw `Converting circular structure to JSON`.  This copy walks every
+  collection once, converts keys to strings, replaces functions and
+  opaque host objects with markers, and breaks reference cycles with a
+  `[circular]` string.  It is for persistence only; the in-memory draft
+  keeps its original values.
+
+  Clojure branch returns VALUE unchanged: the server never persists
+  these drafts."
+  [value]
+  #?(:clj value
+     :cljs (json-safe-node value #{})))

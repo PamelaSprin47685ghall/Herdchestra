@@ -1,0 +1,53 @@
+{
+  "test": "e2e-04 runtime text-loss fix verification (final28 worker w283-runtime-test)",
+  "recordedAt": "2026-11-08T12:00:00Z",
+  "worker": "w283-runtime-test",
+  "scope": "W280 runtime/request fix + simplified unit tests; E2E04 serial observation",
+  "unitTests": {
+    "command": "clojure -X:compose:server:test :nses '[hc.core.scope-test hc.server.model-adapter.request-test]'",
+    "result": "116 tests, 477 assertions, 0 failures, 0 errors",
+    "alsoRun": "clojure -X:compose:server:test :nses '[hc.compose.owner.conversation-compression-test]' -> 7 tests, 17 assertions, 0F/0E",
+    "changes": [
+      "test/hc/core/scope_test.clj: +runtime-message-items-roundtrip-carries-operator-payload (message->items + items->messages roundtrip incl. source-index-free standalone path)",
+      "test/hc/core/scope_test.clj: +runtime-message-items-keeps-absent-payload-keys-absent (no nil payload keys on plain messages)",
+      "test/hc/server/model_adapter/request_test.clj: +text-only-user-message-compiles-to-one-text-part; existing image-with-text / image-only tests cover ->user-message branches",
+      "test/hc/compose/owner/conversation_compression_test.clj: removed unfinished projection-refusal fixture (conversation-tail-fallback-keeps-operator-payload); kept conversation-tail-keeps-operator-payload-on-projection happy-path test"
+    ]
+  },
+  "e2e04Runs": [
+    {
+      "at": "2026-11-08T11:41Z",
+      "result": "FAIL",
+      "assertion": "branch second reply mismatch: E2E04-REPLY-3 (stale copied bubble)",
+      "marker": "E2E04-1794138056368",
+      "serverLog": "plans/evidence/e2e-04/server-hc-e2e-6AexoI.log",
+      "mockRequests": 3,
+      "note": "mock log shows ZERO requests for 分支第二轮; page snapshot shows 连接状态：连接中断 / 网络尚未连接，草稿已保留; trace shows chsk closed :unexpected then reconnect ERR_CONNECTION_REFUSED ~0.4s before teardown"
+    },
+    {
+      "at": "2026-11-08T11:44Z",
+      "result": "FAIL",
+      "assertion": "branch second reply mismatch: E2E04-REPLY-3 (stale copied bubble)",
+      "marker": "E2E04-1794138245764",
+      "serverLog": "plans/evidence/e2e-04/server-hc-e2e-jXwwWL.log",
+      "mockRequests": 3,
+      "note": "identical signature to run 1 and to final27b E2E04-B1: WS channel dies mid-branch-phase; branch send never reaches server"
+    }
+  ],
+  "textLossObservation": {
+    "d1Status": "FIXED in both runs: turn-1 request reached the mock and replyScript matched '第一轮' -> E2E04-REPLY-1 (no E2E04-FALLBACK). Prior final27b runs failed ~50% with content=[image_url] only.",
+    "note": "mock log 'user' field prints '[object Object],[object Object]' for array content (JS display artifact), not missing text; reply1 check passed proves the text part matched."
+  },
+  "remainingBlocker": "E2E04-B1 (final28, unassigned per w278 jvm-exit-hunt): Sente /chsk channel closes :unexpected during branch phase; client cannot submit :send-message; branch turn never dispatches a model call. Not caused by the runtime/request text-loss fix.",
+  "screenshots": [
+    "plans/evidence/e2e-04/e2e04-01-three-turns.png",
+    "plans/evidence/e2e-04/e2e04-02-edited-version.png",
+    "plans/evidence/e2e-04/e2e04-03-original-version.png",
+    "plans/evidence/e2e-04/e2e04-04-branch-created.png"
+  ],
+  "resultJson": "plans/evidence/e2e-04/e2e04-result.json (overwritten by run 2, marker E2E04-1794138245764)",
+  "final28Needs": [
+    "E2E04-B1 root cause: WS drop ~75s into run / branch-phase starvation; needs WS-frame tap or server-side chsk close logging",
+    "release rebuild: bundle still frozen at final27b 92d18d8f; final28 rebuild required to ship runtime.clj/request.clj changes"
+  ]
+}

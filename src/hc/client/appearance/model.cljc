@@ -9,6 +9,9 @@
 (def themes [:system :light :dark])
 (def contrasts [:normal :high])
 (def reduced-motions [:system :reduce :no-preference])
+(def languages [:zh-CN :en])
+(def backgrounds [:system :light :dark])
+(def bubbles [:standard :compact :rounded])
 (def min-font-scale 80)
 (def max-font-scale 200)
 (def font-step 10)
@@ -17,7 +20,10 @@
   {:theme :system
    :font-scale 100
    :contrast :normal
-   :reduced-motion :system})
+   :reduced-motion :system
+   :language :zh-CN
+   :background :system
+   :bubble :standard})
 
 (defn- keyword-or-nil
   [value]
@@ -85,6 +91,29 @@
 
     :else :system))
 
+(defn- normalize-choice
+  "Return VALUE when it is one of CHOICES, else the fallback."
+  [value choices fallback]
+  (let [value (keyword-or-nil value)]
+    (if (some #(= value %) choices) value fallback)))
+
+(defn normalize-language
+  "UI language preference.  The product ships Chinese and English; an
+  unknown value falls back to Chinese, matching the shipped copy."
+  [value]
+  (normalize-choice value languages :zh-CN))
+
+(defn normalize-background
+  "Background override.  `:system` follows the resolved theme; `:light` and
+  `:dark` pin the content background without changing the chrome theme."
+  [value]
+  (normalize-choice value backgrounds :system))
+
+(defn normalize-bubble
+  "Conversation bubble density/shape preset."
+  [value]
+  (normalize-choice value bubbles :standard))
+
 (defn normalize
   "Return a complete, valid appearance state.  Unknown values fall back to
   the documented defaults; a partial map is not an error."
@@ -96,24 +125,36 @@
      :reduced-motion (normalize-reduced-motion
                       (if (contains? state :reduced-motion)
                         (:reduced-motion state)
-                        (:reduced-motion? state)))}))
+                        (:reduced-motion? state)))
+     :language (normalize-language (:language state))
+     :background (normalize-background (:background state))
+     :bubble (normalize-bubble (:bubble state))}))
 
 (defn from-db
   "Read appearance values from a workbench/Fulcro database."
   [db]
-  (normalize {:theme (:ui/theme db)
-              :font-scale (:ui/font-scale db)
-              :contrast (:ui/contrast db)
-              :reduced-motion (:ui/reduced-motion db)}))
+  (let [settings (or (:ui/settings db) {})]
+    (normalize {:theme (:ui/theme db)
+                :font-scale (:ui/font-scale db)
+                :contrast (:ui/contrast db)
+                :reduced-motion (:ui/reduced-motion db)
+                :language (:language settings)
+                :background (:background settings)
+                :bubble (:bubble settings)})))
 
 (defn to-db
   "Return the workbench/Fulcro keys for a normalized appearance state."
   [state]
   (let [state (normalize state)]
-    {:ui/theme (:theme state)
-     :ui/font-scale (:font-scale state)
-     :ui/contrast (:contrast state)
-     :ui/reduced-motion (:reduced-motion state)}))
+    (cond-> {:ui/theme (:theme state)
+             :ui/font-scale (:font-scale state)
+             :ui/contrast (:contrast state)
+             :ui/reduced-motion (:reduced-motion state)}
+      true
+      (assoc :ui/settings
+             {:language (:language state)
+              :background (:background state)
+              :bubble (:bubble state)}))))
 
 (defn to-ui
   "Return the flat keys used by the workbench `set-appearance` mutation."
@@ -122,7 +163,25 @@
     {:theme (:theme state)
      :font-scale (:font-scale state)
      :contrast (:contrast state)
-     :reduced-motion? (:reduced-motion state)}))
+     :reduced-motion? (:reduced-motion state)
+     :language (:language state)
+     :background (:background state)
+     :bubble (:bubble state)}))
+
+(defn to-storage
+  "Return the flat keys persisted in browser-local storage.
+
+  `load!`/`save!` keep appearance under `:settings` with unprefixed keys;
+  `merge-local!` maps them back onto `:ui/*` database paths."
+  [state]
+  (let [state (normalize state)]
+    {:theme (:theme state)
+     :font-scale (:font-scale state)
+     :contrast (:contrast state)
+     :reduced-motion (:reduced-motion state)
+     :language (:language state)
+     :background (:background state)
+     :bubble (:bubble state)}))
 
 (defn action?
   "True for an appearance action descriptor."
@@ -178,6 +237,30 @@
       state
       (assoc state :reduced-motion value))))
 
+(defn set-language
+  [state value]
+  (let [state (normalize state)
+        value (normalize-language value)]
+    (if (= value (:language state))
+      state
+      (assoc state :language value))))
+
+(defn set-background
+  [state value]
+  (let [state (normalize state)
+        value (normalize-background value)]
+    (if (= value (:background state))
+      state
+      (assoc state :background value))))
+
+(defn set-bubble
+  [state value]
+  (let [state (normalize state)
+        value (normalize-bubble value)]
+    (if (= value (:bubble state))
+      state
+      (assoc state :bubble value))))
+
 (defn reduce-action
   "Apply one appearance action.
 
@@ -206,6 +289,15 @@
 
                :appearance/set-reduced-motion
                (set-reduced-motion state (:value action))
+
+               :appearance/set-language
+               (set-language state (:value action))
+
+               :appearance/set-background
+               (set-background state (:value action))
+
+               :appearance/set-bubble
+               (set-bubble state (:value action))
 
                :appearance/reset
                default

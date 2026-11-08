@@ -69,6 +69,54 @@
     :no-preference "标准动态"
     "跟随系统"))
 
+(defn- language-label
+  [value]
+  (case value
+    :en "English"
+    "简体中文"))
+
+(defn- background-label
+  [value]
+  (case value
+    :light "浅色背景"
+    :dark "深色背景"
+    "跟随主题"))
+
+(defn- bubble-label
+  [value]
+  (case value
+    :compact "紧凑气泡"
+    :rounded "圆角气泡"
+    "标准气泡"))
+
+(defn- choice-row
+  [for-id label options value set-action]
+  (el :label {:class "hc-field" :for for-id}
+      (el :span {:class "hc-field__label"} label)
+      (el :select {:id for-id
+                   :class "hc-select"
+                   :value (name value)
+                   :on-change (ev-value set-action)}
+          (mapv (fn [[option label]]
+                  (el :option {:value (name option) :key (name option)} label))
+                options))))
+
+(defn- extra-rows
+  [state]
+  (el :div {:class "hc-appearance-toggles"}
+      (choice-row "hc-appearance-language" "界面语言"
+                  [[:zh-CN "简体中文"] [:en "English"]]
+                  (:language state)
+                  (act :appearance/set-language))
+      (choice-row "hc-appearance-background" "背景"
+                  [[:system "跟随主题"] [:light "浅色背景"] [:dark "深色背景"]]
+                  (:background state)
+                  (act :appearance/set-background))
+      (choice-row "hc-appearance-bubble" "消息气泡"
+                  [[:standard "标准气泡"] [:compact "紧凑气泡"] [:rounded "圆角气泡"]]
+                  (:bubble state)
+                  (act :appearance/set-bubble))))
+
 (defn- theme-row
   [state]
   (el :div {:class "hc-appearance-row"
@@ -157,12 +205,13 @@
                   :aria-labelledby "hc-appearance-title"}
         (el :h2 {:id "hc-appearance-title"} "外观与无障碍")
         (el :p {:class "hc-muted"}
-            "主题、字号、对比度与动态效果只影响本浏览器；不改变服务器状态或会话内容。")
+            "主题、字号、对比度、语言、背景、气泡与动态效果只影响本浏览器；不改变服务器状态或会话内容。")
         (el :fieldset {:class "hc-appearance-fieldset"
                        :style {:border "0" :padding "0" :margin "0"}}
             (el :legend {:class "hc-field__label"} "主题")
             (theme-row state))
         (font-row state)
+        (extra-rows state)
         (toggle-row state)
         (el :p {:class "hc-muted hc-appearance-status"
                 :role "status"
@@ -171,6 +220,9 @@
             (str "当前：" (theme-label (:theme state))
                  " · " (:font-scale state) "%"
                  " · " (if (= :high (:contrast state)) "高对比度" "标准对比度")
-                 " · " (reduced-motion-label (:reduced-motion state))))
+                 " · " (reduced-motion-label (:reduced-motion state))
+                 " · " (language-label (:language state))
+                 " · " (background-label (:background state))
+                 " · " (bubble-label (:bubble state))))
         (el :p {:class "hc-muted"}
             "键盘：Tab 聚焦，方向键调整字号，空格切换复选选项。"))))

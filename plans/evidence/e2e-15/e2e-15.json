@@ -1,0 +1,111 @@
+{
+  "test": "E2E 15",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-08T07:14:13.752Z",
+  "freeze": {
+    "bundleSha256Expected": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+    "treeHashExpected": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
+    "bundleSha256Actual": "2458e3d3d4eaa4a38e2725b8e20fa0a21ece04f4132ac586faa61137ce46d332",
+    "treeHashSrcTestActual": "ddf0d9c3fe73229d8957c68689529f0a1ec4b48c76747f936d02eb588076407c",
+    "bundleMatchesFreeze": false,
+    "treeMatchesFreeze": false
+  },
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-08T06:51:15.468Z",
+    "sha256": "2458e3d3d4eaa4a38e2725b8e20fa0a21ece04f4132ac586faa61137ce46d332"
+  },
+  "checks": {
+    "speechPanelMounted": true,
+    "replyOk": true,
+    "userMessageCount": 1,
+    "assistantRowFound": true,
+    "ttsPlaying": true,
+    "ttsError": false,
+    "ttsRequestCount": 1,
+    "ttsInputIsReply": true,
+    "ttsFormat": "wav",
+    "ttsPaused": true,
+    "ttsResumed": true,
+    "versionSelectorShown": true,
+    "playerGoneAfterVersionSwitch": true,
+    "editedVersionShown": true,
+    "versionSwitchBackOk": true,
+    "versionButtons": 2,
+    "translationPanelOpened": true,
+    "translateRequestCount": 1,
+    "translateSawSource": true,
+    "translateSawSystem": true,
+    "originalPreserved": true,
+    "translationShown": true,
+    "insertDraftButtons": 1,
+    "draftHasPrefix": true,
+    "draftHasTranslation": true,
+    "noAutoSend": true,
+    "micRecordingStarted": true,
+    "micStoppedViaButton": true,
+    "sttFailureShown": false,
+    "sttAudioPreservedHint": true,
+    "sttAttemptsAfterFail": 1,
+    "sttAudioElement": true,
+    "sttServiceOptions": [
+      {
+        "value": "",
+        "label": "默认服务"
+      },
+      {
+        "value": "cloud-stt",
+        "label": "Cloud STT · 云端"
+      },
+      {
+        "value": "device-stt",
+        "label": "Device STT · 设备内"
+      }
+    ],
+    "serviceChangeWarning": true,
+    "reviewShown": true,
+    "transcriptText": "E2E15 转写文本：明天下午四点开会。",
+    "transcriptMatches": true,
+    "reviewShowsDevice": true,
+    "reviewShowsDuration": true,
+    "sttRetryUsedSecondService": true,
+    "sttRecordingPosts": 2,
+    "draftHasTranscript": true,
+    "draftKeptPrefix": true,
+    "transcriptNotSent": true,
+    "settingsListsStt": false,
+    "settingsListsTts": false,
+    "settingsListsTranslate": false
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-01-read-aloud-playing.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-02-version-switch-stopped.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-03-translation.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-04-stt-failed-kept.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-05-transcript-review.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-06-draft-inserted.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-15/e2e15-07-speech-settings.png"
+  ],
+  "manual": {},
+  "httpLog": [
+    "REQ GET /speech/snapshot ",
+    "RES 200 /speech/snapshot",
+    "REQ GET /speech/snapshot ",
+    "RES 200 /speech/snapshot",
+    "REQ POST /speech/tts body=146",
+    "RES 200 /speech/tts",
+    "REQ POST /speech/translate body=188",
+    "RES 200 /speech/translate",
+    "REQ POST /speech/recordings ",
+    "RES 502 /speech/recordings",
+    "REQ POST /speech/recordings/rec-26bf240c-dc3a-4fca-a305-bb39f523f344/retry ",
+    "RES 200 /speech/recordings/rec-26bf240c-dc3a-4fca-a305-bb39f523f344/retry",
+    "REQ GET /speech/snapshot ",
+    "RES 200 /speech/snapshot"
+  ],
+  "consoleLog": [
+    "error: Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ],
+  "finishedAt": "2026-11-08T07:16:04.994Z"
+}

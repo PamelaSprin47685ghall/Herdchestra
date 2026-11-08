@@ -156,8 +156,17 @@
         (let [system (system/start! (test-config data static))]
           (try
             (is (false? (:blocked? system)))
-            (let [owner (get @(:owners system) session-id)
+            ;; Startup creates Owners lazily: only the presentation active
+            ;; session gets one eagerly.  The live session here is not the
+            ;; first listed after the branch exists, so ensure its Owner
+            ;; through the same recovery seam a command would use.
+            (let [loaded (registry/get-session (:registry system) session-id)
+                  ensured (registry/ensure-owner-for-session!
+                           (:registry system) (:session loaded))
+                  owner (or (:owner ensured)
+                            (get @(:owners system) session-id))
                   live (get-in ((:snapshot owner)) [:state :session])]
+              (is (:ok? ensured))
               (is (some? live))
               (is (= 2 (count (get-in live [:messages "m1" :versions]))))
               (is (= "edited question"

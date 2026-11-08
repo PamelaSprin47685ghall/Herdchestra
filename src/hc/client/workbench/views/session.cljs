@@ -41,20 +41,23 @@
         :desktop)))
 
 (defn- ensure-session-messages!
-  "Ask for a fresh baseline when a session summary says it has messages but
-  the local normalized table has none.
+  "Fetch the newest history window when a session summary says it has
+  messages but the local normalized table has none.
 
-  A complete baseline carries every visible session's history, including a
-  branch's source.  If the table is nonetheless missing entities the summary
-  advertises, the snapshot is inconsistent or pruned.  Selection itself is
-  local; the server baseline is the only source of the missing entities, so
-  request one instead of rendering a false empty conversation.  A normal
+  With windowed baselines the newest message window is already published.
+  When even that window is absent locally the session's Owner may not exist
+  yet, so this first asks the server to ensure it (`:session/ensure`, a
+  cheap no-op when the Owner is already live) and then fetches the newest
+  history window (`:history/messages`) instead of requesting a full resync —
+  a resync would return the same windowed baseline.  A normal
   branch/origin selection already has the messages and stays a local
   navigation."
   [this session-id]
   (when (model/missing-session-messages? (application/current-state this)
                                          session-id)
-    (commands/request-resync! this :selected-session-messages-missing)))
+    (do
+      (commands/ensure-session-owner! this session-id)
+      (commands/fetch-history-window! this session-id {}))))
 
 (defn select-session!
   "Select one session from any workbench surface.
@@ -65,6 +68,10 @@
   [this session-id]
   (comp/transact! this [(mutations/select-session {:session-id session-id})])
   (routing/navigate! this :sessions session-id)
+  ;; Owners are created lazily server-side.  Ensure one exists for the
+  ;; selected session so its command epoch and history commands work; the
+  ;; call is idempotent and cheap when the Owner is already live.
+  (commands/ensure-session-owner! this session-id)
   (ensure-session-messages! this session-id))
 
 (defn- session-row
@@ -265,6 +272,11 @@
                                           {:session-id session-id})])
                                        (routing/navigate! this :sessions
                                                           session-id)
+                                       ;; The source session's Owner is also
+                                       ;; lazy; ensure it before its history
+                                       ;; commands can run.
+                                       (commands/ensure-session-owner!
+                                        this session-id)
                                        ;; The baseline normally carries the
                                        ;; source history; request one only if
                                        ;; the local table actually lacks the
@@ -336,6 +348,13 @@
                       selected-id)
         search-services (search-model/services db)
         search-error (search-model/selection-error db search-state)
+        older-available? (boolean
+                          (and selected-id
+                               (model/session-messages-unloaded?
+                                db selected-id)
+                               (not= false
+                                     (model/has-older-messages?
+                                      db selected-id))))
         ;; `:run-error` is the server's active-session error.  A local
         ;; selection may point elsewhere, so only the session's own
         ;; `:last-error` is safe in that case.
@@ -476,6 +495,26 @@
                           (branch-origin-banner this db selected-id)
                           (if selected-id
                             (dom/div {:className "wb-conversation-mount"}
+                                     (when older-available?
+                                       (dom/div {:className "wb-history-window"
+                                                 :role "status"}
+                                                (dom/button
+                                                 {:type "button"
+                                                  :className "wb-button wb-button-small"
+                                                  :aria-label "加载更早的消息"
+                                                  :onClick
+                                                  (fn [_]
+                                                    (commands/ensure-session-owner!
+                                                     this selected-id)
+                                                    (commands/fetch-history-window!
+                                                     this selected-id
+                                                     {:before
+                                                      (some->> messages
+                                                               first
+                                                               (or (:id %)
+                                                                   (:message-id %)))
+                                                      :limit 200}))}
+                                                  "加载更早的消息")))
                                      (when (:active? (:ui/nudge props))
                                        (dom/div {:className "wb-badge"
                                                  :data-tone "warn"

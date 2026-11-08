@@ -1120,3 +1120,320 @@
     (is (empty? (:effects result)))
     (is (= :BACKUP_PASSWORD_EMPTY
            (get-in (:state result) [:ui :message :code])))))
+
+(deftest target-editor-new-edit-and-fields-test
+  (let [state (connected)]
+    ;; A fresh editor starts closed; toggle opens a blank WebDAV form.
+    (let [opened (act state {:type :backup/toggle-target-editor})]
+      (is (true? (get-in opened [:ui :target-editor :open?])))
+      (is (nil? (get-in opened [:ui :target-editor :target-id])))
+      (is (= :webdav (get-in opened [:ui :target-editor :kind]))))
+    ;; :backup/new-target always opens a blank form.
+    (let [fresh (act state {:type :backup/new-target})]
+      (is (true? (get-in fresh [:ui :target-editor :open?])))
+      (is (= "" (get-in fresh [:ui :target-editor :remote-url]))))
+    ;; Editing the WebDAV row backfills non-secret fields and clears secrets.
+    (let [state (act (connected)
+                     {:type :backup/refresh})
+          state (apply-result state (status-result))
+          edited (act state {:type :backup/edit-target :target-id :dav})
+          editor (get-in edited [:ui :target-editor])]
+      (is (true? (:open? editor)))
+      (is (= :dav (:target-id editor)))
+      (is (= :webdav (:kind editor)))
+      (is (= "https://dav.example.com" (:remote-url editor)))
+      (is (= "hc" (:directory editor)))
+      (is (= "" (:password editor)))
+      (is (= "" (:secret editor)))
+      ;; Editing an unknown id warns and keeps the editor closed.
+      (let [missing (act state {:type :backup/edit-target :target-id :nope})]
+        (is (= :BACKUP_TARGET_UNKNOWN (get-in missing [:ui :message :code])))
+        (is (false? (get-in missing [:ui :target-editor :open?]))))
+      ;; set-default? compares against :server :default-target-id.
+      (is (false? (:set-default? editor)))
+      (let [local (act state {:type :backup/edit-target :target-id :local})]
+        (is (true? (get-in local [:ui :target-editor :set-default?])))))))
+
+(deftest target-set-field-test
+  (let [state (act (connected) {:type :backup/new-target})
+        state (act state {:type :backup/set-target-field
+                          :field :kind :value "s3"})
+        state (act state {:type :backup/set-target-field
+                          :field :remote-url :value "https://s3.example.com"})
+        state (act state {:type :backup/set-target-field
+                          :field :bucket :value "hc-bucket"})
+        editor (get-in state [:ui :target-editor])]
+    (is (= :s3 (:kind editor)))
+    (is (= "https://s3.example.com" (:remote-url editor)))
+    (is (= "hc-bucket" (:bucket editor)))
+    (testing "unknown fields are ignored"
+      (let [state (act state {:type :backup/set-target-field
+                              :field :not-a-field :value "x"})]
+        (is (not (contains? (get-in state [:ui :target-editor])
+                            :not-a-field)))))))
+
+(deftest target-save-payload-and-gate-test
+  (let [state (-> (connected)
+                  (act {:type :backup/new-target})
+                  (act {:type :backup/set-target-field
+                        :field :remote-url :value "https://dav.example.com/hc"})
+                  (act {:type :backup/set-target-field
+                        :field :username :value "alice"})
+                  (act {:type :backup/set-target-field
+                        :field :password :value "s3cret"})
+                  (act {:type :backup/set-target-field
+                        :field :directory :value "backups"})
+                  (act {:type :backup/set-target-field
+                        :field :set-default? :value true}))
+        view (model/target-config-view state)]
+    (is (true? (:can-save? view)))
+    (is (true? (:can-test? view)))
+    (is (= 11 (count (:fields view))))
+    (let [queued (act state {:type :backup/save-target})
+          command (last-command queued)
+          payload (:payload command)]
+      (is (= :backup/save-target (:kind command)))
+      (is (nil? (:target-id payload)))
+      (is (true? (:default? payload)))
+      (is (= {:kind :webdav
+              :remote-url "https://dav.example.com/hc"
+              :username "alice"
+              :password "s3cret"
+              :directory "backups"}
+             (:config payload)))
+      (is (= :backup/save-target-pending (get-in queued [:ui :message :code]))))
+    (testing "an unsynced client refuses and keeps the form"
+      (let [offline (-> (model/initial-state)
+                        (act {:type :backup/new-target})
+                        (act {:type :backup/set-target-field
+                              :field :remote-url
+                              :value "https://dav.example.com"}))
+            refused (act offline {:type :backup/save-target})]
+        (is (empty? (:outbox refused)))
+        (is (= :backup/not-synced (get-in refused [:ui :message :code])))
+        (is (= "https://dav.example.com"
+               (get-in refused [:ui :target-editor :remote-url])))))
+    (testing "missing required fields refuse to queue"
+      (let [state (act (connected) {:type :backup/new-target})
+            refused (act state {:type :backup/save-target})]
+        (is (empty? (:outbox refused)))
+        (is (= :BACKUP_TARGET_INVALID (get-in refused [:ui :message :code])))))
+    (testing "s3 payload maps secret and path-style"
+      (let [state (-> (connected)
+                      (act {:type :backup/new-target})
+                      (act {:type :backup/set-target-field
+                            :field :kind :value :s3})
+                      (act {:type :backup/set-target-field
+                            :field :endpoint :value "https://s3.example.com"})
+                      (act {:type :backup/set-target-field
+                            :field :bucket :value "b"})
+                      (act {:type :backup/set-target-field
+                            :field :region :value "us-east-1"})
+                      (act {:type :backup/set-target-field
+                            :field :access-key :value "AK"})
+                      (act {:type :backup/set-target-field
+                            :field :secret :value "SK"})
+                      (act {:type :backup/save-target}))
+            config (:config (:payload (last-command state)))]
+        (is (= :s3 (:kind config)))
+        (is (= "https://s3.example.com" (:endpoint config)))
+        (is (= "b" (:bucket config)))
+        (is (= "us-east-1" (:region config)))
+        (is (= "AK" (:access-key config)))
+        (is (= "SK" (:secret config)))
+        (is (true? (:path-style? config)))))))
+
+(deftest target-save-receipt-test
+  (let [state (-> (connected)
+                  (act {:type :backup/new-target})
+                  (act {:type :backup/set-target-field
+                        :field :remote-url :value "https://dav.example.com"})
+                  (act {:type :backup/set-target-field
+                        :field :directory :value "hc"})
+                  (act {:type :backup/save-target}))
+        done (apply-result state
+                           {:status :accepted :target-id :dav
+                            :kind :webdav :persisted? true
+                            :targets [{:id :dav :kind :webdav
+                                       :configured? true :available? true
+                                       :base-url "https://dav.example.com"
+                                       :directory "hc"}]
+                            :default-target-id :local})]
+    (is (false? (get-in done [:ui :target-editor :open?])))
+    (is (= :BACKUP_TARGET_SAVED (get-in done [:ui :message :code])))
+    (is (some #(= :dav (:id %))
+              (get-in done [:server :targets])))
+    ;; A status refresh was queued after the save receipt.
+    (is (some #(= :backup/status (:kind (:payload %)))
+              (:outbox done)))
+    (testing "a failed save keeps the editor and form"
+      (let [state (-> (connected)
+                      (act {:type :backup/new-target})
+                      (act {:type :backup/set-target-field
+                            :field :remote-url
+                            :value "https://dav.example.com"})
+                      (act {:type :backup/save-target}))
+            failed (apply-error state
+                                {:code :BACKUP_TARGET_INVALID
+                                 :message "bad target"})]
+        (is (true? (get-in failed [:ui :target-editor :open?])))
+        (is (= "https://dav.example.com"
+               (get-in failed [:ui :target-editor :remote-url])))
+        (is (= :warning (get-in failed [:ui :message :kind])))))))
+
+(deftest target-test-receipt-test
+  (let [state (-> (connected)
+                  (act {:type :backup/new-target})
+                  (act {:type :backup/set-target-field
+                        :field :remote-url :value "https://dav.example.com"})
+                  (act {:type :backup/test-target}))
+        command (last-command state)
+        payload (:payload command)]
+    (is (= :backup/test-target (:kind command)))
+    (is (= {:kind :webdav
+            :remote-url "https://dav.example.com"
+            :username "" :password ""}
+           (:config payload)))
+    (is (string? (:command-key payload)))
+    (testing "probe ok marks the test state and shows info"
+      (let [done (apply-result state
+                               {:status :complete :command-id "x"
+                                :probe {:ok? true :kind :webdav
+                                        :target-id nil
+                                        :detail "reachable"}})]
+        (is (= :ok (get-in done [:ui :target-test :status])))
+        (is (= "reachable" (get-in done [:ui :target-test :detail])))
+        (is (= :info (get-in done [:ui :message :kind])))))
+    (testing "a failed probe is still a successful command"
+      (let [done (apply-result state
+                               {:status :complete
+                                :probe {:ok? false :kind :webdav
+                                        :target-id nil
+                                        :detail "401 unauthorized"}})]
+        (is (= :failed (get-in done [:ui :target-test :status])))
+        (is (= "401 unauthorized"
+               (get-in done [:ui :target-test :detail])))
+        (is (= :warning (get-in done [:ui :message :kind])))))
+    (testing "a flat ok?/detail receipt shape is also accepted"
+      ;; The receipt may carry :ok?/:detail directly instead of :probe.
+      (let [done (apply-result state {:ok? true :detail "fine"})]
+        (is (= :ok (get-in done [:ui :target-test :status])))))
+    (testing "a command-level error marks the test failed"
+      (let [failed (apply-error state
+                                {:code :BACKUP_TARGET_UNAVAILABLE
+                                 :message "unreachable"})]
+        (is (= :failed (get-in failed [:ui :target-test :status])))
+        (is (string? (get-in failed [:ui :target-test :detail])))))
+    (testing "different drafts do not block each other"
+      (let [state (act state {:type :backup/set-target-field
+                              :field :kind :value :s3})
+            state (act state {:type :backup/set-target-field
+                              :field :endpoint
+                              :value "https://s3.example.com"})
+            state (act state {:type :backup/set-target-field
+                              :field :bucket :value "b"})
+            state (act state {:type :backup/set-target-field
+                              :field :region :value "r"})
+            state (act state {:type :backup/set-target-field
+                              :field :access-key :value "ak"})
+            state (act state {:type :backup/set-target-field
+                              :field :secret :value "sk"})
+            second (act state {:type :backup/test-target})]
+        ;; The first test-target is still pending (:queued), yet the second
+        ;; draft queues because its :command-key differs.
+        (is (= 2 (count (:outbox second))))
+        (is (some #(= "test-s3-new" (:command-key (:payload %)))
+                  (:outbox second)))))))
+
+(deftest target-delete-two-step-test
+  (let [state (-> (connected)
+                  (act {:type :backup/refresh})
+                  (apply-result (status-result)))
+        ;; Step one only records the pending id.
+        requested (act state {:type :backup/request-delete-target
+                              :target-id :dav})
+        _ (is (= :dav (get-in requested [:ui :target-delete-id])))
+        _ (is (empty? (:outbox requested)))
+        ;; Cancelling clears it without a command.
+        cancelled (act requested {:type :backup/cancel-delete-target})
+        _ (is (nil? (get-in cancelled [:ui :target-delete-id])))
+        ;; Step two queues the delete and clears the confirmation.
+        confirmed (act requested {:type :backup/delete-target})
+        command (last-command confirmed)]
+    (is (= :backup/delete-target (:kind command)))
+    (is (= {:target-id :dav :kind :backup/delete-target}
+           (select-keys (:payload command) [:target-id :kind])))
+    (is (nil? (get-in confirmed [:ui :target-delete-id])))
+    (is (= :backup/delete-target-pending
+           (get-in confirmed [:ui :message :code])))
+    (testing "delete without a pending id warns and queues nothing"
+      (let [state (act state {:type :backup/delete-target})]
+        (is (empty? (:outbox state)))
+        (is (= :BACKUP_TARGET_UNKNOWN (get-in state [:ui :message :code])))))
+    (testing "the success receipt clears state and refreshes"
+      (let [done (apply-result confirmed
+                                {:status :accepted :target-id :dav
+                                 :deleted? true
+                                 :targets [{:id :local :kind :file
+                                            :configured? true
+                                            :available? true
+                                            :root "/data/backups"}]
+                                 :default-target-id :local})]
+        (is (nil? (get-in done [:ui :target-delete-id])))
+        (is (= :BACKUP_TARGET_DELETED (get-in done [:ui :message :code])))
+        (is (not (some #(= :dav (:id %))
+                       (get-in done [:server :targets]))))
+        (is (some #(= :backup/status (:kind (:payload %)))
+                  (:outbox done))))
+    (testing "a failed delete keeps the warning and the pending id"
+      (let [requested (act state {:type :backup/request-delete-target
+                                  :target-id :dav})
+            queued (act requested {:type :backup/delete-target})
+            failed (apply-error queued
+                                {:code :BACKUP_TARGET_UNKNOWN
+                                 :message "missing"})]
+        (is (= :warning (get-in failed [:ui :message :kind]))))))))
+
+(deftest target-config-view-complete-test
+  (let [state (-> (connected)
+                  (act {:type :backup/refresh})
+                  (apply-result (status-result))
+                  (act {:type :backup/new-target})
+                  (act {:type :backup/set-target-field
+                        :field :kind :value :s3})
+                  (act {:type :backup/set-target-field
+                        :field :endpoint :value "https://s3.example.com"})
+                  (act {:type :backup/set-target-field
+                        :field :bucket :value "b"})
+                  (act {:type :backup/set-target-field
+                        :field :region :value "us-east-1"})
+                  (act {:type :backup/set-target-field
+                        :field :access-key :value "ak"})
+                  (act {:type :backup/set-target-field
+                        :field :secret :value "sk"}))
+        view (model/target-config-view state)]
+    (is (= :s3 (:kind view)))
+    (is (= "S3" (:kind-label view)))
+    (is (= (apply dissoc model/default-target-editor
+                  [:open? :kind :endpoint :bucket :region
+                   :access-key :secret])
+           (dissoc (:editor view) :open? :kind :endpoint :bucket :region
+                   :access-key :secret)))
+    (is (= [[:webdav "WebDAV"] [:s3 "S3"] [:file "本地文件"]]
+           model/target-kind-options))
+    (is (= 3 (count (:targets view))))
+    (is (false? (:busy? view)))
+    (is (true? (:can-save? view)))
+    (is (true? (:can-test? view)))
+    (is (= :idle (get-in view [:test :status])))
+    (testing "fields carry labels, inputs, required flags and kinds"
+      (let [by-key (into {} (map (juxt :key identity) (:fields view)))]
+        (is (= :text (get-in by-key [:remote-url :input])))
+        (is (= "服务地址" (get-in by-key [:remote-url :label])))
+        (is (= #{:webdav} (get-in by-key [:remote-url :kinds])))
+        (is (= :password (get-in by-key [:secret :input])))
+        (is (= #{:s3} (get-in by-key [:secret :kinds])))
+        (is (true? (get-in by-key [:bucket :required?])))
+        (is (= :checkbox (get-in by-key [:set-default? :input])))
+        (is (= #{:webdav :s3 :file}
+               (get-in by-key [:set-default? :kinds])))))))

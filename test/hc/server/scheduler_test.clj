@@ -1275,3 +1275,147 @@
       (finally
         (scheduler/stop! (:scheduler started-runtime))
         (close-storage! storage-env)))))
+
+
+(deftest seeded-ms-store-recovers-missed-and-skipped-runs
+  ;; E2E-16 regression: the seed writes epoch-ms `:next-run`/`:scheduled-at`
+  ;; documents straight into the `scheduler` partition.  App startup must
+  ;; read them as milliseconds, classify the live run as interrupted, and
+  ;; record the elapsed daily occurrences as :missed/:skipped facts.  The
+  ;; window must contain a real occurrence: next-run sits ~25h back so at
+  ;; least one daily 08:30 always falls inside [next-run, now].
+  (let [{:keys [store] :as storage-env} (open-storage)
+        now-ms (now "2026-11-08T14:00")
+        snapshot {:prompt "seeded prompt"
+                  :execution {:mode :new-chat}
+                  :model {:connection-id "conn-1"
+                          :model-entry-id "model-a"
+                          :display-name "Mock Fast"}
+                  :capability-scope #{}}
+        schedule-doc
+        (fn [{:keys [id name state next-run-at zone mode]
+              :or {mode :fixed}}]
+          {:id id
+           :name name
+           :prompt "seeded prompt"
+           :state state
+           :revision 1
+           :created-at now-ms
+           :updated-at now-ms
+           :active-run-id nil
+           :last-run-id nil
+           :attention nil
+           :paused-at (when (= :paused state) now-ms)
+           :snapshot snapshot
+           :execution {:mode :new-chat}
+           :recurrence {:kind :daily :time {:hour 8 :minute 30}}
+           :timezone {:mode mode :zone zone}
+           :next-run next-run-at
+           :pending-gaps []
+           :exhausted? false})
+        run-doc
+        {:id "run-overlap"
+         :schedule-id "sched-overlap"
+         :trigger :scheduled
+         :status :running
+         :revision 1
+         :snapshot snapshot
+         :execution {:mode :new-chat}
+         :scheduled-at (- now-ms 93600000)
+         :scheduled-local nil
+         :scheduled-zone shanghai
+         :scheduled-exists? true
+         :ambiguous? false
+         :original-scheduled-at nil
+         :next-run-at-creation (- now-ms 93600000)
+         :data-mode :current
+         :created-at now-ms
+         :started-at 0
+         :ended-at nil
+         :recorded-at now-ms
+         :chat-id nil
+         :result-files []
+         :notification nil
+         :reason nil
+         :issues nil
+         :manual? false
+         :attempt 1}
+        schedules
+        [(schedule-doc {:id "sched-missed"
+                        :name "missed"
+                        :state :enabled
+                        :next-run-at (- now-ms 90000000)
+                        :zone shanghai})
+         (schedule-doc {:id "sched-overlap"
+                        :name "overlap"
+                        :state :enabled
+                        :next-run-at (- now-ms 93600000)
+                        :zone shanghai
+                        :mode :follow-device})]
+        export
+        {:format-version 1
+         :complete? true
+         :store-id "seeded-ms"
+         :exported-at "2026-11-08T06:00:00Z"
+         :partitions
+         {"scheduler"
+          {:version 1
+           :meta nil
+           :last-commit nil
+           :docs (into [{:kind :scheduler-root
+                        :id "root"
+                        :doc {:v 1
+                              :revision 1
+                              :seq 1
+                              :device-zone shanghai
+                              :run-order ["run-overlap"]}}]
+                       (concat
+                        (map (fn [s] {:kind :scheduler-schedule
+                                      :id (:id s)
+                                      :doc s})
+                             schedules)
+                        [{:kind :scheduler-run
+                          :id "run-overlap"
+                          :doc run-doc}]))
+           :obligations []
+           :blob-refs nil}}}]
+    (try
+      (storage/restore-state! store export
+                              {:quiescent? true
+                               :migration-id "seeded-ms-test"})
+      ;; Seed values must read back as epoch milliseconds, not nanoseconds.
+      (let [seeded (durable/state store)]
+        (is (= (- now-ms 90000000)
+               (get-in seeded [:schedules "sched-missed" :next-run])))
+        (is (= (- now-ms 93600000)
+               (get-in seeded [:schedules "sched-overlap" :next-run]))))
+      (let [adapter (durable/durable-store store {:generation "g-seed"
+                                                  :clock #(System/currentTimeMillis)})
+            opened (service/open-service
+                    {:store adapter
+                     :clock (:clock (support/fixed-clock now-ms))
+                     :device-zone shanghai
+                     :start-run! (fn [_] :accepted)})]
+        (try
+          (is (:ok? opened) (pr-str opened))
+          (let [svc (:service opened)
+                recovery (:recovery opened)
+                runs (vals (:runs (service/snapshot svc)))]
+            (is (= 1 (count (:interrupted recovery))))
+            (let [missed (filter #(= "sched-missed" (:schedule-id %)) runs)
+                  overlap-runs (filter #(= "sched-overlap" (:schedule-id %)) runs)]
+              (is (= 1 (count (filter #(= :missed (:status %)) missed))))
+              (is (every? #(= :process-restart (:reason %)) missed))
+              (is (seq (filter #(= :skipped (:status %)) overlap-runs))
+                  "an occurrence during the live run must be skipped")
+              (is (every? #(= :previous-still-running (:reason %))
+                          (filter #(= :skipped (:status %)) overlap-runs)))
+              (is (> (get-in (durable/state store)
+                             [:schedules "sched-missed" :next-run])
+                     now-ms)
+                  "recovery advances next-run strictly past now")))
+          (finally
+            (when (:service opened)
+              (service/close! (:service opened))))))
+      (finally
+        (close-storage! storage-env)))))

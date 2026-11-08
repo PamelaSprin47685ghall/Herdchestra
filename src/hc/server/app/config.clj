@@ -63,6 +63,12 @@
    ;; suppressed stop is recorded as `:nudge-suppressed` in the Owner's
    ;; `:turn-history`, giving automation an observable idle boundary.
    :nudge-enabled? true
+   ;; §2.5 unattended continuation has a host round budget: after this many
+   ;; consecutive Nudge rounds for one actor the Owner records
+   ;; `:round-boundary`, clears the turn, and the session can go idle
+   ;; instead of looping while the Plan ledger stays open.  `nil` uses the
+   ;; policy default (`hc.compose.nudge.policy/default-round-budget`).
+   :nudge-round-budget nil
    ;; `:all` means "same-origin only", never a wildcard.  The remaining
    ;; defaults fail closed: no extra hosts and no remote peers.
    ;; `:allow-remote? true` is rejected by `validate-gateway`; EDN cannot
@@ -604,6 +610,13 @@
                       {:error/kind :config-invalid
                        :field :nudge-enabled?
                        :value (:nudge-enabled? config)})))
+    (when (and (some? (:nudge-round-budget config))
+               (not (and (integer? (:nudge-round-budget config))
+                         (pos? (:nudge-round-budget config)))))
+      (throw (ex-info "nudge-round-budget must be a positive integer or nil"
+                      {:error/kind :config-invalid
+                       :field :nudge-round-budget
+                       :value (:nudge-round-budget config)})))
     (when (str/blank? host)
       (throw (ex-info "host must not be blank"
                       {:error/kind :config-invalid :field :host})))

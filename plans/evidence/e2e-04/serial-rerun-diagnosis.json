@@ -1,0 +1,64 @@
+{
+  "test": "e2e-04 serial low-load rerun (final27b)",
+  "worker": "w277-e2e04-11-final27b",
+  "recordedAt": "2026-11-08T10:30:00Z",
+  "frozenHashes": {
+    "bundleSha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundleBytes": 3087081,
+    "sourceTreeSha256": "43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a",
+    "verifiedOnDisk": "sha256sum resources/public/js/main.js == 92d18d8f...; find src test | sort | xargs sha256sum | sha256sum == 43431535... (re-verified after every temporary spec instrumentation was reverted)"
+  },
+  "serialDiscipline": "one spec at a time; pgrep confirmed no hc-e2e/playwright leftovers between runs (only an unrelated orphaned /tmp/hc-e2e14-chrome-* tree from an earlier session, never touched)",
+  "runs": [
+    {"at": "10:01Z", "result": "FAIL@reply1", "error": "first reply mismatch: E2E04-FALLBACK", "note": "9 chat-completions msgs 4->13, all user content=[image_url] only"},
+    {"at": "10:03Z", "result": "FAIL@branchReply2", "error": "branch second reply mismatch: E2E04-REPLY-3 (stale copied bubble)", "note": "page snapshot shows 连接状态：连接中断; mock log has NO 分支第二轮 request; trace.network shows ws reconnect ERR_CONNECTION_REFUSED"},
+    {"at": "10:07Z", "result": "FAIL@reply1", "error": "first reply mismatch: E2E04-FALLBACK"},
+    {"at": "10:08Z", "result": "FAIL@branchReply2", "error": "same stale REPLY-3 + 连接中断", "note": "captureBodies run: bodies prove message shape"},
+    {"at": "10:10Z", "result": "FAIL@branchReply2", "error": "same", "note": "captureBodies run"},
+    {"at": "10:12Z", "result": "FAIL@reply1", "error": "first reply mismatch: E2E04-FALLBACK"},
+    {"at": "10:22Z", "result": "FAIL@branchReply2", "error": "same", "note": "HC_E2E_JVM_OPTS=-XX:+HeapDumpOnOutOfMemoryError -Xlog:gc* diagnostic run; canonical evidence (result.json + screenshots 01-04, dual hashes correct)"}
+  ],
+  "defects": [
+    {
+      "id": "E2E04-D1",
+      "severity": "deterministic-per-run (~50% of runs)",
+      "summary": "First user message loses its text part when an image attachment is present. The OpenAI request body carries content=[{type:image_url}] with NO {type:text} part, so the mock's lastUserText is '' and every retry returns E2E04-FALLBACK. The UI still renders the typed prompt (it is stored client/server side), but the model never sees it.",
+      "evidence": "captureBodies run: all 9 turn-1 request bodies have messages[1].content parts=['image_url'] only (passing runs have ['text','image_url']); see e2e04-result.json mockState.bodies from the 10:08/10:10 diagnostic runs (superseded by final result.json; bodies were captured in-run). Server-side builder is src/hc/server/model_adapter/request.clj ->user-message: TextContent is only emitted when (context-text message) is non-blank, so (:text message) was blank at request build time -> race between text persistence and attachment send.",
+      "hypothesis": "optimistic/async message entity: attachment send path can reach the model adapter before :text (or :content) is populated on the message record."
+    },
+    {
+      "id": "E2E04-D2",
+      "severity": "deterministic at branch phase (4/4 runs that reach it)",
+      "summary": "The app JVM exits cleanly ~90s uptime into every run that survives the first turns. GC log shows orderly gc,exit at uptime 93.855s with heap healthy (288M/385M committed, NO heap dump, NO OutOfMemoryError, server log has no error). Client sees ws reconnect ERR_CONNECTION_REFUSED -> 连接状态：连接中断 -> 材料库未就绪; branch prompt never reaches the mock.",
+      "evidence": [
+        "plans/evidence/e2e-04/jvm-gc-exit-tail.log (gc,exit block from /tmp/hc-gc.log)",
+        "trace.zip 1-trace.network: ws://127.0.0.1:39787/chsk reconnect -> net::ERR_CONNECTION_REFUSED",
+        "error-context.md aria snapshot: 连接状态：连接中断; 当前轮仍在生成 stuck",
+        "standalone probe (node startApp, no browser, no model traffic): app stayed healthy 150s+ -> death is triggered by test activity, not a timer",
+        "app.mjs JVM_OPTS include -XX:+ExitOnOutOfMemoryError but no OOM occurred; orphan-watchdog ruled out (JVM parent is the node runner, not a shell; shell-launcher? false)"
+      ],
+      "openQuestion": "what delivers the orderly shutdown at ~90s under load: SIGTERM from an external reaper, an in-app supervisor/maintenance path (restore-supervisor stop-current!), or a shutdown-hook trigger inside a component (scheduler/fleet/materials). GC exit logging proves signal-or-System/exit, not a crash."
+    },
+    {
+      "id": "E2E04-D3",
+      "severity": "latent deterministic spec bug (masked by D2)",
+      "summary": "replyScript first-match-wins substring collision: prompt 'E2E04 分支第二轮 ...' contains '第二轮', so rule {match:'第二轮'} (index 1) wins over {match:'分支第二轮'} (index 3); mock would return E2E04-REPLY-2, never E2E04-BRANCH-REPLY-2. Same for 分支第三轮 vs 第三轮. Even with a stable connection the branchReply2/branchReply3 asserts cannot pass.",
+      "evidence": "node one-liner: script.find on 'E2E04 分支第二轮 M：请只回复分支第二。' returns match='第二轮'. Fix options (test/e2e only): reorder rules branch-first, or make mock prefer longest match.",
+      "note": "NOT fixed here: any edit changes tree hash 43431535 which the freeze requires for dual-recording."
+    },
+    {
+      "id": "E2E04-D4",
+      "severity": "observation",
+      "summary": "Each turn issues ~8-9 chat-completions ~330ms apart with growing messageCount; every attempt appends another assistant message plus a system nudge ('review 账本…无人值守…立刻去做'). This retry/nudge storm is what inflates context (msgs 4->33) and may contribute to the ~90s shutdown."
+    }
+  ],
+  "checksPassedBeforeFailure": ["modelBound", "reply1-3 (in runs that got past D1)", "firstRowHasImage", "imageChipVisible", "editAttachmentRemoved", "newVersionHasNoImage", "editedTextShown", "v1KeepsImage", "v1KeepsOriginalText", "blobUrlPresent", "blobReadable", "branchBannerShowsSource", "branchHasEditedFirst", "branchHasPrompt2/3", "branchHasReply1/3", "branchNoBranchRepliesYet"],
+  "evidenceFiles": {
+    "resultJson": "plans/evidence/e2e-04/e2e04-result.json",
+    "screenshots": ["e2e04-01-three-turns.png", "e2e04-02-edited-version.png", "e2e04-03-original-version.png", "e2e04-04-branch-created.png"],
+    "serverLog": "plans/evidence/e2e-04/server-hc-e2e-qeffns.log (and siblings; all end after startup banner, no error)",
+    "playwrightArtifacts": "plans/evidence/e2e-auto/playwright-artifacts/e2e-04--core-E2E-04-history-edit-and-two-branches/ (error-context.md + trace.zip)",
+    "runLogs": ["run1.log", "run3.log"]
+  },
+  "constraintsRespected": "no src/ writes, no git writes, no rebuild; temporary captureBodies instrumentation reverted (tree re-verified 43431535); only test/e2e file touched was e2e-04.spec.mjs and it is byte-identical to freeze state"
+}

@@ -86,6 +86,26 @@
     (is (= [:user-input]
            (get-in result [:state :outbox 0 :reasons])))))
 
+(deftest temporary-read-rides-the-pending-turn
+  (testing "the one-shot temporary read grant reaches the queued turn"
+    (let [fixture (initial)
+          result (apply! fixture (command "c1" 1 {:kind :send-message
+                                                  :text "read once"
+                                                  :temporary-read? true}))]
+      (is (= :accepted (get-in result [:receipt :status])))
+      (is (= [true]
+             (mapv :temporary-read?
+                   (get-in result [:state :pending-turns])))
+          "the queued turn carries the grant so open-user-turn-guard can
+           put it on the model request envelope")))
+  (testing "a send without the grant leaves the turn closed"
+    (let [fixture (initial)
+          result (apply! fixture (command "c1" 1 {:kind :send-message
+                                                  :text "plain"}))]
+      (is (= [nil]
+             (mapv :temporary-read?
+                   (get-in result [:state :pending-turns])))))))
+
 (deftest tool-required-send-refuses-a-tools-less-model-and-keeps-the-draft
   (let [fixture (initial {:initial-session
                           {:model-binding {:connection-id "conn"
@@ -101,6 +121,10 @@
     (is (= :plan (get-in result [:receipt :error :details :role])))
     (is (= :clj-plan
            (get-in result [:receipt :error :details :program-role])))
+    (is (= :binding
+           (get-in result [:receipt :error :details
+                           :capabilities-source]))
+        "the refusal names the binding declaration as the tools source")
     (is (true? (get-in result [:receipt :error :details
                                :draft-preserved?])))
     (is (= [] (get-in result [:state :conversation]))
@@ -1273,6 +1297,49 @@
                        last)]
     (is (= "let me check that" (:text assistant))
         "streamed or preamble text wins over the tool-call placeholder")))
+
+(deftest completed-model-event-mirrors-usage-into-history
+  ;; The :completed event carries the model-port usage report.  The mirror
+  ;; into session history must forward it unchanged so the durable version
+  ;; keeps the report; the read side projects the flat token fields.
+  (let [mirrored (atom nil)
+        port {:apply-command
+              (fn [session payload]
+                (when (= :history/append-message (:kind payload))
+                  (reset! mirrored payload))
+                {:ok? true
+                 :session (assoc (or session {}) :last (:kind payload))
+                 :result {:status :accepted}
+                 :effects []})}
+        fixture (initial)
+        ctx (assoc (context (:registry fixture) 3000) :session-port port)
+        report {:coverage :final
+                :usage {:input-tokens 100 :output-tokens 20
+                        :cache-read-tokens :unknown
+                        :cache-write-tokens :unknown}
+                :sources {:input-tokens :reported
+                          :output-tokens :reported
+                          :cache-read-tokens :unknown
+                          :cache-write-tokens :unknown}}
+        done (handlers/apply-message
+              (assoc-in (:state fixture) [:calls "model-1"]
+                        {:call-id "model-1"
+                         :kind :model
+                         :role :plan
+                         :lane :plan
+                         :agent-id :plan
+                         :state :running
+                         :attempt-id "a1"})
+              {:type :model/event
+               :event {:event :completed
+                       :attempt-id "a1"
+                       :model-call-id "model-1"
+                       :text "priced answer"
+                       :usage report}}
+              ctx)]
+    (is (= :accepted (get-in done [:receipt :status])))
+    (is (= report (:usage @mirrored))
+        "the history mirror payload carries the full usage report")))
 
 (deftest scope-close-waits-for-live-child-tools
   (let [fixture (initial)

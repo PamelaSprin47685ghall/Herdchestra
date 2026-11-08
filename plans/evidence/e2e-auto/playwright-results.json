@@ -6,7 +6,7 @@
       "test",
       "--config",
       "test/e2e/playwright.config.mjs",
-      "test/e2e/e2e-09-protected-commit.spec.mjs"
+      "test/e2e/e2e-04.spec.mjs"
     ],
     "configFile": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/playwright.config.mjs",
     "rootDir": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e",
@@ -120,25 +120,25 @@
   },
   "suites": [
     {
-      "title": "e2e-09-protected-commit.spec.mjs",
-      "file": "e2e-09-protected-commit.spec.mjs",
+      "title": "e2e-04.spec.mjs",
+      "file": "e2e-04.spec.mjs",
       "column": 0,
       "line": 0,
       "specs": [
         {
-          "title": "@core E2E 09 protected commit keeps the external edit, then applies after re-read",
+          "title": "@core E2E 04 history edit and two branches",
           "ok": true,
           "tags": [
             "core"
           ],
           "tests": [
             {
-              "timeout": 240000,
+              "timeout": 420000,
               "annotations": [
                 {
                   "type": "serial",
                   "location": {
-                    "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-09-protected-commit.spec.mjs",
+                    "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-04.spec.mjs",
                     "line": 0,
                     "column": 0
                   }
@@ -152,17 +152,17 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 17648,
+                  "duration": 142083,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T05:15:17.482Z",
+                  "startTime": "2026-11-08T14:12:06.802Z",
                   "annotations": [
                     {
                       "type": "serial",
                       "location": {
-                        "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-09-protected-commit.spec.mjs",
+                        "file": "/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-04.spec.mjs",
                         "line": 0,
                         "column": 0
                       }
@@ -174,9 +174,9 @@
               "status": "expected"
             }
           ],
-          "id": "832a91d250c01367b2df-20a742aa481b2eb1f8dd",
-          "file": "e2e-09-protected-commit.spec.mjs",
-          "line": 55,
+          "id": "60e931cc888ceebcb187-7fa2c327717e80a84b5b",
+          "file": "e2e-04.spec.mjs",
+          "line": 156,
           "column": 1
         }
       ]
@@ -184,8 +184,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-11-06T05:15:17.219Z",
-    "duration": 17955.904,
+    "startTime": "2026-11-08T14:12:06.532Z",
+    "duration": 142567.71399999998,
     "expected": 1,
     "skipped": 0,
     "unexpected": 0,

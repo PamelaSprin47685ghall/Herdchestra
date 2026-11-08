@@ -279,6 +279,50 @@
         (track! this command)
         (send-command! this command)))))
 
+(defn- app-scoped-command!
+  "Send one app-epoch command that is not tied to a session Owner."
+  [this kind payload]
+  (let [epoch (bridge/command-epoch)]
+    (cond
+      (not (bridge/command-allowed?))
+      (blocked! this :connection-not-ready)
+
+      (nil? epoch)
+      (blocked! this :command-epoch-unknown)
+
+      :else
+      (let [command-id (new-id)
+            command {:command-id command-id
+                     :command-epoch epoch
+                     :kind kind
+                     :status :submitting
+                     :created-at (now)
+                     :payload (assoc payload :kind kind)}]
+        (track! this command)
+        (send-command! this command)))))
+
+(defn ensure-session-owner!
+  "Ask the server to start the session's Owner and publish its epoch.
+
+  Sessions are loaded lazily: only the first one gets an Owner at startup.
+  Opening another session calls this once so history and metadata commands
+  have a live Owner epoch to use."
+  [this session-id]
+  (app-scoped-command! this :session/ensure {:session-id session-id}))
+
+(defn fetch-history-window!
+  "Fetch one page of older messages for SESSION-ID.
+
+  The baseline publishes only the newest message window per session.  This
+  command returns the next older page; the receipt reducer merges the
+  entities into `:message/by-id`.  BEFORE is the oldest currently loaded
+  message id (exclusive); LIMIT caps the page."
+  [this session-id {:keys [before limit]}]
+  (app-scoped-command! this :history/messages
+                       (cond-> {:session-id session-id}
+                         before (assoc :before before)
+                         limit (assoc :limit limit))))
+
 (defn edit-message!
   ([this session-id message-id content]
    (edit-message! this session-id message-id content nil nil))

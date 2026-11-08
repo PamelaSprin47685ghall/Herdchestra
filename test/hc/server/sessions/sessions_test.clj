@@ -1289,3 +1289,43 @@
                                       :outbound-context outbound-context})]
         (is (not (:ok? missing)))
         (is (= :MESSAGE_NOT_FOUND (get-in missing [:error :code])))))))
+
+(deftest send-message-freezes-temporary-read-into-run-snapshot
+  (let [{:keys [context session]} (session-with-model)
+        sent (support/execute session :session/send-message
+                              {:text "hello"
+                               :temporary-read? true}
+                              {:now 2000
+                               :config (:config context)
+                               :id-source (:source context)})
+        run-id (get-in sent [:receipt :result :run-id])
+        snapshot (get-in sent [:session :runs run-id :input-snapshot])]
+    (is (:ok? sent))
+    (is (true? (:temporary-read? snapshot))
+        "the accepted send's one-shot temporary read reaches the frozen run")
+    (is (true? (get-in sent [:session :runs run-id :input-snapshot
+                            :temporary-read?])))))
+
+(deftest record-outbound-freezes-temporary-read-into-run-snapshot
+  (let [{:keys [session]} (session-with-model)
+        outbound-context (fn [session _opts]
+                           {:message-ids (vec (keys (:messages session)))
+                            :context {:system "sys" :messages []}})
+        delegate (fn [s request opts] (history/apply-command s request opts))
+        appended (support/execute session :history/append-message
+                                  {:message-id "msg-temp-1"
+                                   :role :user
+                                   :content "hello"}
+                                  {:now 2000
+                                   :delegate delegate
+                                   :outbound-context outbound-context})
+        session (support/ok-session appended)
+        recorded (support/execute session :session/record-outbound
+                                  {:message-id "msg-temp-1"
+                                   :run-id "run-temp-1"
+                                   :temporary-read? true}
+                                  {:now 3000
+                                   :outbound-context outbound-context})
+        session' (support/ok-session recorded)]
+    (is (true? (get-in session' [:runs "run-temp-1"
+                                :input-snapshot :temporary-read?])))))

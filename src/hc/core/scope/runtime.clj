@@ -123,11 +123,17 @@
         text (message-text message)]
     (case role
       (:user :operator)
-      [{:kind :message
-        :role :operator
-        :text text
-        :source-index index
-        :source-role role}]
+      [(cond-> {:kind :message
+                :role :operator
+                :text text
+                :source-index index
+                :source-role role}
+         (contains? message :attachments)
+         (assoc :attachments (:attachments message))
+         (contains? message :quotes)
+         (assoc :quotes (:quotes message))
+         (contains? message :citations)
+         (assoc :citations (:citations message)))]
 
       :system
       [{:kind :message
@@ -208,22 +214,33 @@
             results)
 
       (or (seq messages) (seq thinking) (seq calls))
-      [(cond-> {}
-         (seq messages)
-         (assoc :role (item-role->model-role (first messages))
-                :text (or (:text (first messages)) ""))
+      [(let [first-message (first messages)
+             base (cond-> {}
+                    (seq messages)
+                    (assoc :role (item-role->model-role first-message)
+                           :text (or (:text first-message) ""))
 
-         (seq thinking)
-         (assoc :thinking (:text (first thinking)))
+                    (seq thinking)
+                    (assoc :thinking (:text (first thinking)))
 
-         (seq calls)
-         (assoc :tool-calls (mapv tool-call->model calls))
+                    (seq calls)
+                    (assoc :tool-calls (mapv tool-call->model calls))
 
-         (and (empty? messages) (seq thinking))
-         (assoc :role :assistant :text "")
+                    (and (empty? messages) (seq thinking))
+                    (assoc :role :assistant :text "")
 
-         (and (empty? messages) (empty? thinking) (seq calls))
-         (assoc :role :assistant))]
+                    (and (empty? messages) (empty? thinking) (seq calls))
+                    (assoc :role :assistant))]
+         (if (and (seq messages) (= :operator (:role first-message)))
+           (merge base
+                  (cond-> {}
+                    (contains? first-message :attachments)
+                    (assoc :attachments (:attachments first-message))
+                    (contains? first-message :quotes)
+                    (assoc :quotes (:quotes first-message))
+                    (contains? first-message :citations)
+                    (assoc :citations (:citations first-message))))
+           base))]
 
       :else [])))
 
@@ -241,8 +258,14 @@
 (defn- standalone-message [item]
   (case (:kind item)
     :message
-    {:role (item-role->model-role item)
-     :text (or (:text item) "")}
+    (cond-> {:role (item-role->model-role item)
+             :text (or (:text item) "")}
+      (contains? item :attachments)
+      (assoc :attachments (:attachments item))
+      (contains? item :quotes)
+      (assoc :quotes (:quotes item))
+      (contains? item :citations)
+      (assoc :citations (:citations item)))
 
     :thinking
     {:role :assistant

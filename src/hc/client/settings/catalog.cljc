@@ -239,6 +239,61 @@
   [pricing]
   (not (str/includes? (pricing-label pricing) "未知")))
 
+(defn- format-amount
+  "Format a non-negative number for display: two decimals, comma grouping."
+  [value]
+  (let [fixed #?(:clj (format "%.2f" (double value))
+                 :cljs (.toFixed (double value) 2))
+        [whole frac] (str/split fixed #"\.")]
+    (str (util/format-integer (util/parse-int whole 0)) "." frac)))
+
+(defn- price-amount
+  "Return a numeric price side or nil when it is unknown/absent."
+  [pricing side]
+  (let [value (if (map? pricing) (get pricing side) nil)]
+    (when (number? value) value)))
+
+(defn price-preview
+  "Estimate the cost of one sample request.
+
+  `pricing` is the row's `:pricing` map (`:input`/`:output` numbers with
+  `:currency` and `:unit`).  `counts` supplies `:input`/`:output` token
+  counts.  Returns `{:known? bool :text string}`: `无法估算` when either
+  side or the unit is unknown; a formatted amount otherwise."
+  [pricing counts]
+  (let [pricing (when (map? pricing) pricing)
+        unit (some-> pricing :unit util/normalize-keyword)
+        currency (:currency pricing)
+        input-price (price-amount pricing :input)
+        output-price (price-amount pricing :output)
+        input-tokens (let [n (get counts :input)]
+                       (when (number? n) (max 0 n)))
+        output-tokens (let [n (get counts :output)]
+                        (when (number? n) (max 0 n)))
+        unit-label (case unit
+                     :per-million-tokens "百万 tokens"
+                     :per-request "请求"
+                     :per-image "图片"
+                     :per-second "秒"
+                     nil)
+        known? (and pricing
+                    unit-label
+                    (number? input-price)
+                    (number? output-price)
+                    (number? input-tokens)
+                    (number? output-tokens))]
+    (if-not known?
+      {:known? false :text "无法估算"}
+      (let [input-cost (* input-price (/ input-tokens 1000000.0))
+            output-cost (* output-price (/ output-tokens 1000000.0))
+            total (+ input-cost output-cost)
+            formatted (format-amount total)]
+        {:known? true
+         :text (str (when currency (str currency " "))
+                    formatted
+                    "（按 " unit-label " 计）")
+         :total total}))))
+
 (defn- capacity-value
   [value]
   (cond

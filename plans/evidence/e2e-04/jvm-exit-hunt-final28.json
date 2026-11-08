@@ -1,0 +1,34 @@
+{
+  "test": "e2e-04 JVM-exit hunt + D3 fix + branch-dispatch finding (final28 worker w278-jvm-exit)",
+  "recordedAt": "2026-11-08T10:55:00Z",
+  "frozenHashes": {
+    "bundleSha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundleVerified": "sha256sum resources/public/js/main.js unchanged",
+    "sourceTreeSha256Final27b": "43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a",
+    "sourceTreeSha256Now": "154c7a462bfb5eb085fea694cee1e35bf88048f25f01595feeda143d5b597a97"
+  },
+  "headline": "D-29 retracted: gc,exit at uptime 93.855s is the teardown SIGTERM (w277's own result.json finishedAt 10:23:57.537Z vs gc,exit 10:23:57.554Z = +17ms). No mid-test JVM or system death exists. Instrumented reruns kept the JVM alive for entire tests.",
+  "changes": [
+    "test/e2e/e2e-04.spec.mjs: replyScript branch rules (分支第二轮/分支第三轮) moved before plain 第二轮/第三轮 — fixes D3 deterministic substring collision",
+    "test/e2e/support/app.mjs: [app-exit] code/signal logging for whole run; orphan-watchdog fire log; opt-in HC_E2E_SIGTRACE ptrace wrapper; HC_E2E_LOG_LEVEL env",
+    "src/hc/server/app.clj: HC-ORPHAN-EXIT println when in-app orphan watchdog fires (never observed)"
+  ],
+  "runs": [
+    {"at": "10:43Z", "mode": "sigtrace v2", "result": "FAIL branchReply2 mismatch E2E04-REPLY-3", "jvm": "alive until teardown (app-exit 10:43:17.638Z vs finishedAt 10:43:17.262Z)", "serverLog": "server-hc-e2e-beYLKP.log"},
+    {"at": "10:46Z", "mode": "plain rerun after D3 fix", "result": "FAIL branchReply2 mismatch E2E04-REPLY-3 (same)", "mockLog": "27 requests; turn1 9x, turn2 9x, turn3 9x; ZERO requests after branchPrompt2 -> branch turn never dispatched a model call", "serverLog": "server-hc-e2e-Nx5hYm.log"},
+    {"at": "10:47Z", "mode": "HC_E2E_LOG_LEVEL=info", "result": "FAIL reply1 E2E04-FALLBACK (D1 text-part loss hit)", "note": ":info produced no app logs (app uses different sink); branch phase not reached"}
+  ],
+  "branchDispatchFinding": {
+    "id": "E2E04-B1-NEW",
+    "summary": "After branch creation the branch second user message never produces a chat-completions request (mock log: last request 10:46:02 turn3 storm, branchPrompt2 sent ~10:46:1x, test ended 10:46:27 with ZERO new requests). waitForAssistant returns the stale source REPLY-3 bubble -> 'branch second reply mismatch'. This is the real e2e-04 branch blocker, NOT a connection/JVM failure.",
+    "wsChannelNote": "error-context snapshots show '实时通道未打开或已中断' (hc.client.diagnostics.bridge) and '网络尚未连接，草稿已保留' — consistent with the Sente /chsk channel being down at snapshot time. In the traced run the only ERR_CONNECTION_REFUSED was 0.4s before teardown, but bg_3202's trace was overwritten; mid-test WS starvation under the retry storm remains the leading mechanism (storm delays WS handling -> ping timeout/drop -> client cannot submit :send-message -> zero model calls). Same mechanism plausibly explains E2E11-M1 materials badge starvation.",
+    "candidates": [
+      "Sente channel down/starved under retry storm -> client :send-message never reaches server (leading hypothesis, unproven)",
+      "server received :send-message but Owner dropped it pre-model-call (command-epoch mismatch or guard block)",
+      "composer disabled (:no-model/:select-model) — less likely, button rendered clickable in snapshot"
+    ],
+    "nextStep": "reproduce with HC_E2E_KEEP_TEMP + server debug logging or a WS-frame tap; confirm whether :send-message for branch session-id arrives and what the router/Owner returns; then bound the retry storm (W279 D-30) and re-test — storm bounding is the probable single fix for E2E04-B1 + E2E11-M1"
+  },
+  "remainingBlockers": ["E2E04-D1 text-part loss ~50% (W279)", "E2E04-B1 branch turn no-dispatch (NEW, unassigned)", "E2E11-M1 materials readiness flake (see e2e-11/jvm-exit-hunt-final28.json)"],
+  "conclusion": "No JVM-exit defect; no server/compose exit-path fix needed for final28. D3 spec fix landed. Real blockers enumerated above."
+}

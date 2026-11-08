@@ -646,7 +646,11 @@
   [normalized role]
   (let [role (keyword role)]
     (or (get-in normalized [:roles role])
-        (invalid! :unknown-role
+        (invalid! (if (and (= :task role)
+                           (contains? (:roles normalized) :main)
+                           (not (contains? (:roles normalized) :task)))
+                   :role-unconfigured
+                   :unknown-role)
                   "snapshot names an unknown model role"
                   {:role role
                    :roles (vec (sort-by str (keys (:roles normalized))))}))))

@@ -15,6 +15,22 @@
   "The Phase B directive.  It never claims a review ledger exists."
   "立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。")
 
+(def default-round-budget
+  "Maximum consecutive Nudge rounds for one [tenure-id agent-id] before the
+  policy answers `:round-boundary`.
+
+  The boundary is a host budget, not a task verdict: §2.5 still asks the
+  agent to clear its ledger, but the host stops injecting Nudge calls once
+  the same actor has been nudged this many times without a legal exit, so
+  an unattended session can go idle instead of looping forever.  The next
+  `:turn/ended`, user message, or board/ledger change re-enters the same
+  judgement; nothing is spent permanently."
+  8)
+
+(def round-boundary-reason
+  "The disabled `:reason` that marks an exhausted Nudge round budget."
+  :round-boundary)
+
 (def role-lanes
   "The lane that owns each task-cycle role."
   {:plan :plan
@@ -51,8 +67,9 @@
   `hc.server.model-adapter.port/normalize-error` removes `:error/kind` and
   maps `:invalid-snapshot` reasons to `:kind`.  The real shape therefore
   carries `:kind`/`:reason` such as `:unknown-field`, not `:invalid-snapshot`."
-  #{:unknown-field :not-a-map :unknown-role :invalid-quotes :invalid-citations
-    :messages-not-sequential :messages-empty :attachments-not-sequential
+  #{:unknown-field :not-a-map :unknown-role :role-unconfigured :invalid-quotes
+    :invalid-citations :messages-not-sequential :messages-empty
+    :attachments-not-sequential
     :tool-calls-not-sequential :empty-assistant-message :invalid-tool-arguments
     :arguments-unparsable :arguments-not-a-string :arguments-not-a-map
     :invalid-tool-call-id :blank-tool-name :invalid-role :invalid-identifier})
@@ -111,7 +128,8 @@
   `failure-class` can still see a cause the host reported in place.  The
   fields are copied verbatim; nothing is invented."
   [state {:keys [role agent-id board in-flight? turn-ended? awaiting-user?
-                 nudge-seq turn-id tenure tenure-id execution-tenure
+                 nudge-seq turn-id tenure tenure-id execution-tenure tools?
+                 round-seq round-budget
                  failure failure-outcome permanent-failure? session-id]
           :as facts}]
   (let [role (when role (keyword role))
@@ -139,6 +157,11 @@
      :agent-id agent-id
      :turn-ended? (if (nil? turn-ended?) true (boolean turn-ended?))
      :in-flight? (boolean in-flight?)
+     ;; `:tools?` is tri-state: `false` is the host's proof that the ended
+     ;; turn made no tool call, `true` that it did, and nil that the host
+     ;; cannot say (a manually reported `:turn/ended`).  `legal-exit`
+     ;; requires the proven `false` before it may answer `:plain-response`.
+     :tools? (when (some? tools?) (boolean tools?))
      :awaiting-user? (boolean (or awaiting-user?
                                   (:awaiting-user? tenure)))
      ;; A classified cause may arrive without a `:failure` map: the inline
@@ -157,6 +180,14 @@
      :permanent-failure? (boolean permanent-failure?)
      :nudge-seq nudge-seq
      :turn-id turn-id
+     ;; Consecutive settled rounds this actor has already consumed.  The host
+     ;; counts committed Nudge calls in `[:nudge-rounds key]`; the policy
+     ;; only compares the number against the budget.
+     :round-seq (long (or round-seq 0))
+     :round-budget (let [budget (or round-budget default-round-budget)]
+                     (if (and (integer? budget) (pos? budget))
+                       budget
+                       default-round-budget))
      :session-id (or session-id (:session-id state))}))
 
 (defn user-wait-kind
@@ -189,7 +220,8 @@
   A retired tenure is not an exit; it is inactive and has a successor.
   `:awaiting-user?` is authoritative: the policy never fights an explicit
   human wait, even if its shape is not one of the two §2.5 asks."
-  [{:keys [role lane tenure execution-tenure execution-tenures]
+  [{:keys [role lane tenure execution-tenure execution-tenures tools?
+           failure-outcome]
     :as observation}]
   (when tenure
     (let [awaiting? (boolean (or (:awaiting-user? observation)
@@ -197,6 +229,24 @@
       (cond
         (= :retired (:status tenure))
         nil
+
+        ;; A plain answer is a legal stop: the turn ended `:succeeded`, made
+        ;; no tool call, and left no ledger work.  Nudge exists to push
+        ;; task-cycle progress; with neither tools nor ledger entries there
+        ;; is nothing to push, so the session can idle.  Worker/holder
+        ;; turns keep their board check in `worker-decision`, a failed or
+        ;; unknown outcome still owes the failure-driven decision, and a
+        ;; host that cannot prove the turn was tool-free (`:tools?` nil,
+        ;; e.g. a manually reported `:turn/ended`) keeps the old judgement.
+        (and (contains? central-roles role)
+             (= :succeeded failure-outcome)
+             (false? tools?)
+             (ledger/ledger-empty? (:ledger tenure)))
+        {:kind :plain-response
+         :role role
+         :lane lane
+         :tenure-id (:tenure-id tenure)
+         :milestone (:milestone tenure)}
 
         (or (= :completed (:status tenure))
             (= :completed (:milestone tenure)))
@@ -278,6 +328,22 @@
   ([base reason details]
    (cond-> (assoc base :enabled? false :reason reason)
      (some? details) (assoc :details details))))
+
+(defn- boundary-decision
+  "Answer `:round-boundary` when OBSERVATION already consumed its budget.
+
+  The boundary only applies to a decision the policy would otherwise
+  enable: a legal exit, a block, a deferral, or a lane that never nudges
+  keeps its own answer.  `details` carries the count and the ledger keys
+  the agent still owes, so the snapshot/diagnostic can show what stopped."
+  [observation base]
+  (let [ledger-keys (->> (or (get-in observation [:tenure :ledger]) {})
+                         ledger/entries
+                         (mapv first))]
+    (disabled base round-boundary-reason
+              {:round-seq (:round-seq observation)
+               :round-budget (:round-budget observation)
+               :ledger-keys ledger-keys})))
 
 (defn- effective-turn-ended?
   [observation]
@@ -492,7 +558,13 @@
   [observation]
   (let [role (when (:role observation) (keyword (:role observation)))
         lane (or (:lane observation) (get role-lanes role))
-        observation (assoc observation :role role :lane lane)
+        budget (let [b (or (:round-budget observation)
+                           default-round-budget)]
+                 (if (and (integer? b) (pos? b)) b default-round-budget))
+        observation (-> observation
+                        (assoc :role role :lane lane)
+                        (assoc :round-seq (long (or (:round-seq observation) 0))
+                               :round-budget budget))
         base (base-decision observation)
         tenure (:tenure observation)
         failure-class (failure-class observation)]
@@ -540,10 +612,14 @@
                      :relay-pending? (:relay-pending? tenure)})
 
           (contains? central-roles role)
-          (central-decision observation base)
+          (if (>= (:round-seq observation) (:round-budget observation))
+            (boundary-decision observation base)
+            (central-decision observation base))
 
           (contains? worker-roles role)
-          (worker-decision observation base)
+          (if (>= (:round-seq observation) (:round-budget observation))
+            (boundary-decision observation base)
+            (worker-decision observation base))
 
           :else
           (disabled base :unsupported-role {:role role}))))))

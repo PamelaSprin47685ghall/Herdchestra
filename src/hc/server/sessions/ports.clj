@@ -177,6 +177,32 @@
   [owner effects]
   (mapv (fn [effect] (enqueue! owner effect)) effects))
 
+(defn read-session-summary
+  "Read one session record without its message bodies.
+
+  List and preflight callers need the committed session fields (status,
+  revision, drafts, model binding) but never the `:messages` map or
+  `:message-order`.  Adapters that store the record as one document still pay
+  the document read; this helper strips the bodies before the value reaches
+  the caller so list scans stay small.  Returns the same result shape as
+  `read-session`."
+  [persistence session-id]
+  (let [result (read-session persistence session-id)]
+    (if (= :found (:status result))
+      (let [session (:session result)
+            visible-count
+            (count (filter (fn [id]
+                             (let [m (get-in session [:messages id])]
+                               (and m
+                                    (not (:deleted? m))
+                                    (not (:folded? m)))))
+                           (:message-order session)))]
+        (assoc result :session
+               (-> session
+                   (dissoc :messages :message-order)
+                   (assoc :visible-message-count visible-count))))
+      result)))
+
 (defn- commit-error
   [message data]
   {:status :unknown

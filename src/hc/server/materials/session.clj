@@ -409,7 +409,8 @@
 
 (def ^:private unconfigured-role-kinds
   "Adapter failures that mean the requested utility/task role is absent."
-  #{:unknown-role :role-required :unknown-model :model-missing
+  #{:unknown-role :role-unconfigured :role-required :unknown-model
+    :model-missing
     :connection-missing :role-model-mismatch :role-connection-mismatch})
 
 (defn- role-unavailable?

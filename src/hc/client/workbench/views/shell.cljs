@@ -210,7 +210,9 @@
                                           (dom/strong {} (:title session))
                                           (dom/small {}
                                                      (str "删除时间："
-                                                          (or (:deleted-at session) "—")
+                                                          (or (common/time-label
+                                                               (:deleted-at session))
+                                                              "—")
                                                           " · 预计清理：删除后 30 天"))
                                           (dom/button
                                            {:type "button"
@@ -366,7 +368,7 @@
   [this props]
   (let [aux-open (:ui/aux-open props)
         tab (or (:ui/aux-tab props) :details)]
-    (dom/aside {:id "wb-aux"
+    (dom/nav {:id "wb-aux"
                 :className "wb-aux"
                 :data-open (if aux-open "true" "false")
                 :aria-label "上下文详情"}

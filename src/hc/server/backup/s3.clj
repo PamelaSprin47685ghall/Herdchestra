@@ -230,6 +230,56 @@
   [target method uri query body]
   (request target method (query-uri uri query) query body))
 
+(defn- safe-url
+  "Probe-facing URL: scheme, authority and path only."
+  [^URI uri]
+  (try
+    (str (.getScheme uri) "://" (.getRawAuthority uri)
+         (or (.getRawPath uri) ""))
+    (catch Exception _ nil)))
+
+(defn probe
+  "Check one S3-compatible target without writing objects.
+
+  Accepts a target config map or an existing `S3Target`.  Sends a signed
+  HEAD against the bucket URI: 200 means the bucket exists and is listable,
+  403 means the credentials authenticated but the bucket denies listing
+  (still reported reachable), and anything else is a failure.  The detail
+  carries the HTTP status and a bounded response excerpt; signatures and
+  keys never appear in it."
+  [target-or-config]
+  (try
+    (let [target (if (instance? S3Target target-or-config)
+                   target-or-config
+                   (target target-or-config))
+          uri (bucket-uri target)
+          safe (safe-url uri)]
+      (let [response (request target :head uri {} nil)
+            status (long (:status response))
+            excerpt (http/response-excerpt (:body response) 200)]
+        (cond
+          (= 200 status)
+          {:ok? true :status status
+           :detail (str "S3 bucket reachable (HTTP " status ")")
+           :url safe}
+
+          (= 403 status)
+          {:ok? true :status status
+           :detail (str "credentials valid; bucket exists but listing is "
+                        "forbidden (HTTP 403)"
+                        (when excerpt (str ": " excerpt)))
+           :url safe}
+
+          :else
+          {:ok? false :status status
+           :detail (str "S3 HEAD failed (HTTP " status ")"
+                        (when excerpt (str ": " excerpt)))
+           :url safe})))
+    (catch Throwable t
+      {:ok? false :status nil
+       :detail (or (ex-message t) (str t))
+       :url nil})))
+
 (defn- conflict!
   [id]
   (err/fail! :BACKUP_OBJECT_CONFLICT

@@ -1106,3 +1106,79 @@ OLLAMA_CONTEXT_LENGTH=16384 OLLAMA_NUM_PARALLEL=1 ollama serve
 - `OLLAMA_NUM_PARALLEL=1` + E2E 串行，避免多个 27B 请求争用导致超时。
 - 观测到的 HTTP 500 根因是客户端中途断开/取消，不是模型崩溃；服务端应
   记录取消，不得把断连当成模型失败或重放。
+
+## 16 nippy `read_typed` JIT SIGSEGV 缓解（2026-11-08）
+
+### 现象
+
+`hs_err_pid3871452.log`（11-05，宿主 JDK 27）、`hs_err_pid4054882.log` 与
+`hs_err_pid4063480.log`（11-05，Pixi JDK 21.0.10-internal rattler）记录同一
+崩溃形态：JVM 在 C2 编译代码中收到 SIGSEGV（`si_code=SEGV_MAPERR`，
+`si_addr` 指向未映射地址）。Problematic frame 全部为
+
+```
+J c2 taoensso.nippy.io$read_typed.invokeStatic(...)Ljava/lang/Object; (6084 bytes)
+```
+
+调用栈：`hc.server.storage.view/session-view` → `datalevin.scan/get-range`
+→ `datalevin.bits/read-buffer` → nippy thaw。崩溃线程为
+`hc-publisher-1` 与 `clojure-agent-send-off-pool-1`（agent 线程池）。
+
+离线 thaw 存活数据库全部干净（W248 实测），说明与数据形状/并发时序相关，
+不指向数据损坏。nippy 3.9.0 的 `read_typed` 是 6084 字节巨型方法，
+C2 编译产物在两种 JDK 上均出现越界读，疑似 JIT 误编译（`[INFERENCE]`：
+未定位到具体 JIT bug；也可能是 nippy 对 ByteBuffer 边界的依赖被 C2
+激进优化放大）。
+
+### 缓解参数
+
+`test/e2e/support/app.mjs` `JVM_OPTS` 已加入：
+
+```
+-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic
+-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke
+-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim
+```
+
+语法要点（JDK 21 与 27 均实测）：类名用 `/` 分隔，内部类用 `$`；
+JDK 21 的 CompileCommand 解析器不接受类名通配符，也不接受
+`class$inner` 无方法的裸类模式；`class.method` 形式可解析。
+`invokeStatic`/`invoke`/`invokePrim` 三个入口全部排除，覆盖所有重载。
+
+### 验证（2026-11-08，Pixi JDK 21）
+
+1. `e2e-11` 全量运行三次（含 memory suggest/scan 段，JDK 21）：服务器
+   启动日志出现三条 `CompileCommand: exclude taoensso/nippy/io$read_typed.*`
+   记录，全程无 SIGSEGV（`hs_err_pid*.log` 最新仍为 11-05 的旧文件）。
+   三次均在 `suggestAndWait` 的 `.hc-mat-note` 等待处 120s 超时：mock 收到
+   task 模型 SSE 请求（`taskCalls=1`）但 receipt 未落地，属 memory-suggest
+   流水线/UI 回执问题，与 JVM 崩溃无关；崩溃前该阶段根本到不了。
+2. 独立压力脚本（`/tmp/nippy-stress.clj` + `/tmp/nippy-read-stress.clj`，
+   仅本机验证，未入库）：seed 3 session × 60 条 message/task 混合形状
+   （大字符串、嵌套 map、vector、byte-array），6 个并发读者 × 120 轮
+   `read-session-view` + 120 次并发 commit + 40 轮全分区扫描；
+   另跑 60 轮 × 8 并发读者纯读压测。全部干净退出，无 hs_err 产出。
+3. `startApp` 冒烟：`/healthz` 200，正常关闭。
+
+### 适用范围
+
+- 只覆盖 E2E harness（`app.mjs`）；产品 JVM（`hc.server.app` 直接启动、
+  备份/恢复、CLI）若出现同样崩溃，需在对应启动入口加同样参数，或考虑
+  在 `deps.edn`/启动脚本统一注入。
+- `-XX:-TieredCompilation` 可作诊断手段（强制全解释执行，性能不可接受，
+  仅用于确认 C2 是触发条件），不作为默认。
+- 若后续 nippy/datalevin 升级后崩溃消失，可移除该排除；复检方法见下。
+
+### 复检
+
+```bash
+# 直接验证参数被 JVM 接受（应打印 exclude 行后正常退出）
+JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
+  .pixi/envs/default/bin/clojure \
+  -J"-XX:CompileCommand=exclude,taoensso/nippy/io\$read_typed.invokeStatic" \
+  -M -e '(println :ok)'
+
+# 冒烟：启动 E2E 应用并检查 healthz
+HC_E2E_KEEP_TEMP=1 JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
+  node -e "import('./test/e2e/support/app.mjs').then(async m=>{const a=await m.startApp({});console.log(a.url);await a.close();})"
+```

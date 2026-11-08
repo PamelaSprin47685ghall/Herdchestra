@@ -39,7 +39,7 @@ export const LONG_TEXT = [
   ...LONG_PARAGRAPHS,
 ].join('\n\n');
 
-const MODEL_IDS = ['mock-fast', 'mock-long', 'mock-tool'];
+const MODEL_IDS = ['mock-fast', 'mock-long', 'mock-tool', 'mock-vision', 'mock-slow'];
 const MAX_BODY_BYTES = 1024 * 1024;
 
 function json(res, status, value, extra = {}) {
@@ -91,6 +91,59 @@ function toolCall() {
   };
 }
 
+// Scripted tool calls: `config.toolCalls` is a function
+// `(body) -> [spec]` where spec is `{name, arguments}` (arguments may be an
+// object or a JSON string) optionally with `id`.  It runs for every chat
+// completion request; return `[]` to force a plain text reply even when
+// `forceToolCall` or the model name asks for tools.
+function scriptedToolCalls(config, body) {
+  if (typeof config.toolCalls !== 'function') return null;
+  const specs = config.toolCalls(body);
+  if (!Array.isArray(specs)) return null;
+  return specs.map((spec, index) => ({
+    id: spec.id || `call_scripted_${index}`,
+    type: 'function',
+    function: {
+      name: String(spec.name),
+      arguments: typeof spec.arguments === 'string'
+        ? spec.arguments
+        : JSON.stringify(spec.arguments || {}),
+    },
+  }));
+}
+
+// Extract the last user message's plain text.  Vision requests carry
+// `content` as an array of `{type:"text"}`/`{type:"image_url"}` parts; plain
+// requests carry a string.
+function lastUserText(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const last = [...messages].reverse().find((message) => message?.role === 'user');
+  const content = last?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('');
+  }
+  return '';
+}
+
+// `replyScript` is an ordered list of {match?, reply} rules.  `match` is a
+// substring of the last user text; the first matching rule wins.  A rule
+// without `match` is the fallback for that position.
+function scriptedReply(config, userText, callIndex) {
+  const script = Array.isArray(config.replyScript) ? config.replyScript : null;
+  if (!script || script.length === 0) return null;
+  const byMatch = script.find((rule) =>
+    rule && typeof rule.match === 'string' && userText.includes(rule.match));
+  if (byMatch) return String(byMatch.reply);
+  const fallback = script.find((rule) => rule && rule.match === undefined);
+  if (fallback) return String(fallback.reply);
+  const byIndex = script[Math.min(callIndex, script.length - 1)];
+  return byIndex ? String(byIndex.reply) : null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -114,8 +167,10 @@ export async function startMockModel(options = {}) {
   const state = {
     requests: [],
     chatCompletions: 0,
+    toolCallsIssued: 0,
     active: 0,
     aborted: 0,
+    bodies: [],
     config: {
       reply: FAST_REPLY,
       chunkSize: 24,
@@ -141,10 +196,13 @@ export async function startMockModel(options = {}) {
         mock: true,
         requests: state.requests.length,
         chatCompletions: state.chatCompletions,
+        toolCallsIssued: state.toolCallsIssued,
         active: state.active,
         aborted: state.aborted,
         config: state.config,
         last: state.requests[state.requests.length - 1] || null,
+        log: state.requests.slice(-50),
+        bodies: state.bodies,
       });
     }
     if (req.method === 'POST' && url.pathname === '/__mock/config') {
@@ -161,12 +219,17 @@ export async function startMockModel(options = {}) {
     if (req.method === 'POST' && url.pathname === '/__mock/reset') {
       state.requests = [];
       state.chatCompletions = 0;
+      state.toolCallsIssued = 0;
       state.aborted = 0;
       return json(res, 200, { ok: true, mock: true });
     }
     if (req.method === 'POST' && (url.pathname === '/v1/chat/completions' || url.pathname === '/chat/completions')) {
       const raw = await readBody(req);
       if (raw === null) return json(res, 413, { error: { message: 'request too large' }, mock: true });
+      if (options.captureBodies) {
+        state.bodies.push(raw.slice(0, 64 * 1024));
+        if (state.bodies.length > 80) state.bodies.shift();
+      }
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { /* handled as an empty request */ }
       const model = String(body.model || 'mock-fast');
@@ -179,6 +242,11 @@ export async function startMockModel(options = {}) {
         stream,
         messageCount: Array.isArray(body.messages) ? body.messages.length : 0,
         hasTools: Array.isArray(body.tools) && body.tools.length > 0,
+        toolNames: (Array.isArray(body.tools) ? body.tools : [])
+          .map((tool) => tool?.function?.name || tool?.name).filter(Boolean),
+        toolCallMessages: (Array.isArray(body.messages) ? body.messages : [])
+          .filter((message) => message?.role === 'assistant' && Array.isArray(message?.tool_calls))
+          .map((message) => message.tool_calls.map((call) => call?.function?.name || call?.name)),
         user: Array.isArray(body.messages)
           ? String(body.messages.filter((message) => message.role === 'user').at(-1)?.content || '').slice(0, 200)
           : '',
@@ -196,7 +264,15 @@ export async function startMockModel(options = {}) {
 
       const wantsTool = state.config.forceToolCall || model.includes('tool');
       const long = model.includes('long');
-      const reply = long ? LONG_TEXT : String(state.config.reply || FAST_REPLY);
+      const scripted = scriptedReply(state.config, lastUserText(body), state.chatCompletions - 1);
+      const scriptedCalls = scriptedToolCalls(state.config, body);
+      if (scriptedCalls && scriptedCalls.length > 0) {
+        state.toolCallsIssued += 1;
+      }
+      const effectiveWantsTool = scriptedCalls
+        ? scriptedCalls.length > 0
+        : wantsTool;
+      const reply = scripted ?? (long ? LONG_TEXT : String(state.config.reply || FAST_REPLY));
       const usage = {
         prompt_tokens: 12,
         completion_tokens: long ? Math.ceil(LONG_TEXT.length / 2) : 8,
@@ -204,11 +280,12 @@ export async function startMockModel(options = {}) {
       };
 
       if (!stream) {
-        const message = wantsTool
-          ? { role: 'assistant', content: null, tool_calls: [toolCall()] }
+        const message = effectiveWantsTool
+          ? { role: 'assistant', content: null,
+              tool_calls: scriptedCalls || [toolCall()] }
           : { role: 'assistant', content: reply };
         return json(res, 200, completion(id, model, message,
-                                         wantsTool ? 'tool_calls' : 'stop', usage));
+                                         effectiveWantsTool ? 'tool_calls' : 'stop', usage));
       }
 
       res.writeHead(200, {
@@ -230,16 +307,20 @@ export async function startMockModel(options = {}) {
       };
       res.on('close', stop);
 
-      if (wantsTool) {
+      if (effectiveWantsTool) {
         sse(res, completionChunk(id, model, { role: 'assistant', content: null }));
-        sse(res, completionChunk(id, model, {
-          tool_calls: [{
-            index: 0,
-            id: 'call_mock_tool',
-            type: 'function',
-            function: { name: 'mock_echo', arguments: '{"ok":true,"source":"mock"}' },
-          }],
-        }));
+        const calls = scriptedCalls || [toolCall()];
+        calls.forEach((call, index) => {
+          sse(res, completionChunk(id, model, {
+            tool_calls: [{
+              index,
+              id: call.id,
+              type: 'function',
+              function: { name: call.function.name,
+                          arguments: call.function.arguments },
+            }],
+          }));
+        });
         sse(res, completionChunk(id, model, {}, 'tool_calls'));
         res.write('data: [DONE]\n\n');
         res.end();

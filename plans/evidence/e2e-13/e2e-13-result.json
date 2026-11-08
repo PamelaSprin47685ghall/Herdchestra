@@ -1,0 +1,87 @@
+{
+  "test": "E2E 13 skill install/bind + mini-app generation and storage isolation",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-08T09:32:54.307Z",
+  "finishedAt": "2026-11-08T09:33:16.190Z",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-08T09:06:44.927Z",
+    "sha256": "41fb4643d9c85d6877d01b298d18ffded3d2a7208e06f4418391b68ffcc72da6"
+  },
+  "sourceTreeSha256": "f12affd2eb25c705bc02b69aa64d62f484238d22e1551185b5eae526a79b7dd9",
+  "checks": {
+    "skillCardText": "e2e13-reading-notes · 未标版本 · 未绑定\n来源：文本\n\nE2E13 读书条目技能：记录书名、页码与摘录到工作区笔记。\n\n未启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n269 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游",
+    "skillInstalledDisabled": true,
+    "skillInstalledUnbound": true,
+    "skillCardListsFiles": true,
+    "skillCardNameOk": true,
+    "skillCardDescriptionOk": true,
+    "assistantControlKind": "select",
+    "assistantOptions": [
+      "选择助手…",
+      "通用助手"
+    ],
+    "boundAssistant": "通用助手",
+    "skillEnabled": true,
+    "skillBound": true,
+    "appARegistered": true,
+    "appBRegistered": true,
+    "appARecordWritten": true,
+    "appARecordPersisted": true,
+    "appBDoesNotSeeA": true,
+    "appBRecordWritten": true,
+    "appADoesNotSeeB": true,
+    "appAKeepsOwn": true,
+    "kvRows": [
+      {
+        "app_id": "app-8ac30158-86d6-46bb-8f2d-c6521583902a",
+        "key": "miniapp:app-8ac30158-86d6-46bb-8f2d-c6521583902a:notes",
+        "value": "[\"B-record-观影《肖申克的救赎》\"]"
+      },
+      {
+        "app_id": "app-e61220db-d9c2-4c95-86d7-5faa67531ea5",
+        "key": "miniapp:app-e61220db-d9c2-4c95-86d7-5faa67531ea5:notes",
+        "value": "[\"A-record-读书《活着》\"]"
+      }
+    ],
+    "kvAppCount": 2,
+    "iframeStorageProbe": {
+      "localStorageSentinel": null,
+      "sessionStorageKeys": [
+        "getItem",
+        "setItem",
+        "removeItem",
+        "clear",
+        "key"
+      ],
+      "herdchestraKeys": [
+        "miniapp:app-e61220db-d9c2-4c95-86d7-5faa67531ea5:notes"
+      ]
+    },
+    "pageStorageIsolated": true,
+    "generateFailureStatus": 422,
+    "generateFailureBody": "{:ok? false, :status :error, :error {:code :INVALID_HTML, :message \"模型输出不是完整的 HTML 文档（需要 <html> 和 </html>）\", :details {:chars 22, :preview \"这不是 HTML 文档，没有 html 标签\"}}}",
+    "brokenFileAbsent": true,
+    "existingAppViewableAfterFailure": true
+  },
+  "screenshots": [
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {}
+  ],
+  "appUrl": "http://127.0.0.1:40919",
+  "mockUrl": "http://127.0.0.1:34855",
+  "chromeVersion": "157.0.8103.38",
+  "bundleSha256": "41fb4643d9c85d6877d01b298d18ffded3d2a7208e06f4418391b68ffcc72da6",
+  "freezeBundle": "1e0bd458",
+  "freezeTree": "5af6757f",
+  "bundleNote": "final26 冻结 bundle 1e0bd458（3,086,250 B，15:46:09）+ 树 5af6757f；本次为纯 UI 路径（移除手写 Sente transit 解码），技能预览由安装卡片 frontmatter/文件列表断言替代",
+  "ok": true,
+  "evidence": null
+}

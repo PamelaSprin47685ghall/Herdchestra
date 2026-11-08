@@ -1,0 +1,70 @@
+{
+  "checks": {
+    "dataCenterOpened": true,
+    "createPanelText": ".hc-backup {\n     --hc-backup-fg: #161616;\n     --hc-backup-muted: #4a4a4a;\n     --hc-backup-bg: #ffffff;\n     --hc-backup-surface: #f7f7f7;\n     --hc-backup-border: #b5b5b5;\n     --hc-backup-accent: #0b57d0;\n     --hc-backup-positive: #146c2e;\n     --hc-backup-warning: #7a3e00;\n     --hc-backup-danger: #a4000f;\n     color: var(--hc-backup-fg);\n     background: var(--hc-backup-bg);\n     overflow-wrap: anywhere;\n   }\n   @media (prefers-color-scheme: dark) {\n     html[data-theme=\"auto\"] .hc-backup,\n     html[data-theme=\"system\"] .hc-backup {\n       --hc-backup-fg: #f2f2f2;\n       --hc-backup-muted: #c9c9c9;\n       --hc-backup-bg: #121212;\n       --hc-backup-surface: #1e1e1e;\n       --hc-backup-border: #5a5a5a;\n       --hc-backup-accent: #9ec1ff;\n       --hc-backup-positive: #7ddc9a;\n       --hc-backup-warning: #ffd479;\n       --hc-backup-danger: #ff8a8a;\n     }\n     html[data-theme=\"auto\"] .hc-backup-button--primary,\n     html[data-theme=\"system\"] .hc-backup-button--primary { color: #0b1b33; }\n   }\n   html[data-theme=\"dark\"] .hc-backup {\n     --hc-backup-fg: #f2f2f2;\n     --hc-backup-muted: #c9c9c9;\n     --hc-backup-bg: #121212;\n     --hc-backup-surface: #1e1e1e;\n     --hc-backup-border: #5a5a5a;\n     --hc-backup-accent: #9ec1ff;\n     --hc-backup-positive: #7ddc9a;\n     --hc-backup-warning: #ffd479;\n     --hc-backup-danger: #ff8a8a;\n   }\n   html[data-theme=\"dark\"] .hc-backup-button--primary { color: #0b1b33; }\n   .hc-backup h2, .hc-backup h3, .hc-backup h4 { margin: .6rem 0 .4rem; }\n   .hc-backup p { margin: .35rem 0 .6rem; }\n   .hc-backup__header { margin-bottom: .8rem; }\n   .hc-backup-muted, .hc-backup-note, .hc-backup-field__hint {\n     color: var(--hc-backup-muted);\n     font-size: .88rem;\n   }\n   .hc-backup-sync {\n     display: flex; flex-wrap: wrap; gap: .4rem .8rem;\n     border: 1px solid var(--hc-backup-border); border-radius: .5rem;\n     background: var(--hc-backup-surface); padding: .6rem .75rem;\n   }\n   .hc-backup-tabs {\n     display: flex; flex-wrap: wrap; gap: .35rem;\n     border-bottom: 1px solid var(--hc-backup-border);\n     margin: .8rem 0 1rem;\n   }\n   .hc-backup-tab, .hc-backup-button, .hc-backup-choice {\n     min-height: 44px; min-width: 44px;\n     border: 1px solid var(--hc-backup-border); border-radius: .45rem;\n     background: var(--hc-backup-surface); color: var(--hc-backup-fg);\n     padding: .5rem .8rem; font: inherit; cursor: pointer;\n   }\n   .hc-backup-tab--active { border-color: var(--hc-backup-accent);\n     box-shadow: inset 0 -3px 0 var(--hc-backup-accent); font-weight: 700; }\n   .hc-backup-button--primary { background: var(--hc-backup-accent); color: #fff; }\n   .hc-backup-button--danger { border-color: var(--hc-backup-danger); color: var(--hc-backup-danger); }\n   .hc-backup-button--quiet { background: transparent; }\n   .hc-backup-tab:disabled, .hc-backup-button:disabled, .hc-backup-choice:disabled {\n     opacity: .62; cursor: not-allowed;\n   }\n   .hc-backup-tab:focus-visible, .hc-backup-button:focus-visible,\n   .hc-backup-choice:focus-visible, .hc-backup input:focus-visible {\n     outline: 3px solid var(--hc-backup-accent); outline-offset: 2px;\n   }\n   .hc-backup-panel, .hc-backup-target {\n     border: 1px solid var(--hc-backup-border); border-radius: .55rem;\n     background: var(--hc-backup-surface); padding: .75rem 1rem;\n     margin: .8rem 0;\n   }\n   .hc-backup-facts { display: grid;\n     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));\n     gap: .5rem 1rem; margin: .5rem 0; }\n   .hc-backup-fact dt { font-weight: 700; color: var(--hc-backup-muted); font-size: .8rem; }\n   .hc-backup-fact dd { margin: 0; }\n   .hc-backup-field { display: grid; gap: .3rem; margin: .6rem 0; }\n   .hc-backup-field__label { font-weight: 700; }\n   .hc-backup-input {\n     min-height: 44px; width: 100%; box-sizing: border-box;\n     border: 1px solid var(--hc-backup-border); border-radius: .4rem;\n     background: var(--hc-backup-bg); color: var(--hc-backup-fg);\n     padding: .45rem .6rem; font: inherit;\n   }\n   .hc-backup-check, .hc-backup-radio, .hc-backup-target-choice {\n     display: flex; align-items: flex-start; gap: .55rem;\n     min-height: 44px; padding: .35rem .2rem;\n   }\n   .hc-backup-check input, .hc-backup-radio input,\n   .hc-backup-target-choice input, .hc-backup-category input {\n     width: 1.25rem; height: 1.25rem; margin-top: .15rem;\n   }\n   .hc-backup-categories { border: 1px solid var(--hc-backup-border);\n     border-radius: .55rem; padding: .6rem .8rem; margin: .8rem 0; }\n   .hc-backup-category-grid { display: grid;\n     grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .3rem .9rem; }\n   .hc-backup-category { display: flex; align-items: flex-start; gap: .55rem;\n     min-height: 44px; padding: .35rem .2rem; }\n   .hc-backup-category small, .hc-backup-radio small, .hc-backup-target-choice small {\n     display: block; color: var(--hc-backup-muted); font-size: .82rem;\n   }\n   .hc-backup-actions, .hc-backup-submit, .hc-backup-category-actions {\n     display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .6rem 0;\n   }\n   .hc-backup-warning { border-left: 4px solid var(--hc-backup-warning);\n     background: color-mix(in srgb, var(--hc-backup-warning) 12%, transparent);\n     padding: .45rem .65rem; }\n   .hc-backup-warning--error { border-left-color: var(--hc-backup-danger);\n     background: color-mix(in srgb, var(--hc-backup-danger) 12%, transparent); }\n   .hc-backup-message { border: 1px solid var(--hc-backup-border);\n     border-left-width: 5px; border-radius: .45rem; padding: .55rem .7rem;\n     margin: .6rem 0; display: flex; flex-wrap: wrap; gap: .4rem .8rem;\n     align-items: center; }\n   .hc-backup-message--error { border-left-color: var(--hc-backup-danger); }\n   .hc-backup-message--warning { border-left-color: var(--hc-backup-warning); }\n   .hc-backup-message--success { border-left-color: var(--hc-backup-positive); }\n   .hc-backup-message__action { color: var(--hc-backup-muted); }\n   .hc-backup-badge { display: inline-block; border: 1px solid currentColor;\n     border-radius: 999px; padding: .08rem .45rem; font-size: .78rem;\n     font-weight: 700; white-space: nowrap; }\n   .hc-backup-badge--positive { color: var(--hc-backup-positive); }\n   .hc-backup-badge--warning { color: var(--hc-backup-warning); }\n   .hc-backup-badge--unknown { color: var(--hc-backup-muted); }\n   .hc-backup-row { border: 1px solid var(--hc-backup-border);\n     border-radius: .5rem; padding: .6rem .8rem; margin: .6rem 0;\n     background: var(--hc-backup-bg); }\n   .hc-backup-row__header { display: flex; flex-wrap: wrap;\n     justify-content: space-between; align-items: baseline; gap: .3rem .8rem; }\n   .hc-backup-row__header h4 { margin: 0; }\n   .hc-backup-row--selected { border-color: var(--hc-backup-accent);\n     box-shadow: 0 0 0 2px color-mix(in srgb, var(--hc-backup-accent) 35%, transparent); }\n   .hc-backup-section-heading { display: flex; flex-wrap: wrap;\n     justify-content: space-between; align-items: center; gap: .5rem .9rem; }\n   .hc-backup-section-heading h3 { margin: .2rem 0; }\n   .hc-backup-result__status { display: flex; align-items: center;\n     gap: .5rem; margin: .4rem 0 .6rem; }\n   .hc-backup-verify { border-left: 4px solid var(--hc-backup-positive);\n     background: color-mix(in srgb, var(--hc-backup-positive) 10%, transparent);\n     border-radius: .35rem; padding: .5rem .7rem; margin: .6rem 0; }\n   .hc-backup-table { width: 100%; border-collapse: collapse; margin: .5rem 0;\n     display: block; overflow-x: auto; }\n   .hc-backup-table th, .hc-backup-table td {\n     border-bottom: 1px solid var(--hc-backup-border);\n     padding: .35rem .5rem; text-align: left; }\n   .hc-backup-code { overflow-x: auto; max-height: 16rem; padding: .5rem;\n     background: var(--hc-backup-bg); border: 1px solid var(--hc-backup-border); }\n   .hc-backup-conflict { border-top: 1px solid var(--hc-backup-border);\n     padding-top: .6rem; margin-top: .6rem; }\n   .hc-backup-choice-row { display: flex; flex-wrap: wrap; gap: .4rem; }\n   .hc-backup-choice--selected { border-color: var(--hc-backup-accent);\n     box-shadow: inset 0 0 0 2px var(--hc-backup-accent); font-weight: 700; }\n   .hc-backup-maintenance { border: 2px solid var(--hc-backup-danger);\n     border-radius: .5rem; padding: .7rem .9rem; margin: .8rem 0;\n     background: color-mix(in srgb, var(--hc-backup-danger) 9%, transparent); }\n   .hc-backup-acknowledge { border: 2px solid var(--hc-backup-warning);\n     border-radius: .5rem; padding: .7rem .9rem; margin: .8rem 0;\n     background: color-mix(in srgb, var(--hc-backup-warning) 10%, transparent); }\n   .hc-backup-confirm { border: 1px dashed var(--hc-backup-danger);\n     border-radius: .45rem; padding: .6rem .8rem; margin: .5rem 0; }\n   .hc-backup-target-list { list-style: none; padding: 0; margin: .3rem 0; }\n   .hc-backup-target-list > li { margin: .3rem 0; }\n   .hc-backup-empty { padding: .8rem; border: 1px dashed var(--hc-backup-border);\n     border-radius: .5rem; color: var(--hc-backup-muted); }\n   .hc-backup-list-block ul { padding-left: 1.2rem; }\n   .hc-backup__footer { margin-top: 1rem; border-top: 1px solid var(--hc-backup-border); }\n   @media (max-width: 480px) {\n     .hc-backup-panel, .hc-backup-target { padding: .6rem .7rem; }\n     .hc-backup-facts { grid-template-columns: 1fr; }\n   }\n   @media (prefers-reduced-motion: reduce) {\n     .hc-backup * { animation: none !important; transition: none !important; }\n   }加密备份与恢复本地文件、WebDAV 与 S3 目标由服务器配置；界面只展示服务器实际提供的能力。已同步命令通道可用；点击只表示提交，回执才表示完成。备份状态已更新。关闭创建备份恢复与预览本地恢复点目标与状态备份按一次取样时间生成一致快照；模型密钥默认不勾选，加密默认开启。备份目标WebDAV · webdav 可用地址：http://127.0.0.1:38451/backups / 已选目标webdav备份目录未提供数据目录/tmp/hc-e2e17-NxuIln/src/data恢复点目录/tmp/hc-e2e17-NxuIln/src/data/recovery最近成功备份尚无成功备份本机恢复点尚无恢复点数据占用未提供可用空间未提供目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。刷新状态要备份的类别全选全不选对话与附件包含消息与已打包的附件；未打包附件会单独列出。助手配置同名不同内容默认保留两份，并加备份日期后缀。模型服务配置密钥默认不包含；恢复后连接需要重新验证。工具与 MCP 配置恢复后默认停用待审，不自动获得执行权限。技能恢复后默认停用待审。工作区外部目录只恢复配置；恢复后需要重新定位，不自动授权。世界书同名不同内容默认保留两份，并加备份日期后缀。记忆与画像已归档或删除的记忆保持停用待审，不因旧备份复活。外观偏好单例偏好；替换会覆盖当前外观设置。任务配置恢复后默认暂停，下一次运行时间清空。内容与隐私包含模型密钥与认证信息（默认不勾选）包含已删除的会话（进入已删除区）包含临时会话包含可重建缓存包含外部工作区文件（只恢复配置时不要勾选）登录会话与系统授权永远不会导出；它们必须在新设备重新建立。密码与加密默认开启密码加密备份密码当前 0 个字符；支持中文与空格，首尾空格不会被去掉。再次输入密码密码只保留在本次页面内存中，不写入本地存储，也不会长期记住。显示密码复制密码清除密码请输入备份密码；密码不会被长期记住。生成加密备份备份文件不会在未选择目标时产生外部活动；密码不会写入本地存储；恢复失败不会伪装成功。",
+    "backupCreated": true,
+    "webdavObjects": true,
+    "backupId": "e8c341b3-1418-4298-a6ba-43954268e861",
+    "wrongPasswordRefused": true,
+    "previewHasMissing": true,
+    "previewHasRelink": true,
+    "previewModeMerge": true,
+    "restoreOk": true,
+    "verifyRaw": "{\"scheduleNextRun\":null,\"scheduleState\":\"paused\",\"sessionIds\":[\"s-attachments\",\"s-attachments@backup-78d352655d\",\"s-backup-new\",\"s-deleted\",\"s-history\",\"s-history@backup-a4b00770f2\"],\"sessionCount\":6,\"schedulePaused\":true,\"assistantCount\":4,\"backupAssistantPresent\":true,\"schedulerRunOrder\":[],\"ok\":true,\"assistantNames\":{\"a1\":\"\\u52a9\\u624b\\u7532\",\"a2\":\"\\u52a9\\u624b\\u4e59\\u00b7\\u672c\\u5730\",\"a1@backup-e2603121e2\":\"\\u52a9\\u624b\\u7532\\u00b7\\u5907\\u4efd\\u7248\\uff08\\u6765\\u81ea\\u5907\\u4efd 2026-11-07\\uff09\",\"a2@backup-631c004c92\":\"\\u52a9\\u624b\\u4e59\\uff08\\u6765\\u81ea\\u5907\\u4efd 2026-11-07\\uff09\"},\"partitions\":[\"backup\",\"commands\\/app\",\"config\",\"materials\",\"scheduler\",\"session\\/s-attachments@backup-78d352655d\",\"session\\/s-backup-new\",\"session\\/s-history@backup-a4b00770f2\",\"sessions\"]}",
+    "sessionIds": [
+      "s-attachments",
+      "s-attachments@backup-78d352655d",
+      "s-backup-new",
+      "s-deleted",
+      "s-history",
+      "s-history@backup-a4b00770f2"
+    ],
+    "assistantNames": {
+      "a1": "助手甲",
+      "a2": "助手乙·本地",
+      "a1@backup-e2603121e2": "助手甲·备份版（来自备份 2026-11-07）",
+      "a2@backup-631c004c92": "助手乙（来自备份 2026-11-07）"
+    },
+    "scheduleState": "paused",
+    "schedulePaused": true,
+    "backupAssistantPresent": true,
+    "dstShowsBackupSession": true,
+    "dstHidesDeleted": false
+  },
+  "sourceTreeSha256": "d89a30e336ce7a37fd95f95efc7bb4b6ee996dff2a011988f12d5af8be06a850",
+  "verify": {
+    "scheduleNextRun": null,
+    "scheduleState": "paused",
+    "sessionIds": [
+      "s-attachments",
+      "s-attachments@backup-78d352655d",
+      "s-backup-new",
+      "s-deleted",
+      "s-history",
+      "s-history@backup-a4b00770f2"
+    ],
+    "sessionCount": 6,
+    "schedulePaused": true,
+    "assistantCount": 4,
+    "backupAssistantPresent": true,
+    "schedulerRunOrder": [],
+    "ok": true,
+    "assistantNames": {
+      "a1": "助手甲",
+      "a2": "助手乙·本地",
+      "a1@backup-e2603121e2": "助手甲·备份版（来自备份 2026-11-07）",
+      "a2@backup-631c004c92": "助手乙（来自备份 2026-11-07）"
+    },
+    "partitions": [
+      "backup",
+      "commands/app",
+      "config",
+      "materials",
+      "scheduler",
+      "session/s-attachments@backup-78d352655d",
+      "session/s-backup-new",
+      "session/s-history@backup-a4b00770f2",
+      "sessions"
+    ]
+  }
+}

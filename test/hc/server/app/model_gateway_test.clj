@@ -145,6 +145,78 @@
         (is (= program-role (get-in event [:error :program-role])))
         (is (= mission-role (get-in event [:error :mission-role])))))))
 
+(deftest gateway-names-the-capabilities-source-in-the-refusal
+  (let [owner (atom {:snapshot
+                     (fn []
+                       {:state {:session
+                                {:model-binding
+                                 {:connection-id "conn"
+                                  :model-entry-id "model"
+                                  :capabilities {:tools false}}}}})})
+        live-source ((resolve 'hc.server.app.system/live-tools-source)
+                     owner false
+                     (fn [] {:connections
+                             {"conn" {:models
+                                      {"model" {:capabilities {}}}}}}))
+        events (atom [])
+        gateway ((resolve 'hc.server.app.system/model-gateway)
+                 (atom (recording-port (atom [])))
+                 nil nil "s1" false (atom nil)
+                 (atom {}) (atom nil) (atom nil)
+                 (fn [_request _session] false)
+                 nil
+                 (fn [request _session] (live-source request nil)))]
+    ((:start! gateway)
+     {:attempt-id "a-source"
+      :call-id "c-source"
+      :snapshot {:program-role :clj-plan
+                 :connection "conn"
+                 :model "model"
+                 :messages [{:role :user :text "do the work"}]}}
+     (fn [event] (swap! events conj event) {:ok? true}))
+    (is (wait-for #(= 1 (count @events)) 5000))
+    (is (= :MODEL_TOOLS_UNAVAILABLE
+           (get-in (first @events) [:error :code])))
+    (is (= :binding
+           (get-in (first @events) [:error :capabilities-source]))
+        "a binding-declared no-tools fact names :binding")))
+
+(deftest live-tools-source-follows-the-same-merge-as-the-fact
+  (let [owner (atom {:snapshot
+                     (fn []
+                       {:state {:session
+                                {:model-binding
+                                 {:connection-id "conn"
+                                  :model-entry-id "model"
+                                  :capabilities {:tools true}}}}})})
+        config (atom {:connections
+                      {"conn"
+                       {:models
+                        {"model" {:capabilities {}}}}}})
+        source ((resolve 'hc.server.app.system/live-tools-source)
+                owner false (fn [] @config))]
+    (is (= :binding (source {} nil))
+        "a live entry without a tools fact falls back to the binding")
+    (reset! config {:connections
+                    {"conn"
+                     {:models
+                      {"model" {:capabilities {:tools false}}}}}})
+    (is (= :live-model (source {} nil))
+        "a live entry with a tools fact is authoritative")
+    (reset! owner {:snapshot (fn [] {:state {:session {}}})})
+    (is (= :none (source {} nil))
+        "no binding and no fact means :none")
+    (reset! owner {:snapshot
+                   (fn []
+                     {:state {:session
+                              {:model-binding
+                               {:connection-id "conn"
+                                :model-entry-id "model"
+                                :capabilities {}}}}})})
+    (reset! config {:connections {}})
+    (is (= :none (source {} nil))
+        "an empty capability map is not a declaration")))
+
 (deftest gateway-omits-every-tool-for-a-tools-less-pure-chat
   (let [requests (atom [])
         gateway ((resolve 'hc.server.app.system/model-gateway)

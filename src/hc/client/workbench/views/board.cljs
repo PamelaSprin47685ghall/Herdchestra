@@ -85,7 +85,7 @@
                       (dom/div {:className "wb-page-title"}
                                (dom/div {}
                                         (dom/h1 {} "Swarm 看板")
-                                        (dom/p {} "fleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。"))
+                                        (dom/p {} "Fleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。"))
                                (dom/div {:className "wb-row"}
                                         (common/badge (model/connection-label connection)
                                                       (:tone connection))

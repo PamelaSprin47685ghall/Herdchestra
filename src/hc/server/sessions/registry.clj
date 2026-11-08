@@ -141,19 +141,26 @@
       session)))
 
 (defn- commit-and-register!
-  [registry session effects]
+  "Commit SESSION, then register its Owner.
+
+  With `defer-owner?` the commit still happens but no Owner is started;
+  the caller reports `:owner nil` and the first command that needs the
+  session ensures it through `ensure-owner-for-session!`."
+  [registry session effects defer-owner?]
   (let [commit (sessions/commit-session! (:persistence registry) session)]
     (case (:status commit)
       :committed
       (let [session (:session commit)
-            owner-result (start-owner! registry session)]
-        (swap! (:state registry)
-               assoc-in [:owners (:session-id session)]
-               (:owner owner-result))
-        (if (:ok? owner-result)
+            owner-result (when-not defer-owner?
+                           (start-owner! registry session))]
+        (when-not defer-owner?
+          (swap! (:state registry)
+                 assoc-in [:owners (:session-id session)]
+                 (:owner owner-result)))
+        (if (or defer-owner? (:ok? owner-result))
           {:status :created
            :session session
-           :owner (:owner owner-result)
+           :owner (when-not defer-owner? (:owner owner-result))
            :commit commit
            :effects effects}
           {:status :error
@@ -212,6 +219,38 @@
       (let [loaded (mapv (fn [session-id]
                            (ports/read-session (:persistence registry)
                                                session-id))
+                         (:ids ids-result))
+            failure (first (keep read-session-failure loaded))]
+        (if failure
+          failure
+          {:status :ok
+           :sessions (vec (keep (fn [result]
+                                  (when (= :found (:status result))
+                                    (live-session-value registry
+                                                        (:session result))))
+                                loaded))}))
+      (if (= :error (:status ids-result))
+        ids-result
+        {:status :error
+         :error (or (:error ids-result)
+                    {:code :SESSION_LIST_FAILED
+                     :message
+                     "session list read did not return ok or error"
+                     :details {:status (:status ids-result)}})}))))
+
+(defn- load-session-summaries
+  "Read every committed session without message bodies.
+
+  Same contract as `load-sessions`, but each record arrives without
+  `:messages`/`:message-order`; `session-summary` uses the stored
+  `:visible-message-count` instead.  Callers that need message bodies must
+  use `get-session`/`load-sessions` on the specific session."
+  [registry]
+  (let [ids-result (ports/list-session-ids (:persistence registry))]
+    (if (= :ok (:status ids-result))
+      (let [loaded (mapv (fn [session-id]
+                           (ports/read-session-summary (:persistence registry)
+                                                      session-id))
                          (:ids ids-result))
             failure (first (keep read-session-failure loaded))]
         (if failure
@@ -416,7 +455,8 @@
                 {:status :error :error (:error created)}
                 (let [result (commit-and-register! registry
                                                    (:session created)
-                                                   (:effects created))]
+                                                   (:effects created)
+                                                   (true? (:defer-owner? opts)))]
                   (if (= :duplicate (:status result))
                     (if-let [session (:session result)]
                       (reuse-committed-session registry session)
@@ -462,7 +502,8 @@
                           (:details (:error branch)))
                    :session (:session branch))
             (commit-and-register! registry (:session branch)
-                                  (:effects branch))))))))
+                                  (:effects branch)
+                                  (true? (:defer-owner? opts)))))))))
 
 (defn create-summary-session!
   "Create, commit, and register a session seeded with one applied
@@ -491,7 +532,8 @@
                           (get-in created [:error :details]))
                    :session (:session created))
             (commit-and-register! registry (:session created)
-                                  (:effects created))))))))
+                                  (:effects created)
+                                  (true? (:defer-owner? opts)))))))))
 
 (defn get-committed-session
   "Read the committed session record without merging live Owner state.
@@ -573,7 +615,7 @@
   "Read every committed session and return ordered summaries."
   ([registry] (list-sessions registry {}))
   ([registry opts]
-   (let [loaded (load-sessions registry)]
+   (let [loaded (load-session-summaries registry)]
      (case (:status loaded)
        :ok {:status :ok
             :sessions (sessions/list-sessions (:sessions loaded) opts)}

@@ -285,12 +285,32 @@
                        (assoc :tool-records (vec (or (:tool-records payload) [])))
                        (contains? payload :usage)
                        (assoc :usage (:usage payload)))
-            existing' (cond-> (if upgrade?
+            ;; A terminal mirror carries the version snapshot (usage,
+            ;; citations, tool records) even when its content equals what
+            ;; the last chunk already wrote.  `upgrade?` is false in that
+            ;; case, so without this branch the fields computed above were
+            ;; discarded and the durable version kept `nil` usage forever.
+            ;; Only the selected version is patched; sibling versions and
+            ;; the message-level fallbacks stay untouched.
+            version-fields? (some #(contains? payload %)
+                                  [:attachments :citations :quotes
+                                   :tool-records :usage])
+            existing' (cond-> (cond
+                                upgrade?
                                 (-> existing
                                     (assoc :versions [version'])
                                     (assoc :content content
                                            :updated-at now))
-                                existing)
+
+                                version-fields?
+                                (-> existing
+                                    (update :versions
+                                            assoc
+                                            (:current-version existing)
+                                            version')
+                                    (assoc :updated-at now))
+
+                                :else existing)
                         (and (not upgrade?) (contains? payload :attachments))
                         (assoc :attachments (vec (or (:attachments payload) [])))
                         (and (not upgrade?) (contains? payload :citations))

@@ -266,6 +266,124 @@
       (is (= :milestone-open (:reason decision)))
       (is (= (relay/central-nudge-message {}) (:message decision))))))
 
+(deftest plain-response-exit-test
+  (testing "a proven tool-free success with an empty ledger is a legal stop"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false})
+                     nil
+                     {:failure-outcome :succeeded
+                      :tools? false}))]
+      (is (false? (:enabled? decision)))
+      (is (= :plain-response (:reason decision)))
+      (is (= :plain-response (get-in decision [:exit :kind])))))
+
+  (testing "the same turn with tool calls still nudges"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false})
+                     nil
+                     {:failure-outcome :succeeded
+                      :tools? true}))]
+      (is (true? (:enabled? decision)))
+      (is (= :milestone-open (:reason decision)))))
+
+  (testing "an open ledger still nudges even without tool calls"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false
+                              :ledger (sorted-map "a" "open")})
+                     nil
+                     {:failure-outcome :succeeded
+                      :tools? false}))]
+      (is (true? (:enabled? decision)))
+      (is (= :ledger-open (:reason decision)))))
+
+  (testing "a failed outcome still owes the failure decision"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false})
+                     nil
+                     {:failure-outcome :failed
+                      :tools? false}))]
+      (is (not= :plain-response (:reason decision)))))
+
+  (testing "unknown tool evidence keeps the old judgement"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false})
+                     nil
+                     {:failure-outcome :succeeded}))]
+      (is (true? (:enabled? decision)))
+      (is (= :milestone-open (:reason decision))))))
+
+(deftest round-boundary-test
+  (testing "a central role past its round budget answers :round-boundary"
+    (let [ledger (sorted-map "a" "first")
+          observation (central-observation
+                       :plan
+                       (tenure {:milestone :S2
+                                :first-review? false
+                                :ledger ledger})
+                       nil
+                       {:round-seq 8
+                        :round-budget 8})
+          decision (policy/decide observation)]
+      (is (false? (:enabled? decision)))
+      (is (= :round-boundary (:reason decision)))
+      (is (nil? (:exit decision)))
+      (is (nil? (:prepare decision)))
+      (is (= 8 (get-in decision [:details :round-seq])))
+      (is (= 8 (get-in decision [:details :round-budget])))
+      (is (= ["a"] (get-in decision [:details :ledger-keys])))))
+
+  (testing "under the budget the same observation still nudges"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :S2
+                              :first-review? false
+                              :ledger (sorted-map "a" "first")})
+                     nil
+                     {:round-seq 7
+                      :round-budget 8}))]
+      (is (true? (:enabled? decision)))
+      (is (= :ledger-open (:reason decision)))))
+
+  (testing "the budget does not mask a legal exit"
+    (let [decision (policy/decide
+                    (central-observation
+                     :plan
+                     (tenure {:milestone :pending})
+                     {:tenure-id "execution-1"}
+                     {:round-seq 99
+                      :round-budget 8}))]
+      (is (false? (:enabled? decision)))
+      (is (= :handoff-complete (:reason decision)))
+      (is (= :handoff-complete (get-in decision [:exit :kind])))))
+
+  (testing "a worker past its round budget answers :round-boundary"
+    (let [decision (policy/decide
+                    (worker-observation
+                     (swarm-tenure {})
+                     (ready-board {})
+                     :worker-1
+                     {:round-seq 3
+                      :round-budget 3}))]
+      (is (false? (:enabled? decision)))
+      (is (= :round-boundary (:reason decision)))
+      (is (nil? (:exit decision))))))
+
 (deftest central-suppression-test
   (testing "an in-flight attempt defers Nudge"
     (let [decision (policy/decide
@@ -397,6 +515,27 @@
       (is (= :NUDGE_BLOCKED_PERMANENT_FAILURE
              (get-in decision [:diagnostic :code])))
       (is (= failure (get-in decision [:diagnostic :failure])))))
+
+  (testing "a missing task role is permanent and keeps its remedy"
+    (let [failure {:kind :role-unconfigured
+                   :category :permanent
+                   :disposition :fail
+                   :retryable? false
+                   :remedy :configure-task-model
+                   :role :task}
+          decision (policy/decide
+                    (worker-observation
+                     (swarm-tenure {:ledger (sorted-map)})
+                     (ready-board)
+                     :worker-1
+                     {:failure failure
+                      :failure-outcome :failed}))]
+      (is (true? (:blocked? decision)))
+      (is (= :permanent-failure (:reason decision)))
+      (is (= :NUDGE_BLOCKED_PERMANENT_FAILURE
+             (get-in decision [:diagnostic :code])))
+      (is (= :configure-task-model
+             (get-in decision [:diagnostic :remedy])))))
 
   (testing "context overflow has its own remedy"
     (let [decision (policy/decide

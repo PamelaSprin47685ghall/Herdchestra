@@ -26,20 +26,36 @@
   [app]
   (reset! app-ref app))
 
+(defn- non-empty
+  [value]
+  (when (and (some? value)
+             (or (sequential? value) (map? value))
+             (seq value))
+    value))
+
+(defn assistants-from-db
+  "Assistant rows for the extensions panel.
+
+  `[:ui/settings :assistants]` is an initial-state placeholder that stays an
+  empty map forever; an `or` chain would treat it as truthy and never reach
+  the live projections.  Every source is guarded with `seq` so empty maps
+  and vectors fall through, and the live settings projection wins over the
+  snapshot copy."
+  [db]
+  (let [assistants (or (non-empty (get-in db [:ui/settings :server :assistants]))
+                       (non-empty (get-in db [:ui/settings :assistants]))
+                       (non-empty (:settings/assistants db))
+                       (non-empty (:assistants db)))]
+    (vec (if (map? assistants)
+           (mapv (fn [[id a]] (assoc a :id (or (:id a) id)))
+                 assistants)
+           assistants))))
+
 (defn- state-from-db
   [db]
-  (let [assistants (or (get-in db [:ui/settings :assistants])
-                       (get-in db [:ui/settings :server :assistants])
-                       (:settings/assistants db)
-                       [])
-        selected (workbench-model/selected-session-id db)]
-    (assoc (or (:ui/extensions db) (extensions/initial-state))
-           :selected-session-id selected
-           :assistants (vec (if (map? assistants)
-                              (mapv (fn [[id a]] (assoc a :id (or (:id a) id)))
-                                    assistants)
-                              assistants)))))
-
+  (assoc (or (:ui/extensions db) (extensions/initial-state))
+         :selected-session-id (workbench-model/selected-session-id db)
+         :assistants (assistants-from-db db)))
 (defn- transact-state!
   [state]
   (let [db (when-let [app @app-ref] (application/current-state app))
@@ -162,7 +178,14 @@
         state (assoc state
                      :sync {:phase (get-in db [:ui/connection :phase])
                             :command-epoch (get-in db [:ui/connection :command-epoch])}
-                     :transport-available? allowed?)]
+                     :transport-available? allowed?)
+        ;; `:assistants` is a read-only display projection from the
+        ;; settings tables, not panel-owned state.  Recompute it on
+        ;; every sync so a `/settings/assistants` STATE_DELTA that
+        ;; arrives after the first projection still reaches the view;
+        ;; relying on `state-from-db` alone left the panel on a stale
+        ;; empty list and forced the free-text input path.
+        state (assoc state :assistants (assistants-from-db db))]
     (when new-subscription?
       (reset! last-subscription subscription)
       (reset! fetched? false)

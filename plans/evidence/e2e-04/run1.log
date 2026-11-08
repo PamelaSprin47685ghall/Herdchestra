@@ -1,0 +1,42 @@
+npm notice run herdchestra-client@0.0.1 npx
+npm notice run 'playwright' test --config test/e2e/playwright.config.mjs test/e2e/e2e-04.spec.mjs
+
+Running 1 test using 1 worker
+
+(node:868039) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 test/e2e/e2e-04.spec.mjs:143:1 › @core E2E 04 history edit and two branches (19.2s)
+
+
+  1) test/e2e/e2e-04.spec.mjs:143:1 › @core E2E 04 history edit and two branches ───────────────────
+
+    Error: ASSERTION FAILED: first reply mismatch: E2E04-FALLBACK E2E04-1794132086801
+
+       at support/ui.mjs:183
+
+      181 |
+      182 | export function assert(condition, message) {
+    > 183 |   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
+          |                         ^
+      184 | }
+      185 |
+      186 | export function assertEqual(actual, expected, message) {
+        at assert (/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/support/ui.mjs:183:25)
+        at /home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-04.spec.mjs:234:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    plans/evidence/e2e-auto/playwright-artifacts/e2e-04--core-E2E-04-history-edit-and-two-branches/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: plans/evidence/e2e-auto/playwright-artifacts/e2e-04--core-E2E-04-history-edit-and-two-branches/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    plans/evidence/e2e-auto/playwright-artifacts/e2e-04--core-E2E-04-history-edit-and-two-branches/trace.zip
+    Usage:
+
+        npx playwright show-trace plans/evidence/e2e-auto/playwright-artifacts/e2e-04--core-E2E-04-history-edit-and-two-branches/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    test/e2e/e2e-04.spec.mjs:143:1 › @core E2E 04 history edit and two branches ────────────────────

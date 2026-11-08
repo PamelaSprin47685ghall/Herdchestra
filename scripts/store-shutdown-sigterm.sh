@@ -51,7 +51,8 @@ for i in $(seq 1 "$ROUNDS"); do
   work="$(mktemp -d /tmp/hc-sigterm-work-XXXXXX)"
   tmp="$(mktemp -d /tmp/hc-sigterm-tmp-XXXXXX)"
   applog="$data/app.log"
-  "$JAVA" -Xmx1g -XX:MaxDirectMemorySize=512m \
+  "$JAVA" -Xmx384m -XX:MaxDirectMemorySize=192m \
+    -XX:MaxMetaspaceSize=160m -Xss512k \
     -XX:-OmitStackTraceInFastThrow -Djava.io.tmpdir="$tmp" \
     -cp "$CP" clojure.main -m hc.server.app \
     --host 127.0.0.1 --port 0 --data-dir "$data" \

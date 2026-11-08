@@ -410,6 +410,48 @@
       (view/session-view (:engine store)
                          {:partition partition :session-id session-id}))))
 
+(defn read-document
+  "Read one stored document by exact key after the read barrier.
+
+  `opts`: `{:partition .. :session-id .. :kind .. :id ..}`.  Returns the
+  unwrapped document (with `:storage/*` identity keys) or nil when absent.
+  This is the point read for callers that need one document and must not pay
+  the partition scan `read-session-view` performs."
+  [store {:keys [partition session-id kind id] :as opts}]
+  (with-read-lock store
+    (ensure-open! store)
+    (when-not (and (string? partition) (seq partition)
+                   (keyword? kind)
+                   (or (string? id) (keyword? id)))
+      (invalid-options "read-document needs :partition :kind and :id"
+                       {:opts opts}))
+    (view/read-doc (:engine store)
+                   {:partition partition :session-id session-id
+                    :kind kind :id id})))
+
+(defn read-partition-version
+  "Return the committed version of PARTITION, or 0 when it has none."
+  [store partition]
+  (with-read-lock store
+    (ensure-open! store)
+    (or (engine/get-value (:engine store)
+                          (keys/partition-meta-key partition "version"))
+        0)))
+
+(defn read-partition-head
+  "Read `{:version n :state doc}` for one session's owner partition.
+
+  `opts`: `{:partition .. :session-id ..}`.  This is the point read behind
+  the owner-state corruption check; it does not scan the partition's
+  obligations or board documents."
+  [store {:keys [partition session-id] :as opts}]
+  (with-read-lock store
+    (ensure-open! store)
+    (when-not (and (string? partition) (seq partition))
+      (invalid-options "read-partition-head needs :partition" {:opts opts}))
+    (view/partition-head (:engine store)
+                         {:partition partition :session-id session-id})))
+
 (defn list-open-obligations
   "List open obligations for a partition or session.
 

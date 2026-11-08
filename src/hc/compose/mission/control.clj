@@ -40,10 +40,15 @@
   result with its command-id and command-epoch, then call `submit-command!`."
   [ctx request]
   (let [call-id (or (:call-id ctx) (:call-id request))]
+    ;; The app reads the draft file from disk before this command so the
+    ;; Owner can reconcile the relay cache against the disk version inside
+    ;; the same CAS.  The key is always present; nil means "no disk bytes"
+    ;; (missing/unreadable file), which reconcile treats as a no-op.
     (cond-> {:kind :review/submit
              :lane (or (:lane ctx) (:lane request) (review-lane ctx))
              :tenure-id (or (:tenure-id ctx) (:tenure-id request))
-             :findings (:findings request)}
+             :findings (:findings request)
+             :draft-disk-content (:draft-disk-content request)}
       call-id (assoc :call-id call-id))))
 
 (defn review-message

@@ -254,10 +254,10 @@
 
   `:execute!` receives `(ctx {:primitive kw :request map})` and returns the
   board primitive's result verbatim.  Only worker board primitives are
-  handled here; `:review`, `:devops`, `:abandon`, `:askPreviousScope` and
-  `:assume` belong to other composition layers.  When a `fallback` function
-  is supplied it is called for those primitives; otherwise the bridge
-  returns an explicit `:UNSUPPORTED_OPERATION` value."
+  handled here; `:review`, `:devops`, `:abandon`, `:askPreviousScope`,
+  `:negotiate` and `:assume` belong to other composition layers.  When a
+  `fallback` function is supplied it is called for those primitives;
+  otherwise the bridge returns an explicit `:UNSUPPORTED_OPERATION` value."
   ([runtime] (control-port runtime nil))
   ([runtime fallback]
    {:execute!

@@ -1,0 +1,56 @@
+{
+  "env": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 12,
+    "totalMemBytes": 66924290048,
+    "freeMemBytes": 38038110208,
+    "chrome": "157.0.8103.38"
+  },
+  "config": {
+    "root": "/tmp/hc-bench1/run",
+    "sessions": 1000,
+    "messages": 20,
+    "msgChars": 400,
+    "jvmOpts": [
+      "-J-Xmx4g",
+      "-J-XX:MaxDirectMemorySize=512m",
+      "-J-XX:MaxMetaspaceSize=512m",
+      "-J-Xss512k",
+      "-J-XX:+ExitOnOutOfMemoryError"
+    ],
+    "staticRoot": "resources/public"
+  },
+  "seed": {
+    "skipped": true
+  },
+  "app": {
+    "url": "http://127.0.0.1:46815",
+    "pid": 3905114,
+    "listenMs": 387451,
+    "healthMs": 507743,
+    "healthStatus": 503,
+    "healthOkFlag": false,
+    "peak": {
+      "hwmKb": 2879576,
+      "rssKb": 2879576
+    },
+    "logTail": "WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure\nWARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key\nWARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity\nWARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send\nReflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.\nWARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nHerdchestra listening on http://127.0.0.1:46815/\nworkspace: /tmp/hc-bench1/run/workspace\nstore:     /tmp/hc-bench1/run/data/db\n"
+  },
+  "dom": {
+    "listOpenMs": 8286,
+    "syncMs": 7782,
+    "sessionItems": 200,
+    "totalNodes": 2591,
+    "selectMs": 69,
+    "messageNodes": 20,
+    "messageDomNodes": 337,
+    "totalAfter": 2592,
+    "expectedSessions": 1000,
+    "expectedMessagesPerSession": 20,
+    "synced": true,
+    "badgeText": "●已同步"
+  },
+  "startedAt": "2026-11-07T19:46:10.538Z"
+}

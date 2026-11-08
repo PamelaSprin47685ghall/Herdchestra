@@ -231,6 +231,83 @@
         (is (= "手工改写" (get-in versions [1 :content]))
             "a late chunk cannot rewrite an edited answer")))))
 
+(deftest terminal-mirror-usage-lands-on-the-unchanged-version
+  ;; The Owner mirrors the assistant text on every chunk and then once more
+  ;; on :completed with the same content plus the usage report.  That final
+  ;; write is not a content upgrade, but it must still record the version
+  ;; snapshot; otherwise the durable copy keeps `nil` usage forever.
+  (let [report {:coverage :final
+                :usage {:input-tokens 100 :output-tokens 20
+                        :cache-read-tokens :unknown
+                        :cache-write-tokens :unknown}
+                :sources {:input-tokens :reported
+                          :output-tokens :reported
+                          :cache-read-tokens :unknown
+                          :cache-write-tokens :unknown}}
+        chunked (command (base-session) :history/append-message
+                         {:message-id "assistant-usage"
+                          :role :assistant
+                          :content "partial answer"}
+                         1000)
+        terminal (command (:session chunked) :history/append-message
+                          {:message-id "assistant-usage"
+                           :role :assistant
+                           :content "partial answer"
+                           :usage report
+                           :citations [{:url "https://example.test/s"}]
+                           :tool-records [{:tool-call-id "t1"}]}
+                          2000)
+        message (get-in (:session terminal)
+                        [:messages "assistant-usage"])
+        version (get-in message [:versions 0])
+        view (view-of (:session terminal) "assistant-usage")]
+    (is (:ok? terminal))
+    (is (= "partial answer" (:content version)))
+    (is (= 1 (count (:versions message)))
+        "a same-content terminal mirror never appends a version")
+    (is (= report (:usage version))
+        "the stored version keeps the full usage report")
+    (is (= 100 (:input-tokens (:usage view)))
+        "the normalized view exposes the flat input token count")
+    (is (= 20 (:output-tokens (:usage view)))
+        "the normalized view exposes the flat output token count")
+    (is (= :reported (:source (:usage view)))
+        "the normalized view exposes the pair provenance")
+    (is (= [{:url "https://example.test/s"}] (:citations version)))
+    (is (= [{:tool-call-id "t1"}] (:tool-records version)))
+    (is (empty? (history/check-invariants (:session terminal))))))
+
+(deftest terminal-mirror-unknown-usage-stays-unknown
+  ;; A provider that reports nothing still produces an all-`:unknown`
+  ;; report; the flat projection renders those fields as nil, never zero.
+  (let [unknown {:coverage :partial
+                 :usage {:input-tokens :unknown :output-tokens :unknown
+                         :cache-read-tokens :unknown
+                         :cache-write-tokens :unknown}
+                 :sources {:input-tokens :unknown :output-tokens :unknown
+                           :cache-read-tokens :unknown
+                           :cache-write-tokens :unknown}}
+        first (command (base-session) :history/append-message
+                       {:message-id "assistant-unknown"
+                        :role :assistant
+                        :content "answer"}
+                       1000)
+        terminal (command (:session first) :history/append-message
+                          {:message-id "assistant-unknown"
+                           :role :assistant
+                           :content "answer"
+                           :usage unknown}
+                          2000)
+        view (view-of (:session terminal) "assistant-unknown")]
+    (is (:ok? terminal))
+    (is (= unknown
+           (get-in (:session terminal)
+                   [:messages "assistant-unknown" :versions 0 :usage]))
+        "the stored version keeps the unknown report, not a zero")
+    (is (nil? (:input-tokens (:usage view))))
+    (is (nil? (:output-tokens (:usage view))))
+    (is (= :unknown (:source (:usage view))))))
+
 (deftest selecting-a-version-switches-snapshots-without-activity
   (let [session (-> (base-session)
                     (add-message "m1" :assistant "first answer"
@@ -425,6 +502,33 @@
     (is (= [{:url "https://source.test"}]
            (:citations (second messages))))
     (is (= [{:text "quoted text"}] (:quotes (second messages))))))
+
+(deftest session-run-port-carries-temporary-read-into-request-snapshot
+  (let [session (-> (base-session)
+                    (assoc :model-binding {:connection-id "conn-1"
+                                           :model-entry-id "model-1"
+                                           :temporary? true})
+                    (add-message "m1" :user "question" {}))
+        out (context/outbound-context session)
+        started (runs/start-run
+                 session
+                 {:run-id "r-temp"
+                  :call-id "c-temp"
+                  :model-binding (:model-binding session)
+                  :message-ids (:message-ids out)
+                  :context (select-keys out [:messages :message-ids
+                                             :summary-ids :version-ids
+                                             :excluded :pinned-attachments
+                                             :warnings])
+                  :temporary-read? true
+                  :now 4000})
+        effect (first (:effects started))
+        claimed (run-port/start (:session started) effect
+                                {:now 5000
+                                 :id-source (ids/counter-source {:prefix "tr"})})]
+    (is (:ok? claimed) (pr-str (:error claimed)))
+    (is (true? (get-in claimed [:request :snapshot :temporary-read?]))
+        "the frozen run's one-shot read reaches the model request snapshot")))
 
 (deftest compression-id-collision-and-completed-answer-are-refused
   (let [session (-> (base-session)
@@ -665,6 +769,35 @@
                       :summary "summary three"} 3000)]
     (is (= :COMPRESSION_RANGE_OVERLAP (get-in overlap [:error :code])))
     (is (= :COMPRESSION_RANGE_NOT_CONTIGUOUS (get-in gap [:error :code])))))
+
+(deftest nudge-messages-stay-out-of-every-visible-projection
+  ;; A nudge answer keeps its provenance in :messages/:message-order but is
+  ;; invisible to reading, outbound, and compression.  All three projections
+  ;; must agree on the same id set, or a contiguous range over the visible
+  ;; messages fails COMPRESSION_RANGE_NOT_CONTIGUOUS.
+  (let [session (-> (base-session)
+                    (add-message "m1" :user "one" {})
+                    (add-message "m2" :assistant "nudge answer" {})
+                    (add-message "m3" :user "two" {})
+                    (add-message "m4" :assistant "two answer" {}))
+        session (-> session
+                    (assoc-in [:messages "m2" :nudge?] true)
+                    (assoc-in [:messages "m2" :nudge-id] "nudge-1"))
+        visible-ids ["m1" "m3" "m4"]
+        outbound (context/outbound-context session)
+        reading (context/reading-context session)
+        prepared (command session :history/prepare-compression
+                          {:compression-id "c1"
+                           :message-ids visible-ids
+                           :summary "summary"} 2000)]
+    (is (= visible-ids (message/visible-message-ids session)))
+    (is (= visible-ids (:message-ids outbound)))
+    (is (= visible-ids (:message-ids reading)))
+    (is (= 3 (count (:messages reading))))
+    (is (= 3 (count (sessions/visible-messages session))))
+    (is (:ok? prepared))
+    (is (= visible-ids
+           (get-in prepared [:result :compression :message-ids])))))
 
 (deftest compression-summary-marks-changed-source-versions
   (let [session (-> (base-session)

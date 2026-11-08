@@ -1215,3 +1215,65 @@
     (is (= :failed (get-in result [:receipt :layers :reachable :status])))
     (is (not (re-find #"secret" text)))
     (is (not (re-find #"user:" text)))))
+
+(deftest settings-save-preserves-backup-and-preference-sections
+  ;; The backup service CAS-writes `[:backup :targets]` into the same
+  ;; committed document.  A settings save must carry those sections
+  ;; forward instead of overwriting the document with only the model
+  ;; fields it manages.
+  (let [persistence (memory-persistence
+                     0
+                     {:connections []
+                      :backup {:targets {:local {:kind :file
+                                                :root "/tmp/backups"}}
+                               :default-target-id :local}
+                      :appearance {:theme :dark}
+                      :assistants {"default" {:id "default"
+                                              :name "Default"
+                                              :revision 1
+                                              :enabled? true}}})
+        component (settings/service
+                   {:persistence persistence
+                    :config {:connections [] :revision 0}
+                    :secret-store (secrets/memory-secret-store)})
+        saved (save-connection! component (fields "Provider") [] [])
+        read-back (:config (ports/read-config persistence))]
+    (is (:ok? saved))
+    (is (= {:local {:kind :file :root "/tmp/backups"}}
+           (get-in read-back [:backup :targets]))
+        "a connection save must not drop backup targets")
+    (is (= :local (get-in read-back [:backup :default-target-id])))
+    (is (= {:theme :dark} (:appearance read-back))
+        "a connection save must not drop appearance preferences")
+    (is (= "default" (get-in read-back [:assistants "default" :id]))
+        "a connection save must not drop assistants")
+    (is (= "default" (get-in (settings/document component)
+                             [:assistants "default" :id])))))
+
+(deftest settings-role-save-preserves-backup-and-preference-sections
+  ;; Role saves share the same committed document; they must also carry
+  ;; `:backup`, `:appearance`, and `:assistants` forward.
+  (let [persistence (memory-persistence
+                     0
+                     {:connections []
+                      :backup {:targets {:local {:kind :file
+                                                :root "/tmp/backups"}}}
+                      :appearance {:theme :light}
+                      :assistants {"default" {:id "default"
+                                              :name "Default"
+                                              :revision 1
+                                              :enabled? true}}})
+        component (settings/service
+                   {:persistence persistence
+                    :config {:connections [] :revision 0}
+                    :secret-store (secrets/memory-secret-store)})
+        saved (settings/handle!
+               component
+               {:kind :settings/save-role
+                :roles {:main {:connection "conn-1" :model "m1"}}})
+        read-back (:config (ports/read-config persistence))]
+    (is (:ok? saved))
+    (is (= {:local {:kind :file :root "/tmp/backups"}}
+           (get-in read-back [:backup :targets])))
+    (is (= {:theme :light} (:appearance read-back)))
+    (is (= "default" (get-in read-back [:assistants "default" :id])))))

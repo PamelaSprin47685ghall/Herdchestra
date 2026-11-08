@@ -646,3 +646,17 @@
     (is (= #{} (:previous-removed-lines effect)))
     (is (= #{"app-os"} (get-in (:state result) [:bundle :removed-lines])))
     (is (= #{"app-os"} (get-in effect [:bundle :removed-line-ids])))))
+
+(deftest faq-query-action-test
+  (let [state (model/initial-state)
+        result (model/reduce-action
+                state
+                {:type :diagnostics/set-faq-query
+                 :value "图片"})]
+    (is (= "图片" (get-in result [:state :faq-query])))
+    (is (= [] (:effects result)))
+    (let [cleared (model/reduce-action
+                   (:state result)
+                   {:type :diagnostics/set-faq-query
+                    :value nil})]
+      (is (= "" (get-in cleared [:state :faq-query]))))))

@@ -146,6 +146,10 @@
                                     :user-turn? (not regenerate?)
                                     :regenerate? regenerate?
                                     :turn-id (:run-id effect)
+                                    :temporary-read?
+                                    (true? (get-in run
+                                                   [:input-snapshot
+                                                    :temporary-read?]))
                                     :messages messages}
                          :required-capabilities #{}}
                :session-run {:run-id run-id

@@ -92,6 +92,20 @@
       (contains? persisted :default-role)
       (assoc :default-role (:default-role persisted))
 
+      ;; Assistants and appearance preferences live in the same committed
+      ;; document.  A connection or role save must not drop them.
+      (contains? persisted :assistants)
+      (assoc :assistants (:assistants persisted))
+
+      (contains? persisted :appearance)
+      (assoc :appearance (:appearance persisted))
+
+      ;; Backup target configuration lives in the same committed document
+      ;; under [:backup :targets].  The backup service CAS-writes it
+      ;; independently; a settings save must not silently discard it.
+      (contains? persisted :backup)
+      (assoc :backup (:backup persisted))
+
       (contains? persisted :revision)
       (assoc :revision (:revision persisted)))))
 
@@ -853,6 +867,83 @@
         next-config (effective-config (:launch service) next-document)]
     (commit-config! service next-config next-document)))
 
+(defn- normalize-assistant-entry
+  "Normalize one submitted assistant to the persisted shape.
+
+  The client sends `{id name revision enabled? default-model}`; the id is
+  the map key.  Unknown fields are dropped so a malformed payload cannot
+  smuggle transport or credential data into the committed document."
+  [id assistant]
+  (when (map? assistant)
+    (let [id (str (or (:id assistant) (:assistant-id assistant) id))]
+      (when-not (str/blank? id)
+        (cond-> {:id id
+                 :assistant-id (str (or (:assistant-id assistant) id))
+                 :name (str (or (:name assistant) (:display-name assistant) id))
+                 :revision (long (or (:revision assistant) 1))
+                 :enabled? (not (false? (:enabled? assistant)))}
+          (:display-name assistant)
+          (assoc :display-name (str (:display-name assistant)))
+          (map? (:default-model assistant))
+          (assoc :default-model
+                 (select-keys (:default-model assistant)
+                              [:connection-id :model-id :model-entry-id])))))))
+
+(defn- handle-save-assistants!
+  "Persist the assistant map from `:settings/save-assistants`.
+
+  The payload carries the desired assistant map under `:assistants`.
+  `:delete-assistant-id` removes one entry; the submitted map is then
+  authoritative for every other id, so a delete cannot resurrect through a
+  stale copy.  Without `:assistants` the persisted map minus the deleted id
+  is kept.  The built-in `default` assistant may be edited but never
+  deleted: removing it would leave new sessions without a stable identity."
+  [service payload]
+  (let [submitted (:assistants payload)
+        delete-id (some-> (:delete-assistant-id payload) str)
+        persisted (or (:assistants (document service)) {})
+        submitted-map
+        (when (map? submitted)
+          (reduce-kv (fn [m id assistant]
+                       (if-let [normalized (normalize-assistant-entry id assistant)]
+                         (assoc m (:id normalized) normalized)
+                         m))
+                     {}
+                     submitted))
+        merged (cond
+                 (and (map? submitted) (nil? delete-id))
+                 ;; A save replaces the whole assistant map; the client sends
+                 ;; every assistant it wants kept.
+                 submitted-map
+
+                 (map? submitted)
+                 ;; A delete carries the post-delete map; trust it over the
+                 ;; persisted copy so the removed id stays removed.
+                 (dissoc submitted-map delete-id)
+
+                 delete-id
+                 (dissoc persisted delete-id)
+
+                 :else persisted)
+        ;; A save that omits `default` keeps the persisted built-in entry;
+        ;; a delete of `default` is refused below, so it is never lost here.
+        merged (if (and (nil? delete-id)
+                        (not= "default" delete-id)
+                        (contains? persisted "default")
+                        (not (contains? merged "default")))
+                 (assoc merged "default" (get persisted "default"))
+                 merged)
+        next-document (assoc (document service) :assistants merged)
+        next-config (effective-config (:launch service) next-document)]
+    (cond
+      (and delete-id (= "default" delete-id))
+      {:ok? false
+       :error {:code :SETTINGS_INVALID
+               :message "the built-in assistant cannot be deleted"}}
+
+      :else
+      (commit-config! service next-config next-document))))
+
 (defn- handle-delete-connection!
   [service payload model-auth]
   (let [id (str (:connection-id payload))
@@ -924,6 +1015,8 @@
       (with-write-lock service #(handle-save-connection! service payload))
       :settings/save-role
       (with-write-lock service #(handle-save-role! service payload))
+      :settings/save-assistants
+      (with-write-lock service #(handle-save-assistants! service payload))
       :settings/delete-connection
       (with-write-lock service
                        #(handle-delete-connection! service payload model-auth))

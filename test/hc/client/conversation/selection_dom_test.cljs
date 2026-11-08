@@ -473,13 +473,15 @@
                                   :blocked {:code :TOOL_ADMISSION_REFUSED_LIMIT
                                             :member "worker-1"
                                             :count 3
-                                            :last-code :TOOL_ADMISSION_REFUSED
+                                            :last-code :tool-failed
                                             :remedy "检查工具准入配置"})))
       (let [blocked (.querySelector container ".hc-blocked")]
         (is (some? blocked))
+        (is (str/includes? (.-textContent blocked) "权限被关闭，或执行结果无法确认")
+            "the reason category renders before the concrete blocked detail")
         (is (str/includes? (.-textContent blocked) "worker-1"))
         (is (str/includes? (.-textContent blocked) "3"))
-        (is (str/includes? (.-textContent blocked) "TOOL_ADMISSION_REFUSED"))
+        (is (str/includes? (.-textContent blocked) "tool-failed"))
         (is (str/includes? (.-textContent blocked) "检查工具准入配置")))
       (finally
         (act! #(.unmount root))

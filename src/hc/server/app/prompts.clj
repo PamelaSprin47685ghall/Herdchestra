@@ -76,6 +76,10 @@ EDN map; there is no `this` and no positional argument.
   `:WRITE_LOCKED_BEFORE_FIRST_REVIEW` until your first accepted `review` in
   this tenure; a new tenure locks it again, and after handoff the draft is
   frozen (`:DRAFT_LOCKED_AFTER_HANDOFF`).
+- The operator may edit the draft file on disk at any time; `cat` before
+  `write` when refining, and on `:FILE_CONFLICT` or `:DRAFT_USER_EDITED`
+  re-read the file and rewrite the polished version — the disk content is
+  authoritative.
 - `(where {:content ... :needle ...})` and
   `(whereAll {:content ... :needle ...})` find exact text.
 - `(park {:payload ...})` and `(unpark {:name ... :value ...})` suspend and

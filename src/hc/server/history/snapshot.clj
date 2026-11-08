@@ -144,10 +144,21 @@
                      (remove #(or (:deleted? %) (:folded? %)))
                      (remove #(or (:nudge? %) (:nudge-id %)))
                      (mapv #(message-entity session %)))
-        ids (mapv :id visible)]
+        ids (mapv :id visible)
+        ;; `:messages-window` limits the emitted `:messages` entities to a
+        ;; caller-chosen subset of VISIBLE.  `:message-ids` always carries the
+        ;; full visible list so the client summary's message count stays
+        ;; exact; only the entity bodies are windowed.  OPTS:
+        ;;   :ids     set of message ids to include (nil = all)
+        window-ids (:ids (:messages-window opts))
+        window-set (when (set? window-ids) window-ids)
+        windowed-visible (if window-set
+                           (filterv #(contains? window-set (:id %)) visible)
+                           visible)]
     {:session-id (:session-id session)
      :message-ids ids
-     :messages visible
+     :ordered-ids ids
+     :messages windowed-visible
      :context (context-view session opts)
      :branch-of (:origin-session-id session)})))
 

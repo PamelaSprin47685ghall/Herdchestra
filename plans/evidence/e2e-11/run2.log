@@ -1,0 +1,44 @@
+npm notice run herdchestra-client@0.0.1 npx
+npm notice run 'playwright' test --config test/e2e/playwright.config.mjs test/e2e/e2e-11.spec.mjs
+
+Running 1 test using 1 worker
+
+(node:881334) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✘  1 test/e2e/e2e-11.spec.mjs:387:1 › @e2e E2E 11 memory candidates, archive and temporary sessions (1.3m)
+
+
+  1) test/e2e/e2e-11.spec.mjs:387:1 › @e2e E2E 11 memory candidates, archive and temporary sessions 
+
+    TimeoutError: locator.waitFor: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.hc-mat-badge').filter({ hasText: '材料库已就绪' }).first() to be visible
+
+
+      309 |   // The materials snapshot arrives asynchronously; wait for the ready badge.
+      310 |   await page.locator('.hc-mat-badge', { hasText: '材料库已就绪' }).first()
+    > 311 |     .waitFor({ state: 'visible', timeout: 30000 });
+          |      ^
+      312 | }
+      313 |
+      314 | function memoryCheckbox(page, label) {
+        at openMaterialsMemory (/home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-11.spec.mjs:311:6)
+        at /home/kunweiz/Desktop/vibe/Herdchestra/test/e2e/e2e-11.spec.mjs:739:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    plans/evidence/e2e-auto/playwright-artifacts/e2e-11--e2e-E2E-11-memory--66bfa-hive-and-temporary-sessions/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: plans/evidence/e2e-auto/playwright-artifacts/e2e-11--e2e-E2E-11-memory--66bfa-hive-and-temporary-sessions/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    plans/evidence/e2e-auto/playwright-artifacts/e2e-11--e2e-E2E-11-memory--66bfa-hive-and-temporary-sessions/trace.zip
+    Usage:
+
+        npx playwright show-trace plans/evidence/e2e-auto/playwright-artifacts/e2e-11--e2e-E2E-11-memory--66bfa-hive-and-temporary-sessions/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    test/e2e/e2e-11.spec.mjs:387:1 › @e2e E2E 11 memory candidates, archive and temporary sessions ─

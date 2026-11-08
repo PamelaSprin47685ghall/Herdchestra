@@ -110,6 +110,50 @@
           statuses)
     {}))
 
+(defn- normalize-assistant
+  "Normalize one assistant record to the settings view shape.
+
+  The server publishes `{id name revision}` plus any persisted fields such
+  as `:assistant-id`, `:display-name`, `:enabled?`, and `:default-model`."
+  [id assistant]
+  (when (map? assistant)
+    (let [id (str (or (:id assistant) (:assistant-id assistant) id))]
+      {:id id
+       :assistant-id (str (or (:assistant-id assistant) id))
+       :name (str (or (:name assistant) (:display-name assistant) id))
+       :display-name (str (or (:display-name assistant)
+                              (:name assistant)
+                              id))
+       :revision (long (or (:revision assistant) 1))
+       :enabled? (not (false? (:enabled? assistant)))
+       ;; `:model-entry-id` is the sessions-layer alias of `:model-id`; keep
+       ;; one canonical client key so editors and validation agree.
+       :default-model (when (map? (:default-model assistant))
+                        (let [model (select-keys (:default-model assistant)
+                                                [:connection-id :model-id
+                                                 :model-entry-id])]
+                          (cond-> model
+                            (and (nil? (:model-id model))
+                                 (some? (:model-entry-id model)))
+                            (assoc :model-id (:model-entry-id model)))))})))
+
+(defn- normalize-assistants
+  [assistants]
+  (cond
+    (map? assistants)
+    (into {} (keep (fn [[id assistant]]
+                     (when-let [a (normalize-assistant id assistant)]
+                       [(:id a) a])))
+          assistants)
+
+    (sequential? assistants)
+    (into {} (keep (fn [assistant]
+                     (when-let [a (normalize-assistant nil assistant)]
+                       [(:id a) a])))
+          assistants)
+
+    :else {}))
+
 (defn initial-state
   "Return a disconnected settings state.  Drafts are empty."
   ([] (initial-state {}))
@@ -122,9 +166,12 @@
              :models (normalize-models models)
              :model-list-status (normalize-statuses model-list-status)
              :roles (normalize-roles roles)
+            :assistant-order []
+            :assistant-refs {}
              :session-model-snapshots (or session-model-snapshots {})}
     :drafts {}
     :role-drafts {}
+    :assistants {}
     :ui {:open? false
          :section :providers
          :selected-draft-id nil
@@ -134,12 +181,16 @@
          :manual-model-inputs {}
          :draft-history []
          :confirm-delete-draft-id nil
+         :assistant-drafts {}
+         :confirm-delete-assistant-id nil
+         :selected-assistant-id nil
+         :price-preview-inputs {}
          :current-session-id nil
          :active-session-id nil
          :session-running? false
          :draft-storage-status :saved
          :model-auth model-auth/initial-state
-         :onboarding {:step :connection
+         :onboarding {:step :connection-type
                       :dismissed? false
                       :completed? false}
          :transport-available? (boolean transport-available?)
@@ -390,6 +441,9 @@
             roles (when has-roles?
                     (normalize-roles (or (:settings/roles snapshot)
                                          (:models snapshot))))
+            has-assistants? (contains? snapshot :settings/assistants)
+            assistants (when has-assistants?
+                         (normalize-assistants (:settings/assistants snapshot)))
             sync (cond-> (cond
                            (map? (:sync snapshot)) (:sync snapshot)
                            (or (contains? snapshot :phase)
@@ -429,6 +483,17 @@
                     (some? roles)
                     (-> (assoc-in [:server :roles] roles)
                         (merge-role-drafts roles))
+
+                    (some? assistants)
+                    (assoc-in [:server :assistants] assistants)
+
+                    (contains? snapshot :settings/assistant-order)
+                    (assoc-in [:server :assistant-order]
+                             (vec (:settings/assistant-order snapshot)))
+
+                    (contains? snapshot :assistant-refs)
+                    (assoc-in [:server :assistant-refs]
+                             (:assistant-refs snapshot))
 
                     (some? sync)
                     (update :sync merge
@@ -1469,6 +1534,40 @@
                      (or (get-in receipt [:error :message])
                          "测试未被接受；表单与草稿保留。")))))
 
+(defn- apply-save-assistants
+  [state command receipt]
+  (if (contains? #{:accepted :replayed} (:status receipt))
+    (let [payload (:payload command)
+          submitted (get payload :assistants)
+          delete-id (:delete-assistant-id payload)
+          assistants (if (map? submitted)
+                       (normalize-assistants submitted)
+                       (get-in state [:server :assistants]))
+          assistants (if delete-id
+                       (dissoc assistants (str delete-id))
+                       assistants)
+          ;; A delete receipt removes only the deleted assistant's draft.
+          ;; Save receipts keep local drafts for ids the server did not
+          ;; accept (validation may drop unknown fields).
+          drafts (if delete-id
+                   (dissoc (:assistant-drafts (:ui state) {})
+                           (str delete-id))
+                   (:assistant-drafts (:ui state) {}))
+          state' (cond-> (-> state
+                              (assoc-in [:server :assistants] assistants)
+                              (assoc-in [:ui :assistant-drafts] drafts))
+                    delete-id
+                    (-> (assoc-in [:ui :confirm-delete-assistant-id] nil)
+                        (assoc-in [:ui :selected-assistant-id] nil)))
+          state' (message state' :info
+                           (if delete-id
+                             "助手已删除。"
+                             "助手已保存。"))]
+      (result state' [(persist-effect state')]))
+    (result (message state :error
+                     (or (get-in receipt [:error :message])
+                         "助手保存未被接受；本地修改保留。")))))
+
 (defn- apply-domain-receipt
   [state command receipt]
   (case (:kind command)
@@ -1478,6 +1577,7 @@
     :settings/list-models (apply-list-models state command receipt)
     :settings/save-role (apply-save-role state command receipt)
     :settings/delete-connection (apply-delete state command receipt)
+    :settings/save-assistants (apply-save-assistants state command receipt)
     :session/select-model
     (if (contains? #{:accepted :replayed} (:status receipt))
       (result (message state :info
@@ -1531,11 +1631,16 @@
         main (role-row state :main)
         tested? (some #(contains? #{:complete :running} (:status %))
                       (vals (:tests state)))
+        wizard-step (get-in state [:ui :onboarding :step] :connection-type)
+        ;; The checklist step is derived from server state; the wizard step
+        ;; is the operator's current position.  They are separate so going
+        ;; back never rewrites what is actually configured.
         step (cond
-               (empty? connections) :connection
+               (empty? connections) :connection-type
                (not enabled-chat-model?) :model
                :else :done)]
-    {:step step
+    {:step wizard-step
+     :checklist-step step
      :complete? (= :done step)
      :connection-count (count connections)
      :has-main? (boolean main)
@@ -1548,14 +1653,34 @@
   [state action]
   (let [type (util/normalize-keyword (:type action))
         onboarding (get-in state [:ui :onboarding])
+        step-order [:connection-type :connection-details :model :done]
+        step-index (fn [step]
+                     (or (first (keep-indexed (fn [idx candidate]
+                                                (when (= candidate step) idx))
+                                              step-order))
+                         0))
         onboarding (case type
                      :settings/start-onboarding
                      (assoc onboarding :dismissed? false :completed? false
-                            :step :connection)
+                            :step :connection-type)
 
                      :settings/onboarding-step
                      (assoc onboarding :step (util/normalize-keyword (:step action))
                             :dismissed? false)
+
+                     :settings/onboarding-back
+                     (let [idx (step-index (:step onboarding))]
+                       (assoc onboarding
+                              :step (nth step-order (max 0 (dec idx)))
+                              :dismissed? false))
+
+                     :settings/onboarding-next
+                     (let [idx (step-index (:step onboarding))]
+                       (assoc onboarding
+                              :step (nth step-order
+                                         (min (dec (count step-order))
+                                              (inc idx)))
+                              :dismissed? false))
 
                      :settings/dismiss-onboarding
                      (assoc onboarding :dismissed? true)
@@ -1566,10 +1691,82 @@
 
                      :settings/reset-onboarding
                      (assoc onboarding :dismissed? false :completed? false
-                            :step :connection)
+                            :step :connection-type)
 
                      onboarding)]
     (result (assoc-in state [:ui :onboarding] onboarding))))
+
+(defn- handle-onboarding-edit-field
+  "Store one connection-detail field on the wizard's draft.
+
+  The wizard edits the draft's `:fields` map through the same
+  `draft/edit-field` path the providers section uses, so saving the
+  connection later sees exactly what the operator typed.  The value is also
+  mirrored into `:ui :onboarding :fields` for the step summary."
+  [state action]
+  (let [field (util/normalize-keyword (:field action))
+        value (:value action)
+        draft-id (or (:draft-id action)
+                     (get-in state [:ui :onboarding :draft-id]))
+        draft (find-draft state draft-id)]
+    (if-not draft
+      (result (message state :error "还没有连接草稿；请先选择连接方式。"))
+      (let [draft (if (= :path field)
+                    ;; Changing the connection kind resets the draft shape;
+                    ;; `draft/set-path` keeps the id and only touches
+                    ;; kind-specific fields so a cloud-key draft cannot leak
+                    ;; into local.
+                    (draft/set-path draft value {:now (:now action)})
+                    (draft/edit-field draft field value
+                                      {:now (:now action)}))
+            state (-> state
+                      (assoc-in [:drafts (:draft-id draft)] draft)
+                      (assoc-in [:ui :onboarding :fields field] value)
+                      (assoc-in [:ui :onboarding :draft-id] (:draft-id draft))
+                      (assoc-in [:ui :selected-draft-id] (:draft-id draft)))]
+        (result state [(persist-effect state)])))))
+
+(defn- handle-onboarding-choose-connection
+  "Select or create the draft the wizard edits.
+
+  `:path` is one of the connection service kinds.  An existing draft for the
+  same path is reused so stepping back never duplicates unsaved input; a
+  saved connection becomes a normal edit draft through `ensure-draft`."
+  [state action]
+  (let [path (util/normalize-keyword (:path action))
+        onboarding (get-in state [:ui :onboarding])
+        draft-id (:draft-id onboarding)
+        drafts (:drafts state)
+        existing-id (or (when (and draft-id (find-draft state draft-id))
+                             draft-id)
+                           (some (fn [[id draft]]
+                                  (when (and (= path (get-in draft [:fields
+                                                                   :service-kind]))
+                                              (not (:orphaned? draft)))
+                                     id))
+                                 drafts))]
+    (cond
+      existing-id
+      (result (-> state
+                  (assoc-in [:ui :onboarding :draft-id] existing-id)
+                  (assoc-in [:ui :onboarding :step] :connection-details)
+                  (assoc-in [:ui :onboarding :dismissed?] false)
+                  (assoc-in [:ui :selected-draft-id] existing-id)
+                  (message :info "继续编辑连接草稿；返回上一步不会丢失已填内容。")))
+
+      :else
+      (let [draft (draft/blank-draft path (select-keys action [:now]))
+            state (-> state
+                      (assoc-in [:drafts (:draft-id draft)] draft)
+                      (assoc-in [:ui :selected-draft-id] (:draft-id draft))
+                      (assoc-in [:ui :onboarding :draft-id] (:draft-id draft))
+                      (assoc-in [:ui :onboarding :step] :connection-details)
+                      (assoc-in [:ui :onboarding :dismissed?] false)
+                      (assoc-in [:ui :section] :providers)
+                      (message :info
+                               (str "已新建" (draft/path-label draft)
+                                    "草稿；保存成功前不会出现在连接列表。")))]
+        (result state [(persist-effect state)])))))
 
 (defn set-transport-available
   [state available?]
@@ -1898,6 +2095,317 @@
   [state]
   (assoc-in state [:ui :message] nil))
 
+;; ---------------------------------------------------------------------------
+;; Assistants
+
+(defn- assistant-draft-default-model
+  "Return the default-model selection stored on an assistant draft."
+  [draft]
+  (or (:default-model draft)
+      {:connection-id nil :model-id nil}))
+
+(defn- assistant-validation-errors
+  "Client-side checks for one assistant draft before it is queued."
+  [state draft]
+  (let [id (str/trim (str (:id draft)))
+        assistants (get-in state [:server :assistants] {})
+        editing-id (str (:assistant-id draft))
+        collision? (and (contains? assistants id)
+                        (not= id editing-id))
+        name (str/trim (str (:name draft)))
+        default-model (:default-model draft)
+        groups (model-groups state)]
+    (cond-> []
+      (str/blank? id)
+      (conj {:field :id :message "助手标识不能为空。"})
+
+      collision?
+      (conj {:field :id
+             :message "助手标识已存在；请使用不同标识。"})
+
+      (str/blank? name)
+      (conj {:field :name :message "助手名称不能为空。"})
+
+      (and (map? default-model)
+           (or (str/blank? (str (:connection-id default-model)))
+               (str/blank? (str (:model-id default-model)))))
+      (conj {:field :default-model
+             :message "默认模型需要同时选择连接与模型。"})
+
+      (and (map? default-model)
+           (util/present? (str (:connection-id default-model)))
+           (util/present? (str (:model-id default-model)))
+           (nil? (catalog/find-row groups default-model)))
+      (conj {:field :default-model
+             :message "默认模型指向的连接或模型已不可用。"}))))
+
+(defn assistant-ref-counts
+  "Return `{:sessions n :worldbooks n}` for ASSISTANT-ID.
+
+  The bridge projects `:server/:assistant-refs` as
+  `{assistant-id {:sessions [ids] :worldbooks [ids]}}`; a missing entry
+  means no known references."
+  [state assistant-id]
+  (let [refs (get-in state [:server :assistant-refs] {})
+        entry (get refs (str assistant-id))]
+    {:sessions (count (get entry :sessions))
+     :worldbooks (count (get entry :worldbooks))}))
+
+(defn- assistant-row
+  [state assistant]
+  (let [groups (model-groups state)
+        draft (get-in state [:ui :assistant-drafts (:id assistant)])
+        default-model (or (:default-model draft)
+                          (:default-model assistant))]
+    (cond-> {:id (:id assistant)
+             :assistant-id (:assistant-id assistant)
+             :name (:name assistant)
+             :display-name (:display-name assistant)
+             :revision (:revision assistant)
+             :enabled? (if draft
+                         (not (false? (:enabled? draft)))
+                         (:enabled? assistant))
+             :editing? (some? draft)
+             :selected? (= (:id assistant)
+                           (get-in state [:ui :selected-assistant-id]))
+             :default-model default-model
+             :default-model-label
+             (when (and (map? default-model)
+                        (util/present? (str (:connection-id default-model))))
+               (when-let [row (catalog/find-row groups default-model)]
+                 (catalog/selection-label groups row)))
+             :reference-counts (assistant-ref-counts state (:id assistant))}
+      draft
+      (assoc :name (or (:name draft) (:name assistant))
+             :display-name (or (:display-name draft)
+                               (:display-name assistant))
+             :enabled? (not (false? (:enabled? draft)))))))
+
+(defn assistant-cards
+  "Return assistant rows for the settings assistants section."
+  [state]
+  (->> (get-in state [:server :assistants] {})
+       (map (fn [[_id assistant]] (assistant-row state assistant)))
+       (sort-by (fn [card]
+                  [(if (:selected? card) 0 1)
+                   (str/lower-case (str (:name card)))
+                   (:id card)]))
+       vec))
+
+(defn- new-assistant-id
+  "Return a fresh assistant id that does not collide with existing ids."
+  [state]
+  (let [existing (set (keys (get-in state [:server :assistants] {})))
+        base "assistant"
+        candidate (loop [n 1]
+                    (let [id (if (= 1 n) base (str base "-" n))]
+                      (if (contains? existing id)
+                        (recur (inc n))
+                        id)))]
+    candidate))
+
+(defn- handle-new-assistant
+  [state _action]
+  (let [id (new-assistant-id state)
+        draft {:id id
+               :assistant-id id
+               :name ""
+               :display-name ""
+               :enabled? true
+               :default-model nil
+               :is-new? true
+               :version 0
+               :editing? true}
+        state' (-> state
+                   (assoc-in [:ui :assistant-drafts id] draft)
+                   (assoc-in [:ui :selected-assistant-id] id)
+                   (assoc-in [:ui :confirm-delete-assistant-id] nil)
+                   (message :info "新建助手草稿；保存前不会出现在服务器助手列表。"))]
+    (result state')))
+
+(defn- handle-select-assistant
+  [state action]
+  (result (-> state
+              (assoc-in [:ui :selected-assistant-id] (:assistant-id action))
+              (assoc-in [:ui :confirm-delete-assistant-id] nil))))
+
+(defn- handle-edit-assistant-field
+  [state action]
+  (let [assistant-id (str (:assistant-id action))
+        field (util/normalize-keyword (:field action))
+        value (:value action)
+        existing (get-in state [:server :assistants assistant-id])
+        draft (get-in state [:ui :assistant-drafts assistant-id]
+                      {:id assistant-id
+                       :assistant-id (:assistant-id existing assistant-id)
+                       :enabled? (not (false? (:enabled? existing)))
+                       :version 0})]
+    (if-not (or existing
+                 (contains? (:assistant-drafts (:ui state) {}) assistant-id))
+      (result (message state :error "没有可编辑的助手。"))
+      (let [current (or (:default-model draft)
+                        (:default-model existing)
+                        {})
+            draft (case field
+                    :default-model-connection
+                    (assoc draft :default-model
+                           (if (str/blank? (str value))
+                             nil
+                             {:connection-id (str value)
+                              :model-id (:model-id current)}))
+
+                    :default-model-model
+                    (assoc draft :default-model
+                           (if (str/blank? (str value))
+                             (when (util/present? (str (:connection-id current)))
+                               {:connection-id (:connection-id current)
+                                :model-id nil})
+                             {:connection-id (:connection-id current)
+                              :model-id (str value)}))
+
+                    ;; Every other field replaces its own key; the draft
+                    ;; keeps fields the action did not name.  Unknown fields
+                    ;; leave the draft unchanged.
+                    (if (contains? #{:id :assistant-id :name :display-name
+                                     :enabled? :default-model}
+                                   field)
+                      (assoc draft field
+                             (case field
+                               :id (str/trim (str value))
+                               :assistant-id (str/trim (str value))
+                               :name (str value)
+                               :display-name (str value)
+                               :enabled? (boolean value)
+                               :default-model (when (map? value) value)))
+                      draft))]
+        (result (assoc-in state [:ui :assistant-drafts assistant-id]
+                          (assoc draft :editing? true)))))))
+
+(defn- handle-save-assistant
+  [state action]
+  (let [assistant-id (str (:assistant-id action))
+        draft (get-in state [:ui :assistant-drafts assistant-id])
+        existing (get-in state [:server :assistants assistant-id])]
+    (if-not (or draft existing)
+      (result (message state :error "没有可保存的助手草稿。"))
+      (let [merged (merge (or existing
+                              {:id assistant-id
+                               :assistant-id assistant-id
+                               :name assistant-id
+                               :revision 1
+                               :enabled? true})
+                         (select-keys draft [:id :assistant-id :name
+                                             :display-name :enabled?
+                                             :default-model]))
+            draft-for-validation (assoc merged
+                                         :is-new? (or (:is-new? draft)
+                                                      (nil? existing)))
+            errors (assistant-validation-errors state draft-for-validation)]
+        (if (seq errors)
+          (result (message state :error
+                           (str "无法保存助手："
+                                (str/join "；" (map :message errors)))))
+          (let [assistants (get-in state [:server :assistants] {})
+                saved-id (:id merged)
+                next-assistants
+                (cond-> (dissoc assistants assistant-id)
+                  true (assoc saved-id
+                              (-> merged
+                                  (dissoc :editing? :version :renaming?)
+                                  (assoc :revision
+                                         (long (inc (or (:revision merged) 0)))))))
+                queued (commands/queue state :settings/save-assistants
+                                       {:assistants next-assistants}
+                                       (select-keys action [:command-id :now]))]
+            (if (:ok? queued)
+              (result (-> (:state queued)
+                          (assoc-in [:ui :assistant-drafts saved-id] nil)
+                          (assoc-in [:ui :assistant-drafts assistant-id] nil)
+                          (assoc-in [:ui :selected-assistant-id] saved-id)
+                          (message :info
+                                   "已提交助手保存；等待服务器回执。"))
+                      [(persist-effect (:state queued))])
+              (result (message (:state queued) :error
+                               (get-in queued [:error :message]))))))))))
+
+(defn- handle-request-delete-assistant
+  [state action]
+  (let [assistant-id (str (:assistant-id action))
+        refs (assistant-ref-counts state assistant-id)
+        total (+ (:sessions refs) (:worldbooks refs))
+        detail (if (pos? total)
+                 (str "当前有 " total " 处引用（会话 " (:sessions refs)
+                      "，世界书 " (:worldbooks refs)
+                      "）；引用保留原助手标识。")
+                 "未发现会话或世界书引用该助手。")]
+    (result (-> state
+                (assoc-in [:ui :confirm-delete-assistant-id] assistant-id)
+                (message :warning
+                         (str "删除助手会移除其配置；" detail
+                              "请再次确认。"))))))
+
+(defn- handle-cancel-delete-assistant
+  [state]
+  (result (assoc-in state [:ui :confirm-delete-assistant-id] nil)))
+
+(defn- handle-confirm-delete-assistant
+  [state action]
+  (let [assistant-id (str (:assistant-id action))
+        existing (get-in state [:server :assistants assistant-id])]
+    (cond
+      (nil? existing)
+      (result (message state :error "没有可删除的助手。"))
+
+      (= "default" assistant-id)
+      (result (message state :error
+                       "内置“通用助手”不能删除；可以重命名或停用。"))
+
+      :else
+      (let [assistants (get-in state [:server :assistants] {})
+            next-assistants (dissoc assistants assistant-id)
+            queued (commands/queue state :settings/save-assistants
+                                   {:assistants next-assistants
+                                    :delete-assistant-id assistant-id}
+                                   (select-keys action [:command-id :now]))]
+        (if (:ok? queued)
+          (result (-> (:state queued)
+                      (assoc-in [:ui :assistant-drafts assistant-id] nil)
+                      (assoc-in [:ui :confirm-delete-assistant-id] nil)
+                      (assoc-in [:ui :selected-assistant-id] nil)
+                      (message :info "已提交助手删除；等待服务器回执。"))
+                  [(persist-effect (:state queued))])
+          (result (message (:state queued) :error
+                           (get-in queued [:error :message]))))))))
+
+(defn- handle-edit-price-preview-input
+  [state action]
+  (let [key [(:connection-id action) (:model-id action)]
+        field (util/normalize-keyword (:field action))
+        value (:value action)
+        current (get-in state [:ui :price-preview-inputs key]
+                        {:input 1000 :output 500})]
+    (result (assoc-in state [:ui :price-preview-inputs key field]
+                      value))))
+
+(defn- price-preview-row
+  [state row]
+  (let [key [(:connection-id row) (:model-id row)]
+        inputs (get-in state [:ui :price-preview-inputs key]
+                       {:input 1000 :output 500})
+        preview (catalog/price-preview (:pricing row) inputs)]
+    {:input (:input inputs)
+     :output (:output inputs)
+     :text (:text preview)
+     :known? (:known? preview)}))
+
+(defn price-preview
+  "Return the price-preview view for one model row.
+
+  The operator edits token counts; the preview either shows a computed
+  estimate or `无法估算` when the price or unit is unknown."
+  [state row]
+  (price-preview-row state row))
+
 (defn reduce-action
   "Apply one UI action.  Returns `{:state state' :effects effects}`.
 
@@ -1967,9 +2475,25 @@
                                          state (:available? action))
       :settings/start-onboarding (handle-onboarding state action)
       :settings/onboarding-step (handle-onboarding state action)
+      :settings/onboarding-back (handle-onboarding state action)
+      :settings/onboarding-next (handle-onboarding state action)
       :settings/dismiss-onboarding (handle-onboarding state action)
       :settings/finish-onboarding (handle-onboarding state action)
       :settings/reset-onboarding (handle-onboarding state action)
+      :settings/onboarding-edit-field (handle-onboarding-edit-field state action)
+      :settings/onboarding-choose-connection
+      (handle-onboarding-choose-connection state action)
+      :settings/new-assistant (handle-new-assistant state action)
+      :settings/select-assistant (handle-select-assistant state action)
+      :settings/edit-assistant-field (handle-edit-assistant-field state action)
+      :settings/save-assistant (handle-save-assistant state action)
+      :settings/request-delete-assistant
+      (handle-request-delete-assistant state action)
+      :settings/cancel-delete-assistant (handle-cancel-delete-assistant state)
+      :settings/confirm-delete-assistant
+      (handle-confirm-delete-assistant state action)
+      :settings/edit-price-preview-input
+      (handle-edit-price-preview-input state action)
       :settings/set-draft-storage-status (set-draft-storage-status
                                           state (:status action))
       :settings/dismiss-message (result (dismiss-message state))

@@ -19,7 +19,7 @@
    :clj-review
    {:label "Reviewer"
     :capabilities #{:cat :stat :ls :where :whereAll :unpark :review
-                    :askPreviousScope :assume}}
+                    :askPreviousScope :assume :negotiate}}
 
    :clj-worker
    {:label "Swarm worker"
@@ -33,7 +33,7 @@
                     :cancel :replace :release :reopen :comment :update
                     :take-or-die :park-slot :abandon
                     :resolve-action :acknowledge-recovery
-                    :askPreviousScope :assume}}
+                    :askPreviousScope :assume :negotiate}}
 
    :dedicated-worker
    {:label "Plan dedicated worker"
@@ -48,6 +48,7 @@
   '{cat :cat
     stat :stat
     ls :ls
+    negotiate :negotiate
     write :write
     mkdir :mkdir
     rm :rm
@@ -90,7 +91,7 @@
   #{:devops :review :split :claim :finish :cancel :replace :release :reopen
     :comment :update :take-or-die :park-slot
     :resolve-action :acknowledge-recovery :abandon
-    :askPreviousScope :assume})
+    :askPreviousScope :assume :negotiate})
 
 (defn role?
   [role]

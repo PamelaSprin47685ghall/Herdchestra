@@ -16,6 +16,7 @@
             [hc.compose.retry.policy :as retry-policy]
             [hc.core.relay :as relay]
             [hc.core.scope.admission :as scope-admission]
+            [hc.core.scope.errors :as errors]
             [hc.core.scope.ledger :as scope-ledger]
             [hc.core.scope.projection :as scope-projection]
             [hc.core.scope.runtime :as scope-runtime]))
@@ -91,6 +92,7 @@
   (let [result (mission/restore state opts)]
     (if (:ok? result)
       (let [state (with-mission state (:state result))
+            asks (get-in state [:scope :asks])
             state (if (map? (:actors state))
                     state
                     (assoc state :actors
@@ -103,6 +105,8 @@
                                                  {})})))
             state (assoc state :scope
                          (scope-runtime/cold-start-state (:scope state)))
+            state (assoc-in state [:scope :asks]
+                         (or asks {}))
             ;; Presence is connection-scoped, not business state.  A restart
             ;; has no live clients, so a stale controller id must not fence
             ;; the first client that reconnects.  The next attach (or the
@@ -185,12 +189,18 @@
            :conversation (vec (or initial-conversation []))
            :drafts {}
            :scope {:book (scope-ledger/new-book)
-                   :records []}
+                   :records []
+                   :asks {}}
            :terminals []
            :pending-cancels []
            :pending-turns []
            :nudges {}
            :nudge-seq 0
+           ;; Consecutive Nudge rounds consumed per [tenure-id agent-id].
+           ;; Distinct from `:nudge-budget`: that one bounds repeated
+           ;; *failures*, this one bounds repeated *successful no-progress*
+           ;; turns before the policy answers `:round-boundary`.
+           :nudge-rounds {}
            :progress-seq 0
            :turn nil
            :turn-history []
@@ -712,9 +722,16 @@
   "Create one model run for a claimed model attempt.
 
   Tool calls are not runs.  A retry creates a new run because it has a new
-  attempt id; the previous run stays as evidence."
+  attempt id; the previous run stays as evidence.
+
+  A scope-ask consult call (`:scope-consult-for` on its snapshot) is
+  ephemeral: it never enters the conversation, so it must not open a run
+  either.  A live run would make `conversation-stable?` block every new
+  user turn while the consult streams."
   [state call attempt-id now]
-  (if-not (= :model (:kind call))
+  (if-not (and (= :model (:kind call))
+               (nil? (get-in call [:request :snapshot
+                                   :scope-consult-for])))
     state
     (let [attempt-id (normalize-attempt-id attempt-id)
           id (run-id (:call-id call) attempt-id)]
@@ -1030,12 +1047,276 @@
                    (retain-scope-records existing records)))))
 
 (defn scope-admission-check
-  [state member annotation]
-  (scope-admission/check
-   {:member member
-    :annotation annotation
-    :retention (scope-ledger/retention (scope-book state))
-    :admission (scope-admission/admission)}))
+  [state member annotation call-id]
+  (let [result (scope-admission/check
+                {:member member
+                 :annotation annotation
+                 :retention (scope-ledger/retention (scope-book state))
+                 :admission (scope-admission/admission)})
+        book (scope-book state)
+        asks (get-in state [:scope :asks])
+        beats (scope-ledger/reset-beats book)
+        beat (peek beats)
+        asked? (some #(= (:call-id beat) (:target-call-id %))
+                     (vals asks))]
+    (if (and (:ok result)
+             (not (:exempt result))
+             (= :reset-scope (:kind (:annotation result)))
+             (scope-ledger/established? book)
+             (seq beats)
+             (not asked?))
+      (errors/refuse
+       :SCOPE_ASK_REQUIRED
+       (str "a reset after the first scope beat requires an "
+            "askPreviousScope receipt for beat "
+            (pr-str (:call-id beat))
+            " before it can settle")
+       {:member member
+        :kind :reset-scope
+        :previous-scope-call-id (:call-id beat)
+        :call-id call-id})
+      result)))
+
+(defn- ask-target-beat
+  "The newest settled reset beat: the previous Scope an ask targets."
+  [state]
+  (peek (scope-ledger/reset-beats (scope-book state))))
+
+(defn- ask-questions-digest
+  [questions]
+  (str questions))
+
+(defn ask-previous-scope-state
+  "Record one `askPreviousScope` receipt against the previous Scope beat.
+
+  Pure state transition: it validates the request, replays an existing
+  receipt for the same call-id, or appends a new `:accepted` receipt under
+  `[:scope :asks call-id]`.  It never creates a model call and never
+  answers; the consult path (P2) and `:scope/ask-answer` deliver the
+  answer later.
+
+  Returns `{:state state' :result result}` where result is
+  `{:ok true :outcome :accepted :receipt receipt}` or a refusal value
+  `{:ok false :code ... :message ...}`."
+  [state {:keys [call-id questions member turn-id tenure-id lane agent-id]
+          :as request}]
+  (let [questions (str questions)
+        digest (when-not (str/blank? questions) (ask-questions-digest questions))]
+    (cond
+      (str/blank? questions)
+      {:state state
+       :result (errors/refuse
+                :ASK_QUESTIONS_REQUIRED
+                "askPreviousScope needs a non-blank :questions string"
+                {:call-id call-id})}
+
+      (nil? call-id)
+      {:state state
+       :result (errors/refuse
+                :ASK_CALL_ID_REQUIRED
+                "askPreviousScope needs the physical tool call id"
+                {})}
+
+      :else
+      (let [beat (ask-target-beat state)
+            existing (get-in state [:scope :asks call-id])]
+        (cond
+          (nil? beat)
+          {:state state
+           :result (errors/refuse
+                    :NO_PREVIOUS_SCOPE
+                    "no settled reset beat exists; there is no previous Scope to ask"
+                    {:call-id call-id})}
+
+          (some? existing)
+          (if (= (:questions-digest existing) digest)
+            {:state state
+             :result {:ok true
+                      :outcome :accepted
+                      :receipt (assoc (:receipt existing) :replayed? true)}}
+            {:state state
+             :result (errors/refuse
+                      :ASK_REPLAY_MISMATCH
+                      "call-id was already used for a different askPreviousScope request"
+                      {:call-id call-id
+                       :accepted-questions-digest (:questions-digest existing)
+                       :received-questions-digest digest})})
+
+          :else
+          (let [now (:at request)
+                receipt {:status :accepted
+                         :outcome :accepted
+                         :kind :scope/ask-previous
+                         :call-id call-id
+                         :target-call-id (:call-id beat)
+                         :generation (:call-id beat)
+                         :questions questions
+                         :questions-digest digest
+                         :consult :pending
+                         :role member
+                         :turn-id turn-id
+                         :tenure-id tenure-id
+                         :lane lane
+                         :agent-id agent-id
+                         :at now}
+                state' (assoc-in state [:scope :asks call-id]
+                                 {:receipt receipt
+                                  :status :accepted
+                                  :target-call-id (:call-id beat)
+                                  :generation (:call-id beat)
+                                  :questions questions
+                                  :questions-digest digest
+                                  :consult :pending
+                                  :role member
+                                  :turn-id turn-id
+                                  :tenure-id tenure-id
+                                  :agent-id agent-id
+                                  :lane lane
+                                  :at now})]
+            {:state state'
+             :result {:ok true :outcome :accepted :receipt receipt}}))))))
+
+(defn latest-reset-call-id
+  "The call-id of the newest settled reset beat, or nil."
+  [state]
+  (:call-id (peek (scope-ledger/reset-beats (scope-book state)))))
+
+(defn- ask-entry
+  "The `[:scope :asks call-id]` record, or nil."
+  [state call-id]
+  (get-in state [:scope :asks call-id]))
+
+(defn- scope-asks
+  "All ask receipts keyed by call-id."
+  [state]
+  (get-in state [:scope :asks] {}))
+
+(defn- conversation-call-index
+  "Index of the first conversation `:tool-call` entry for CALL-ID, or nil."
+  [conversation call-id]
+  (when (some? call-id)
+    (loop [index 0]
+      (when (< index (count conversation))
+        (let [entry (nth conversation index)]
+          (if (and (= :tool-call (:role entry))
+                   (= (str (:call-id entry)) (str call-id)))
+            index
+            (recur (inc index))))))))
+
+(defn- sealed-view-digest
+  "Stable fingerprint of one sealed view's rebuilt messages."
+  [messages]
+  (let [digest (java.security.MessageDigest/getInstance "SHA-256")]
+    (->> (.digest digest (.getBytes (pr-str messages) "UTF-8"))
+         (map #(format "%02x" (bit-and (int %) 0xff)))
+         (apply str))))
+
+(defn sealed-scope-view
+  "Rebuild the sealed view of one previous Scope beat.
+
+  The Owner conversation is never trimmed, so the view is a pure slice:
+  from the target beat's reset `:tool-call` entry up to (not including) the
+  next settled reset beat's `:tool-call` entry, or the conversation tail
+  when no later beat exists.  The slice is normalized through
+  `conversation->items`/`items->messages`, which restores model-valid
+  roles and tool envelopes.
+
+  Returns `{:ok? true :messages [...] :digest <sha256> :start <n>
+  :end <n>}` or `{:ok? false :code ... :message ...}`."
+  [state target-call-id]
+  (let [conversation (:conversation state)
+        start (conversation-call-index conversation target-call-id)
+        beats (scope-ledger/reset-beats (scope-book state))
+        target-index (some (fn [index]
+                             (when (= (str (:call-id (nth beats index)))
+                                      (str target-call-id))
+                               index))
+                           (range (count beats)))
+        next-call-id (when target-index
+                       (:call-id (nth beats (inc target-index) nil)))
+        end (if-let [next-index (some->> next-call-id
+                                       (conversation-call-index conversation))]
+              next-index
+              (count conversation))]
+    (cond
+      (nil? start)
+      {:ok? false
+       :code :SEALED_VIEW_BOUNDARY_MISSING
+       :message "the target reset call-id is not in the conversation"
+       :details {:target-call-id target-call-id}}
+
+      (and (some? next-call-id)
+           (nil? (conversation-call-index conversation next-call-id)))
+      {:ok? false
+       :code :SEALED_VIEW_BOUNDARY_MISSING
+       :message "a later reset beat is not in the conversation"
+       :details {:target-call-id target-call-id
+                 :next-call-id next-call-id}}
+
+      :else
+      (let [slice (subvec conversation start end)
+            items (scope-runtime/conversation->items slice)
+            messages (vec (scope-runtime/items->messages items))]
+        {:ok? true
+         :messages messages
+         :digest (sealed-view-digest messages)
+         :start start
+         :end end}))))
+
+(defn mark-scope-ask-stale
+  "Mark every pending ask whose generation no longer names the latest beat.
+
+  Generation invalidation discards the answer: a consult already in flight
+  is dropped by `deliver-scope-ask-answer`, and a pending ask that was
+  never consulted can never be answered.  The receipt stays for audit."
+  [state]
+  (let [latest (latest-reset-call-id state)
+        asks (scope-asks state)
+        stale-ids (into []
+                        (keep (fn [[call-id ask]]
+                                (when (and (= :pending (:consult ask))
+                                           (= :accepted (:status ask))
+                                           (not= (:generation ask) latest))
+                                  call-id)))
+                        asks)]
+    (if (empty? stale-ids)
+      {:state state :stale []}
+      {:state (reduce (fn [s call-id]
+                        (-> s
+                            (assoc-in [:scope :asks call-id :status] :stale)
+                            (assoc-in [:scope :asks call-id :consult]
+                                      :stale)))
+                      state
+                      stale-ids)
+       :stale stale-ids})))
+
+(defn pending-scope-ask-consults
+  "Asks still owed a consult, with their generation status.
+
+  Returns entries `{:call-id :ask :stale?}` for every ask whose consult is
+  `:pending` and whose status is still `:accepted`."
+  [state]
+  (let [latest (latest-reset-call-id state)]
+    (into []
+          (keep (fn [[call-id ask]]
+                  (when (and (= :pending (:consult ask))
+                             (= :accepted (:status ask)))
+                    {:call-id call-id
+                     :ask ask
+                     :stale? (not= (:generation ask) latest)})))
+          (scope-asks state))))
+
+(defn scope-consult-in-flight?
+  "True when a scope-ask consult model call is ready or live."
+  [state]
+  (boolean
+   (some (fn [call]
+           (and (= :model (:kind call))
+                (some? (get-in call [:request :snapshot
+                                     :scope-consult-for]))
+                (contains? #{:ready :dispatching :running :retry-wait}
+                           (:state call))))
+         (vals (:calls state)))))
 
 (defn settle-tool-scope
   "Settle one tool call's Scope annotation in the same Owner transition."
@@ -1106,7 +1387,9 @@
                   (contains? message :citations)
                   (assoc :citations (:citations message))
                   (contains? message :message-id)
-                  (assoc :message-id (:message-id message)))]
+                  (assoc :message-id (:message-id message))
+                  (contains? message :attribution)
+                  (assoc :attribution (:attribution message)))]
     (case (:role message)
       :user (assoc payload :kind :message :role :operator)
       :assistant (assoc payload :kind :message :role :assistant)
@@ -1138,7 +1421,8 @@
       (contains? item :attachments) (assoc :attachments (:attachments item))
       (contains? item :quotes) (assoc :quotes (:quotes item))
       (contains? item :citations) (assoc :citations (:citations item))
-      (contains? item :message-id) (assoc :message-id (:message-id item)))
+      (contains? item :message-id) (assoc :message-id (:message-id item))
+      (contains? item :attribution) (assoc :attribution (:attribution item)))
     :tool-call
     {:role :assistant
      :tool-calls [(cond-> {:id (:call-id item)

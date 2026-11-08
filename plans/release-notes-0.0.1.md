@@ -1,5 +1,9 @@
 # Herdchestra 0.0.1 发布说明（草案）
 
+> **final28 冻结（2026-11-08，v0.0.2）**：bundle `fd5e1f9003535d9e4dfed2bf358a8055376c233786238c293c40671babd63d39`（3,089,772 B，22:19:01；CSS `e06ece29…`；manifest `e0ef5e1b…`）+ 源码树 `77d92bc2`（PRE=POST，1060 files）；全量 3929 tests / 25571 assertions / 0F / 0E / exit 0；app-check `:ok true`/0.0.1；E2E 22/22 PASS。末尾修复 W280–W286（message->items 携带 attachments/quotes/citations、`:plain-response`/`:tools?` 三态、sente dispatcher+closeRingHandler、composer-snapshot 文本竞态、publish-run-events! 首见基线）。git：annotated tag **v0.0.2**（message 见下），未 push；台账内 git 标识为发布时快照，权威以 `git rev-parse HEAD` 与 `git rev-parse 'v0.0.2^{}'` 为准；树 hash 口径 = `find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum`（LC_ALL=C 按字节序）。final27b（`92d18d8f`+`43431535`）、final26/27 及更旧作废；E2E/视觉证据双记 `fd5e1f90` + `77d92bc2`。
+
+> **final28 前收口（2026-11-08）**：**E2E 22/22 全部 PASS**（E2E04 42/42 checks、3 连 PASS；E2E11 30/30）。E2E04 根因：publisher 首见 session 把分支复制的 3 条 assistant 全文当流式 delta 广播 → `:streaming? true` → composer `:needs-decision` → 第二轮永不发出；修复 `publish-run-events!` 首见基线。D-29 证伪（teardown SIGTERM）、D-30 已修（runtime message->items 携带 attachments/quotes/citations + composer-snapshot 文本竞态）。W287 正跑 final28 clean release rebuild + 全量 + app-check；待新 hash 后重冻结并准备 tag **v0.0.2**。
+
 > 状态：**草案，不是已发布版本**。截至 2026-11-05 本稿生成时，仓库 `HEAD`
 > 只跟踪 `AGENTS.md`，产品源码、测试、构建清单与文档仍未提交（发布条件 6 /
 > G8 为 FAIL）。本文件用于满足 `RUNNING.md` 发布条件 8，并作为提交与打标前的

@@ -23,7 +23,11 @@
    (relay/new-state
     (merge {:session-id "session-test"
             :user-input "Build the requested feature."
-            :draft {:path "plans/test.md" :content "Draft body."}
+            :draft {:path "plans/test.md"
+                    :content "Draft body."
+                    :version 1
+                    :source :program
+                    :user-edited? false}
             :successor-hint "Independently inspect the workspace."}
            opts))))
 
@@ -1599,3 +1603,47 @@
                           (zero? unresolved-token))]
       (and (= quiescent? (barrier/closing-quiescent? board))
            (= ff-ready (barrier/ff-ready? board))))))
+
+(deftest draft-version-and-source-markers-test
+  (testing "set-draft stamps version, source, and user-edited flag"
+    (let [state (fresh)
+          written (ok! (relay/set-draft state
+                                        {:path "plans/test.md"
+                                         :content "Program body."}))
+          draft (get-in (:state written) [:draft])]
+      (is (= 2 (:version draft)))
+      (is (= :program (:source draft)))
+      (is (false? (:user-edited? draft)))
+      (is (= 2 (get-in written [:receipt :draft-version])))
+      (testing "a second program write keeps the version monotonic"
+        (let [again (ok! (relay/set-draft (:state written)
+                                          {:path "plans/test.md"
+                                           :content "Program body v2."}))]
+          (is (= 3 (:version (get-in (:state again) [:draft]))))
+          (is (= :program
+                 (:source (get-in (:state again) [:draft]))))))))
+
+  (testing "execution/start effect carries draft source markers"
+    (let [pending (drive-plan-to-pending! (fresh))
+          plan-id (relay/current-tenure-id pending :plan)
+          ;; Simulate the reconcile outcome: the draft was user-edited on
+          ;; disk and adopted by the host before review.
+          pending* (assoc-in pending [:draft]
+                              (assoc (get-in pending [:draft])
+                                     :source :user
+                                     :user-edited? true
+                                     :version 3))
+          started (ok! (review! pending* :plan plan-id []))
+          effect (first (:effects started))]
+      (is (= :execution/start (:type effect)))
+      (is (= :user (:draft-source effect)))
+      (is (true? (:draft-user-edited? effect)))
+      (is (= "Draft body." (:draft effect))))))
+
+(deftest draft-freeze-after-handoff-still-holds-test
+  (let [state (-> (fresh) drive-plan-to-pending! start-execution! :state)
+        frozen (relay/set-draft state
+                                {:path "plans/test.md" :content "changed"})]
+    (is (= :DRAFT_LOCKED_AFTER_HANDOFF (error-code frozen)))
+    (is (= "Draft body." (get-in (:state frozen) [:draft :content])))
+    (is (= :program (get-in (:state frozen) [:draft :source])))))

@@ -70,6 +70,8 @@
   [command]
   (contains? #{:pending :submitting} (keywordize (:status command))))
 
+(declare command-failure)
+
 (defn command-label
   [command]
   (when command
@@ -85,15 +87,14 @@
                     :unpark "正在提交回答"
                     "正在提交")
       :accepted nil
-      :unconfirmed (let [copy (failures/failure-copy
-                              {:code :receipt-lost :context {:saved? false}})]
-                     (str (:title copy) "：" (:body copy)))
+      :unconfirmed (let [{:keys [copy]} (command-failure command)]
+                     (when copy
+                       (str (:title copy) "：" (:body copy))))
       :rejected (case (keywordize (:kind command))
                   :send (let [search-label (search-model/command-error-label command)
                               code (get-in command [:error :code])
-                              copy (when (and (nil? search-label) code)
-                                     (failures/failure-copy
-                                      {:code code :context {:saved? false}}))]
+                              {:keys [copy]}
+                              (command-failure command)]
                           (or search-label
                               (when (and copy
                                          (not= "无法确定具体原因" (:title copy)))
@@ -108,6 +109,39 @@
                   :unpark "回答未送达，可再次提交"
                   "命令未送达")
       nil))))
+
+(defn- command-failure
+  "Return `{:copy :reason}` for the failure copy a command status maps to.
+
+  `:unconfirmed` always reports the lost receipt; a rejected `:send` uses
+  the server error code when one exists and the shared copy module knows
+  it.  Other statuses return nils."
+  [command]
+  (let [status (keywordize (:status command))
+        status (if (= :refused status) :rejected status)]
+    (case status
+      :unconfirmed {:copy (failures/failure-copy
+                           {:code :receipt-lost :context {:saved? false}})
+                    :reason :receipt-lost}
+      :rejected (when (= :send (keywordize (:kind command)))
+                  (let [code (get-in command [:error :code])
+                        copy (when code
+                               (failures/failure-copy
+                                {:code code :context {:saved? false}}))]
+                    {:copy (when (and copy
+                                      (not= "无法确定具体原因" (:title copy)))
+                             copy)
+                     :reason code}))
+      {:copy nil :reason nil})))
+
+(defn command-reason
+  "The ten-category reason id behind a command's failure copy, or nil when
+  the command has no contract-kind failure.  Views render this category
+  before the concrete kind title."
+  [command]
+  (let [{:keys [copy reason]} (command-failure command)]
+    (when copy
+      (failures/failure-category reason))))
 
 (defn- save-view
   [draft-state]
@@ -143,7 +177,11 @@
                      (let [copy (failures/failure-copy
                                  {:code :attachment-unsupported
                                   :context {:saved? false}})]
-                       (str (:title copy) "：" (:body copy)))
+                       (str (or (failures/reason-label
+                                 {:code :attachment-unsupported
+                                  :context {:saved? false}})
+                                "")
+                            (:title copy) "：" (:body copy)))
                      :else "准备中")
      :ready? ready?
      :excluded? (boolean (:excluded? attachment))
@@ -205,6 +243,21 @@
      :reason reason
      :options (:options decision)
      :fix-intent (when (= :fix (:action decision)) (:intent decision))
+     ;; R-05/B-03: an unbound model is a hard send gate, but the operator
+     ;; still needs a visible way forward.  "连接模型" uses the same repair
+     ;; path as the banner (`:fix!` with `:select-model`, falling back to
+     ;; `:settings!`); "稍后设置" only opens settings.  With no callback at
+     ;; all the entry stays visible but disabled, per the surface contract.
+     :model-entry (when (= :no-model blocker)
+                    (let [has-fix? (fn? (:fix! callbacks))
+                          has-settings? (fn? (:settings! callbacks))]
+                      {:visible? true
+                       :primary-label "连接模型"
+                       :disabled? (not (or has-fix? has-settings?))
+                       :reason (when-not (or has-fix? has-settings?)
+                                 "模型设置通道未就绪")
+                       :defer-label "稍后设置"
+                       :defer? has-settings?}))
      :target-size (a11y/target-size layout :primary)
      :aria-label "发送消息"}))
 
@@ -270,7 +323,8 @@
                 {:command-id (:command-id command)
                  :kind (:kind command)
                  :status (:status command)
-                 :label (command-label command)})
+                 :label (command-label command)
+                 :reason (command-reason command)})
      :run-active? run-active?
      :target-size (a11y/target-size layout :primary)
      :aria {:label "消息输入"
@@ -542,9 +596,19 @@
                   (fn? (:settings! callbacks)))
               (assoc :actions [{:id :select-model :label "选择其他模型"}])))
 
+      ;; R-12: an unbound model needs a primary repair entry in the message
+      ;; area, not only a hint under the composer.  `:no-model` is checked
+      ;; last so a bound-but-unavailable model keeps its more specific
+      ;; explanation above.
+      (composer/model-missing? model)
+      (conj {:kind :info
+             :text "还没有可用模型；草稿与历史仍保留。连接模型后即可发送。"
+             :actions [{:id :select-model :label "连接模型"}]})
+
       command-message
       (conj (cond-> {:kind :error
                      :text command-message
+                     :reason (command-reason rejected)
                      :actions []}
               ;; Only a rejected send owns a draft snapshot.  A rejected stop
               ;; or answer has nothing to restore in the composer.
@@ -663,7 +727,12 @@
      :composer (composer-view state session-id layout callbacks)
      :asks asks
      :banners (banners state session-id callbacks)
-     :blocked (:blocked state)
+     :blocked (when (map? (:blocked state))
+                (assoc (:blocked state)
+                       :reason (let [id (failures/failure-category
+                                         (or (:last-code (:blocked state))
+                                             (:code (:blocked state))))]
+                                (when (not= :indeterminate id) id))))
      :jump {:visible? (boolean (:show-jump? stream-state))
             :label "返回最新内容"
             :target-size (a11y/target-size layout :primary)}

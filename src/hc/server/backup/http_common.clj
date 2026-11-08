@@ -98,6 +98,14 @@
                 :body (bounded-body (:body response))}))
   response)
 
+(defn response-excerpt
+  "A short, credential-free summary of an HTTP response body for probe
+  details.  Never includes request headers or signatures."
+  [^bytes body limit]
+  (when body
+    (let [text (String. ^bytes body StandardCharsets/UTF_8)]
+      (subs text 0 (min (long (or limit 200)) (count text))))))
+
 (defn- unreserved-byte?
   [b]
   (let [n (bit-and (int b) 0xff)]
@@ -132,6 +140,7 @@
   [id ^bytes bytes]
   (let [{:keys [header]} (package/verify-container bytes)]
     (assoc (package/public-metadata header)
+           :encrypted? (= :aes-gcm (:encryption header))
            :id id
            :size (alength bytes)
            :sha256 (codec/sha256-hex bytes)

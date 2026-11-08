@@ -185,6 +185,31 @@
      border-radius: .5rem; color: var(--hc-backup-muted); }
    .hc-backup-list-block ul { padding-left: 1.2rem; }
    .hc-backup__footer { margin-top: 1rem; border-top: 1px solid var(--hc-backup-border); }
+   .hc-backup-target-row-actions { display: inline-flex; gap: .35rem;
+    margin-left: .4rem; }
+   .hc-backup-target-delete { display: flex; flex-wrap: wrap; gap: .5rem;
+    align-items: center; border: 1px dashed var(--hc-backup-danger);
+    border-radius: .45rem; padding: .5rem .7rem; margin: .5rem 0; }
+   .hc-backup-target-delete__actions { display: inline-flex; gap: .4rem; }
+   .hc-backup-target-editor__grid { display: grid; gap: .2rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+   .hc-backup-select { min-height: 44px; width: 100%; box-sizing: border-box;
+    border: 1px solid var(--hc-backup-border); border-radius: .4rem;
+    background: var(--hc-backup-bg); color: var(--hc-backup-fg);
+    padding: .45rem .6rem; font: inherit; }
+   .hc-backup-target-test { border-left: 4px solid var(--hc-backup-muted);
+    background: color-mix(in srgb, var(--hc-backup-muted) 10%, transparent);
+    border-radius: .35rem; padding: .45rem .65rem; margin: .5rem 0; }
+   .hc-backup-target-test--ok { border-left-color: var(--hc-backup-positive);
+    background: color-mix(in srgb, var(--hc-backup-positive) 10%, transparent); }
+   .hc-backup-target-test--failed { border-left-color: var(--hc-backup-danger);
+    background: color-mix(in srgb, var(--hc-backup-danger) 10%, transparent);
+    color: var(--hc-backup-danger); }
+   .hc-backup-target-test--pending { border-left-color: var(--hc-backup-accent);
+    background: color-mix(in srgb, var(--hc-backup-accent) 10%, transparent); }
+   .hc-backup-button:disabled { opacity: .55; cursor: not-allowed; }
+   .hc-backup-check__input { width: 1.25rem; height: 1.25rem;
+    margin-top: .15rem; accent-color: var(--hc-backup-accent); }
    @media (max-width: 480px) {
      .hc-backup-panel, .hc-backup-target { padding: .6rem .7rem; }
      .hc-backup-facts { grid-template-columns: 1fr; }
@@ -462,7 +487,8 @@
   (let [target (model/target-view state)
         last-backup (:last-backup target)
         storage (:storage target)
-        recovery (first (model/recovery-point-rows state))]
+        recovery (first (model/recovery-point-rows state))
+        config (model/target-config-view state)]
     (el :section {:class "hc-backup-panel hc-backup-target"}
         (el :h3 {} "备份目标")
         (if (:configured? target)
@@ -499,35 +525,191 @@
                                     (el :small {} (str "端点：" (:endpoint item)
                                                        " · 桶：" (:bucket item)
                                                        (when (:prefix item)
-                                                         (str " · 前缀：" (:prefix item)))))))))
+                                                         (str " · 前缀：" (:prefix item)))))))
+                                  (el :span {:class "hc-backup-target-row-actions"}
+                                      (button "编辑"
+                                              (act :backup/edit-target
+                                                   :target-id (:id item))
+                                              {:class "hc-backup-button hc-backup-button--quiet"
+                                               :disabled (boolean (:busy? config))})
+                                      (button "删除"
+                                              (act :backup/request-delete-target
+                                                   :target-id (:id item))
+                                              {:class "hc-backup-button hc-backup-button--quiet"
+                                               :disabled (boolean (:busy? config))}))))
                         (:targets target)))
-              (facts [["已选目标" (some-> target :selected :id id-label)]
-                      ["备份目录" (:local-root target)]
-                      ["数据目录" (:data-dir target)]
-                      ["恢复点目录" (:recovery-root target)]
-                      ["最近成功备份" (or (:sampled-at last-backup)
-                                          (:created-at last-backup)
-                                          "尚无成功备份")]
-                      ["本机恢复点" (if recovery
-                                      (str (:created-at recovery)
-                                           (when (number? (:bytes recovery))
-                                             (str " · "
-                                                  (format-bytes (:bytes recovery)))))
-                                      "尚无恢复点")]
-                      ["数据占用" (if (number? (:used-bytes storage))
-                                    (format-bytes (:used-bytes storage))
-                                    "未提供")]
-                      ["可用空间" (if (number? (:free-bytes storage))
-                                    (format-bytes (:free-bytes storage))
-                                    "未提供")]]))
+              (do
+                (when config
+                  (let [delete-id (:delete-id config)]
+                    (when (and delete-id
+                               (some #(= delete-id (:id %))
+                                     (:targets config)))
+                      (el :div {:class "hc-backup-target-delete"}
+                          (el :span {}
+                              (str "删除目标 " (id-label delete-id)
+                                   "？此操作只移除配置，不删远程数据。"))
+                          (el :span {:class "hc-backup-target-delete__actions"}
+                              (button "确认删除"
+                                      (act :backup/delete-target)
+                                      {:class "hc-backup-button hc-backup-button--danger"
+                                       :disabled (:busy? config)})
+                              (button "取消"
+                                      (act :backup/cancel-delete-target)
+                                      {:class "hc-backup-button hc-backup-button--quiet"
+                                       :disabled (:busy? config)}))))))
+                (facts [["已选目标" (some-> target :selected :id id-label)]
+                        ["备份目录" (:local-root target)]
+                        ["数据目录" (:data-dir target)]
+                        ["恢复点目录" (:recovery-root target)]
+                        ["最近成功备份" (or (:sampled-at last-backup)
+                                            (:created-at last-backup)
+                                            "尚无成功备份")]
+                        ["本机恢复点" (if recovery
+                                        (str (:created-at recovery)
+                                             (when (number? (:bytes recovery))
+                                               (str " · "
+                                                    (format-bytes (:bytes recovery)))))
+                                        "尚无恢复点")]
+                        ["数据占用" (if (number? (:used-bytes storage))
+                                      (format-bytes (:used-bytes storage))
+                                      "未提供")]
+                        ["可用空间" (if (number? (:free-bytes storage))
+                                      (format-bytes (:free-bytes storage))
+                                      "未提供")]])))
           (el :p {:class "hc-backup-muted"}
               "尚未读取到已配置的备份目标；刷新状态后再操作。"))
         (el :p {:class "hc-backup-note"}
-            "目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。")
+            "目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。")
         (el :div {:class "hc-backup-actions"}
             (button "刷新状态"
                     (act :backup/refresh)
-                    {:disabled (not (model/can-submit? state))})))))
+                    {:disabled (not (model/can-submit? state))})
+            (button "新建目标"
+                    (act :backup/new-target)
+                    {:class "hc-backup-button hc-backup-button--quiet"
+                     :disabled (boolean (:busy? config))})))))
+(defn- target-editor-field
+  "Render one editor field spec as a labelled control.
+
+  Text and password fields dispatch `:backup/set-target-field` on every input
+  event so fast typing cannot lose characters between renders.  The kind
+  select dispatches on change and converts the DOM string back to a keyword.
+  Checkbox fields report `:target-checked` booleans."
+  [field-spec editor busy?]
+  (let [k (:key field-spec)
+        label (str (:label field-spec)
+                   (when (:required? field-spec) " *"))]
+    (case (:input field-spec)
+      :text
+      (field label
+             (draft-input
+              {:class "hc-backup-input"
+               :type "text"
+               :value (str (get editor k ""))
+               :disabled busy?
+               :aria-label label
+               :aria-required (when (:required? field-spec) "true")
+               :on-input (ev-value
+                          (act :backup/set-target-field :field k))})
+             (when-let [hint (:hint field-spec)] hint))
+      :password
+      (field label
+             (draft-input
+              {:class "hc-backup-input"
+               :type "password"
+               :value (str (get editor k ""))
+               :disabled busy?
+               :autocomplete "off"
+               :aria-label label
+               :aria-required (when (:required? field-spec) "true")
+               :on-input (ev-value
+                          (act :backup/set-target-field :field k))})
+             (when-let [hint (:hint field-spec)] hint))
+      :select
+      (field label
+             (el :select {:class "hc-backup-input hc-backup-select"
+                          :value (name (get editor k :webdav))
+                          :disabled busy?
+                          :aria-label label
+                          :on-change (ev-value
+                                      (act :backup/set-target-field
+                                           :field k))}
+                 (mapv (fn [[opt-val opt-label]]
+                         (el :option {:value (name opt-val)
+                                      :selected (= opt-val (get editor k))}
+                             opt-label))
+                       (or (:options? field-spec)
+                           model/target-kind-options)))
+             (when-let [hint (:hint field-spec)] hint))
+      :checkbox
+      (field label
+             (el :input {:type "checkbox"
+                         :class "hc-backup-check__input"
+                         :checked (boolean (get editor k))
+                         :disabled busy?
+                         :aria-label label
+                         :on-change (ev-checked
+                                     (act :backup/set-target-field :field k))}))
+      nil)))
+
+(defn- target-config-panel
+  "Editor panel for backup targets, driven by `model/target-config-view`."
+  [state]
+  (when-let [config (model/target-config-view state)]
+    (when (:open? config)
+      (let [editor (:editor config)
+            busy? (boolean (:busy? config))
+            target-id (:target-id config)
+            test (:test config)]
+        (el :section {:class "hc-backup-panel hc-backup-target-editor"}
+            (el :h3 {}
+                (if (some? target-id)
+                  (str "编辑备份目标 " (id-label target-id))
+                  "新建备份目标"))
+            (el :div {:class "hc-backup-target-editor__grid"}
+                (field "目标类型"
+                       (el :select {:class "hc-backup-input hc-backup-select"
+                                    :value (name (:kind editor :webdav))
+                                    :disabled busy?
+                                    :aria-label "目标类型"
+                                    :on-change (ev-value
+                                                (act :backup/set-target-field
+                                                     :field :kind))}
+                             (mapv (fn [[opt-val opt-label]]
+                                     (el :option {:value (name opt-val)
+                                                  :selected (= opt-val (:kind editor))}
+                                         opt-label))
+                                   model/target-kind-options)))
+                (mapv (fn [field-spec]
+                        (when (contains? (:kinds field-spec) (:kind editor))
+                          (target-editor-field field-spec editor busy?)))
+                      (:fields config)))
+            (when (#{:ok :failed :pending} (:status test))
+              (el :div {:class (str "hc-backup-target-test hc-backup-target-test--"
+                                    (name (:status test)))}
+                  (case (:status test)
+                    :pending "正在测试连接…"
+                    :ok (or (:detail test) "连接测试通过。")
+                    :failed (or (:detail test) "连接测试失败。"))))
+            (el :div {:class "hc-backup-actions"}
+                (button "测试连接"
+                        (act :backup/test-target)
+                        {:class "hc-backup-button"
+                         :disabled (or busy? (not (:can-test? config)))
+                         :title (when-not (:can-test? config)
+                                  "请先填写必填项")})
+                (button "保存目标"
+                        (act :backup/save-target)
+                        {:class "hc-backup-button hc-backup-button--primary"
+                         :disabled (or busy? (not (:can-save? config)))
+                         :title (when-not (:can-save? config)
+                                  "请先填写必填项")})
+                (button "取消"
+                        (act :backup/toggle-target-editor)
+                        {:class "hc-backup-button hc-backup-button--quiet"
+                         :disabled busy?}))
+            (when (and (not (:can-save? config)) (not busy?))
+              (el :p {:class "hc-backup-muted"} "请填写必填项后再保存。")))))))
 
 (defn- category-grid
   [state scope]
@@ -693,6 +875,7 @@
         (el :p {:class "hc-backup-lead"}
             "备份按一次取样时间生成一致快照；模型密钥默认不勾选，加密默认开启。")
         (target-summary state)
+        (target-config-panel state)
         (category-grid state :create)
         (create-options state)
         (encryption-panel state)
@@ -1180,6 +1363,7 @@
       (el :p {:class "hc-backup-lead"}
           "恢复前先校验并预览。预览区分合并与替换，列出冲突、缺失关联与未打包附件；预览阶段不写入任何资料。")
       (target-summary state)
+      (target-config-panel state)
       (backup-list state)
       (password-panel state)
       (mode-panel state)
@@ -1192,8 +1376,8 @@
               (el :p {:class "hc-backup-warning" :role "status"} reason))
             (button "校验并生成预览"
                     (act :backup/preview)
-                    {:class "hc-backup-button hc-backup-button--primary"
-                     :disabled (boolean reason)})))
+                  {:class "hc-backup-button hc-backup-button--primary"
+                   :disabled (boolean reason)})))
       (preview-panel state)
       (maintenance-panel state)
       (restore-result-panel state)))

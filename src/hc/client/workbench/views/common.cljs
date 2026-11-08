@@ -75,7 +75,11 @@
   [value]
   (when (some? value)
     (try
-      (let [date (js/Date. value)]
+      (let [value' (if (and (string? value)
+                            (re-matches #"^\d+(\.\d+)?$" value))
+                     (js/parseFloat value)
+                     value)
+            date (js/Date. value')]
         (if (js/isNaN (.getTime date))
           (str value)
           (.toLocaleString date "zh-CN"

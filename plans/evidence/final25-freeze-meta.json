@@ -1,0 +1,86 @@
+{
+  "freeze": "final25",
+  "date": "2026-11-08",
+  "timezone": "CST",
+  "purpose": "final25: freeze candidate after final23 test-failure remediation. Includes P-SESSION lazy Owner + history/messages window + session-summary + read-document point reads + baseline windowing, plus sibling slices V-MAT/V-BOARD/V-OPS/V-RENDER/P-BENCH2/3 fixes. Supersedes final22 (tree 1e824c83) and the aborted final23 run (43F/10E -> 3F/0E -> 0F/0E).",
+  "fixes": {
+    "backup_arities": "W214: src/hc/client/backup/view.cljc target-summary paren fixes (4 sites); 49/419 0F/0E",
+    "lazy_owner_dedup": "W215: src/hc/server/app/commands.clj defer-owner ensure on create/branch/metadata paths; 20/169 + 7/42 + 3/72 0F/0E",
+    "onboarding_checklist": "W217: test asserts :checklist-step (wizard :step split); 34/140 0F/0E",
+    "history_window_active": "W216: src/hc/server/app/snapshot.clj active-session publishes full history, window bounds inactive sessions; 4/104 0F/0E",
+    "publisher_key_and_shutdown": "W218: publisher_test 8-arg baseline-cache-key + publish-body! (:state router) Atom deref fix; 13/252 0F/0E",
+    "lazy_owner_window": "lazy_owner_test window contract reconciled with active-session full-history rule"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "pre": {
+    "tree-hash-src-test": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
+    "bundle-sha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30 (pre-rebuild bundle from final24 tree, mtime 2026-11-08T10:54:02+08:00, size 3085407)",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "snapshot": "2026-11-08T11:44:51+08:00"
+  },
+  "stability-check": {
+    "snap-a": "2026-11-08T11:44:51+08:00",
+    "snap-b": "2026-11-08T11:46:53+08:00",
+    "tree-hash-both": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
+    "result": "PASS - tree hash identical across 120s window"
+  },
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-build.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 23,
+    "note": "513 files; 13 pre-existing infer warnings (undeclared-var % in views/session.cljs:514-515 CLJS analyzer noise; build completed)",
+    "bundle-sha256-after": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+    "bundle-size-after": 3085407,
+    "bundle-mtime-after": "2026-11-08 11:47:24.651530826 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b (unchanged)"
+  },
+  "bundle-verification": {
+    "method": "grep on resources/public/js/main.js for keyword literals and 18-key merge vector",
+    "findings": [
+      "merge-local-state 18-key vector present: new M(null,18,5,Q,[Ir,tQ,uw,qp,HU,lUa,qB,XQ,ll,ZR,as,ew,sn,gV,wI,uz,Kl,dA])",
+      "turn-selection-version, wb-history-window, materials/revision, operator-assistants, last-move, draft/turn-selection, session/ensure, history/messages all present",
+      "current-with-local (n$) and session-id equality gate verified in prior final22 analysis; symbol names stable across rebuild"
+    ],
+    "verdict": "PASS"
+  },
+  "full-test": {
+    "command": "JAVA_TOOL_OPTIONS='-Xmx1g -XX:MaxDirectMemorySize=512m' /tmp/pixi run test",
+    "log": "/tmp/hc-full-test-final25.log",
+    "exit": 0,
+    "tests": 3905,
+    "assertions": 25448,
+    "failures": 0,
+    "errors": 0,
+    "wall-seconds": 360,
+    "start-epoch": 1794110019,
+    "end-epoch": 1794110379
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final25.log",
+    "exit": 0,
+    "wall-seconds": 15,
+    "ok": true,
+    "version": "0.0.1",
+    "start-epoch": 1794110019,
+    "end-epoch": 1794110034
+  },
+  "post": {
+    "tree-hash-src-test": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
+    "bundle-sha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
+    "bundle-size": 3085407,
+    "bundle-mtime": "2026-11-08 11:47:24.651530826 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "git-status-porcelain-count": 162,
+    "snapshot": "2026-11-08T11:54:01+08:00"
+  },
+  "result": "PASS - final25 freeze candidate bundle 45f11529 + tree 76cf2fd0; clean rebuild exit 0 (23s); full suite 3905 tests/25448 assertions 0F/0E (exit 0, 360s); app-check ok:true version 0.0.1 (exit 0, 15s)"
+}

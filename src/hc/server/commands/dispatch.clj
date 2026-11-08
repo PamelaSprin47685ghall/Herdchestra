@@ -54,7 +54,7 @@
   #{:session/list :settings/list-models :browser/snapshot :browser/cards
     :speech/snapshot :diagnostics/status :extensions/status :extensions/view
     :materials/snapshot :scheduler/list :backup/status
-    :documents/ocr-status})
+    :documents/ocr-status :session/ensure :history/messages})
 
 (defn default-owner-kind?
   [kind]

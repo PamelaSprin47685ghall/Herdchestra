@@ -1,0 +1,1 @@
+CompileCommand: exclude taoensso/nippy/io$read_typed.invokeStatic intx exclude = 1111

@@ -161,3 +161,44 @@
   (is (= :no-usable-model (failures/failure-category "no-model")))
   (is (= :quota-or-rate-limited (failures/failure-category :search_quota_exceeded)))
   (is (= :local-storage-or-file (failures/failure-category :command_store_failed))))
+
+(deftest every-reason-card-carries-category-and-copy
+  (doseq [code (concat failures/failure-kinds [:transport-disconnected])]
+    (testing (name code)
+      (let [card (failures/failure-reason-card {:code code :context {:saved? false}})]
+        (is (= (failures/failure-category code) (:category-id card)))
+        (is (seq (:number card)))
+        (is (seq (:label card)))
+        (is (seq (:explanation card)))
+        (is (= (:kinds (some #(when (= (:id %) (:category-id card)) %)
+                              failures/failure-reason-categories))
+               (:member-kinds card)))
+        (is (= (:reason-category (failures/failure-copy
+                                  {:code code :context {:saved? false}}))
+               (:category-id card)))
+        (is (= (:title (failures/failure-copy
+                        {:code code :context {:saved? false}}))
+               (get-in card [:copy :title])))))))
+
+(deftest reason-card-unknown-code-uses-indeterminate
+  (let [card (failures/failure-reason-card {:code :never-heard-of-this
+                                            :context {:saved? false}})]
+    (is (= :indeterminate (:category-id card)))
+    (is (nil? (:number card)))
+    (is (= "无法确定具体原因" (:label card)))
+    (is (seq (:explanation card)))
+    (is (= [] (:member-kinds card)))
+    (is (= "无法确定具体原因" (get-in card [:copy :title])))))
+
+(deftest copy-results-carry-the-reason-card
+  (let [copy (failures/failure-copy {:code :receipt-lost
+                                     :context {:saved? false}})]
+    (is (= :permission-or-outcome-unknown
+           (get-in copy [:reason :category-id])))
+    (is (= "八" (get-in copy [:reason :number])))
+    (is (= "权限被关闭，或执行结果无法确认"
+           (get-in copy [:reason :label])))
+    (is (seq (get-in copy [:reason :explanation]))))
+  (is (nil? (failures/reason-label :never-heard-of-this {})))
+  (is (= "（五）内容超出了所选模型能接收的范围 · "
+         (failures/reason-label :input-too-large {}))))

@@ -10,6 +10,8 @@
             [hc.server.app.system :as system]
             [hc.server.sessions.registry :as registry]
             [hc.server.storage.support :as support]
+            [hc.core.scope.annotation :as annotation]
+            [hc.core.scope.ledger :as ledger]
             [hc.core.swarm-stm :as swarm])
   (:import (java.io File)))
 
@@ -38,6 +40,7 @@
               :lane :plan
               :tenure-id "tenure-1"
               :findings [{:kind :gap}]
+              :draft-disk-content nil
               :call-id "call-1"}
              (:payload request)))
       (is (not (contains? request :operator?)))
@@ -74,6 +77,82 @@
     (is (= :UNSUPPORTED_OPERATION
            (get-in (fallback {} {:primitive :abandon :request {}})
                    [:error :code])))))
+
+(defn- negotiate-owner
+  "A fake Owner whose snapshot carries a settled Scope book."
+  [submitted]
+  (let [book (:book (ledger/settle-turn
+                     (ledger/new-book) "turn-1"
+                     (annotation/parse-annotation
+                      {:kind :reset-scope :new-scope-goal "g"
+                       :new-scope-retention-budget 4})
+                     {:call-id "r1"}))]
+    {:snapshot (fn []
+                 {:state {:session-id "s-neg"
+                          :scope {:book book :records [] :asks {}}}})
+     :submit-command! (fn [request]
+                        (swap! submitted conj request)
+                        {:status :accepted :outcome :ok})}))
+
+(deftest negotiate-returns-the-scope-book-snapshot-test
+  (let [submitted (atom [])
+        owner-ref (atom (negotiate-owner submitted))
+        fallback ((var-get #'system/control-fallback) owner-ref (atom nil))
+        result (fallback {:role :plan :call-id "call-1"}
+                         {:primitive :negotiate :request {}})]
+    (is (:ok? result))
+    (is (= :negotiate (:kind result)))
+    (is (= "s-neg" (:session-id result)))
+    (is (= "g" (:goal result)))
+    (is (= 4 (:budget result)))
+    (is (true? (:established? result)))
+    (is (false? (:must-reset result)))
+    (is (= 1 (:resets result)))
+    (is (empty? @submitted)
+        "negotiate is a pure read; it never submits an Owner command")))
+
+(deftest negotiate-without-owner-is-explicit-test
+  (let [fallback ((var-get #'system/control-fallback) (atom nil) (atom nil))]
+    (is (= :OWNER_NOT_READY
+           (get-in (fallback {} {:primitive :negotiate :request {}})
+                   [:error :code])))))
+
+(deftest ask-previous-scope-submits-an-owner-receipt-command-test
+  (let [submitted (atom [])
+        owner-ref (atom (negotiate-owner submitted))
+        fallback ((var-get #'system/control-fallback) owner-ref (atom nil))
+        result (fallback {:role :plan
+                          :call-id "call-9"
+                          :turn-id "turn-9"
+                          :tenure-id "tenure-9"
+                          :lane :plan
+                          :agent-id "worker-1"}
+                         {:primitive :askPreviousScope
+                          :request {:questions "what did we decide?"}})]
+    (is (= {:status :accepted :outcome :ok} result))
+    (let [request (first @submitted)]
+      (is (= "scope-ask-call-9" (:command-id request)))
+      (is (= {:kind :scope/ask-previous
+              :call-id "call-9"
+              :questions "what did we decide?"
+              :member "worker-1"
+              :turn-id "turn-9"
+              :tenure-id "tenure-9"
+              :lane :plan
+              :agent-id "worker-1"}
+             (:payload request))))))
+
+(deftest ask-previous-scope-with-blank-questions-is-refused-test
+  (let [submitted (atom [])
+        owner-ref (atom (negotiate-owner submitted))
+        fallback ((var-get #'system/control-fallback) owner-ref (atom nil))
+        result (fallback {:call-id "call-1"}
+                         {:primitive :askPreviousScope
+                          :request {:questions "   "}})]
+    (is (= :ASK_QUESTIONS_REQUIRED
+           (get-in result [:error :code])))
+    (is (empty? @submitted)
+        "a blank question never reaches the Owner")))
 
 (deftest holder-attempt-maps-to-clj-worker-test
   (is (= :clj-worker
@@ -320,3 +399,99 @@
                   (is (not (.exists (io/file repo "smoke.txt"))))))
               (finally
                 (fleet-runtime/stop! rt)))))))))
+
+(defn- draft-owner
+  [submitted draft-content disk-content]
+  {:snapshot (fn []
+               {:state {:commands {:command-epoch 3}
+                        :mission {:relay
+                                  {:lanes {:plan {:milestone :pending}}
+                                   :draft {:path "plans/x.md"
+                                           :content draft-content}}}}})
+   :submit-command! (fn [request]
+                      (swap! submitted conj request)
+                      {:status :accepted :outcome :ok})
+   })
+
+(deftest review-early-check-refuses-on-disk-divergence-test
+  (let [submitted (atom [])
+        owner (draft-owner submitted "relay draft" nil)
+        fallback ((var-get #'system/control-fallback)
+                  (atom owner) (atom nil)
+                  {:draft-root "/tmp"
+                   :draft-reader (fn [_root _path] "user edited draft")})
+        result (fallback {:role :clj-plan
+                          :call-id "call-1"
+                          :tenure-id "tenure-1"
+                          :lane :plan}
+                         {:primitive :review
+                          :request {:findings []}})]
+    (is (= :DRAFT_USER_EDITED
+           (get-in result [:error :code])))
+    (is (empty? @submitted)
+        "a divergent draft must not submit :review/submit")
+    (is (= "plans/x.md"
+           (get-in result [:error :details :path])))))
+
+(deftest review-early-check-passes-when-aligned-or-unreadable-test
+  (let [submitted (atom [])
+        owner (draft-owner submitted "same bytes" nil)
+        fallback ((var-get #'system/control-fallback)
+                  (atom owner) (atom nil)
+                  {:draft-root "/tmp"
+                   :draft-reader (fn [_root _path] "same bytes")})
+        result (fallback {:role :clj-plan
+                          :call-id "call-2"
+                          :tenure-id "tenure-1"
+                          :lane :plan}
+                         {:primitive :review
+                          :request {:findings []}})]
+    (is (= {:status :accepted :outcome :ok} result))
+    (is (= 1 (count @submitted)))
+    (is (= "same bytes"
+           (get-in (first @submitted) [:payload :draft-disk-content]))
+        "aligned disk bytes ride the command for the Owner-side reconcile")
+    (testing "an unreadable file fails open"
+      (reset! submitted [])
+      (let [fallback* ((var-get #'system/control-fallback)
+                       (atom owner) (atom nil)
+                       {:draft-root "/tmp"
+                        :draft-reader (fn [_root _path] nil)})
+            result* (fallback* {:role :clj-plan
+                                :call-id "call-3"
+                                :tenure-id "tenure-1"
+                                :lane :plan}
+                               {:primitive :review
+                                :request {:findings []}})]
+        (is (= {:status :accepted :outcome :ok} result*))
+        (is (= 1 (count @submitted)))
+        (is (contains? (first @submitted) :payload))
+        (is (nil? (get-in (first @submitted)
+                          [:payload :draft-disk-content])))))))
+
+(deftest review-early-check-only-guards-plan-handoff-test
+  (let [submitted (atom [])
+        owner (draft-owner submitted "relay draft" nil)
+        fallback ((var-get #'system/control-fallback)
+                  (atom owner) (atom nil)
+                  {:draft-root "/tmp"
+                   :draft-reader (fn [_root _path] "different")})]
+    (testing "non-empty findings are not the handoff and pass through"
+      (let [result (fallback {:role :clj-plan
+                              :call-id "call-4"
+                              :tenure-id "tenure-1"
+                              :lane :plan}
+                             {:primitive :review
+                              :request {:findings [{:key "k" :value "v"}]}})]
+        (is (= {:status :accepted :outcome :ok} result))
+        (is (= 1 (count @submitted)))))
+    (testing "an execution-lane review is not guarded"
+      (reset! submitted [])
+      (let [result (fallback {:role :clj-review
+                              :call-id "call-5"
+                              :tenure-id "tenure-2"
+                              :lane :execution}
+                             {:primitive :review
+                              :request {:findings []}})]
+        (is (= {:status :accepted :outcome :ok} result))
+        (is (= 1 (count @submitted)))))))

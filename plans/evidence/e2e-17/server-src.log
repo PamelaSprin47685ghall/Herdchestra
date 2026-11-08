@@ -1,0 +1,219 @@
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:owner-start-failed s-attachments class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-backup-new class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-history class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+Herdchestra listening on http://127.0.0.1:43021/
+workspace: /tmp/hc-e2e17-pTcT1x/src/workspace
+store:     /tmp/hc-e2e17-pTcT1x/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:owner-start-failed s-attachments class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-backup-new class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-history class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+Herdchestra listening on http://127.0.0.1:32799/
+workspace: /tmp/hc-e2e17-BBZcNK/src/workspace
+store:     /tmp/hc-e2e17-BBZcNK/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:owner-start-failed s-attachments class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-backup-new class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-history class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+Herdchestra listening on http://127.0.0.1:39543/
+workspace: /tmp/hc-e2e17-6gzAKe/src/workspace
+store:     /tmp/hc-e2e17-6gzAKe/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:owner-start-failed s-attachments class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-backup-new class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-history class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+Herdchestra listening on http://127.0.0.1:46609/
+workspace: /tmp/hc-e2e17-HXpuPw/src/workspace
+store:     /tmp/hc-e2e17-HXpuPw/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+:owner-start-failed s-attachments class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-backup-new class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+:owner-start-failed s-history class clojure.lang.ExceptionInfo clojure.lang.ExceptionInfo: pair-hint: language value is not supported {:error :PAIR_HINT_LANGUAGE_INVALID, :source :explicit, :value "zh", :supported [:en :zh-CN]}
+Herdchestra listening on http://127.0.0.1:37445/
+workspace: /tmp/hc-e2e17-MwmuGE/src/workspace
+store:     /tmp/hc-e2e17-MwmuGE/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:41657/
+workspace: /tmp/hc-e2e17-A4BsA4/src/workspace
+store:     /tmp/hc-e2e17-A4BsA4/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:35019/
+workspace: /tmp/hc-e2e17-AuPnRL/src/workspace
+store:     /tmp/hc-e2e17-AuPnRL/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:37535/
+workspace: /tmp/hc-e2e17-1Gsqkq/src/workspace
+store:     /tmp/hc-e2e17-1Gsqkq/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:38415/
+workspace: /tmp/hc-e2e17-fco8Rw/src/workspace
+store:     /tmp/hc-e2e17-fco8Rw/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:45541/
+workspace: /tmp/hc-e2e17-dTSsOt/src/workspace
+store:     /tmp/hc-e2e17-dTSsOt/src/data/db
+BACKUP_DEBUG create password 28 c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a
+BACKUP_DEBUG verify password 25 eba8dcfbae3215ddf8e22125b44831a11cfbabac3a6817f551f045b5d24b7557
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:39087/
+workspace: /tmp/hc-e2e17-902DZR/src/workspace
+store:     /tmp/hc-e2e17-902DZR/src/data/db
+BACKUP_DEBUG command :backup/create [28 c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a]
+BACKUP_DEBUG create password 28 c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a
+BACKUP_DEBUG command :backup/verify [25 eba8dcfbae3215ddf8e22125b44831a11cfbabac3a6817f551f045b5d24b7557]
+BACKUP_DEBUG verify password 25 eba8dcfbae3215ddf8e22125b44831a11cfbabac3a6817f551f045b5d24b7557
+BACKUP_DEBUG command :backup/verify [28 c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a]
+BACKUP_DEBUG verify password 28 c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a
+BACKUP_DEBUG command :backup/preview nil
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:36059/
+workspace: /tmp/hc-e2e17-O9Wfzt/src/workspace
+store:     /tmp/hc-e2e17-O9Wfzt/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:46621/
+workspace: /tmp/hc-e2e17-c8Hicu/src/workspace
+store:     /tmp/hc-e2e17-c8Hicu/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:40095/
+workspace: /tmp/hc-e2e17-7Stiao/src/workspace
+store:     /tmp/hc-e2e17-7Stiao/src/data/db
+WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
+WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
+WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
+WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
+Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Herdchestra listening on http://127.0.0.1:41489/
+workspace: /tmp/hc-e2e17-NxuIln/src/workspace
+store:     /tmp/hc-e2e17-NxuIln/src/data/db

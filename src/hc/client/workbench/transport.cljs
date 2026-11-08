@@ -81,9 +81,20 @@
   (fn [{:keys [id ?data] :as message}]
     (case id
       :chsk/state
-      (let [[_old-state new-state open-change?] ?data
+      (let [[old-state new-state open-change?] ?data
             state (if (map? new-state) new-state {})
             open? (boolean (or (:open? state) open-change?))]
+        ;; Diagnostic: Sente swaps its state atom for every open/close
+        ;; transition.  Record the raw transition so a phase change without
+        ;; a physical WebSocket close can be told apart from one caused by a
+        ;; misread state payload.
+        (log/debug "HC-WS-STATE"
+                   {:old-open? (:open? old-state)
+                    :new-open? (:open? new-state)
+                    :map? (map? new-state)
+                    :open-change? open-change?
+                    :last-close (:last-close state)
+                    :closed? (:closed? state)})
         (swap! channel assoc
                :open? open?
                :status (if open? :open :closed)
@@ -145,6 +156,7 @@
             (swap! channel merge
                    {:status :connecting
                     :chsk chsk
+                    :state-atom (:state_ chsk)
                     :stop-router stop-router
                     :client-id client-id
                     :last-error nil

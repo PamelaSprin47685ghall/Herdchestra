@@ -404,11 +404,18 @@
           {:path path :locked-path (get-in state [:draft :path])})
 
     :else
-    (let [state' (assoc state :draft {:path path :content content})]
+    (let [state' (assoc state :draft {:path path
+                                     :content content
+                                     :version (inc (or (:version
+                                                       (get state :draft))
+                                                       0))
+                                     :source :program
+                                     :user-edited? false})]
       (success state'
                {:status :accepted
                 :outcome :draft-updated
                 :path path
+                :draft-version (get-in state' [:draft :version])
                 :content-length (count content)}
                []))))
 
@@ -788,7 +795,9 @@
       (execution-empty-review state tenure board))))
 
 (defn- start-execution
-  [state plan-tenure findings]
+  [state plan-tenure findings {:keys [draft-source draft-user-edited?]
+                               :or {draft-source :program
+                                    draft-user-edited? false}}]
   (let [draft (:draft state)]
     (cond
       (seq findings)
@@ -838,11 +847,15 @@
                     :draft-path (:path draft)
                     :draft (:content draft)
                     :draft-length (count (:content draft))
+                    :draft-source (or (get draft :source) draft-source)
+                    :draft-user-edited?
+                    (or (get draft :user-edited?) draft-user-edited?)
                     :milestone :execution}]
         (success state' receipt [effect])))))
 
 (defn- review-new
-  [state {:keys [lane tenure-id findings board]}]
+  [state {:keys [lane tenure-id findings board draft-source
+                 draft-user-edited?]}]
   (cond
     (not (valid-lane? lane))
     (fail state :INVALID_LANE
@@ -889,7 +902,9 @@
                 (cond
                   (and (= lane :plan)
                        (= :pending (:milestone tenure)))
-                  (start-execution state tenure findings*)
+                      (start-execution state tenure findings*
+                                       {:draft-source draft-source
+                                        :draft-user-edited? draft-user-edited?})
 
                   (= lane :plan)
                   (plan-review state tenure findings*)

@@ -125,10 +125,25 @@
 `:session/by-id` 中时才渲染可点击的“来源会话：标题”按钮，点击后写入
 `:ui/selected-session-id` 并导航到 `:sessions/<id>`。来源已删除、归档或
 不在基线时只显示“已删除或不可见”，不保留无效果链接。来源跳转与普通会话
-选择都只改变本地选择；正常基线已经携带每个可见会话（含分支来源）的历史，
-不得对来源跳转无条件请求重同步。只有 `model/missing-session-messages?` 为真
-（摘要声明有消息但本地归一化表没有对应实体）时，才请求一次新基线，避免把
-不一致或已修剪的快照渲染成空对话。
+选择都只改变本地选择；服务器只为 active session 启动时建 Owner，其余会话
+懒加载。选择会话（含来源跳转）时先调 `commands/ensure-session-owner!`
+（`:session/ensure`，应用纪元作用域，Owner 已存在时是 cheap no-op），其
+accepted 回执把 `:command-epoch` 写到 `:session/by-id` 行（行不存在则等
+基线），供 `model/session-command-epoch` 授权后续会话命令。
+
+基线历史是窗口化的：每个会话只发布最新 `history-window-size`（默认 200）
+条消息实体，`:message-ids`/`:message-count` 仍是全量可见列表。更早的消息
+经 `commands/fetch-history-window!`（`:history/messages`，read-only 作用域
+不走纪元门）按 `:before`（当前最旧已加载消息 id，exclusive）分页拉取；
+回执把 `:messages` 实体并入 `:message/by-id`、`:message-order` 并入全局
+`:message/order`，并把全量 `:message-ids`、`:has-older?`、`:command-epoch`
+写到 `:session/history/<sid>`（`:session/by-id` 行存在时同步写）。客户端
+判定：`model/missing-session-messages?` 只在“摘要有消息但本地完全没有实体”
+时为真，此时 `ensure-session-messages!` 走 ensure-owner + fetch-window 而
+不是 resync（resync 拿到的也是窗口化基线）；`model/session-messages-unloaded?`
+（已加载数 < `:message-count`）是正常的 older 未加载状态，会话页据此显示
+“加载更早的消息”入口，`model/has-older-messages?` 读取回执记录的
+`:has-older?`，已知为 false 时不再显示入口。
 来源跳转和手动切换都会递增 `:ui/selection-seq`。`:history/branch` 在提交时
 捕获该序号；接受回执只在这个序号仍等于当前值时才选中新分支。基线恢复会
 重查 `:accepted` 回执，所以分支回执必须幂等，迟到的重放不得把操作员从

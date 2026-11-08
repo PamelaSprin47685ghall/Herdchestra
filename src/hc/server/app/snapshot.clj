@@ -453,9 +453,24 @@
 
 (defn- assistant-view
   [id assistant]
-  {:id (str (or (:id assistant) (:assistant-id assistant) id))
-   :name (or (:name assistant) (:display-name assistant) (str id))
-   :revision (long (or (:revision assistant) 1))})
+  (let [id (str (or (:id assistant) (:assistant-id assistant) id))
+        default-model (when (map? (:default-model assistant))
+                        (let [model (:default-model assistant)]
+                          (cond-> (select-keys model [:connection-id
+                                                    :model-id
+                                                    :model-entry-id])
+                            (and (nil? (:model-id model))
+                                 (some? (:model-entry-id model)))
+                            (assoc :model-id (:model-entry-id model)))))]
+    (cond-> {:id id
+             :assistant-id (str (or (:assistant-id assistant) id))
+             :name (str (or (:name assistant) (:display-name assistant) id))
+             :revision (long (or (:revision assistant) 1))
+             :enabled? (not (false? (:enabled? assistant)))}
+      (:display-name assistant)
+      (assoc :display-name (str (:display-name assistant)))
+      default-model
+      (assoc :default-model default-model))))
 
 (defn- assistant-views
   [assistants]
@@ -577,14 +592,81 @@
         (false? (:enabled? model)) :disabled
         :else (or (:availability model) :unconfirmed)))))
 
+(defn- tools-capability-fact?
+  "True when CAPABILITIES carries a `:tools` fact in any accepted shape:
+  a map entry, a set member, or a sequence member."
+  [capabilities]
+  (cond
+    (map? capabilities)
+    (boolean (or (find capabilities :tools)
+                 (find capabilities "tools")))
+
+    (set? capabilities)
+    (contains? capabilities :tools)
+
+    (sequential? capabilities)
+    (boolean (some #(= :tools %) capabilities))
+
+    :else false))
+
+(defn- tools-declared?
+  "True when CAPABILITIES carries a `:tools` fact: a map entry with a
+  non-nil value, a set member, or a sequence member.  `:unknown` counts —
+  it is a declaration, not support — while an absent or nil value is not."
+  [capabilities]
+  (cond
+    (map? capabilities)
+    (boolean (some (fn [[k v]]
+                     (and (#{:tools "tools"} k) (some? v)))
+                   capabilities))
+
+    (set? capabilities)
+    (contains? capabilities :tools)
+
+    (sequential? capabilities)
+    (boolean (some #(= :tools %) capabilities))
+
+    :else false))
+
+(defn binding-capabilities-source
+  "Project which declaration answers the binding's `:tools` question.
+
+  `:live-model` when the live model entry carries a `:tools` fact,
+  `:binding` when only the binding's copied `:capabilities` declare one,
+  and `:none` when neither does.  `MODEL_TOOLS_UNAVAILABLE` reports this so
+  the UI can tell 「the model cannot do tools」 from 「nobody declared it」."
+  [connections models binding]
+  (when (and (map? binding) (some? (:connection-id binding)))
+    (let [connection-id (:connection-id binding)
+          model (model-view-by-id models connection-id
+                                  (:model-entry-id binding))
+          binding-declared? (and (map? binding)
+                                 (contains? binding :capabilities)
+                                 (tools-declared?
+                                  (:capabilities binding)))]
+      (cond
+        (and (map? model)
+             (tools-capability-fact? (:capabilities model)))
+        :live-model
+
+        binding-declared? :binding
+
+        :else :none))))
+
 (defn- with-model-availability
   [summary connections models]
   (if (or (nil? connections) (nil? models))
     summary
-    (if-let [availability (binding-availability connections models
-                                                 (:model-binding summary))]
-      (assoc summary :model-availability availability)
-      summary)))
+    (let [binding (:model-binding summary)]
+      (let [availability (binding-availability connections models binding)
+            capabilities-source (binding-capabilities-source
+                                 connections models binding)]
+        (cond-> summary
+          availability
+          (assoc :model-availability availability)
+
+          capabilities-source
+          (assoc :capabilities-source capabilities-source))))))
 
 (defn- cached-entry
   "Return the cached VALUE for KIND/ID when VERSION matches, else build it.
@@ -607,6 +689,56 @@
                      (update c kind #(select-keys % visible-ids)))
                    c
                    [:conversation :history :summary]))))
+
+(defn- history-window-tail-ids
+  "The newest HISTORY-WINDOW-SIZE visible message ids of SESSION, or nil
+  when no tail window applies.  Fetched windows are unioned on top by the
+  caller; this is only the default tail."
+  [session history-window-size]
+  (when (and (integer? history-window-size) (pos? history-window-size))
+    (let [visible-ids (->> (or (:message-order session) [])
+                           (keep #(get-in session [:messages %]))
+                           (remove #(or (:deleted? %) (:folded? %)))
+                           (map :message-id)
+                           vec)]
+      (when (pos? (count visible-ids))
+        (vec (take-last history-window-size visible-ids))))))
+
+(defn- history-window-ids
+  "Return the `:ids` set for one session's message window, or nil for all.
+
+  The window is the union of the newest HISTORY-WINDOW-SIZE visible ids and
+  any ids the client already fetched through `:history/messages` (tracked in
+  PUBLISHED-WINDOWS).  A nil window publishes every visible message, which is
+  the pre-windowing behavior."
+  [session session-id published-windows history-window-size]
+  (let [published (when published-windows
+                    (get @published-windows session-id))]
+    (when (or published
+              (and (integer? history-window-size)
+                   (pos? history-window-size)))
+      (let [visible (set (map :message-id
+                              (filter (fn [m]
+                                        (not (or (:deleted? m)
+                                                 (:folded? m)
+                                                 (:nudge? m)
+                                                 (:nudge-id m))))
+                                      (vals (:messages session)))))
+            tail (history-window-tail-ids session history-window-size)
+            ids (into #{}
+                      (comp (filter visible) (distinct))
+                      (concat published tail))]
+        (not-empty ids)))))
+
+(defn- history-window-key
+  "Cache fingerprint for one session's window: the window id set is stable
+  for a given revision plus fetched set, so the sorted vector is enough."
+  [session session-id published-windows history-window-size]
+  (let [ids (history-window-ids session session-id published-windows
+                                 history-window-size)]
+    (if ids
+      (vec (sort ids))
+      :all)))
 
 ;; ---------------------------------------------------------------------------
 ;; Baseline
@@ -631,12 +763,16 @@
     :sync            `{:phase .. :epoch .. :seq .. :command-epoch ..}`
     :session-cache   optional atom reused across ticks; caches per-session
                      conversation, history and summary blocks by version
+    :published-windows atom map session-id -> set of message ids the client
+                      has already fetched; merged into each session's window
+    :history-window-size newest message entities published per session when
+                      no fetched window exists (default: all messages)
     :now             epoch ms
 
   Returns a plain map ready for `STATE_SNAPSHOT`."
   [{:keys [sessions session-records owner-snapshots active-session board
            gate-status swarm-id config sync now outbound-opts-fn
-           session-cache]
+           session-cache published-windows history-window-size]
     :or {sessions [] session-records [] owner-snapshots {} swarm-id nil
          config {}}}]
   (let [visible-ids (set (map :session-id sessions))
@@ -648,7 +784,11 @@
         visible-owners (select-keys owner-snapshots visible-ids)
         board (or board (:board active-state))
         command-epoch (get-in sync [:command-epoch])
-        settings (settings-view (get config :models))
+        ;; The publisher passes `{:models <settings-config> :assistants ...}`;
+        ;; assistants live beside the model section, not inside it.
+        settings (settings-view
+                  (merge (get config :models)
+                         (select-keys config [:assistants])))
         settings-present? (contains? config :models)
         settings-connections (when settings-present? (:settings/by-id settings))
         settings-models (when settings-present? (:settings/models settings))
@@ -692,17 +832,36 @@
         histories
         (mapv (fn [session]
                 (let [session-id (:session-id session)
-                      active? (= session-id active-session)]
+                      active? (= session-id active-session)
+                      ;; The message window bounds every session, active
+                      ;; included: `:session/history` keeps the full visible
+                      ;; id list while older entities are fetched through
+                      ;; `:history/messages`.
+                      window-ids (history-window-ids session session-id
+                                                      published-windows
+                                                      history-window-size)
+                      window-opts {:messages-window
+                                   (when window-ids {:ids window-ids})}]
                   (if (and session-cache (not active?))
                     (cached-entry
                      session-cache :history session-id
-                     (:revision session)
-                     #(history-snapshot/session-history session {}))
+                     [(:revision session)
+                      (history-window-key session session-id
+                                          published-windows
+                                          history-window-size)]
+                     #(history-snapshot/session-history
+                       session
+                       (merge window-opts
+                              (if (and outbound-opts-fn active?)
+                                (or (outbound-opts-fn session) {})
+                                {}))))
                     (history-snapshot/session-history
                      session
-                     (if (and outbound-opts-fn active?)
-                       (or (outbound-opts-fn session) {})
-                       {})))))
+                     (merge
+                      (if (and outbound-opts-fn active?)
+                        (or (outbound-opts-fn session) {})
+                        {})
+                      window-opts)))))
               session-records)
         history
         (let [entities (mapcat :messages histories)
@@ -877,17 +1036,37 @@
                             (:slots tenure)))
                     (:tenures (:actors active-state))))
              has-conversation? (boolean (seq (:conversation active-state)))
-             run-active? (boolean (or (seq live-calls) turn-active?))
+             ;; D-13: a settled turn whose last answer is `:round-boundary`
+             ;; is an idle boundary, not an unfinished run.  The ledger may
+             ;; still be open -- the host stopped injecting Nudge calls on
+             ;; purpose -- so actor slots alone must not keep the session
+             ;; reporting `:running`/`unattended?` forever.  A live call or
+             ;; a live turn still wins: the boundary only answers a settled
+             ;; stop.
+             round-boundary?
+             (let [entries (vec (:turn-history active-state))]
+               (and (seq entries)
+                    (= :round-boundary (:reason (last entries)))
+                    (not turn-active?)
+                    (empty? live-calls)))
+             run-active? (boolean
+                          (or (seq live-calls)
+                              turn-active?
+                              (and has-conversation?
+                                   actor-active?
+                                   (not round-boundary?))))
              ;; A freshly created session has empty conversation, no calls,
              ;; and no turn.  Actor slots may still be initializing; they
              ;; must not make the composer claim an unattended run before
              ;; the operator has sent anything.
              run-status (if (or run-active?
-                                (and has-conversation? actor-active?))
+                                (and has-conversation? actor-active?
+                                     (not round-boundary?)))
                           :running
                           :finished)
              unattended? (boolean
                           (and (or has-conversation? run-active?)
+                               (not round-boundary?)
                                (or nudge-active? turn-active? actor-active?)))
              current-run-id
              (or (get-in active-state [:session :current-run-id])

@@ -85,12 +85,14 @@
   (contains? #{:dispatching :running} (:state attempt)))
 
 (defn- freeze-run-snapshot
-  [binding message-ids policy language context target-message-id target-mode now]
+  [binding message-ids policy language context target-message-id target-mode
+   temporary-read? now]
   (freeze {:message-ids (vec message-ids)
            :model-binding binding
            :policy (or policy {})
            :language language
            :context (or context {})
+           :temporary-read? (true? temporary-read?)
            :target-message-id target-message-id
            :target-mode target-mode
            :frozen-at now}))
@@ -104,7 +106,8 @@
   an explicit regeneration target; the terminal handler appends a version
   instead of a second assistant message."
   [session {:keys [run-id call-id model-binding message-ids policy language
-                    context target-message-id target-mode now]}]
+                    context target-message-id target-mode temporary-read?
+                    now]}]
   (cond
     (run-active? session)
     (error session :RUN_ALREADY_ACTIVE
@@ -144,7 +147,7 @@
     :else
     (let [snapshot-result (freeze-run-snapshot model-binding message-ids policy
                                                language context target-message-id
-                                               target-mode now)]
+                                               target-mode temporary-read? now)]
       (if-not (:ok? snapshot-result)
         (assoc (error session (:code (:error snapshot-result))
                       (:message (:error snapshot-result))
@@ -196,7 +199,8 @@
   outbound context so the workbench panel can show the last accepted send.
   It never touches `:current-run-id` or `:calls`, and re-recording the same
   run-id is idempotent."
-  [session {:keys [run-id message-id message-ids context now]}]
+  [session {:keys [run-id message-id message-ids context temporary-read?
+                   now]}]
   (cond
     (not (ids/valid-id? run-id))
     (error session :RUN_ID_INVALID "run-id must be a non-blank string"
@@ -218,7 +222,8 @@
                :origin :ui-send
                :message-id message-id
                :input-snapshot {:message-ids (vec message-ids)
-                                :context context}
+                                :context context
+                                :temporary-read? (true? temporary-read?)}
                :created-at now
                :updated-at now
                :completed-at now}

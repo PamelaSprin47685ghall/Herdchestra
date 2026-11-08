@@ -738,17 +738,39 @@
     (symbol? value) (name value)
     :else value))
 
+(defn- missing-role-error
+  "Classify a role lookup miss inside `resolve-profile`.
+
+  A `:task` request against a port that only configured `:main` is a
+  missing configuration, not an unknown role: the vocabulary exists, the
+  binding does not.  Every other miss keeps `:unknown-role`."
+  [port-state role]
+  (let [roles (:roles port-state)
+        configured? (contains? roles role)
+        kind (if (and (= :task role)
+                      (contains? roles :main)
+                      (not configured?))
+               :role-unconfigured
+               :unknown-role)]
+    (cond-> {:kind kind
+             :category (if (= :role-unconfigured kind)
+                         :permanent
+                         :unclassified)
+             :disposition :fail
+             :retryable? false
+             :message (if (= :role-unconfigured kind)
+                        "the :task role is not configured; only :main exists"
+                        "snapshot names an unknown model role")
+             :role role
+             :roles (vec (sort-by str (keys roles)))}
+      (= :role-unconfigured kind)
+      (assoc :remedy :configure-task-model))))
+
 (defn- resolve-profile
   [port-state snapshot]
   (let [role (keyword (or (:role snapshot) (:default-role port-state)))
         role-target (or (get-in port-state [:roles role])
-                        {:error {:kind :unknown-role
-                                 :category :unclassified
-                                 :disposition :fail
-                                 :retryable? false
-                                 :message "snapshot names an unknown model role"
-                                 :role role
-                                 :roles (vec (sort-by str (keys (:roles port-state))))}})
+                        {:error (missing-role-error port-state role)})
         role-connection (id-str (:connection role-target))
         requested-connection (id-str (or (:connection snapshot)
                                          (:provider snapshot)))

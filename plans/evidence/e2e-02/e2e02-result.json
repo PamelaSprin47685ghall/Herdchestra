@@ -1,0 +1,983 @@
+{
+  "test": "E2E 02",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-07T16:34:29.295Z",
+  "marker": "E2E02-1794069249044",
+  "appUrl": "http://127.0.0.1:36409",
+  "mockUrls": {
+    "personal": "http://127.0.0.1:45947",
+    "work": "http://127.0.0.1:34303"
+  },
+  "chromeVersion": "157.0.8103.38",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-07T10:12:03.121Z",
+    "sha256": "c9cbfdf6603b66c601a3e8b220f8fb64e178d72f54974f7c6bfd03367712f30d"
+  },
+  "sourceTreeSha256": "0d64399d2279a419de302495c55ebb4410b44fdd729eb4628720726f6bac524d",
+  "checks": {
+    "twoConnectionGroups": true,
+    "personalGroupVisible": true,
+    "workGroupVisible": true,
+    "sameNameNotMerged": true,
+    "personalRowExists": true,
+    "workRowExists": true,
+    "personalSourceLabel": true,
+    "workSourceLabel": true,
+    "sourcesDistinguishable": true,
+    "sessionADefaultLabel": true,
+    "sessionAModelRecorded": true,
+    "sessionAReplyFromPersonal": true,
+    "sessionAReplyNotWork": true,
+    "workSwitchVisible": true,
+    "workSwitchEnabled": true,
+    "sessionBModelRecorded": true,
+    "sessionBReplyFromWork": true,
+    "sessionBReplyNotPersonal": true,
+    "sessionAKeepsPersonal": true,
+    "sessionCDefaultLabel": true,
+    "sessionCDefaultPersonal": true,
+    "roleReboundToWork": true,
+    "labelShowsDisabled": true,
+    "historyUserMessagesKept": true,
+    "historyRepliesKept": true,
+    "unavailableBannerVisible": true,
+    "bannerOffersOtherModel": true,
+    "otherModelButtonPresent": true,
+    "repairPathOpensSettings": true,
+    "bindingNotSilentlyChanged": true,
+    "noSilentPersonalRequest": true,
+    "noSilentWorkFailover": true,
+    "workSessionStillSends": true,
+    "personalMockUsed": true,
+    "workMockUsed": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-01-model-groups.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-02-session-a-default.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-03-session-b-switched.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-04-personal-disabled.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-05-send-refused.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-02/e2e02-06-work-control.png"
+  ],
+  "browserEvents": [],
+  "groupCount": 2,
+  "sameNameBadgeCount": 2,
+  "personalRowText": "Shared Model · 同名模型，按连接区分\n\nshared-model · 来源：个人服务 · 127.0.0.1:45947\n\n选为当前角色\n用于下一轮\n当前没有生成中的回复；新模型用于下一轮。\n编辑能力\n尚未确认\n本地服务\n视觉：尚未确认\n音频：尚未确认\n视频：尚未确认\n文档：尚未确认\n工具：已声明支持\n推理：尚未确认\n价格\n未知\n上下文容量\n未知\n推理档位\n使用默认\n连接\n个人服务 · 127.0.0.1:45947\n\n能力图标只表示已声明或已知，不代表当前会话已有执行许可。",
+  "workRowText": "Shared Model · 同名模型，按连接区分\n\nshared-model · 来源：工作网关 · 127.0.0.1:34303\n\n选为当前角色\n用于下一轮\n当前没有生成中的回复；新模型用于下一轮。\n编辑能力\n尚未确认\n本地服务\n视觉：尚未确认\n音频：尚未确认\n视频：尚未确认\n文档：尚未确认\n工具：已声明支持\n推理：尚未确认\n价格\n未知\n上下文容量\n未知\n推理档位\n使用默认\n连接\n工作网关 · 127.0.0.1:34303\n\n能力图标只表示已声明或已知，不代表当前会话已有执行许可。",
+  "sessionAModelLabel": "模型：Shared Model",
+  "currentModelTextA": "当前会话模型：Shared Model",
+  "replyA1": "PERSONAL-REPLY E2E02-1794069249044",
+  "currentModelTextB": "当前会话模型：Shared Model",
+  "replyB1": "WORK-REPLY E2E02-1794069249044",
+  "sessionARelabel": "模型：Shared Model",
+  "replyA2": "PERSONAL-REPLY E2E02-1794069249044",
+  "sessionCModelLabel": "模型：Shared Model",
+  "replyC1": "PERSONAL-REPLY E2E02-1794069249044",
+  "countsBeforeDisable": {
+    "personal": 27,
+    "work": 9
+  },
+  "saveButtonDisabled": false,
+  "saveOutcome": "连接已保存；草稿已清理。",
+  "sessionALabelAfterDisable": "模型：Shared Model（连接已停用）",
+  "sendDisabledAfterDisable": true,
+  "bannerText": "所选连接已停用；请启用连接或选择其他模型，草稿已保留\n选择其他模型",
+  "sessionALabelAfterRepairVisit": "模型：Shared Model（连接已停用）",
+  "countsAfterBlocked": {
+    "personal": 27,
+    "work": 9
+  },
+  "replyB2": "WORK-REPLY E2E02-1794069249044",
+  "mockState": {
+    "personal": {
+      "mock": true,
+      "requests": 27,
+      "chatCompletions": 27,
+      "active": 0,
+      "aborted": 27,
+      "config": {
+        "reply": "PERSONAL-REPLY E2E02-1794069249044",
+        "chunkSize": 24,
+        "chunkDelayMs": 90,
+        "errorStatus": null,
+        "failAfterChunks": null,
+        "forceToolCall": false
+      },
+      "last": {
+        "at": "2026-11-07T16:34:45.202Z",
+        "path": "/v1/chat/completions",
+        "model": "shared-model",
+        "stream": true,
+        "messageCount": 13,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ]
+        ],
+        "user": "会话C第一条 E2E02-1794069249044"
+      },
+      "log": [
+        {
+          "at": "2026-11-07T16:34:30.810Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 4,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:31.128Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 6,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:31.433Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 7,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:31.744Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 8,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:32.064Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 9,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:32.380Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 10,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:32.702Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 11,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:33.059Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 12,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:33.395Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 13,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:38.755Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 16,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:39.122Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 16,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:39.488Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 17,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:39.869Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 18,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:40.264Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 19,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:40.657Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 20,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:41.037Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 21,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:41.438Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 22,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:41.856Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 23,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话A第二条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:42.712Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 4,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:43.007Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 6,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:43.306Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 7,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:43.608Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 8,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:43.913Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 9,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:44.224Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 10,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:44.552Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 11,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:44.875Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 12,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:45.202Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 13,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话C第一条 E2E02-1794069249044"
+        }
+      ]
+    },
+    "work": {
+      "mock": true,
+      "requests": 18,
+      "chatCompletions": 18,
+      "active": 1,
+      "aborted": 17,
+      "config": {
+        "reply": "WORK-REPLY E2E02-1794069249044",
+        "chunkSize": 24,
+        "chunkDelayMs": 90,
+        "errorStatus": null,
+        "failAfterChunks": null,
+        "forceToolCall": false
+      },
+      "last": {
+        "at": "2026-11-07T16:34:56.461Z",
+        "path": "/v1/chat/completions",
+        "model": "shared-model",
+        "stream": true,
+        "messageCount": 23,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ]
+        ],
+        "user": "会话B停用对照 E2E02-1794069249044"
+      },
+      "log": [
+        {
+          "at": "2026-11-07T16:34:34.643Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 4,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:34.945Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 6,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:35.254Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 7,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:35.558Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 8,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:35.872Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 9,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:36.202Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 10,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:36.527Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 11,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:36.858Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 12,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:37.207Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 13,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B第一条 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:53.257Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 16,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:53.612Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 16,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:53.968Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 17,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:54.377Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 18,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:54.766Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 19,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:55.186Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 20,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:55.594Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 21,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:55.997Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 22,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        },
+        {
+          "at": "2026-11-07T16:34:56.461Z",
+          "path": "/v1/chat/completions",
+          "model": "shared-model",
+          "stream": true,
+          "messageCount": 23,
+          "hasTools": true,
+          "toolNames": [
+            "devops",
+            "clj-plan"
+          ],
+          "toolCallMessages": [
+            [
+              null
+            ]
+          ],
+          "user": "会话B停用对照 E2E02-1794069249044"
+        }
+      ]
+    }
+  },
+  "ok": true,
+  "finishedAt": "2026-11-07T16:34:56.646Z"
+}

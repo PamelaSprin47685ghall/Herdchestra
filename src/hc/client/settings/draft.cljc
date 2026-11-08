@@ -775,9 +775,10 @@
   {:version 1
    :drafts (into {}
                  (map (fn [[draft-id draft]]
-                        [draft-id (-> draft
-                                      (update :keys #(mapv export-key %))
-                                      (update :saved-connection #(when % (connection/client-safe %))))]))
+                        [draft-id (util/json-safe
+                                   (-> draft
+                                       (update :keys #(mapv export-key %))
+                                       (update :saved-connection #(when % (connection/client-safe %)))))]))
                  drafts)})
 
 (defn secret-leak?

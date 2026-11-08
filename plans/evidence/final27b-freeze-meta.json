@@ -1,0 +1,58 @@
+{
+  "freeze": "final27b",
+  "date": "2026-11-08",
+  "timezone": "CST",
+  "purpose": "final27b: freeze after fixing the W273 regression found by final27. Root cause: model-snapshot-keys in src/hc/server/app/system.clj gained :temporary-read? and sanitize-model-request forwarded it into the model request snapshot, but hc.server.model-adapter.request/top-level-keys does not know the field, so every run attempt failed with :unknown-field :temporary-read? (5 failures in hc.server.history-regenerate-live-test/regenerate-uses-real-model-http-terminal). Fix: remove :temporary-read? from model-snapshot-keys only; the field stays in the run input-snapshot (runs.clj/run_port.clj) and is still consumed by material-injection before sanitization. Supersedes final27 (tree f12affd2, bundle 92d18d8f).",
+  "fixes": {
+    "W273_regression_fix": "src/hc/server/app/system.clj model-snapshot-keys drops :temporary-read? so sanitize-model-request no longer leaks the session-level flag into the provider request snapshot. :temporary-read? remains in run input-snapshot (sessions/runs.clj, history/run_port.clj) and request-level reads for material-injection unchanged. Targeted ns hc.server.history-regenerate-live-test 1/11 0F/0E; related ns set (history.context, history.run-port, sessions.runs, sessions.sessions, app.system, compose.owner.handlers, model-adapter.events) all 0F/0E.",
+    "carried_from_final27": "W271/W274 branch-message-entities, W272 temporary-read select-keys, W265 speech onstop/silent-wav-blob, all final26 fixes"
+  },
+  "tree-hash-recipe": "find src test -type f | sort | xargs sha256sum | sha256sum",
+  "clean-rebuild": {
+    "command": "rm -rf .shadow-cljs/cljs-runtime && flock /tmp/hc-build.lock -c 'npx shadow-cljs release :app'",
+    "exit": 0,
+    "wall-seconds": 23,
+    "note": "same pre-existing undeclared-var % analyzer warning in views/session.cljs; build completed",
+    "bundle-sha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundle-size": 3087081,
+    "bundle-mtime": "2026-11-08 17:53:37.851856825 +0800",
+    "bundle-note": "bundle identical to final27 - the fix is server-side Clojure only, no CLJS source changed",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b"
+  },
+  "full-test": {
+    "command": "clojure -X:test:compose:server:client",
+    "log": "/tmp/hc-full-test-final27b.log",
+    "exit": 0,
+    "tests": 3914,
+    "assertions": 25498,
+    "failures": 0,
+    "errors": 0
+  },
+  "targeted-tests": {
+    "hc.server.history-regenerate-live-test": "1 test / 11 assertions / 0F/0E (log /tmp/hc-regen-ns-final27.log)",
+    "related-ns": "hc.server.history.context-test 18/63, hc.server.history.run-port-test 3/13, hc.server.sessions.runs-test 14/190, hc.server.sessions.sessions-test 51/318, hc.server.app.system-test 19/117, hc.compose.owner.handlers-test 65/290, hc.server.model-adapter.events-test 4/22 - all 0F/0E"
+  },
+  "app-check": {
+    "command": "/tmp/pixi run app-check",
+    "log": "/tmp/hc-app-check-final27b.log",
+    "exit": 0,
+    "wall-seconds": 15,
+    "ok": true,
+    "version": "0.0.1"
+  },
+  "post": {
+    "tree-hash-src-test": "43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a",
+    "bundle-sha256": "92d18d8f72b3c14ba428a0787cc774a0792ddbfe55bf32017f77025bec15c723",
+    "bundle-size": 3087081,
+    "bundle-mtime": "2026-11-08 17:53:37.851856825 +0800",
+    "manifest-edn-sha256": "e0ef5e1b36dbc68fcda5337a573e7b3a2660c22ff80e82ad051a889e938af14b",
+    "css": {
+      "resources/public/css/framework7-bundle.css": "77da0dd42f787c7f9b8012df796006d19353b6c22af717018ab6a65d6fff2a57",
+      "resources/public/css/workbench.css": "e06ece29dfe88f0e847792914d56f2b8e42563f040360fbb211c2ea350ef64b9"
+    },
+    "git-status-porcelain-count": 301,
+    "snapshot": "2026-11-08T18:00:14+08:00",
+    "tree-hash-note": "tree hash 43431535 differs from final27 f12affd2 exactly by the one-line system.clj fix; bundle/manifest/CSS identical"
+  },
+  "result": "PASS - final27b freeze: clean rebuild exit 0 (23s), bundle 92d18d8f (3,087,081 B, 17:53:37, unchanged), full suite 3914 tests / 25498 assertions / 0 failures / 0 errors / exit 0 (/tmp/hc-full-test-final27b.log), app-check :ok true version 0.0.1 exit 0 (/tmp/hc-app-check-final27b.log). Tree hash src+test = 43431535a524140470def1851bbbe3a183b22337adeb783fd11e82a2f62f6c5a."
+}

@@ -118,6 +118,21 @@
         (is (false? (:ok? started)))
         (is (= :INVALID_MODELS (get-in started [:error :code])))))))
 
+(deftest actors-stop-before-dispatch-when-task-model-unconfigured
+  (support/with-temp-dir [root "hc-fleet-actors-"]
+    (let [repo (str root "/repo")]
+      (.mkdirs (java.io.File. repo))
+      (support/init-repo! repo)
+      (let [rt (start-runtime! repo root "swarm-1")
+            started (actors/start! {:runtime rt
+                                    :models {:main "main" :task nil}})]
+        (is (false? (:ok? started)))
+        (is (= :TASK_MODEL_UNCONFIGURED
+               (get-in started [:error :code])))
+        (is (= :configure-task-model
+               (get-in started [:error :details :remedy])))
+        (is (string? (get-in started [:error :message])))))))
+
 (defn- concurrent-board-task!
   [rt]
   (swarm/execute!
