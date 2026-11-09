@@ -5,4 +5,4 @@
   notes must be kept in step with this value.  Runtime health, diagnostics,
   backup metadata, and MCP client identity read it from here.")
 
-(def version "0.0.1")
+(def version "0.0.2")

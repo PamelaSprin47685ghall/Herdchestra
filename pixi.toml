@@ -1,6 +1,6 @@
 [workspace]
 name = "herdchestra"
-version = "0.0.1"
+version = "0.0.2"
 description = "Independent multi-agent engineering system: guarded Owner, Swarm STM board, protected workspace writes."
 channels = ["conda-forge"]
 # osx-arm64 omitted: conda-forge clojure has no arm build (HACK.md §4.2).
