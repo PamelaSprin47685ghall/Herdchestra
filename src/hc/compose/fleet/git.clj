@@ -20,6 +20,8 @@
   (head [this directory])
   (current-branch [this directory])
   (ancestor? [this directory ref])
+  (worktree-clean? [this directory])
+  (ff-ready? [this directory target-ref])
   (create-worktree! [this {:keys [workspace branch base]}])
   (remove-worktree! [this workspace])
   (delete-branch! [this branch])
@@ -123,6 +125,51 @@
   (and (string? ref)
        (not= "HEAD" ref)
        (not (re-matches #"[0-9a-fA-F]{7,40}" ref))))
+
+(defn- ancestor-check
+  "Run one ancestor test of REF against HEAD in DIRECTORY.
+
+  The result keeps the historical `ancestor?` shape."
+  [directory ref]
+  (let [result (run-command ["git" "merge-base" "--is-ancestor" ref "HEAD"]
+                            {:dir directory})]
+    (cond
+      (interrupted-result? result)
+      {:status :interrupted :ref ref
+       :exit (:exit result) :out (:out result) :err (:err result)}
+
+      (zero? (long (or (:exit result) 1)))
+      {:status :ok :ancestor? true :ref ref}
+
+      (= 1 (:exit result))
+      {:status :ok :ancestor? false :ref ref}
+
+      :else
+      {:status :failed
+       :code :ANCESTOR_CHECK_FAILED
+       :ref ref
+       :exit (:exit result)
+       :out (:out result)
+       :err (:err result)})))
+
+(defn- worktree-status
+  "Return `{:clean? bool :result git-result}` for DIRECTORY.
+
+  A worktree is clean only when `git status --porcelain` exits zero with
+  blank output.  A missing directory, timeout, or unreadable status is not
+  clean; it is never optimistically treated as clean."
+  [directory]
+  (try
+    (let [result (run-command ["git" "status" "--porcelain"]
+                              {:dir directory})]
+      {:clean? (boolean (and (= :ok (:status result))
+                             (str/blank? (:out result))))
+       :result result})
+    (catch Throwable t
+      {:clean? false
+       :result {:status :failed
+                :code :WORKTREE_STATUS_FAILED
+                :err (or (.getMessage ^Throwable t) (str t))}})))
 
 (defn- classify-worktree-failure
   [result]
@@ -260,25 +307,67 @@
          :err (:err result)})))
 
   (ancestor? [_ directory ref]
-    (let [result (git directory "merge-base" "--is-ancestor" ref "HEAD")]
-      (cond
-        (interrupted-result? result)
-        {:status :interrupted :ref ref
-         :exit (:exit result) :out (:out result) :err (:err result)}
+    (ancestor-check directory ref))
 
-        (zero? (long (or (:exit result) 1)))
-        {:status :ok :ancestor? true :ref ref}
+  (worktree-clean? [_ directory]
+    (:clean? (worktree-status directory)))
 
-        (= 1 (:exit result))
-        {:status :ok :ancestor? false :ref ref}
+  (ff-ready? [this directory target-ref]
+    (try
+      (let [head-result (head this directory)
+            target-result (repo-head this target-ref)
+            status (worktree-status directory)
+            clean? (:clean? status)
+            head-ok? (= :ok (:status head-result))
+            target-ok? (= :ok (:status target-result))
+            ancestor (when (and head-ok? target-ok? clean?)
+                       (ancestor-check directory target-ref))
+            base {:head (when head-ok? (:head head-result))
+                  :target-head (when target-ok? (:head target-result))
+                  :clean? clean?}]
+        (cond
+          (or (interrupted-result? head-result)
+              (interrupted-result? target-result)
+              (interrupted-result? (:result status))
+              (interrupted-result? ancestor))
+          (assoc base :ready? false :reason :interrupted)
 
-        :else
-        {:status :failed
-         :code :ANCESTOR_CHECK_FAILED
-         :ref ref
-         :exit (:exit result)
-         :out (:out result)
-         :err (:err result)})))
+          (not head-ok?)
+          (assoc base :ready? false :reason :HEAD_UNREADABLE
+                 :head-result head-result)
+
+          (not target-ok?)
+          (assoc base :ready? false :reason :TARGET_HEAD_UNREADABLE
+                 :target-ref target-ref
+                 :target-result target-result)
+
+          (not= :ok (:status (:result status)))
+          (assoc base :ready? false :reason :WORKTREE_STATUS_FAILED
+                 :status-result (:result status))
+
+          (not clean?)
+          (assoc base :ready? false :reason :WORKTREE_DIRTY)
+
+          (= :failed (:status ancestor))
+          (assoc base :ready? false :reason :ANCESTOR_CHECK_FAILED
+                 :ancestor ancestor)
+
+          (:ancestor? ancestor)
+          (assoc base :ready? true :reason :ready
+                 :target-ref target-ref)
+
+          :else
+          (assoc base :ready? false :reason :TARGET_NOT_ANCESTOR
+                 :target-ref target-ref)))
+      (catch Throwable t
+        {:ready? false
+         :head nil
+         :target-head nil
+         :clean? false
+         :reason :GIT_CHECK_FAILED
+         :target-ref target-ref
+         :error {:code :GIT_CHECK_FAILED
+                 :message (or (.getMessage ^Throwable t) (str t))}})))
 
   (create-worktree! [this {:keys [workspace branch base]}]
     (let [path-existed? (.exists (io/file workspace))

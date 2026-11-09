@@ -30,6 +30,14 @@
   [lane milestone]
   (boolean (some #{milestone} (milestones lane))))
 
+(def statuses
+  "Live tenure statuses.
+
+  `:abandoned` is a terminal outcome like `:completed`; `:retired` is an
+  archival value produced by `retire-tenure` and never stored in a live
+  lane."
+  #{:active :completed :abandoned})
+
 (defn next-milestone
   [lane milestone]
   (let [ladder (milestones lane)
@@ -68,6 +76,15 @@
   [tenure]
   (and tenure (= :completed (:status tenure))))
 
+(defn abandoned?
+  [tenure]
+  (and tenure (= :abandoned (:status tenure))))
+
+(defn terminal?
+  "True when the tenure cannot run another review or board command."
+  [tenure]
+  (or (completed? tenure) (abandoned? tenure)))
+
 (defn retire-tenure
   "Retire a tenure.  The returned record is archival only; the live lane
   receives a fresh successor in the same atomic transition."
@@ -77,6 +94,28 @@
          :review-window :closed
          :swarm-phase :none
          :relay-pending? false))
+
+(defn abandon-tenure
+  "Mark TENURE abandoned after REASON.
+
+  The record stays in its lane as terminal evidence.  Its ledger, root-task
+  mirror, review window, and swarm phase are cleared so the relay and board
+  invariants remain true; the mission host removes the board tasks in the
+  same transition.  AT is optional; a map REASON may carry it as `:at`."
+  ([tenure reason]
+   (abandon-tenure tenure reason nil))
+  ([tenure reason at]
+   (when tenure
+     (assoc tenure
+            :status :abandoned
+            :abandoned-reason reason
+            :retired-at (or at (when (map? reason) (:at reason)))
+            :review-window :closed
+            :swarm-phase :none
+            :relay-pending? false
+            :awaiting-user? false
+            :ledger ledger/empty-ledger
+            :root-tasks []))))
 
 (defn promote-tenure
   "Advance one milestone in the tenure's lane.

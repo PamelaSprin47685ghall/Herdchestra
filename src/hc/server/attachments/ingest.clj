@@ -836,7 +836,7 @@
             :else
             (let [actual (try
                            (when-let [in (ports/open-blob (:blob-store service) id)]
-                             (with-open [stream in]
+                             (with-open [^InputStream stream in]
                                (sha256-stream stream)))
                            (catch Throwable error
                              (service-error :ATTACHMENT_STORE_FAILED

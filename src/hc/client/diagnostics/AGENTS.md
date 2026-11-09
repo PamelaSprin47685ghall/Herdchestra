@@ -1,7 +1,8 @@
 # `hc.client.diagnostics` — statistics, cost, logs, and local diagnostic previews
 
-Authority: root `AGENTS.md` §7.4 旅程 8.6（导出诊断包） and §7.5, `src/AGENTS.md`,
-`src/hc/client/AGENTS.md`. Root wins on conflict.
+Authority: root `AGENTS.md` §7.4 旅程 8.6（导出诊断包） and §7.4 旅程 8.5
+（排障与十类未交付理由）, `src/AGENTS.md`, `src/hc/client/AGENTS.md`. Root
+wins on conflict.
 
 ## 1 Boundary
 

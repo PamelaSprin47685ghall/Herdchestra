@@ -31,13 +31,14 @@
 9. **工具参数结束不等于执行结束**：收到工具参数流结束只表示调用描述完整，必须等服务器领域状态返回工具终态才关闭等待展示。
 10. **边界类型**：跨语言协议使用字符串形式的稳定 ID；严格区分字段缺省、空字符串 `""` 与 `null`。单条 Sente 消息不超过 1 MiB，大对象走独立 HTTP/Blob 通道；超限的 `STATE_SNAPSHOT` / `STATE_DELTA` 以 `/sync-objects/<token>` 引用传输，客户端校验域分隔摘要后才原子应用。
 11. **无障碍与输入法**：焦点顺序符合视觉顺序；弹层关闭后焦点回到触发点；图标有可读名称；正文对比度至少 4.5:1；触摸热区至少 44×44 逻辑像素；`Escape` 先关最上层弹层，再交输入法候选/文本选区，最后才停止生成。
+12. **用户侧三状态**：用户可见的交付状态只有进行中、已交付、未交付（附理由与教训）。24 类失败码是内部映射，展示时先给十类「未交付理由」再给具体文案；「正在生成」「已停止」「显示失败」等是操作回执，不是第四种交付状态。
 
 ## 4 命名空间
 
 当前：`hc.client.sync.*`（`adapter`、`connection`、`json-patch`、`messages`、`normalize`）、
 `hc.client.artifacts.*`（产物卡片、来源披露与真实打开/下载动作）、
 `hc.client.conversation.*`（纯草稿/输入法/流/时间线/ask/导出、`export_plan` 选择/取消/长图计划、`minimap` 话题概览与锚点，以及 React 会话面）、
-`hc.client.copy.*`（24 类失败文案单一事实来源与可执行动作）、
+`hc.client.copy.*`（24 类错误码的内部映射、十类「未交付理由」、用户侧三状态与可执行动作）、
 `hc.client.materials.*`（长期记忆、世界书、指令卡模型与视图）、
 `hc.client.search.*`（联网搜索三态控件、服务选择、来源卡与发送 payload）、
 `hc.client.extensions.*`（MCP/技能配置、启停、草稿与真实命令）、
@@ -81,7 +82,9 @@ clojure -M:cljs:client -re node
 6. Swarm/fleet dashboard：JVM 投影测试覆盖任务树、等待释放与父项不自动完成、槽位生命周期、holder/W 区分、完整 join 报告；CLJS 渲染测试用 `react-dom/server` 渲染真实 React/Framework7 元素树并检查可访问标签与响应式 CSS。
 7. 会话元数据控件：纯模型测试覆盖动作门控、命令 payload、回执文案与已删除列表归一化；`test/js/verify_session_controls_dom.sh` 在 jsdom 中挂载真实 `SessionControls`，点击重命名/置顶/归档/恢复/删除/永久删除，断言回调收到 keyword `:action` 与真实 `:session/*` kind，删除与永久删除需要第二次显式确认，永久删除只携带 `{:confirm? true}` 且不含工作区路径，回执未决时已打开的表单或确认框不能再次发送；`test/js/verify_workbench_session_commands.sh` 用真实命令 helper 证明已删除行只存在于 Fulcro 显示库 `:ui/session-list` 时仍按同一 `sid` 取得 Owner epoch，缺失会话不会借用 app 或其它会话 epoch；浏览器冒烟再验证只有服务器回执或下一份快照改变界面，已删除行不可选中且临时会话不进入已删除区。
 8. 工作台抽屉层：`model/overlay-stack` 只在 ≤1023px 抽屉布局把导航/详情当作 Escape 覆盖层；`test/js/verify_workbench_shell_dom.sh` 在 jsdom 挂载真实 `shell/workbench-content`，断言宽屏详情列打开时没有 `.wb-drawer-backdrop`、关闭按钮仍可提交，窄屏才渲染覆盖层，打开时焦点进入 `#wb-aux-close`、关闭时回到实际开启者。CSS 固定覆盖层 `z-index:30`、抽屉 `40`，关闭抽屉使用 `visibility:hidden` 退出 Tab 顺序。
-9. 失败文案与纯逻辑导出：`hc.client.copy.failures-test` 覆盖 24 类、三口径
-   互异、`:saved?` 两分支、未知用量不写 0；`conversation.export-test` 覆盖
+9. 失败文案与纯逻辑导出：`hc.client.copy.failures-test` 覆盖 24 类内部映射、
+   24→10 分类、三口径互异、`:saved?` 两分支、未知用量不写 0；用户侧三状态
+   由视图按根 §7.4 呈现，不另建第二套状态模型；
+   `conversation.export-test` 覆盖
    选择/版本/取消/长图/重复 id；`conversation.minimap-test` 覆盖空列表、混合
    类型、截断与锚点稳定。测试命令见 `conversation/AGENTS.md`。

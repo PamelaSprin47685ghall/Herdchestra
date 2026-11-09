@@ -47,25 +47,43 @@
             (some? details) (assoc :details details))})
 
 (def ^:private program-roles
+  "Mission role -> program role for worktree tool execution.
+
+  The Steward and Meditator normally run outside worktree execution, but an
+  explicit `execute-program!` request must still resolve their role instead
+  of falling through to an unknown program role."
   {:plan :clj-plan
    :reviewer :clj-review
    :worker :clj-worker
    :holder :clj-worker
    :plan-worker :dedicated-worker
-   :dedicated-worker :dedicated-worker})
+   :dedicated-worker :dedicated-worker
+   :steward :clj-steward
+   :meditator :clj-meditator})
 
-(defn- program-role
+(defn program-role-for
+  "Return the program role for a worktree tool REQUEST.
+
+  A holder is a clj-worker with `:holder? true`.  The Steward and Meditator
+  are never holders, so a spoofed holder flag on them is ignored instead of
+  promoting the request to a swarm worker.  A caller-supplied
+  `:program-role` wins."
   [request]
-  ;; A holder is a clj-worker with holder? true.  It must never inherit the
-  ;; Plan dedicated-worker capability set: that role has no write/split/
-  ;; claim/finish/take-or-die and would also skip the static holder Shell
-  ;; gate.  Correct an inconsistent caller instead of leaking the role.
-  (if (:holder? request)
-    :clj-worker
-    (or (:program-role request)
-        (get program-roles (:role request))
-        (:role request)
-        :clj-worker)))
+  ;; A holder must never inherit the Plan dedicated-worker capability set:
+  ;; that role has no write/split/claim/finish/take-or-die and would also
+  ;; skip the static holder Shell gate.  Correct an inconsistent caller
+  ;; instead of leaking the role.
+  (let [raw-role (:role request)
+        role (if (or (string? raw-role) (symbol? raw-role))
+               (keyword raw-role)
+               raw-role)
+        stewardship? (contains? #{:steward :meditator} role)]
+    (if (and (:holder? request) (not stewardship?))
+      :clj-worker
+      (or (:program-role request)
+          (get program-roles role)
+          role
+          :clj-worker))))
 
 (defn execute-program!
   "Run one actor tool program against the matching worktree runtime.
@@ -100,4 +118,4 @@
       :else
       (ws/run-program!
        (tool-runtime runtime)
-       (assoc request :role (program-role request))))))
+       (assoc request :role (program-role-for request))))))

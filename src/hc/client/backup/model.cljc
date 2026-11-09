@@ -136,6 +136,7 @@
    :maintenance nil
    :maintenance-request nil
    :message nil
+   :copy-feedback nil
    :last-create nil
    :last-restore nil
    :verify-result nil
@@ -197,6 +198,13 @@
 (defn dismiss-message
   [state]
   (assoc-in state [:ui :message] nil))
+
+(defn- copy-feedback
+  "Store clipboard progress next to the password controls instead of in the
+  page-top message banner."
+  [state status text code]
+  (assoc-in state [:ui :copy-feedback]
+            {:status status :message text :code code}))
 
 (defn code-point-count
   "Count Unicode code points.  A surrogate pair is one user-visible
@@ -281,35 +289,39 @@
     :backup/pending))
 
 (defn- submit
-  "Queue KIND/PAYLOAD and attach a neutral progress message.  A refusal keeps
-  the form and reports the exact reason."
-  [state kind payload]
-  (let [queued (commands/queue state kind payload)]
-    (if (:ok? queued)
-      (message (:state queued) :info
-               (case kind
-                 :backup/status "正在读取备份状态…"
-                 :backup/list "正在读取备份列表…"
-                 :backup/create "正在取样并写入备份；完成前不会宣称已保存。"
-                 :backup/preview "正在校验备份并生成预览；尚未写入任何资料。"
-                 :backup/verify "正在校验备份完整性…"
-                 :backup/restore "正在请求恢复；服务器会先建立本地恢复点。"
-                 :backup/delete "正在删除所选备份…"
-                 :backup/recovery-points "正在读取本地恢复点…"
-                 :backup/restore-recovery-point "正在请求从恢复点回退…"
-                 :backup/prune "正在按 7+4+3 清理恢复点…"
-                 :backup/maintenance-restore "正在请求停机恢复；服务器确认停止写入前不会宣布成功。"
-                 :backup/maintenance-status "正在核对维护状态…"
-                 :backup/maintenance-restore-recovery-point "正在请求停机回退；服务器确认停止写入前不会宣布成功。"
-                 :backup/save-target "正在保存备份目标…"
-                 :backup/test-target "正在测试连接…"
-                 :backup/delete-target "正在删除备份目标…"
-                 "正在提交…")
-               {:code (progress-code kind)})
-      (message state :warning
-               (or (get-in queued [:error :message])
-                   "命令未提交；表单仍保留。")
-               {:code (get-in queued [:error :code])}))))
+  "Queue KIND/PAYLOAD and attach a neutral progress message unless OPTS has
+  `:silent? true`.  A refusal keeps the form and reports the exact reason."
+  ([state kind payload]
+   (submit state kind payload {}))
+  ([state kind payload opts]
+   (let [queued (commands/queue state kind payload)]
+     (if (:ok? queued)
+       (if (:silent? opts)
+         (:state queued)
+         (message (:state queued) :info
+                  (case kind
+                    :backup/status "正在读取备份状态…"
+                    :backup/list "正在读取备份列表…"
+                    :backup/create "正在取样并写入备份；完成前不会宣称已保存。"
+                    :backup/preview "正在校验备份并生成预览；尚未写入任何资料。"
+                    :backup/verify "正在校验备份完整性…"
+                    :backup/restore "正在请求恢复；服务器会先建立本地恢复点。"
+                    :backup/delete "正在删除所选备份…"
+                    :backup/recovery-points "正在读取本地恢复点…"
+                    :backup/restore-recovery-point "正在请求从恢复点回退…"
+                    :backup/prune "正在按 7+4+3 清理恢复点…"
+                    :backup/maintenance-restore "正在请求停机恢复；服务器确认停止写入前不会宣布成功。"
+                    :backup/maintenance-status "正在核对维护状态…"
+                    :backup/maintenance-restore-recovery-point "正在请求停机回退；服务器确认停止写入前不会宣布成功。"
+                    :backup/save-target "正在保存备份目标…"
+                    :backup/test-target "正在测试连接…"
+                    :backup/delete-target "正在删除备份目标…"
+                    "正在提交…")
+                  {:code (progress-code kind)}))
+       (message state :warning
+                (or (get-in queued [:error :message])
+                    "命令未提交；表单仍保留。")
+                {:code (get-in queued [:error :code])})))))
 
 (defn- refresh-status
   [state]
@@ -350,6 +362,7 @@
       redact-command-passwords
       (assoc-in [:ui :password] "")
       (assoc-in [:ui :password-confirm] "")
+      (assoc-in [:ui :copy-feedback] nil)
       (update-in [:ui :password-reset] (fnil inc 0))))
 
 ;; ---------------------------------------------------------------------------
@@ -1507,8 +1520,16 @@
   [receipt]
   (or (:receipt receipt) (:result receipt)))
 
+(defn- manual-status-request?
+  "True only for an explicit operator refresh.  Mount, post-restore, and
+  post-mutation refreshes carry no manual origin and stay silent."
+  [command]
+  (let [payload (or (:payload command) {})]
+    (and (not (true? (:silent? payload)))
+         (= :manual (:origin payload)))))
+
 (defn- apply-status
-  [state result]
+  [state command result]
   (let [result (or result {})
         errors (vec (or (:errors result) []))
         state (-> state
@@ -1556,6 +1577,10 @@
                "备份状态部分读取失败；列表可能不完整。界面不会把读取失败当作空列表。"
                {:details errors})
       (let [current (get-in state [:ui :message])
+            manual? (manual-status-request? command)
+            replace? (or manual?
+                         (nil? current)
+                         (= :backup/status-pending (:code current)))
             maintenance (get-in state [:server :maintenance])
             last (:last maintenance)
             status (normalize-keyword (:status last))
@@ -1565,17 +1590,26 @@
                                          :failed-commit-unproven
                                          :failed-before-commit}
                                        status))]
-        (if (or (nil? current)
-                (= :backup/status-pending (:code current)))
-          (if attention?
-            (message state :warning
-                     (str "最近一次维护恢复未完成："
-                          (get maintenance-status-labels status (name status))
-                          "。请在“恢复与预览”分区查看提交证据与启动门槛。")
-                     {:code :BACKUP_MAINTENANCE_ATTENTION
-                      :details last})
-            (message state :info "备份状态已更新。"
-                     {:code :backup/status-loaded}))
+        (cond
+          (and attention? replace?)
+          (message state :warning
+                   (str "最近一次维护恢复未完成："
+                        (get maintenance-status-labels status (name status))
+                        "。请在“恢复与预览”分区查看提交证据与启动门槛。")
+                   {:code :BACKUP_MAINTENANCE_ATTENTION
+                    :details last})
+
+          attention?
+          state
+
+          manual?
+          (message state :info "备份状态已更新。"
+                   {:code :backup/status-loaded})
+
+          (= :backup/status-pending (:code current))
+          (assoc-in state [:ui :message] nil)
+
+          :else
           state)))))
 
 (defn- apply-create
@@ -1994,7 +2028,7 @@
 (defn- apply-receipt-success
   [state command result]
   (case (:kind command)
-    :backup/status (apply-status state result)
+    :backup/status (apply-status state command result)
     :backup/list
     (let [state (assoc-in state [:server :backups]
                           (vec (or (:backups result) [])))
@@ -2248,7 +2282,9 @@
       (assoc-in state [:ui field] (boolean value))
 
       (contains? #{:password :password-confirm} field)
-      (assoc-in state [:ui field] (str (or value "")))
+      (-> state
+          (assoc-in [:ui :copy-feedback] nil)
+          (assoc-in [:ui field] (str (or value ""))))
 
       :else state)))
 
@@ -2693,8 +2729,16 @@
   (let [type (action-type (:type action))]
     (case type
       :backup/refresh
-      (result (submit state :backup/status
-                      {:target-id (selected-target-id state)}))
+      (let [manual? (= :manual (:origin action))]
+        (result (submit state :backup/status
+                        (cond-> {:target-id (selected-target-id state)}
+                          (:origin action)
+                          (assoc :origin (:origin action))
+
+                          (true? (:silent? action))
+                          (assoc :silent? true))
+                        {:silent? (or (not manual?)
+                                      (true? (:silent? action)))})))
       :backup/refresh-recovery
       (result (submit state :backup/recovery-points {}))
 
@@ -2824,21 +2868,23 @@
       :backup/copy-password
       (let [password (str (get-in state [:ui :password]))]
         (if (empty? password)
-          (result (message state :warning "没有可复制的密码。"
-                           {:code :BACKUP_PASSWORD_EMPTY}))
-          {:state (message state :info "正在复制密码…"
-                           {:code :BACKUP_PASSWORD_COPYING})
+          (result (copy-feedback state :failed
+                                 "没有可复制的密码。"
+                                 :BACKUP_PASSWORD_EMPTY))
+          {:state (copy-feedback state :copying
+                                 "正在复制密码…"
+                                 :BACKUP_PASSWORD_COPYING)
            :effects [{:type :backup/copy-text :text password}]}))
 
       :backup/copy-result
       (result
        (if (true? (:ok? action))
-         (message state :success
-                  "密码已复制到剪贴板；不会写入本地存储。"
-                  {:code :BACKUP_PASSWORD_COPIED})
-         (message state :warning
-                  "无法复制密码：浏览器拒绝或没有剪贴板权限；请手动选择并复制。"
-                  {:code :BACKUP_PASSWORD_COPY_FAILED})))
+         (copy-feedback state :copied
+                        "已复制到剪贴板；不会写入本地存储。"
+                        :BACKUP_PASSWORD_COPIED)
+         (copy-feedback state :failed
+                        "复制失败：浏览器拒绝或没有剪贴板权限；请手动选择并复制。"
+                        :BACKUP_PASSWORD_COPY_FAILED)))
 
       :backup/apply-receipt
       (result (apply-receipt state (:receipt action)))

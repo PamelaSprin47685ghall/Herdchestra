@@ -699,3 +699,143 @@
     (is (= :OWNER_STOP_INCOMPLETE (get-in discarded [:error :code])))
     (is (= :found (:status (registry/get-session reg session-id))))
     (is (some? (registry/owner-for reg session-id)))))
+
+(defn- summary-only-persistence
+  "A SessionPersistence that can only answer summary point reads.
+
+  `read-session` counts calls, so a caller that scans full records instead of
+  summaries is visible in the test."
+  [summaries read-calls summary-result]
+  (reify
+    ports/SessionPersistence
+    (read-session [_ _]
+      (swap! read-calls inc)
+      {:status :error
+       :error {:code :FULL_RECORD_READ_FORBIDDEN
+               :message "the retention scan must not read message bodies"}})
+    (commit-session! [_ _ _]
+      {:status :unknown :error {:code :NOT_SUPPORTED}})
+    (list-session-ids [_]
+      {:status :ok :ids (vec (sort (keys summaries)))})
+    (delete-session! [_ _ _]
+      {:status :unknown :error {:code :NOT_SUPPORTED}})
+    (read-config [_] {:status :missing})
+    (commit-config! [_ _ _]
+      {:status :unknown :error {:code :NOT_SUPPORTED}})
+
+    ports/SessionSummaryRead
+    (read-session-summary-doc [_ session-id]
+      (summary-result session-id (get summaries session-id)))))
+
+(defn- mark-deleted!
+  [reg session-id deleted-at]
+  (let [loaded (ports/read-session (:persistence reg) session-id)
+        session (-> (:session loaded)
+                    (assoc :status :deleted :deleted-at deleted-at)
+                    (update :revision inc))]
+    (sessions/commit-session! (:persistence reg) session)))
+
+(defn- mark-restored!
+  [reg session-id]
+  (let [loaded (ports/read-session (:persistence reg) session-id)
+        session (-> (:session loaded)
+                    (assoc :status :active :deleted-at nil)
+                    (update :revision inc))]
+    (sessions/commit-session! (:persistence reg) session)))
+
+(deftest deleted-session-summaries-point-read-the-summary-index
+  (let [summaries {"deleted-1" {:session-id "deleted-1"
+                                :status :deleted
+                                :deleted-at 100
+                                :revision 2}
+                   "active-1" {:session-id "active-1"
+                               :status :active
+                               :deleted-at nil
+                               :revision 1}}
+        read-calls (atom 0)
+        persistence (summary-only-persistence
+                     summaries read-calls
+                     (fn [session-id summary]
+                       (if summary
+                         {:status :found :session summary}
+                         {:status :missing})))
+        reg (registry/registry {:persistence persistence})
+        result (registry/deleted-session-summaries reg)]
+    (is (= :ok (:status result)))
+    (is (= ["deleted-1"] (mapv :session-id (:sessions result))))
+    (is (zero? @read-calls)
+        "the scan reads compact summaries, never full session records")
+    (is (= :found (:status (registry/get-committed-session-summary
+                            reg "deleted-1"))))
+    (is (zero? @read-calls))))
+
+(deftest deleted-session-summary-read-failure-fails-the-whole-scan
+  (let [persistence (summary-only-persistence
+                     {"s1" {:session-id "s1" :status :deleted :revision 1}}
+                     (atom 0)
+                     (fn [_ _]
+                       {:status :unknown
+                        :error {:code :STORAGE_READ_FAILED
+                                :message "storage read failed"}}))
+        reg (registry/registry {:persistence persistence})
+        result (registry/deleted-session-summaries reg)]
+    (is (= :error (:status result)))
+    (is (= :STORAGE_READ_FAILED (get-in result [:error :code])))))
+
+(deftest purge-deleted-session-stops-the-owner-before-purging
+  (let [stopped (atom 0)
+        owner {:snapshot (fn [] {:state {}})
+               :stop! (fn []
+                        (swap! stopped inc)
+                        {:ok? true :stopped? true :drained? true})}
+        reg (make-registry {:owner-factory (fn [_] owner)})
+        created (registry/create-session! reg {:config nil :client-id "w1"})
+        session-id (get-in created [:session :session-id])
+        _ (mark-deleted! reg session-id 1000)
+        purged (registry/purge-deleted-session! reg session-id)]
+    (is (= 1 @stopped) "the live Owner is stopped exactly once")
+    (is (= :purged (:status purged)))
+    (is (= :missing (:status (registry/get-session reg session-id))))
+    (is (nil? (registry/owner-for reg session-id)))))
+
+(deftest purge-deleted-session-refuses-an-owner-without-drain-evidence
+  (let [owner {:snapshot (fn [] {:state {}})
+               :stop! (fn [] {:ok? true :stopped? true :drained? false})}
+        reg (make-registry {:owner-factory (fn [_] owner)})
+        created (registry/create-session! reg {:config nil :client-id "w1"})
+        session-id (get-in created [:session :session-id])
+        _ (mark-deleted! reg session-id 1000)
+        purged (registry/purge-deleted-session! reg session-id)]
+    (is (= :error (:status purged)))
+    (is (= :OWNER_STOP_INCOMPLETE (get-in purged [:error :code])))
+    (is (= :found (:status (registry/get-session reg session-id))))
+    (is (some? (registry/owner-for reg session-id))
+        "a failed stop keeps the route for a later retry")))
+
+(deftest purge-deleted-session-without-an-owner-removes-the-record
+  (let [reg (make-registry)
+        created (registry/create-session! reg {:config nil :client-id "w1"})
+        session-id (get-in created [:session :session-id])
+        _ (mark-deleted! reg session-id 1000)
+        purged (registry/purge-deleted-session! reg session-id)]
+    (is (= :purged (:status purged)))
+    (is (= :missing (:status (registry/get-session reg session-id))))))
+
+(deftest purge-deleted-session-checks-the-lifecycle-before-stopping-the-owner
+  (let [stopped (atom 0)
+        owner {:snapshot (fn [] {:state {}})
+               :stop! (fn []
+                        (swap! stopped inc)
+                        {:ok? true :stopped? true :drained? true})}
+        reg (make-registry {:owner-factory (fn [_] owner)})
+        created (registry/create-session! reg {:config nil :client-id "w1"})
+        session-id (get-in created [:session :session-id])
+        _ (mark-deleted! reg session-id 1000)
+        _ (mark-restored! reg session-id)
+        purged (registry/purge-deleted-session! reg session-id)]
+    (is (= :error (:status purged)))
+    (is (= :SESSION_NOT_DELETED (get-in purged [:error :code])))
+    (is (zero? @stopped)
+        "a restored session must not lose its live Owner")
+    (is (= :found (:status (registry/get-session reg session-id))))
+    (is (some? (registry/owner-for reg session-id)))))

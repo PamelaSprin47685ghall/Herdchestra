@@ -44,16 +44,22 @@
           ((:stop! handle) {:close-store? false}))))))
 
 (defspec failed-initial-commit-produces-no-runtime 50
-  (prop/for-all [_ (gen/return nil)]
+  (prop/for-all [version (gen/choose 0 1000)
+                 code (gen/elements [:DISK_FULL :PERMISSION_DENIED
+                                     :IO_ERROR :STORE_FULL])
+                 suffix (gen/choose 0 1000000)]
     (let [failing (reify store/Store
-                    (load-state [_] {:version 0 :state nil})
+                    (load-state [_] {:version version :state nil})
                     (commit! [_ _ _]
-                      {:ok? false :error {:code :DISK_FULL}})
+                      {:ok? false :error {:code code}})
                     (close! [_] nil))
-          threw? (try
-                   (owner/start-owner! {:session-id "runtime-failure"
-                                        :store failing})
-                   false
-                   (catch clojure.lang.ExceptionInfo e
-                     (= :INITIAL_COMMIT_FAILED (:code (ex-data e)))))]
-      (true? threw?))))
+          data (try
+                 (owner/start-owner! {:session-id (str "runtime-failure-" suffix)
+                                      :store failing})
+                 nil
+                 (catch clojure.lang.ExceptionInfo e
+                   (ex-data e)))]
+      ;; No runtime may be built when the initial commit fails and no other
+      ;; writer has published state; the commit error must survive verbatim.
+      (and (= :INITIAL_COMMIT_FAILED (:code data))
+           (= {:code code} (:error data))))))

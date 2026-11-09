@@ -58,6 +58,37 @@
                 :events (apply on-click type args)}
        label)))
 
+(def ^:private delete-actions
+  {:mcp {:request :extensions/mcp-request-delete
+         :confirm :extensions/mcp-remove
+         :cancel :extensions/mcp-cancel-delete
+         :label "确认删除服务器"}
+   :skill {:request :extensions/skill-request-delete
+           :confirm :extensions/skill-delete
+           :cancel :extensions/skill-cancel-delete
+           :label "确认删除技能"}})
+
+(defn- delete-controls
+  "Two-step delete: the first click only asks for confirmation; the danger
+  button that sends the server command appears after that confirmation."
+  [state kind id]
+  (let [{:keys [request confirm cancel label]} (get delete-actions kind)
+        pending? (model/pending? state)
+        pending-title (when pending? "已有扩展命令正在提交")]
+    (if (model/delete-confirmed? state kind id)
+      (el :div {:class "hc-ext-confirm"}
+          (button label confirm
+                  {:danger? true
+                   :disabled? pending?
+                   :title pending-title
+                   :args [:id id]})
+          (button "取消" cancel {:args [:id id]}))
+      (button "删除" request
+              {:danger? true
+               :disabled? pending?
+               :title pending-title
+               :args [:id id]}))))
+
 (defn- checkbox
   [label checked? type & args]
   (let [opts (when (map? (last args)) (last args))
@@ -210,11 +241,7 @@
                         {:disabled? (or pending? (not connected?))
                          :title (when-not connected? "服务器未连接")
                          :args [:id id]})
-                (button "删除" :extensions/mcp-remove
-                        {:danger? true
-                         :disabled? pending?
-                         :title (when pending? "已有扩展命令正在提交")
-                         :args [:id id]})))
+                (delete-controls state :mcp id)))
         (when-let [error (get-in server [:connection :error])]
           (el :p {:class "wb-error" :role "alert"}
               (str "连接失败：" (or (:message error) (pr-str error)))))
@@ -380,11 +407,10 @@
         applied? (get-in state [:skill-updates id :applied?])
         conflicts (count (:conflicts diff))
         paths (:paths diff)]
-    (el :div {:class "hc-ext-update"}
-        (el :div {:class "hc-ext-section-title"}
-            (el :h3 {} "上游更新与三方对比")
-            (el :p {:class "wb-muted"}
-                "选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。"))
+    (el :details {:class "hc-ext-update"}
+        (el :summary {:class "hc-ext-update-summary"} "上游更新与三方对比")
+        (el :p {:class "wb-muted"}
+            "选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。")
         (field "上游来源"
                (select kind [["文本" :text] ["链接" :url] ["压缩包" :archive]]
                        (on-input :extensions/skill-update-source :id id)))
@@ -455,10 +481,33 @@
       :directory (str "目录 " (or (:path source) "未报告"))
       (if kind (name kind) "未报告"))))
 
+(defn- assistant-label
+  "Resolve one skill binding to an assistant display name.
+
+  A binding may be an id string or a map carrying `:assistant-id`, `:id` or
+  `:name`.  The binding's own name wins; otherwise the id is looked up in the
+  assistants projection, and an unresolved id is shown as-is."
+  [assistants binding]
+  (let [binding-id (or (:assistant-id binding)
+                       (:id binding)
+                       (when-not (map? binding) binding))
+        resolved (some (fn [assistant]
+                         (when (and (some? binding-id)
+                                    (= (str binding-id) (str (:id assistant))))
+                           assistant))
+                       assistants)]
+    (text (or (:name binding)
+              (:name resolved)
+              (:id resolved)
+              binding-id
+              "未命名助手"))))
+
 (defn- skill-card [state skill]
   (let [id (:id skill)
         pending? (model/pending? state)
         bindings (count (:bindings skill))
+        binding-labels (mapv #(assistant-label (:assistants state) %)
+                             (:bindings skill))
         assistant-id (get-in state [:draft :assistant-id])
         assistant-target? (model/non-blank-string? assistant-id)
         bind-reason (cond
@@ -476,8 +525,8 @@
                 (el :strong {} (text (:name skill)))
                 (el :span {:class "wb-muted"}
                     (str " · " (or (:version skill) "未标版本")
-                         " · " (if (pos? bindings)
-                                 (str "绑定 " bindings " 个")
+                         " · " (if (seq binding-labels)
+                                 (str "绑定：" (str/join "、" binding-labels))
                                  "未绑定")))
                 (el :div {:class "wb-muted"}
                     (str "来源：" (skill-source-label (:source skill))))
@@ -501,10 +550,7 @@
                          :title (or unbind-reason
                                     (str "从 " assistant-id " 解除绑定"))
                          :args [:id id]})
-                (button "删除" :extensions/skill-delete
-                        {:danger? true
-                         :disabled? pending?
-                         :args [:id id]})))
+                (delete-controls state :skill id)))
         (el :div {:class "hc-ext-files"}
             (let [files (:files skill)
                   entries (cond
@@ -574,6 +620,12 @@
         (when reason
           (el :p {:class "wb-muted"} (text reason))))))
 
+(defn- skill-name-list
+  "Names shown next to a blocked or excluded count; ids stand in for entries
+  the server did not name."
+  [entries]
+  (str/join "、" (map #(text (or (:name %) (:id %) "未命名技能")) entries)))
+
 (defn- session-skill-section
   [state]
   (let [scope (:session-scope state)
@@ -617,10 +669,12 @@
                          "无")))
               (when (seq blocked)
                 (el :p {:class "wb-muted"}
-                    (str "条件未满足：" (count blocked) " 个")))
+                    (str "条件未满足（" (count blocked) "）："
+                         (skill-name-list blocked))))
               (when (seq excluded)
                 (el :p {:class "wb-muted"}
-                    (str "未生效：" (count excluded) " 个"))))))))
+                    (str "未生效（" (count excluded) "）："
+                         (skill-name-list excluded)))))))))
 
 (defn- skill-form [state]
   (let [draft (:draft state)

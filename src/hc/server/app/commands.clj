@@ -35,17 +35,24 @@
   `registry/purge-session!` removes only the session record.  It never
   deletes workspace files.
 
-  The app scope also carries trusted Steward fleet commands.  The browser
-  gateway forbids every `:fleet/*` kind, and the router accepts only the
-  `steward-command-envelope` shape.  `:fleet/join` runs on a worker thread so
-  no Owner mailbox or transport thread blocks."
+  The app scope also carries the trusted Steward planes: `:fleet/*` and
+  `:steward/*` accept only the `steward-command-envelope` shape, and
+  `:program/abandon` accepts only the holder program's
+  `program-command-envelope`.  The browser gateway forbids all three groups.
+  `:fleet/join` runs on a worker thread so no Owner mailbox or transport
+  thread blocks."
   (:require [clojure.string :as str]
+            [hc.compose.fleet.service :as fleet-service]
             [hc.compose.fleet.router :as fleet-router]
+            [hc.compose.mission.host :as mission-host]
+            [hc.compose.steward :as steward]
             [hc.server.gateway.ports :as gateway-ports]
             [hc.server.sessions.registry :as registry]
             [hc.server.app.settings :as settings]
             [hc.server.app.backup :as backup-app]
             [hc.server.app.scheduler :as scheduler-app]
+            [hc.server.app.search-commands :as history-search]
+            [hc.server.app.steward-store :as steward-store]
             [hc.server.diagnostics.integration :as diagnostics-integration]
             [hc.server.diagnostics.service :as diagnostics-service]
             [hc.server.extensions.app :as extensions-app]
@@ -84,7 +91,10 @@
   "Commands that a genuine browser operator may originate.  The Sente
   gateway is the trust boundary; agents never submit through it."
   #{:send-message :stop-run :answer-ask :user/message :operator/cancel
-    :user/unpark :call/ack :session/select-skills})
+    :user/unpark :call/ack :session/select-skills
+    ;; Presence commands are operator actions: an observer may use them to
+    ;; take control, and they never start session work.
+    :session/attach-client :session/takeover :session/detach-client})
 
 (def ^:private metadata-kinds
   #{:session/rename :session/update-draft :session/pin :session/archive
@@ -97,11 +107,19 @@
   "Namespaces whose commands change application configuration, not one
   session.  They use the app command epoch and the app receipt scope."
   #{"settings" "model-auth" "search" "documents" "speech" "extensions"
-    "diagnostics" "backup" "scheduler" "fleet"})
+    "diagnostics" "backup" "scheduler" "fleet" "steward" "program"})
 
 (def ^:private session-namespaces
   "Namespaces whose commands change one session's live services."
   #{"browser" "materials"})
+
+(def ^:private history-search-kinds
+  "App-scoped history index commands.
+
+  These never enter a session Owner: search and status read the derived
+  index, and reindex is a trusted maintenance command.  They use the app
+  command epoch and the app receipt scope."
+  (history-search/command-kinds))
 
 (defn- settings-kind?
   [kind]
@@ -125,6 +143,7 @@
       (= :session/ensure kind)
       (= :session/create-from-summary kind)
       (= :app/issue-epoch kind)
+      (contains? history-search-kinds kind)
       (and (keyword? kind)
            (contains? app-namespaces (namespace kind)))))
 
@@ -710,7 +729,16 @@
                        :command-id (:command-id request)
                        :command-epoch (:command-epoch request)
                        :payload payload})]
-          (when (:ok? result) (notify-change! router))
+          ;; Read-only materials projections must not publish a new server
+          ;; revision.  The client bridge asks for one snapshot per revision;
+          ;; notifying on the snapshot itself would create a fetch/notify loop
+          ;; and can push another session's baseline over the current view.
+          (when (and (:ok? result)
+                     (not (contains? #{:materials/snapshot
+                                       :materials/memory/search
+                                       :materials/memory/effective}
+                                     (:kind payload))))
+            (notify-change! router))
           (reply reply-fn result))))
     (reply reply-fn
            (result-error :MATERIALS_UNAVAILABLE
@@ -1362,8 +1390,8 @@
 (defn steward-command-envelope
   "Build the trusted envelope a Steward main-model tool submits.
 
-  The router accepts `:fleet/*` only from this envelope.  The envelope is
-  never constructed from browser payload fields.  Use
+  The router accepts `:fleet/*` and `:steward/*` only from this envelope.
+  The envelope is never constructed from browser payload fields.  Use
   `(app-command-epoch router)` for COMMAND-EPOCH and a fresh UUID for
   COMMAND-ID."
   [command-id command-epoch payload]
@@ -1446,6 +1474,436 @@
                          (contains? fleet-mutating-kinds (:kind payload)))
                 (notify-change! router))
               (reply reply-fn result))))))))
+
+;; ---------------------------------------------------------------------------
+;; Trusted holder program commands
+
+(defn program-command-envelope
+  "Build the trusted envelope a holder program's control port submits.
+
+  WORKSPACE is the caller's host-owned worktree.  It must come from the
+  program control context, never from model arguments; the router locates
+  the swarm by workspace.  PAYLOAD carries intent only, for example
+  `{:kind :program/abandon :reason \"rebase conflict\"}`.  A model-supplied
+  `:swarm-id` is never authoritative and is ignored."
+  [command-id command-epoch workspace payload]
+  {:command-id command-id
+   :command-epoch command-epoch
+   :program-role :holder
+   :origin :program-tool
+   :holder? true
+   :workspace workspace
+   :payload payload})
+
+(defn- trusted-program-request?
+  "True only for a holder program's control port.
+
+  Browser transports never set `:origin` or `:program-role`, and the gateway
+  rejects reserved command planes.  A worker program has `:clj-worker` but
+  is not a holder, so it cannot abandon its swarm."
+  [request]
+  (and (contains? #{:clj-worker :holder} (:program-role request))
+       (= :program-tool (:origin request))
+       (true? (:holder? request))
+       (nil? (:subscription-id request))
+       (nil? (:uid request))
+       (nil? (:client-id request))
+       (not (true? (:operator? request)))))
+
+(defn- mission-abandon-handle
+  "Resolve the router's mission handle.
+
+  The state holds an atom so the application can attach or replace the
+  mission layer during startup.  The atom may hold a `MissionHost` or a
+  function `(fn [request] -> result)`.  A nil/invalid value means the
+  mission plane is not assembled."
+  [router]
+  (let [state (try @(:state router) (catch Throwable _ nil))
+        ref (:mission-ref state)]
+    (when ref
+      (try @ref (catch Throwable _ ref)))))
+
+(defn- tenure-abandon!
+  [router payload swarm-id slice-id]
+  (let [entry (mission-abandon-handle router)
+        request {:swarm-id swarm-id
+                 :slice-id slice-id
+                 :reason (:reason payload)
+                 :at (or (:at payload) (System/currentTimeMillis))}]
+    (cond
+      (nil? entry)
+      {:ok? false
+       :error {:code :TENURE_ABANDON_UNAVAILABLE
+               :message "the mission layer is not attached"}}
+
+      (ifn? entry)
+      (try
+        (entry request)
+        (catch Throwable t
+          {:ok? false
+           :error {:code :TENURE_ABANDON_FAILED
+                   :message (or (.getMessage ^Throwable t) (str t))}}))
+
+      (and (map? entry)
+           (instance? clojure.lang.IAtom (:state entry)))
+      (try
+        (mission-host/abandon-swarm! entry request)
+        (catch Throwable t
+          {:ok? false
+           :error {:code :TENURE_ABANDON_FAILED
+                   :message (or (.getMessage ^Throwable t) (str t))}}))
+
+      :else
+      {:ok? false
+       :error {:code :TENURE_ABANDON_UNAVAILABLE
+               :message "the mission layer handle is invalid"}})))
+
+(defn- attach-tenure-abandon
+  "Attach the mission tenure outcome to a successful fleet abandon.
+
+  The fleet abandon already happened and is never rolled back.  A missing or
+  failing mission layer is reported as a diagnostic on the same result."
+  [router payload result slice-id]
+  (if-not (:ok? result)
+    result
+    (let [abandoned (tenure-abandon! router payload (:swarm-id result)
+                                     slice-id)]
+      (if (:ok? abandoned)
+        (assoc result
+               :tenure-abandoned? true
+               :tenure-id (:tenure-id abandoned)
+               :tenure-abandon {:ok? true
+                                :tenure-id (:tenure-id abandoned)})
+        (let [error (:error abandoned)
+              code (or (:code error) :TENURE_ABANDON_UNAVAILABLE)]
+          (assoc result
+                 :tenure-abandoned? false
+                 :tenure-abandon {:ok? false :error error}
+                 :diagnostics
+                 (conj (vec (:diagnostics result))
+                       {:code code
+                        :reason :tenure-abandon-unavailable
+                        :message (or (:message error)
+                                     "the mission tenure was not marked abandoned")
+                        :swarm-id (:swarm-id result)
+                        :fleet-abandoned? true})))))))
+
+(defn- handle-program!
+  [router request payload reply-fn]
+  (let [kind (:kind payload)]
+    (cond
+      (not (trusted-program-request? request))
+      (reply reply-fn
+             (result-error :PROGRAM_FORBIDDEN
+                           "program commands are reserved for the holder program control port"
+                           {:kind kind}))
+
+      (not= :program/abandon kind)
+      (reply reply-fn
+             (result-error :COMMAND_KIND_UNKNOWN
+                           "unknown command kind"
+                           {:kind kind}))
+
+      (not (non-blank-string? (:workspace request)))
+      (reply reply-fn
+             (result-error :PROGRAM_WORKSPACE_REQUIRED
+                           "abandon needs the caller's host-owned :workspace"
+                           {:kind kind}))
+
+      :else
+      (let [service (when-let [r (:fleet-ref router)] @r)]
+        (if-not service
+          (reply reply-fn
+                 (result-error :FLEET_UNAVAILABLE
+                               "fleet service is not running"
+                               {:kind kind}))
+          (let [slice-id (try
+                           (some-> (fleet-service/runtime-for-workspace
+                                    service (:workspace request))
+                                   :slice-id)
+                           (catch Throwable _ nil))
+                fleet-result
+                (try
+                  (fleet-service/abandon-by-workspace!
+                   service (:workspace request) (:reason payload))
+                  (catch Throwable t
+                    {:ok? false
+                     :error {:code :ABANDON_FAILED
+                             :message (or (.getMessage ^Throwable t)
+                                          (str t))}}))
+                result
+                (if (:ok? fleet-result)
+                  (try
+                    (attach-tenure-abandon router payload fleet-result slice-id)
+                    (catch Throwable t
+                      (assoc fleet-result
+                             :tenure-abandoned? false
+                             :diagnostics
+                             (conj (vec (:diagnostics fleet-result))
+                                   {:code :TENURE_ABANDON_FAILED
+                                    :reason :tenure-abandon-unavailable
+                                    :message (or (.getMessage ^Throwable t)
+                                                 (str t))
+                                    :fleet-abandoned? true}))))
+                  fleet-result)
+                result (with-fleet-receipt result)]
+            (when (:ok? result) (notify-change! router))
+            (reply reply-fn result)))))))
+
+;; ---------------------------------------------------------------------------
+;; Rebuildable history full-text search
+
+(defn- history-search-handlers
+  "Return the handler map for one call.
+
+  The trusted map contains the only `:history/reindex` handler whose trust
+  switch is on.  Search and status always use the untrusted map; both are
+  read-only app commands available to browsers and operators."
+  [router trusted?]
+  (let [state (try @(:state router) (catch Throwable _ nil))]
+    (if trusted?
+      (get state :history-search-trusted-handlers)
+      (get state :history-search-handlers))))
+
+(defn- record-history-search-diagnostic!
+  "Best-effort diagnostic for an unexpected handler failure.
+
+  The handler contract catches its own Throwable; this path only runs when
+  the injected function itself violates the contract.  A diagnostics failure
+  must never change the command reply."
+  [router request kind code message]
+  (when-let [diagnostics (:diagnostics router)]
+    (try
+      (diagnostics-service/record-log!
+       diagnostics
+       {:request-id (:command-id request)
+        :session-id (or (get-in request [:payload :session-id])
+                        (:session-id request))
+        :service-name "history-search"
+        :purpose (str kind)
+        :result :failed
+        :error {:code code :message message}
+        :at (System/currentTimeMillis)})
+      (catch Throwable _ nil))))
+
+(defn- handle-history-search!
+  [router request payload reply-fn]
+  (let [kind (:kind payload)
+        reindex? (= :history/reindex kind)
+        trusted? (and reindex? (trusted-steward-request? request))
+        handler (get (history-search-handlers router trusted?) kind)]
+    (cond
+      (and reindex? (not trusted?))
+      (reply reply-fn
+             (result-error :HISTORY_REINDEX_FORBIDDEN
+                           "reindex requires a trusted server-side caller"
+                           {:kind kind}))
+
+      (not (ifn? handler))
+      (reply reply-fn
+             (result-error (if reindex?
+                             :HISTORY_REINDEX_UNAVAILABLE
+                             :HISTORY_SEARCH_UNAVAILABLE)
+                           "the history search handlers are not wired"
+                           {:kind kind}))
+
+      :else
+      (try
+        (let [result (handler payload)]
+          (cond
+            (= :ok (:status result))
+            (reply reply-fn
+                   {:ok? true
+                    :receipt {:status :accepted
+                              :result result}})
+
+            (= :error (:status result))
+            (reply reply-fn {:ok? false :error (:error result)})
+
+            :else
+            (do
+              (record-history-search-diagnostic!
+               router request kind :HISTORY_SEARCH_FAILED
+               "the history search handler returned an invalid result")
+              (reply reply-fn
+                     (result-error :HISTORY_SEARCH_FAILED
+                                   "the history search handler returned an invalid result"
+                                   {:kind kind :result result})))))
+        (catch Throwable t
+          (record-history-search-diagnostic!
+           router request kind :HISTORY_SEARCH_FAILED (str t))
+          (reply reply-fn
+                 (result-error :HISTORY_SEARCH_FAILED
+                               "the history search command failed"
+                               {:kind kind :cause (str t)})))))))
+
+;; ---------------------------------------------------------------------------
+;; Repository Steward commands
+
+(def steward-command-kinds
+  "Application commands of the repository Steward plane.
+
+  All are trusted-only: the browser gateway forbids them, and the router
+  accepts only `steward-command-envelope` requests."
+  #{:steward/state :steward/intent :steward/evidence
+    :steward/decide :steward/transition})
+
+(def ^:private steward-commit-attempts
+  "A Steward mutation recomputes against the freshly loaded version.
+
+  Every Steward command is pure, so a lost compare-and-set is retried
+  instead of surfacing a conflict the caller cannot resolve by itself."
+  16)
+
+(defn- steward-store-of
+  "Resolve the Steward store from the router's `:steward-ref`.
+
+  The atom may hold the Store directly or `{:store store}`; nil means the
+  repository Steward is not assembled in this process."
+  [router]
+  (let [entry (when-let [ref (:steward-ref router)] @ref)]
+    (cond
+      (nil? entry) nil
+      (and (map? entry) (some? (:store entry))) (:store entry)
+      :else entry)))
+
+(defn- steward-observe
+  "Apply one world observation and pull the Decision Frontier.
+
+  The observation is committed even when the frontier cannot be pulled
+  (for example an empty intent text); the refusal is reported as
+  `:frontier-error` instead of discarding valid evidence."
+  [state observation]
+  (let [observed (steward/observe-world state observation)]
+    (if-not (:ok? observed)
+      observed
+      (let [pulled (steward/evaluate-frontier (:state observed))]
+        (cond-> observed
+          (:ok? pulled)
+          (-> (assoc :state (:state pulled))
+              (assoc :triggered? (:triggered? pulled))
+              (assoc :frontier (:frontier pulled))
+              (assoc :reasons (:reasons pulled)))
+
+          (not (:ok? pulled))
+          (assoc :frontier-error (:error pulled)))))))
+
+(defn- steward-effect
+  [state payload kind]
+  (let [now (or (:now payload) (System/currentTimeMillis))]
+    (case kind
+      :steward/intent
+      (steward-observe state
+                       (assoc (select-keys payload [:intent :capacity])
+                              :now now))
+      :steward/evidence
+      (steward-observe state
+                       (assoc (select-keys payload [:git-commits :capacity])
+                              :now now))
+      :steward/decide
+      (steward/decide state
+                      (select-keys payload [:request-id :candidates :policy]))
+      :steward/transition
+      (let [to (:to payload)]
+        (steward/transition-mission state
+                                    (:mission-id payload)
+                                    (if (string? to) (keyword to) to)
+                                    (:reason payload))))))
+
+(defn- steward-receipt
+  [kind version result]
+  {:status :accepted
+   :kind kind
+   :version version
+   :result (cond-> (select-keys
+                    result
+                    [:new? :evidence :invalidated-assumption-ids
+                     :newly-invalidated-assumption-ids :triggered? :frontier
+                     :reasons :frontier-error :decision :replayed? :mission
+                     :link])
+             (:state result)
+             (assoc :steward (steward/snapshot (:state result))))})
+
+(defn- steward-failure
+  [result fallback-message]
+  (result-error (or (get-in result [:error :code])
+                    :STEWARD_COMMAND_FAILED)
+                (or (get-in result [:error :message]) fallback-message)
+                (get-in result [:error :details])))
+
+(defn- handle-steward!
+  [router request payload reply-fn]
+  (let [kind (:kind payload)]
+    (cond
+      (not (trusted-steward-request? request))
+      (reply reply-fn
+             (result-error :STEWARD_FORBIDDEN
+                           "steward commands are reserved for the Steward main-model tool surface"
+                           {:kind kind}))
+
+      (not (contains? steward-command-kinds kind))
+      (reply reply-fn
+             (result-error :COMMAND_KIND_UNKNOWN
+                           "unknown command kind"
+                           {:kind kind}))
+
+      :else
+      (let [store (steward-store-of router)]
+        (if-not store
+          (reply reply-fn
+                 (result-error :STEWARD_UNAVAILABLE
+                               "the repository Steward is not running"
+                               {:kind kind}))
+          (try
+            (if (= :steward/state kind)
+              (let [{:keys [version state]} (steward-store/load-state store)
+                    state (or state (steward/initial-state))]
+                (reply reply-fn
+                       {:ok? true
+                        :receipt {:status :accepted
+                                  :kind kind
+                                  :version version
+                                  :steward (steward/snapshot state)
+                                  :intent (:intent state)
+                                  :capacity (:capacity state)}}))
+              (loop [attempt 0]
+                (let [{:keys [version state]} (steward-store/load-state store)
+                      state (or state (steward/initial-state))
+                      result (steward-effect state payload kind)]
+                  (if-not (:ok? result)
+                    (reply reply-fn
+                           (steward-failure result
+                                            "the Steward refused the command"))
+                    (let [committed (steward-store/commit! store version
+                                                            (:state result))]
+                      (cond
+                        (:ok? committed)
+                        (do
+                          (notify-change! router)
+                          (reply reply-fn
+                                 {:ok? true
+                                  :receipt (steward-receipt
+                                            kind (:version committed) result)}))
+
+                        (and (= :VERSION_CONFLICT
+                                (get-in committed [:error :code]))
+                             (< attempt steward-commit-attempts))
+                        (recur (inc attempt))
+
+                        :else
+                        (reply
+                         reply-fn
+                         (result-error
+                          (or (get-in committed [:error :code])
+                              :STEWARD_COMMIT_FAILED)
+                          (or (get-in committed [:error :message])
+                              "the Steward state could not be committed")
+                          (get-in committed [:error :details])))))))))
+            (catch Throwable t
+              (reply reply-fn
+                     (result-error :STEWARD_COMMAND_FAILED
+                                   "the Steward command failed"
+                                   {:cause (str t)})))))))))
 
 (def ^:private resolved-config-key
   ::resolved-session-config)
@@ -1573,6 +2031,14 @@
       (handle-scheduler! router payload reply-fn)
       (= "fleet" (namespace kind))
       (handle-fleet! router request payload reply-fn)
+      (= "steward" (namespace kind))
+      (handle-steward! router request payload reply-fn)
+      (= "program" (namespace kind))
+      (handle-program! router request payload reply-fn)
+      ;; History search and status are owner-kind read-only commands; they
+      ;; never reach a session Owner.  Reindex is app-gated and trusted-only.
+      (contains? history-search-kinds kind)
+      (handle-history-search! router request payload reply-fn)
       (or (contains? conversation-kinds kind)
           (= "history" (namespace kind)))
       (handle-owner-command! router request payload reply-fn)
@@ -1656,7 +2122,7 @@
                    materials diagnostics backup scheduler-ref session-config
                    documents browser-services attachments-ref model-auth
                    app-gate gates gate-lock dedup-store-for dedup in-flight
-                   fleet-ref]
+                   fleet-ref steward-ref]
   gateway-ports/OwnerPort
   (submit-command! [this request reply-fn]
     (let [kind (get-in request [:payload :kind])]
@@ -1748,6 +2214,20 @@
     :dedup-store     durable store for the app command gate
     :dedup-store-for `(fn [session-id] store)` for one durable session gate
     :fleet-ref       atom holding the application fleet service
+    :steward-ref     atom holding the repository Steward store, or a map
+                     `{:store store}`; nil when the Steward is not assembled
+    :mission-ref     atom holding a MissionHost or a
+                     `(fn [request] -> result)` mission abandon handle; nil
+                     leaves holder abandons as fleet-only
+    :history-search-handlers
+                     handler map for :history/search and
+                     :history/search-status (browser and owner)
+    :history-search-trusted-handlers
+                     handler map for trusted callers; the only map whose
+                     :history/reindex handler may rebuild
+    :history-search  opts passed to
+                     `hc.server.app.search-commands/handlers`; the router
+                     builds both maps with the trust switch fixed
 
   `:session-config` is the `hc.server.sessions.config` value used to bind a
   new session.  Pass a zero-argument function that reads the live settings
@@ -1764,29 +2244,47 @@
   [{:keys [registry settings on-change extensions speech search materials
            diagnostics backup scheduler-ref session-config documents
            browser-services attachments-ref model-auth dedup-store
-           dedup-store-for fleet-ref]}]
+           dedup-store-for fleet-ref steward-ref history-search-handlers
+           history-search-trusted-handlers history-search mission-ref]}]
   (let [self (atom nil)
         app-store (or dedup-store (command-durable/memory-store))
         app-gate (ensure-app-epoch! (command-durable/gate app-store))
+        untrusted-handlers
+        (or history-search-handlers
+            (when (map? history-search)
+              (history-search/handlers
+               (assoc history-search :allow-reindex? false))))
+        trusted-handlers
+        (or history-search-trusted-handlers
+            (when (map? history-search)
+              (history-search/handlers
+               (assoc history-search :allow-reindex? true))))
         base (->Router (atom {:owners {}
                               :active-session-id nil
                               ;; Shared with the system publisher when it
                               ;; installs its own atoms; tests and embedded
                               ;; routers get working defaults here.
                               :published-windows (atom {})
-                              :history-window-size (atom 200)})
+                              :history-window-size (atom 200)
+                              :history-search-handlers
+                              (or untrusted-handlers {})
+                              :history-search-trusted-handlers
+                              (or trusted-handlers {})
+                              :mission-ref mission-ref})
                        registry settings on-change extensions speech search
                        materials diagnostics backup scheduler-ref session-config
                        documents browser-services attachments-ref model-auth
                        app-gate (atom {}) (Object.) dedup-store-for nil
-                       (atom 0) fleet-ref)
+                       (atom 0) fleet-ref steward-ref)
         dedup (command-dispatch/wrap
                {:gate-for (fn [scope] (gate-for @self scope))
                 :window-fn (fn [scope] (window-for @self scope))
                 :scope-fn (fn [request] (scope-for @self request))
                 :owner-kind? (fn [kind]
-                               (or (= :app/issue-epoch kind)
-                                   (command-dispatch/default-owner-kind? kind)))
+                               (and (not (contains? history-search-kinds kind))
+                                    (or (= :app/issue-epoch kind)
+                                        (command-dispatch/default-owner-kind?
+                                         kind))))
                 :resolve-replay (fn [request stored]
                                   (resolve-command-replay @self request stored))
                 :sensitive-request? sensitive-request?

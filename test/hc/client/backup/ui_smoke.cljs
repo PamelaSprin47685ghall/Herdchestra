@@ -36,7 +36,8 @@
               :size 1024 :integrity :verified}]
    :recovery-points [{:id "rp-1" :created-at "2026-11-03T00:00:02Z"
                       :reason :before-restore :scope [:conversations]}]
-   :storage {:engine "datalevin"}
+   :storage {:engine "datalevin" :path "/data"
+             :used-bytes 2048 :free-bytes 4096}
    :errors []})
 
 (defn- connected []
@@ -82,7 +83,8 @@
                      :expired-skipped []
                      :needs-reconfiguration [{:id "ws-1" :label "旧工作区"}]
                      :permissions {:schedules :paused
-                                   :tools :disabled-needs-review}
+                                   :tools :disabled-needs-review
+                                   :device-control :enabled}
                      :manifest {:format-version 1 :device "laptop"}
                      :recovery-point {:required? true :status :will-create}
                      :no-changes? false
@@ -148,12 +150,41 @@
            "preview permission defaults are missing")
     (check (includes? restore-html "计划任务")
            "permission entry is missing")
+    (check (not (includes? restore-html "设备控制"))
+           "device control must not appear in restore permissions")
     (check (includes? restore-html "需要重新配置的项")
            "needs-reconfiguration list is missing")
     (check (includes? restore-html "旧工作区")
            "needs-reconfiguration item is missing")
     (check (not (includes? restore-html "执行恢复</button>"))
            "an enabled live restore button is rendered"))
+
+  (let [html (render (-> (connected)
+                         (assoc-in [:ui :last-restore]
+                                   {:status :complete
+                                    :permissions {:schedules :paused
+                                                  :device-control :enabled}
+                                    :warnings []})
+                         (act {:type :backup/select-section :section :restore})))]
+    (check (includes? html "外部权限没有自动恢复")
+           "the restore result must state that external permissions stay unrestored")
+    (check (not (includes? html "设备控制"))
+           "device control must not appear in the restore result"))
+
+  (let [html (render (-> (connected)
+                         (act {:type :backup/refresh :origin :manual})
+                         (apply-result (status-result))
+                         (act {:type :backup/select-section :section :status})))]
+    (check (includes? html "当前目标与状态")
+           "the merged target and status heading is missing")
+    (check (not (includes? html "已配置目标"))
+           "the old configured-target heading must be gone")
+    (check (not (includes? html "存储状态"))
+           "the old storage heading must be gone")
+    (check (includes? html "目标列表") "the target list heading is missing")
+    (check (includes? html "未配置") "the unconfigured target state is missing")
+    (check (includes? html "2 KiB") "the storage used amount is missing")
+    (check (includes? html "4 KiB") "the storage free amount is missing"))
 
   (let [recovery-html (render (act (preview-state)
                                    {:type :backup/select-section

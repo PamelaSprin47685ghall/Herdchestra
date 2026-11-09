@@ -2115,8 +2115,12 @@
    ;; existed fall back to counting the live messages.
    :message-count (or (:visible-message-count session)
                       (count (visible-messages session)))
-   :has-draft? (boolean (some #(not (drafts/blank? %))
-                              (vals (:drafts session))))
+   ;; A compact summary carries the precomputed flag and no draft bodies.
+   ;; A full session carries `:drafts`, so both paths agree.
+   :has-draft? (boolean (if (contains? session :has-draft?)
+                          (:has-draft? session)
+                          (some #(not (drafts/blank? %))
+                                (vals (:drafts session)))))
    :origin-session-id (:origin-session-id session)
    :origin-message-id (:origin-message-id session)
    :assistant-id (:assistant-id session)

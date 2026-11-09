@@ -244,7 +244,7 @@
 
 (defn run
   "Seed one store.  Args: data-dir, ws-ext-path, blob-root, variant
-  (:source or :destination)."
+  (:backup or :destination)."
   [data-dir ws-ext-path blob-root variant]
   (let [variant (keyword variant)
         _ (register-workspace! data-dir ws-ext-path)
@@ -270,8 +270,6 @@
                                            :attachments [att1 att-missing]})
         m4 (message "m4" :assistant "已收到附件" {:now now
                                                   :attachments [att1]})
-        m5 (message "m5" :user "第二个会话" {:now now})
-        m6 (message "m6" :assistant "第二个回复" {:now now})
         m7 (message "m7" :user "备份新增会话" {:now now :attachments [att2]})
         m8 (message "m8" :assistant "备份新增回复" {:now now})
         m9 (message "m9" :user "已删除会话" {:now now})

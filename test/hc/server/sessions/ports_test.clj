@@ -33,6 +33,20 @@
     (is (= :found (:status (ports/read-config store))))
     (is (= :conflict (:status (ports/commit-config! store 0 config))))))
 
+(deftest summary-view-drops-message-bodies-and-counts-visible-messages
+  (let [session {:session-id "s-1"
+                 :revision 3
+                 :messages {"m-1" {:message-id "m-1"}
+                            "m-2" {:message-id "m-2" :deleted? true}
+                            "m-3" {:message-id "m-3" :folded? true}
+                            "m-4" {:message-id "m-4"}}
+                 :message-order ["m-1" "m-2" "m-3" "m-4"]}
+        summary (ports/session-summary-view session)]
+    (is (= 2 (:visible-message-count summary)))
+    (is (= 3 (:revision summary)))
+    (is (not (contains? summary :messages)))
+    (is (not (contains? summary :message-order)))))
+
 (deftest an-unknown-commit-is-never-reported-as-committed
   (let [store (reify ports/SessionPersistence
                 (read-session [_ _] {:status :missing})

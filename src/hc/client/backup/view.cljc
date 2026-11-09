@@ -342,7 +342,6 @@
 (def permission-labels
   {:schedules "计划任务"
    :auto-backup "自动备份"
-   :device-control "设备控制"
    :full-access "完全访问"
    :external-write "外部写入"
    :background-run "后台运行"
@@ -383,7 +382,8 @@
   the raw snapshot, not a restored default, so it stays out of the summary."
   [permissions]
   (->> (or permissions {})
-       (remove (fn [[key _]] (= :source key)))
+       (remove (fn [[key _]]
+                 (contains? #{:source :device-control} (keyword key))))
        (sort-by (comp name first))
        (mapv (fn [[key value]]
                [(get permission-labels key (name key))
@@ -400,6 +400,17 @@
                                "未提供"
                                (str value)))))
             pairs)))
+
+(defn- copy-feedback-view
+  "Clipboard progress rendered beside the copy button, not in the page banner."
+  [state]
+  (when-let [feedback (get-in state [:ui :copy-feedback])]
+    (el :span {:class (str "hc-backup-copy-feedback hc-backup-copy-feedback--"
+                           (name (or (:status feedback) :copying))
+                           " hc-backup-note")
+               :role "status"
+               :aria-live "polite"}
+        (:message feedback))))
 
 (defn- list-block
   [title items empty-text]
@@ -582,7 +593,7 @@
             "目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。")
         (el :div {:class "hc-backup-actions"}
             (button "刷新状态"
-                    (act :backup/refresh)
+                    (act :backup/refresh :origin :manual)
                     {:disabled (not (model/can-submit? state))})
             (button "新建目标"
                     (act :backup/new-target)
@@ -652,6 +663,14 @@
                                      (act :backup/set-target-field :field k))}))
       nil)))
 
+(defn- target-test-message
+  [test]
+  (case (:status test)
+    :pending "正在测试连接…"
+    :ok (or (:detail test) "连接测试通过。")
+    :failed (or (:detail test) "连接测试失败。")
+    "连接测试状态未知。"))
+
 (defn- target-config-panel
   "Editor panel for backup targets, driven by `model/target-config-view`."
   [state]
@@ -684,13 +703,12 @@
                         (when (contains? (:kinds field-spec) (:kind editor))
                           (target-editor-field field-spec editor busy?)))
                       (:fields config)))
+            ;; The default branch below is total.  The outer predicate only
+            ;; narrows which statuses this panel renders.
             (when (#{:ok :failed :pending} (:status test))
               (el :div {:class (str "hc-backup-target-test hc-backup-target-test--"
                                     (name (:status test)))}
-                  (case (:status test)
-                    :pending "正在测试连接…"
-                    :ok (or (:detail test) "连接测试通过。")
-                    :failed (or (:detail test) "连接测试失败。"))))
+                  (target-test-message test)))
             (el :div {:class "hc-backup-actions"}
                 (button "测试连接"
                         (act :backup/test-target)
@@ -806,6 +824,7 @@
                     (act :backup/copy-password)
                     {:class "hc-backup-button hc-backup-button--quiet"
                      :disabled (empty? (str (:password ui)))})
+            (copy-feedback-view state)
             (button "清除密码"
                     (act :backup/clear-password)
                     {:class "hc-backup-button hc-backup-button--quiet"
@@ -939,7 +958,7 @@
         (el :div {:class "hc-backup-section-heading"}
             (el :h3 {} "选择要恢复的备份")
             (button "刷新列表"
-                    (act :backup/refresh)
+                    (act :backup/refresh :origin :manual)
                     {:class "hc-backup-button hc-backup-button--quiet"
                      :disabled (not (model/can-submit? state))}))
         (cond
@@ -994,6 +1013,7 @@
                     (act :backup/copy-password)
                     {:class "hc-backup-button hc-backup-button--quiet"
                      :disabled (empty? (str (:password ui)))})
+            (copy-feedback-view state)
             (button "清除密码"
                     (act :backup/clear-password)
                     {:class "hc-backup-button hc-backup-button--quiet"
@@ -1180,12 +1200,12 @@
               (let [errors (model/maintenance-validation state)
                     reason (or (model/submit-reason state)
                                (some-> errors first :message))]
-                (when reason
-                  (el :p {:class "hc-backup-warning" :role "status"} reason))
-                (button "停机并恢复"
-                        (act :backup/request-maintenance-restore)
-                        {:class "hc-backup-button hc-backup-button--danger"
-                         :disabled (boolean reason)})))
+                [(when reason
+                   (el :p {:class "hc-backup-warning" :role "status"} reason))
+                 (button "停机并恢复"
+                         (act :backup/request-maintenance-restore)
+                         {:class "hc-backup-button hc-backup-button--danger"
+                          :disabled (boolean reason)})]))
           (el :div {}
               (warning
                (str "工作台内恢复不可用："
@@ -1226,11 +1246,11 @@
               (when-let [message (:message maintenance)]
                 (el :p {:class "hc-backup-muted"} message))
               (when (:reconnect? maintenance)
-                (warning "连接已中断；维护可能仍在进行。请重新连接并核对结果，不要重复提交。" :error)
-                (el :div {:class "hc-backup-actions"}
-                    (button "重新连接并核对"
-                            (act :backup/reconnect)
-                            {:class "hc-backup-button hc-backup-button--primary"})))
+                [(warning "连接已中断；维护可能仍在进行。请重新连接并核对结果，不要重复提交。" :error)
+                 (el :div {:class "hc-backup-actions"}
+                     (button "重新连接并核对"
+                             (act :backup/reconnect)
+                             {:class "hc-backup-button hc-backup-button--primary"}))])
               (el :div {:class "hc-backup-actions"}
                   (button "核对维护状态"
                           (act :backup/refresh-maintenance)
@@ -1276,10 +1296,10 @@
                       (:summary preview))))
         (conflict-panel state)
         (when (:memory-reactivation-required? preview)
-          (warning "替换会重新启用已归档或删除的记忆；需要显式确认，恢复后仍可再次停用。" :error)
-          (checkbox "我确认要重新启用这些记忆"
-                    (get-in state [:ui :confirm-memory-reactivation?])
-                    (act :backup/toggle-memory-reactivation)))
+          [(warning "替换会重新启用已归档或删除的记忆；需要显式确认，恢复后仍可再次停用。" :error)
+           (checkbox "我确认要重新启用这些记忆"
+                     (get-in state [:ui :confirm-memory-reactivation?])
+                     (act :backup/toggle-memory-reactivation))])
         (preview-lists preview)
         (when (seq (:permissions preview))
           (el :div {:class "hc-backup-preview-permissions"}
@@ -1355,7 +1375,7 @@
               (el :h4 {} "恢复后的权限状态")
               (facts (permission-facts (:permissions result)))
               (el :p {:class "hc-backup-note"}
-                  "恢复后的计划任务保持暂停，外部权限与设备控制没有自动恢复。"))))))
+                  "恢复后的计划任务保持暂停，外部权限没有自动恢复。"))))))
 
 (defn- restore-section
   [state]
@@ -1476,15 +1496,16 @@
   [state]
   (let [target (model/target-view state)
         status (get-in state [:server :status])
-        create-result (model/create-result-view state)]
+        create-result (model/create-result-view state)
+        storage (:storage target)]
     (el :div {:class "hc-backup-section"}
         (el :div {:class "hc-backup-actions"}
             (button "刷新状态"
-                    (act :backup/refresh)
+                    (act :backup/refresh :origin :manual)
                     {:class "hc-backup-button hc-backup-button--primary"
                      :disabled (not (model/can-submit? state))}))
         (el :section {:class "hc-backup-panel"}
-            (el :h3 {} "当前目标")
+            (el :h3 {} "当前目标与状态")
             (if status
               (facts [["数据目录" (:data-dir target)]
                       ["备份目录" (:local-root target)]
@@ -1494,48 +1515,50 @@
                                           "尚无成功备份")]
                       ["已列出的备份" (count (model/backup-rows state))]
                       ["本地恢复点" (count (model/recovery-point-rows state))]])
-              (el :p {:class "hc-backup-muted"} "尚未读取备份状态。")))
-        (el :section {:class "hc-backup-panel"}
-            (el :h3 {} "已配置目标")
+              (el :p {:class "hc-backup-muted"} "尚未读取备份状态。"))
+            (el :h4 {} "目标列表")
             (el :p {:class "hc-backup-muted"}
                 "本地文件、WebDAV 与 S3 是三种目标能力；当前服务器只暴露其已配置的目标。")
-            (el :ul {:class "hc-backup-target-list"}
-                (mapv (fn [item]
-                        (el :li {:key (str (:id item))}
-                            (el :strong {} (str (:kind-label item) " · " (id-label (:id item))))
-                            " "
-                            (badge (cond
-                                     (not (:configured? item)) "未配置"
-                                     (:available? item) "可用"
-                                     :else "不可用")
-                                   (if (:available? item) :positive :warning))
-                            (when (:reason item)
-                              (el :p {:class "hc-backup-muted"} (:reason item)))
-                            (when (:root item)
-                              (el :p {:class "hc-backup-muted"}
-                                  (str "目录：" (:root item))))
-                            (when (:base-url item)
-                              (el :p {:class "hc-backup-muted"}
-                                  (str "地址：" (:base-url item))))
-                            (when (:endpoint item)
-                              (el :p {:class "hc-backup-muted"}
-                                  (str "端点：" (:endpoint item)
-                                       " · 桶：" (:bucket item))))))
-                      (:targets target))))
+            (if (seq (:targets target))
+              (el :ul {:class "hc-backup-target-list"}
+                  (mapv (fn [item]
+                          (el :li {:key (str (:id item))}
+                              (el :strong {} (str (:kind-label item) " · " (id-label (:id item))))
+                              " "
+                              (badge (cond
+                                       (not (:configured? item)) "未配置"
+                                       (:available? item) "可用"
+                                       :else "不可用")
+                                     (if (:available? item) :positive :warning))
+                              (when (:reason item)
+                                (el :p {:class "hc-backup-muted"} (:reason item)))
+                              (when (:root item)
+                                (el :p {:class "hc-backup-muted"}
+                                    (str "目录：" (:root item))))
+                              (when (:base-url item)
+                                (el :p {:class "hc-backup-muted"}
+                                    (str "地址：" (:base-url item))))
+                              (when (:endpoint item)
+                                (el :p {:class "hc-backup-muted"}
+                                    (str "端点：" (:endpoint item)
+                                         " · 桶：" (:bucket item))))))
+                        (:targets target)))
+              (el :p {:class "hc-backup-muted"}
+                  "尚未读取到已配置的备份目标；刷新状态后再操作。"))
+            (when storage
+              (el :div {:class "hc-backup-storage"}
+                  (el :h4 {} "存储")
+                  (facts [["路径" (:path storage)]
+                          ["已用" (if (number? (:used-bytes storage))
+                                    (format-bytes (:used-bytes storage))
+                                    "未提供")]
+                          ["可用" (if (number? (:free-bytes storage))
+                                    (format-bytes (:free-bytes storage))
+                                    "未提供")]]))))
         (when (seq (:errors target))
           (el :section {:class "hc-backup-panel"}
               (el :h3 {} "目标读取错误")
               (list-block "错误" (mapv pr-str (:errors target)) "无")))
-        (when-let [storage (:storage target)]
-          (el :section {:class "hc-backup-panel"}
-              (el :h3 {} "存储状态")
-              (facts [["路径" (:path storage)]
-                      ["已用" (if (number? (:used-bytes storage))
-                                (format-bytes (:used-bytes storage))
-                                "未提供")]
-                      ["可用" (if (number? (:free-bytes storage))
-                                (format-bytes (:free-bytes storage))
-                                "未提供")]])))
         (when create-result
           (el :section {:class "hc-backup-panel"}
               (el :h3 {} "最近备份")

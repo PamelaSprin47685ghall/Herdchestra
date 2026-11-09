@@ -58,13 +58,18 @@
      :updated-at (:updated-at message)}))
 
 (defn- compression-summary
-  [compression]
+  "One compression as a client display copy.
+
+  `:stale?` marks a summary whose reviewed source versions changed.  The
+  record stays visible so the panel can explain why it is no longer sent."
+  [session compression]
   {:compression-id (:compression-id compression)
    :state (:state compression)
    :message-ids (vec (:message-ids compression))
    :range (:range compression)
    :summary (:summary compression)
    :source-version-ids (:source-version-ids compression)
+   :stale? (context/compression-stale? session compression)
    :created-at (:created-at compression)
    :applied-at (:applied-at compression)
    :reverted-at (:reverted-at compression)})
@@ -100,6 +105,25 @@
     (when (and (map? context) (seq context))
       (select-keys context frozen-section-keys))))
 
+(defn- visible-message-count
+  "Count the messages `message/visible-messages` would project, without
+  building a display copy for each one."
+  [session]
+  (->> (:message-order session)
+       (keep #(get-in session [:messages %]))
+       (remove #(or (:deleted? %) (:folded? %)))
+       (remove #(or (:nudge? %) (:nudge-id? %)))
+       count))
+
+(defn- deleted-message-count
+  "Count the messages `message/deleted-messages` would project, without
+  building a display copy for each one."
+  [session]
+  (->> (:message-order session)
+       (keep #(get-in session [:messages %]))
+       (filter :deleted?)
+       count))
+
 (defn context-view
   "Context metadata for the workbench context panel.
 
@@ -107,27 +131,50 @@
   a run it is a compact preview; the actual message bodies remain in
   `:message/by-id`, so the projection carries IDs, summary IDs, exclusions,
   and warnings rather than a second copy of every body.  `:source` says which
-  copy the panel is showing."
+  copy the panel is showing.
+
+  OPTS may carry `:context? false` for a session that is not the active one.
+  That skips `outbound-context` and the materialized `message-view` reading
+  projection, which are only needed for the visible panel; boundary,
+  compression records (including `:stale?`) and the reading counts remain.
+  Without `:context?` the projection is the full active-session view."
   ([session] (context-view session {}))
   ([session opts]
-  (let [out (context/outbound-context session opts)
-        frozen (frozen-outbound session)
-        outbound (cond-> (select-keys out outbound-keys)
-                   frozen (merge frozen)
-                   true (assoc :source (if frozen :last-run :preview)))]
+  (let [full? (not (false? (:context? opts)))
+        out (when full? (context/outbound-context session
+                                                  (dissoc opts :context?)))
+        frozen (when full? (frozen-outbound session))
+        outbound (when full?
+                   (cond-> (select-keys out outbound-keys)
+                     frozen (merge frozen)
+                     true (assoc :source (if frozen :last-run :preview))))]
     {:boundary (context/boundary session)
      :recent-rounds (context/recent-rounds session)
      :pinned-attachment-ids (context/pinned-attachment-ids session)
-     :pinned-attachments (:pinned-attachments out)
-     :missing-pinned-attachments (:missing-pinned-attachments out)
-     :compressions (mapv compression-summary
+     :pinned-attachments (when full? (:pinned-attachments out))
+     :missing-pinned-attachments (when full? (:missing-pinned-attachments out))
+     :compressions (mapv #(compression-summary session %)
                          (vals (context/compressions session)))
      :outbound outbound
-     :reading {:message-count (count (message/visible-messages session))
-               :deleted-count (count (message/deleted-messages session))}})))
+     :reading (if full?
+                ;; `outbound-context` already walked the visible records to
+                ;; build the send range; reuse its count instead of running
+                ;; `visible-messages` and `deleted-messages` as two more full
+                ;; projections.  The deleted count still needs its own walk
+                ;; because deleted records never reach the outbound range.
+                {:message-count (get-in out [:history :visible-count])
+                 :deleted-count (deleted-message-count session)}
+                {:message-count (visible-message-count session)
+                 :deleted-count (deleted-message-count session)})})))
 
 (defn session-history
-  "Return one session's client history projection."
+  "Return one session's client history projection.
+
+  `:messages-window {:ids #{...}}` narrows the emitted entities to the
+  requested visible ids.  Entities are constructed only for that window;
+  `:message-ids` still lists every visible id so the client count stays
+  exact.  OPTS may carry `:context? false` for a session that is not active;
+  see `context-view`."
   ([session] (session-history session {}))
   ([session opts]
   (let [ordered (vec (or (:message-order session) []))
@@ -143,18 +190,22 @@
                      (keep #(get-in session [:messages %]))
                      (remove #(or (:deleted? %) (:folded? %)))
                      (remove #(or (:nudge? %) (:nudge-id %)))
-                     (mapv #(message-entity session %)))
-        ids (mapv :id visible)
+                     vec)
+        ids (mapv :message-id visible)
         ;; `:messages-window` limits the emitted `:messages` entities to a
         ;; caller-chosen subset of VISIBLE.  `:message-ids` always carries the
         ;; full visible list so the client summary's message count stays
-        ;; exact; only the entity bodies are windowed.  OPTS:
+        ;; exact; only the entity bodies are windowed.  Filtering happens on
+        ;; the visible list, before `message-entity` normalizes a version chain,
+        ;; so a 2000-message session builds entities only for the window.
+        ;; OPTS:
         ;;   :ids     set of message ids to include (nil = all)
         window-ids (:ids (:messages-window opts))
         window-set (when (set? window-ids) window-ids)
-        windowed-visible (if window-set
-                           (filterv #(contains? window-set (:id %)) visible)
-                           visible)]
+        windowed (if window-set
+                   (filterv #(contains? window-set (:message-id %)) visible)
+                   visible)
+        windowed-visible (mapv #(message-entity session %) windowed)]
     {:session-id (:session-id session)
      :message-ids ids
      :ordered-ids ids
@@ -173,7 +224,13 @@
   OPTS may carry `:outbound-opts-fn`, a function from one session to the
   outbound section options.  The application supplies it so the panel sees
   the live assistant, memory, worldbook, cards and tools instead of the
-  default empty projection."
+  default empty projection.
+
+  OPTS passes through to every `session-history` call.  Without `:context?`
+  every session keeps the full active-session context projection, which is
+  the backward-compatible default.  A caller that publishes many sessions
+  passes `:context? false` for the ones whose panel is not visible; the
+  per-session decision stays with the caller."
   ([sessions active-session] (baseline sessions active-session {}))
   ([sessions active-session opts]
   (let [opts-fn (:outbound-opts-fn opts)

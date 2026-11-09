@@ -269,6 +269,12 @@
             "mission is completed"
             {:lane lane :tenure-id tenure-id})
 
+      (tenure/abandoned? tenure)
+      (fail state :TENURE_ABANDONED
+            "tenure was abandoned"
+            {:lane lane :tenure-id tenure-id
+             :reason (:abandoned-reason tenure)})
+
       (not (active-tenure? tenure))
       (fail state :TENURE_RETIRED
             "tenure is not active"
@@ -599,6 +605,15 @@
   host retries with `maybe-relay` after the board settles."
   [state lane tenure reason board reviewed?]
   (cond
+    ;; Abandoned and completed tenures are terminal records.  A stale
+    ;; barrier retry must never retire one or open a successor for it.
+    (not (tenure/active? tenure))
+    (fail state :TENURE_NOT_ACTIVE
+          "only an active tenure can relay"
+          {:lane lane
+           :tenure-id (:tenure-id tenure)
+           :status (:status tenure)})
+
     (not (ledger/ledger-empty? (:ledger tenure)))
     (fail state :RELAY_NOT_READY
           "ledger is not empty"
@@ -1112,6 +1127,83 @@
             (relay! state lane tenure :board-settled board false)))))))
 
 ;; ---------------------------------------------------------------------------
+;; Abandoning one execution tenure
+
+(defn abandon-execution-tenure
+  "Mark one execution tenure `:abandoned` after REASON.
+
+  The tenure remains in the execution lane as terminal evidence, so the
+  host can still find its board and bindings.  Its ledger and root-task
+  mirror are cleared; the mission host removes the board tasks in the same
+  transition.  A repeated abandon is an idempotent success.  A Plan tenure
+  is never abandonable (`:ABANDON_PLAN_TENURE_FORBIDDEN`), and no other
+  lane may be passed here.
+
+  AT is optional; a map REASON may carry `:at` instead."
+  ([state tenure-id reason]
+   (abandon-execution-tenure state tenure-id reason nil))
+  ([state tenure-id reason at]
+   (let [tenure (tenure-by-id state tenure-id)]
+     (cond
+       (nil? tenure)
+       (if (contains? (:retired-tenure-ids state) tenure-id)
+         (fail state :TENURE_RETIRED
+               "tenure has retired"
+               {:lane :execution :tenure-id tenure-id})
+         (fail state :UNKNOWN_TENURE
+               "tenure-id does not identify a live tenure"
+               {:lane :execution :tenure-id tenure-id}))
+
+       (= :plan (:lane tenure))
+       (fail state :ABANDON_PLAN_TENURE_FORBIDDEN
+             "the Plan tenure cannot be abandoned"
+             {:lane :plan :tenure-id tenure-id})
+
+       (not= :execution (:lane tenure))
+       (fail state :TENURE_LANE_MISMATCH
+             "only an execution tenure can be abandoned"
+             {:lane :execution :tenure-lane (:lane tenure)})
+
+       (nil? reason)
+       (fail state :ABANDON_REASON_REQUIRED
+             "abandon requires a reason"
+             {:lane :execution :tenure-id tenure-id})
+
+       (tenure/abandoned? tenure)
+       (success state
+                (assoc (receipt-base :execution tenure)
+                       :outcome :already-abandoned
+                       :reason (:abandoned-reason tenure)
+                       :retired-at (:retired-at tenure))
+                [])
+
+       (tenure/completed? tenure)
+       (fail state :TENURE_ALREADY_COMPLETED
+             "a completed tenure cannot be abandoned"
+             {:lane :execution :tenure-id tenure-id})
+
+       (not (active-tenure? tenure))
+       (fail state :TENURE_RETIRED
+             "tenure is not active"
+             {:lane :execution :tenure-id tenure-id
+              :status (:status tenure)})
+
+       :else
+       (let [tenure' (tenure/abandon-tenure tenure reason at)
+             state' (assoc-tenure state :execution tenure')
+             receipt (assoc (receipt-base :execution tenure')
+                            :outcome :abandoned
+                            :reason reason
+                            :abandoned-reason reason
+                            :retired-at (:retired-at tenure'))]
+         (success state' receipt
+                  [{:type :relay/tenure-abandoned
+                    :lane :execution
+                    :tenure-id tenure-id
+                    :reason reason
+                    :at (:retired-at tenure')}]))))))
+
+;; ---------------------------------------------------------------------------
 ;; Current-state compaction
 
 (defn prune-barriers
@@ -1248,10 +1340,36 @@
                          "a pending relay tenure must have an empty ledger"
                          {:ledger (:ledger execution)})])
 
-           (when-not (contains? #{:active :completed} (:status execution))
+           (when-not (contains? tenure/statuses (:status execution))
              [(violation :INVALID_EXECUTION_STATUS
-                         "live execution tenure must be active or completed"
+                         "live execution tenure must be active, completed, or abandoned"
                          {:status (:status execution)})])
+
+           (when (and (tenure/abandoned? execution)
+                      (nil? (:abandoned-reason execution)))
+             [(violation :ABANDONED_WITHOUT_REASON
+                         "an abandoned tenure must record its reason"
+                         {:tenure-id (:tenure-id execution)})])
+
+           (when (and (tenure/abandoned? execution)
+                      (not= :none (:swarm-phase execution)))
+             [(violation :ABANDONED_WITH_SWARM_PHASE
+                         "an abandoned tenure has no live swarm phase"
+                         {:tenure-id (:tenure-id execution)
+                          :swarm-phase (:swarm-phase execution)})])
+
+           (when (and (tenure/abandoned? execution)
+                      (not (ledger/ledger-empty? (:ledger execution))))
+             [(violation :ABANDONED_WITH_LEDGER
+                         "an abandoned tenure has no open ledger"
+                         {:tenure-id (:tenure-id execution)
+                          :ledger (:ledger execution)})])
+
+           (when (and (tenure/abandoned? execution)
+                      (:relay-pending? execution))
+             [(violation :ABANDONED_WITH_PENDING_RELAY
+                         "an abandoned tenure cannot have a pending relay"
+                         {:tenure-id (:tenure-id execution)})])
 
            (let [ids (map :task-id (:root-tasks execution))]
              (when-not (= (count ids) (count (distinct ids)))

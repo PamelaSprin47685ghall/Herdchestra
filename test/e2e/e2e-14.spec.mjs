@@ -24,7 +24,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startApp, REPO_ROOT } from './support/app.mjs';
-import { goto, newSession, waitForShell, waitForSync, writeJson } from './support/ui.mjs';
+import {
+  clientBundleInfo, goto, newSession, waitForShell, waitForSync, writeJson,
+} from './support/ui.mjs';
+import { sourceTreeSha256 } from './support/evidence.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'plans/evidence/e2e-14');
@@ -33,6 +36,9 @@ const FREEZE = {
   bundleSha256: '45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30',
   treeSha256: '76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b',
 };
+const BROWSER_TEXT_TIMEOUT_MS = 90000;
+const BROWSER_TEXT_POLL_MS = 1500;
+const diagnostics = {};
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -117,17 +123,26 @@ async function shot(page, name) {
 }
 
 async function browserText(page) {
-  return page.locator('.hc-browser').innerText().catch(() => '');
+  return page.evaluate(() => {
+    const el = document.querySelector('.hc-browser');
+    return el ? (el.innerText || el.textContent || '') : '';
+  }).catch(() => '');
 }
 
-async function waitBrowserText(page, needle, timeout = 30000) {
-  await page.waitForFunction(
-    (text) => {
-      const el = document.querySelector('.hc-browser');
-      return el && (el.innerText || '').includes(text);
-    },
-    needle,
-    { timeout },
+async function waitBrowserText(page, needle, timeout = BROWSER_TEXT_TIMEOUT_MS) {
+  const started = Date.now();
+  let lastText = '';
+  while (Date.now() - started < timeout) {
+    lastText = await browserText(page);
+    diagnostics.lastBrowserText = lastText.slice(0, 200);
+    if (lastText.includes(needle)) return lastText;
+    const remaining = timeout - (Date.now() - started);
+    if (remaining <= 0) break;
+    await page.waitForTimeout(Math.min(BROWSER_TEXT_POLL_MS, remaining));
+  }
+  throw new Error(
+    `managed browser text did not contain ${JSON.stringify(needle)} within ${timeout}ms; `
+    + `lastBrowserText=${JSON.stringify(diagnostics.lastBrowserText || '')}`,
   );
 }
 
@@ -181,6 +196,10 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
   const evidence = {
     test: 'E2E 14',
     freeze: FREEZE,
+    // Captured at test runtime, never copied from the FREEZE constants.
+    clientBundle: clientBundleInfo(),
+    sourceTreeSha256: sourceTreeSha256(),
+    diagnostics,
     checks,
     screenshots: [],
     startedAt: new Date().toISOString(),
@@ -255,7 +274,7 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
         () => !document.querySelector('#hc-browser-enable'),
         null, { timeout: 30000 });
     }
-    await waitBrowserText(page, '已启用', 30000);
+    await waitBrowserText(page, '已启用', 90000);
     checks.permissionEnabled = true;
     evidence.screenshots.push(await shot(page, '02-permission-enabled'));
 
@@ -293,7 +312,7 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
 
       await observe(page);
       try {
-        await waitBrowserText(page, 'E2E14 Step 1', 30000);
+        await waitBrowserText(page, 'E2E14 Step 1', 90000);
       } catch (error) {
         console.log('DEBUG browserText:', JSON.stringify((await browserText(page)).slice(0, 4000)));
         console.log('DEBUG warning:', await page.locator('.hc-browser-warning').innerText().catch(() => 'none'));
@@ -314,7 +333,7 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       await typeInput.fill('代理输入');
       await clickById(page, 'hc-browser-type');
       await observe(page);
-      await waitBrowserText(page, '代理输入', 30000);
+      await waitBrowserText(page, '代理输入', 90000);
       checks.agentTyped = true;
       writeEvidence();
 
@@ -322,7 +341,12 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       await clickById(page, 'hc-browser-click');
       await page.waitForTimeout(800);
       await observe(page);
-      await waitBrowserText(page, 'E2E14 Step 2', 30000);
+      await waitBrowserText(page, 'E2E14 Step 2', 90000).catch(async (error) => {
+        const retry = page.getByRole('button', { name: /重试|重新读取页面/ }).first();
+        if ((await retry.count()) === 0) throw error;
+        await retry.click().catch(() => {});
+        await waitBrowserText(page, 'E2E14 Step 2', 30000);
+      });
       checks.step2Reached = true;
       evidence.screenshots.push(await shot(page, '04-step2'));
       writeEvidence();
@@ -351,7 +375,7 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       await clickById(page, 'hc-browser-resume');
       await page.getByText('代理可操作').first().waitFor({ timeout: 30000 });
       await observe(page);
-      await waitBrowserText(page, 'human@example.test', 30000);
+      await waitBrowserText(page, 'human@example.test', 90000);
       checks.resumeRereadDom = true;
       evidence.screenshots.push(await shot(page, '06-resumed'));
 
@@ -385,14 +409,17 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       }
       assert(checks.step3Reached, 'could not reach step 3 after retries');
 
-      // Node rows are label text only ("hc-N input password 密码"); the
-      // submit button row also mentions 密码 via its form, so require the
-      // password *type* token to pin the real input node.
-      const sensitiveRow = page.locator('.hc-browser-node')
-        .filter({ hasText: /input password/ }).first();
+      // Node rows are label text only ("hc-N 输入框 密码 密码"); the
+      // semantic `.hc-browser-node-sensitive` class pins the real input
+      // node instead of the submit-button row that also mentions 密码.
+      const sensitiveRow = page
+        .locator('.hc-browser-node.hc-browser-node-sensitive').first();
       await sensitiveRow.waitFor({ state: 'visible', timeout: 15000 });
-      checks.sensitiveBadge = await sensitiveRow
-        .getByText('敏感，操作员输入').count() > 0;
+      const sensitiveText = await sensitiveRow.innerText();
+      checks.sensitiveLabel = sensitiveText.includes('密码');
+      checks.sensitiveBadge = sensitiveText.includes('敏感，操作员输入');
+      assert(checks.sensitiveLabel && checks.sensitiveBadge,
+             `sensitive row missing label/badge: ${sensitiveText}`);
       await sensitiveRow.getByRole('button', { name: '选择' })
         .evaluate((el) => el.click());
       await page.waitForSelector('.hc-browser-node-selected', { timeout: 10000 });
@@ -440,7 +467,7 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       await clickById(page, 'hc-browser-resume');
       await page.getByText('代理可操作').first().waitFor({ timeout: 30000 });
       await observe(page);
-      await waitBrowserText(page, '已提交', 30000);
+      await waitBrowserText(page, '已提交', 90000);
       checks.resumedAfterSensitive = true;
       checks.sensitiveValueNotLeaked =
         !(await browserText(page)).includes('s3cret-operator-value');

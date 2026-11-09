@@ -27,7 +27,7 @@ import { startApp, REPO_ROOT } from './support/app.mjs';
 import { startMockSearch } from './support/mock-search.mjs';
 import { startMockWebDAV } from './support/mock-services.mjs';
 import {
-  assert, assertEqual, assistantBodies, composer, goto, lastAssistantText,
+  assert, assertEqual, composer, goto, lastAssistantText,
   newSession, shot, turnLive, userTexts, waitForAssistant, waitForShell,
   waitForSync, writeJson, clientBundleInfo,
 } from './support/ui.mjs';
@@ -258,12 +258,12 @@ async function bodyText(page) {
 }
 
 async function waitText(page, text, timeout = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if ((await bodyText(page)).includes(text)) return true;
-    await page.waitForTimeout(400);
-  }
-  return false;
+  // A real DOM condition: the body text contains the needle.  The timeout
+  // is the bound; there is no separate settle guess.
+  return page.waitForFunction((needle) =>
+    (document.body.innerText || '').includes(needle), text, { timeout })
+    .then(() => true)
+    .catch(() => false);
 }
 
 async function sessionFilter(page, value) {
@@ -272,15 +272,17 @@ async function sessionFilter(page, value) {
   // list and can be present-but-hidden at this viewport.
   const input = page.locator('.wb-session-list #wb-session-search').first();
   await input.fill(value);
-  await page.waitForTimeout(400);
   // `fill` on a controlled React input must round-trip through onChange;
   // verify the DOM value actually landed before the caller reads lists.
-  const landed = await input.inputValue().catch(() => '');
-  if (landed !== value) {
+  const waitForLanded = () => page.waitForFunction((expected) => {
+    const el = document.querySelector('.wb-session-list #wb-session-search');
+    return Boolean(el && el.value === expected);
+  }, value, { timeout: 5000 }).catch(() => false);
+  if (!(await waitForLanded())) {
     await input.click().catch(() => {});
     await page.keyboard.press('ControlOrMeta+A').catch(() => {});
     await page.keyboard.type(value, { delay: 10 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await waitForLanded();
   }
 }
 
@@ -293,7 +295,27 @@ async function sessionFilterText(page) {
 
 async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true } = {}) {
   await waitForSync(page, 30000);
-  const before = await assistantBodies(page).count();
+  // A fresh session must be selected and its conversation log empty before
+  // sending.  A global assistant count also included the previously selected
+  // session's bubbles, so `count > before` missed a real reply after a
+  // session switch.
+  const emptyLog = await page.waitForFunction(() => {
+    const log = document.querySelector('[aria-label="会话消息"]');
+    if (!log) return false;
+    return log.querySelectorAll(
+      '.hc-message-in:not(.hc-message-process) .hc-message-body:has(*)').length === 0;
+  }, null, { timeout: 15000 }).then(() => true).catch(() => false);
+  if (!emptyLog) {
+    const dump = await page.evaluate(() => ({
+      log: document.querySelector('[aria-label="会话消息"]')?.innerText
+        ?.slice(0, 1500) || '',
+      bodyText: (document.body.innerText || '').slice(0, 3000),
+    }));
+    throw new Error(
+      `selected session is not a fresh empty session before send; `
+      + `dump=${JSON.stringify(dump)}`);
+  }
+  const before = 0;
   if (fill) {
     // The composer is uncontrolled; `fill` fires input events that the
     // reducer turns into :draft/edit.  Real keystrokes via keyboard.type
@@ -311,12 +333,24 @@ async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true }
         await page.keyboard.press('ControlOrMeta+A').catch(() => {});
         await page.keyboard.press('Backspace').catch(() => {});
         await page.keyboard.type(text, { delay: 8 }).catch(() => {});
-        await page.waitForTimeout(400);
+        // Wait for the controlled textarea to echo the typed value.
+        await page.waitForFunction((expected) => {
+          const el = document.querySelector('textarea[aria-label="消息输入"]');
+          return Boolean(el && el.value === expected);
+        }, text, { timeout: 5000 }).catch(() => {});
         continue;
       }
-      const sendBtn = page.locator('button[aria-label="发送消息"]').first();
-      if (!(await sendBtn.isDisabled().catch(() => true))) { committed = true; break; }
-      await page.waitForTimeout(400);
+      const sendEnabled = await page.evaluate(() => {
+        const button = [...document.querySelectorAll('button[aria-label="发送消息"]')][0];
+        return Boolean(button && !button.disabled);
+      });
+      if (sendEnabled) { committed = true; break; }
+      // The draft is correct but the send gate is closed; wait for the real
+      // enablement instead of a blind poll.
+      await page.waitForFunction(() => {
+        const button = [...document.querySelectorAll('button[aria-label="发送消息"]')][0];
+        return Boolean(button && !button.disabled);
+      }, null, { timeout: 2000 }).catch(() => {});
     }
     if (!committed) {
       const dump = await page.evaluate(() => ({
@@ -336,18 +370,13 @@ async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true }
   const sendButton = page.locator('button[aria-label="发送消息"]').first();
   await sendButton.waitFor({ state: 'visible', timeout: 15000 });
   // The send button stays disabled while the sync badge reports 中断 or the
-  // draft has not committed; retry the click briefly instead of failing.
-  const clickDeadline = Date.now() + 30000;
-  let clicked = false;
-  while (Date.now() < clickDeadline) {
-    if (!(await sendButton.isDisabled().catch(() => true))) {
-      await sendButton.click({ timeout: 5000 }).catch(() => {});
-      clicked = true;
-      break;
-    }
-    await page.waitForTimeout(500);
-  }
-  if (!clicked) {
+  // draft has not committed; wait for the observable enablement, then click.
+  try {
+    await page.waitForFunction(() => {
+      const button = [...document.querySelectorAll('button[aria-label="发送消息"]')][0];
+      return Boolean(button && !button.disabled);
+    }, null, { timeout: 30000 });
+  } catch {
     const dump = await page.evaluate(() => ({
       textareas: [...document.querySelectorAll('textarea')].map((t) => ({
         aria: t.getAttribute('aria-label'), value: t.value.slice(0, 80),
@@ -359,33 +388,70 @@ async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true }
       bodyText: (document.body.innerText || '').slice(0, 3000),
     }));
     console.log('SEND-DISABLED-DUMP', JSON.stringify(dump));
+    throw new Error('send button stayed disabled for 30s');
   }
-  assert(clicked, 'send button stayed disabled for 30s');
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if ((await assistantBodies(page).count()) > before) break;
-    await page.waitForTimeout(250);
+  await sendButton.click({ timeout: 5000 }).catch((error) => {
+    throw new Error(`send click failed: ${String(error)}`);
+  });
+  // Observable condition 1: the current conversation log contains an
+  // assistant body carrying this run's reply marker.  It is scoped to the
+  // selected session and requires the real text, not just a count change.
+  const appeared = await page.waitForFunction((markerText) => {
+    const log = document.querySelector('[aria-label="会话消息"]');
+    if (!log) return false;
+    return [...log.querySelectorAll(
+      '.hc-message-in:not(.hc-message-process) .hc-message-body:has(*)')]
+      .some((body) => (body.textContent || '').includes(markerText));
+  }, MARK_REPLY, { timeout }).then(() => true).catch(() => false);
+  if (!appeared) {
+    const dump = await page.evaluate(() => ({
+      textareas: [...document.querySelectorAll('textarea')].map((t) => ({
+        aria: t.getAttribute('aria-label'), value: t.value.slice(0, 80),
+        disabled: t.disabled, visible: t.offsetParent !== null,
+      })),
+      sendButtons: [...document.querySelectorAll('button[aria-label="发送消息"]')]
+        .map((b) => ({ disabled: b.disabled, title: b.title,
+                       text: (b.textContent || '').trim() })),
+      bodyText: (document.body.innerText || '').slice(0, 3000),
+    }));
+    const st = await mockState(mock).catch(() => null);
+    throw new Error(
+      `assistant reply did not appear within ${timeout}ms; `
+      + `chatRequests=${st ? st.chat.length : 'unknown'}; dump=${JSON.stringify(dump)}`);
   }
-  // Wait until the turn is genuinely settled: no live generation and the
-  // mock has been quiet for a few polls.
-  let quietSince = null;
-  let lastCount = -1;
-  let stable = 0;
+  // Observable condition 2: no live generation, no unattended marker, and
+  // the mock chat log stable for 5s.  The 500ms sleep is only the poll
+  // interval; the exit condition is the 5s quiet window.
   const settleDeadline = Date.now() + 120000;
+  let quietSince = null;
+  let lastCount = null;
   while (Date.now() < settleDeadline) {
     const live = await turnLive(page);
     const st = await mockState(mock).catch(() => null);
     const n = st ? st.chat.length : -1;
-    if (n !== lastCount) { lastCount = n; stable = 0; } else { stable += 1; }
     const unattended = await page.getByText('无人值守').count().catch(() => 0);
-    if (!live && unattended === 0 && stable >= 3) {
+    if (!live && unattended === 0 && n === lastCount) {
       if (quietSince === null) quietSince = Date.now();
-      if (Date.now() - quietSince >= 2000) return;
+      if (Date.now() - quietSince >= 5000) {
+        const after = await page.evaluate(() => {
+          const log = document.querySelector('[aria-label="会话消息"]');
+          return log
+            ? log.querySelectorAll(
+              '.hc-message-in:not(.hc-message-process) .hc-message-body:has(*)').length
+            : 0;
+        });
+        return { ok: true, before, after };
+      }
     } else {
       quietSince = null;
+      lastCount = n;
     }
     await page.waitForTimeout(500);
   }
+  const dump = await page.evaluate(() => ({
+    bodyText: (document.body.innerText || '').slice(0, 3000),
+  }));
+  throw new Error(`turn did not settle within 120s; dump=${JSON.stringify(dump)}`);
 }
 
 async function createTemporarySession(page) {
@@ -410,6 +476,20 @@ async function createTemporarySession(page) {
   }, null, { timeout: 60000 });
 }
 
+async function createNormalSession(page) {
+  await page.locator('button[aria-label="新建会话"]').first().click();
+  await composer(page).waitFor({ state: 'visible', timeout: 15000 });
+  await waitForSync(page, 30000);
+  // The create receipt selects the new normal row asynchronously.  Until the
+  // selected row is no longer the temporary session, the composer and the
+  // message log can still belong to the old session.
+  await page.waitForFunction(() => {
+    const current = document.querySelector(
+      '.wb-session-list .wb-list-button[aria-current="true"]');
+    return Boolean(current && !(current.textContent || '').includes('临时会话'));
+  }, null, { timeout: 30000 });
+}
+
 async function gotoSessions(page, appUrl) {
   await goto(page, appUrl, '/sessions');
   await waitForSync(page);
@@ -431,11 +511,14 @@ async function enableSuggest(page) {
   const enabled = async () => btn.isEnabled().catch(() => false);
   for (let i = 0; i < 4 && !(await enabled()); i += 1) {
     await label.click();
-    const start = Date.now();
-    while (Date.now() - start < 25000) {
-      if (await enabled()) return;
-      await page.waitForTimeout(500);
-    }
+    try {
+      await page.waitForFunction(() => {
+        const button = [...document.querySelectorAll('button')]
+          .find((b) => (b.textContent || '').trim() === '整理记忆');
+        return Boolean(button && !button.disabled);
+      }, null, { timeout: 25000 });
+      return;
+    } catch { /* retry the label click once the command settles */ }
   }
   assert(await enabled(), '整理记忆 button never enabled after enabling 自动建议新记忆');
 }
@@ -482,7 +565,8 @@ async function clickButton(page, name, timeout = 30000) {
   const button = page.getByRole('button', { name, exact: true }).first();
   await button.waitFor({ state: 'visible', timeout });
   await button.click();
-  await page.waitForTimeout(600);
+  // The caller owns the resulting-state wait; a generic settle here was a
+  // fixed guess that could not know which observable effect to expect.
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -585,17 +669,25 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     phase('enableRequiredSearch-temp1');
 
     // The send exercises required web search + the chat model.
-    await sendTurnE2E20(page, `${MARK_USER} ${marker}`, mock);
+    const sendTurn1 = await sendTurnE2E20(page, `${MARK_USER} ${marker}`, mock);
+    result.sendTurn1 = sendTurn1;
     phase('sendTurn-1');
     const tempText = await lastAssistantText(page);
     result.tempReply = tempText.slice(0, 300);
-    check('tempReplyReceived', tempText.includes(MARK_REPLY), tempText.slice(0, 200));
+    const tempReplyOk = check('tempReplyReceived',
+      tempText.includes(MARK_REPLY), tempText.slice(0, 200));
+    // Hard short-circuit: the STT upload and every later phase depend on a
+    // real reply in this temporary session.
+    assert(tempReplyOk,
+      `temporary session reply missing after a settled send: ${tempText.slice(0, 300)}`);
 
     // Required search actually hit the mock searxng endpoint.
     const searchState = await (await fetch(`${search.url}/__mock/state`)).json();
     result.searchState = { queries: searchState.queries };
-    check('webSearchUsed', (searchState.queries || []).length >= 1,
+    const webSearchOk = check('webSearchUsed',
+      (searchState.queries || []).length >= 1,
       JSON.stringify(searchState.queries));
+    assert(webSearchOk, 'required web search never reached the mock searxng endpoint');
 
     // STT: upload a real WAV through the documented binary route with the
     // temporary session id, exactly like the client recorder does.
@@ -618,14 +710,26 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
         accept: 'application/edn',
       };
       if (sessionId) headers['x-hc-session-id'] = sessionId;
-      const res = await fetch('/speech/recordings', {
-        method: 'POST', body: bytes, headers,
-      });
-      return { status: res.status, text: await res.text() };
+      // Bound the upload: a wedged server must fail this step, not hang the
+      // spec until the global test timeout.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      try {
+        const res = await fetch('/speech/recordings', {
+          method: 'POST', body: bytes, headers, signal: controller.signal,
+        });
+        return { status: res.status, text: await res.text() };
+      } catch (error) {
+        return { status: 0, text: `upload failed: ${String(error)}` };
+      } finally {
+        clearTimeout(timer);
+      }
     }, { wavB64: wav.toString('base64'), sessionId: tempSessionId });
     result.sttUpload = { status: sttRes.status, body: sttRes.text.slice(0, 1500) };
-    check('sttUploadAccepted', sttRes.status === 200 && sttRes.text.includes(MARK_STT),
+    const sttOk = check('sttUploadAccepted',
+      sttRes.status === 200 && sttRes.text.includes(MARK_STT),
       `status=${sttRes.status} body=${sttRes.text.slice(0, 200)}`);
+    assert(sttOk, `STT upload failed: status=${sttRes.status} body=${sttRes.text.slice(0, 300)}`);
     phase('sttUpload');
 
     // ---- Memory candidates ----------------------------------------------
@@ -637,9 +741,7 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     // discard as a candidate (never active/injected).
     await gotoSessions(page, app.url);
     await waitForSync(page);
-    await page.locator('button[aria-label="新建会话"]').first().click();
-    await composer(page).waitFor({ state: 'visible', timeout: 15000 });
-    await waitForSync(page, 30000);
+    await createNormalSession(page);
     await sendTurnE2E20(page, `${MARK_MEMORY} ${marker}`, mock);
     phase('sendTurn-normal-memory');
 
@@ -650,28 +752,41 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     const candBefore = await page.locator('.hc-memory-row.hc-memory-candidate').count();
     await clickButton(page, '整理记忆');
     phase('clickMemorySuggest');
-    let candAfter = candBefore;
-    const suggestDeadline = Date.now() + 300000;
-    while (Date.now() < suggestDeadline) {
-      candAfter = await page.locator('.hc-memory-row.hc-memory-candidate').count();
-      const text = await bodyText(page);
-      if (candAfter > candBefore || text.includes('整理失败')
-          || text.includes('MEMORY_SUGGEST')) break;
-      await page.waitForTimeout(3000);
-    }
+    // The suggestion result is observable: a new candidate row, the
+    // candidate marker in a row, or an explicit failure/MEMORY_SUGGEST
+    // notice.  Wait for that condition instead of a fixed 3s poll.
+    const suggestSettled = await page.waitForFunction(
+      ({ before, markerText }) => {
+        const rows = [...document.querySelectorAll('.hc-memory-row.hc-memory-candidate')];
+        const text = document.body.innerText || '';
+        return rows.length > before
+          || rows.some((row) => (row.textContent || '').includes(markerText))
+          || text.includes('整理失败')
+          || text.includes('MEMORY_SUGGEST');
+      },
+      { before: candBefore, markerText: MARK_MEMORY },
+      { timeout: 300000 },
+    ).then(() => true).catch(() => false);
+    const candAfter = await page.locator('.hc-memory-row.hc-memory-candidate').count();
+    if (!suggestSettled) result.suggestTimedOut = true;
     result.suggest = { before: candBefore, after: candAfter };
     const mockAfterSuggest = await mockState(mock);
     result.mockAfterSuggest = {
       chat: mockAfterSuggest.chat.length,
       memorySuggestCalls: mockAfterSuggest.memorySuggestCalls,
     };
-    check('memorySuggestRan', mockAfterSuggest.memorySuggestCalls >= 1,
+    const suggestRan = check('memorySuggestRan',
+      mockAfterSuggest.memorySuggestCalls >= 1,
       `suggest calls=${mockAfterSuggest.memorySuggestCalls}`);
+    assert(suggestRan, 'memory suggest pass never reached the mock model');
     const candText = await page.locator('.hc-memory-row.hc-memory-candidate')
       .filter({ hasText: MARK_MEMORY }).first().innerText().catch(() => '');
     result.memoryCandidateText = candText.slice(0, 400);
-    check('memoryCandidatePresent', candText.includes(MARK_MEMORY) || candAfter > candBefore,
+    const candidateOk = check('memoryCandidatePresent',
+      candText.includes(MARK_MEMORY) || candAfter > candBefore,
       `candidates ${candBefore}->${candAfter}`);
+    assert(candidateOk,
+      `memory candidate did not survive the suggest pass: ${candBefore}->${candAfter}`);
     result.screenshots.push(await shot(page, EVIDENCE, 'e2e20-02-memory-candidate'));
     phase('memorySuggestDone');
 
@@ -687,18 +802,17 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     const discardStart = Date.now();
     await discardBtn.click();
     // The temporary controls disappear once the discard is accepted.
-    const discardDeadline = Date.now() + 60000;
-    let discarded = false;
-    while (Date.now() < discardDeadline) {
-      if ((await page.locator('button[aria-label="结束临时会话"]').count()) === 0) {
-        discarded = true;
-        break;
-      }
-      await page.waitForTimeout(500);
-    }
+    const discarded = await page.waitForFunction(() =>
+      !document.querySelector('button[aria-label="结束临时会话"]'),
+    null, { timeout: 60000 }).then(() => true).catch(() => false);
     result.discardElapsedMs = Date.now() - discardStart;
-    check('discardCompleted', discarded && result.discardElapsedMs < 60000,
+    const discardOk = check('discardCompleted',
+      discarded && result.discardElapsedMs < 60000,
       `elapsed=${result.discardElapsedMs}ms`);
+    // Short-circuit: the residue phase is meaningless if the discard never
+    // completed.
+    assert(discardOk,
+      `temporary session discard did not complete in ${result.discardElapsedMs}ms`);
     result.screenshots.push(await shot(page, EVIDENCE, 'e2e20-03-after-discard'));
     phase('discardDone');
 
@@ -709,7 +823,12 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     // EVERY mock reply — including the surviving normal session — so it
     // cannot distinguish residue here; reply-marker coverage lives in
     // searchNoResidue / deletedAreaNoTemp / backupPreviewNoTempResidue.
-    await page.waitForTimeout(1500);
+    // Bounded negative condition: wait for the discarded marker to leave
+    // the rendered surface before reading it.  Residue that never leaves
+    // times out here and is then reported by the check below.
+    await page.waitForFunction((markerText) =>
+      !document.body.innerText.includes(markerText),
+    MARK_USER, { timeout: 5000 }).catch(() => {});
     const messageTexts = await page.locator(
       '.hc-message-out .hc-message-body, .hc-message-in .hc-message-body')
       .allInnerTexts().catch(() => []);
@@ -726,8 +845,11 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     // the surviving session's model label ("Mock E2E20") and never empty
     // the list; MARK_USER exists only inside discarded message bodies.
     await sessionFilter(page, '用户探针-合成敏感标记');
-    // The filter is client-side; give the list one beat to re-render.
-    await page.waitForTimeout(800);
+    // The filtered list is observable: wait for its empty state (bounded).
+    await page.waitForFunction(() =>
+      (document.querySelector('.wb-session-list')?.innerText || '')
+        .includes('没有匹配会话'),
+    null, { timeout: 10000 }).catch(() => {});
     const filterText = await sessionFilterText(page);
     result.sessionFilterE2E20 = filterText.slice(0, 400);
     check('searchNoResidue',
@@ -741,7 +863,9 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     // review items; a discarded session's suggestion is either absent or
     // still a candidate (never injected).  Record what is actually shown.
     await gotoMaterialsMemory(page, app.url);
-    await page.waitForTimeout(1500);
+    // A real load condition: the memory filter bar/rows are mounted.
+    await page.locator('.hc-mat-filters, .hc-memory-row').first()
+      .waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
     const memoryBody = await bodyText(page);
     result.memoryPageAfterDiscard = memoryBody.slice(0, 3000);
     const memRows = await page.locator('.hc-memory-row').allInnerTexts();
@@ -798,11 +922,14 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     await pwField.fill(BACKUP_PASSWORD);
     const previewBtn = page.getByRole('button', { name: '校验并生成预览' });
     // The button stays disabled while `submit-reason`/`preview-validation`
-    // reports a reason (sync pending, password check, selection).  Poll
-    // longer and capture the rendered reason on timeout.
-    const previewDeadline = Date.now() + 180000;
-    let previewReady = false;
-    while (Date.now() < previewDeadline) {
+    // reports a reason (sync pending, password check, selection).  Wait for
+    // the real enablement and capture the rendered reason only on failure.
+    const previewReady = await page.waitForFunction(() => {
+      const btn = [...document.querySelectorAll('.hc-backup button')]
+        .find((b) => (b.textContent || '').includes('校验并生成预览'));
+      return Boolean(btn && !btn.disabled);
+    }, null, { timeout: 180000 }).then(() => true).catch(() => false);
+    if (!previewReady) {
       const state = await page.evaluate(() => {
         const btn = [...document.querySelectorAll('.hc-backup button')]
           .find((b) => (b.textContent || '').includes('校验并生成预览'));
@@ -810,9 +937,7 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
         return { disabled: btn ? btn.disabled : null,
                  warn: warn ? warn.textContent : null };
       });
-      if (state.disabled === false) { previewReady = true; break; }
       result.backupPreviewBlocker = state.warn || state.disabled;
-      await page.waitForTimeout(1000);
     }
     assert(previewReady, `preview button never enabled; blocker=${JSON.stringify(result.backupPreviewBlocker)}`);
     await previewBtn.click();
@@ -842,7 +967,11 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
       await deletedDetails.locator('summary').first().click();
       const loadBtn = deletedDetails.getByRole('button', { name: /加载已删除会话|刷新已删除会话/ }).first();
       if (await loadBtn.count()) await loadBtn.click().catch(() => {});
-      await page.waitForTimeout(1500);
+      // Wait for the deleted area to leave its loading state.
+      await page.waitForFunction(() => {
+        const el = document.querySelector('details.wb-deleted-sessions');
+        return el && !/正在加载/.test(el.textContent || '');
+      }, null, { timeout: 15000 }).catch(() => {});
     }
     const deletedAreaText = await page.locator('details.wb-deleted-sessions').first()
       .innerText().catch(() => '');
@@ -883,8 +1012,10 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     await sendTurnE2E20(page, `${MARK_TRANSFER} ${marker}-t`, mock);
     phase('sendTurn-3');
     const transferReply = await lastAssistantText(page);
-    check('transferTurnReplied', transferReply.includes(MARK_REPLY),
-      transferReply.slice(0, 200));
+    const transferReplyOk = check('transferTurnReplied',
+      transferReply.includes(MARK_REPLY), transferReply.slice(0, 200));
+    assert(transferReplyOk,
+      `transfer session reply missing after a settled send: ${transferReply.slice(0, 300)}`);
     // Leave an unsent draft marker too, to prove draft survival.
     await composer(page).fill(`${MARK_TRANSFER} 草稿保留 ${marker}-draft`);
     const mockBeforeTransfer = await mockState(mock);
@@ -896,19 +1027,20 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     const transferStart = Date.now();
     await transferBtn.click();
     // The temporary controls disappear once the transfer is accepted.
-    const transferDeadline = Date.now() + 60000;
-    let transferred = false;
-    while (Date.now() < transferDeadline) {
-      if ((await page.locator('button[aria-label="转为普通会话"]').count()) === 0
-          && (await page.locator('button[aria-label="结束临时会话"]').count()) === 0) {
-        transferred = true;
-        break;
-      }
-      await page.waitForTimeout(500);
-    }
+    const transferred = await page.waitForFunction(() =>
+      !document.querySelector('button[aria-label="转为普通会话"]')
+      && !document.querySelector('button[aria-label="结束临时会话"]'),
+    null, { timeout: 60000 }).then(() => true).catch(() => false);
     result.transferElapsedMs = Date.now() - transferStart;
-    check('transferCompleted', transferred, `elapsed=${result.transferElapsedMs}ms`);
-    await page.waitForTimeout(1000);
+    const transferOk = check('transferCompleted',
+      transferred, `elapsed=${result.transferElapsedMs}ms`);
+    assert(transferOk,
+      `temporary session transfer did not complete in ${result.transferElapsedMs}ms`);
+    // The transferred content is observable; wait for the marker to be
+    // rendered instead of a fixed settle.
+    await page.waitForFunction((markerText) =>
+      (document.body.innerText || '').includes(markerText),
+    MARK_TRANSFER, { timeout: 5000 }).catch(() => {});
     const afterTransfer = await bodyText(page);
     check('transferKeepsContent',
       afterTransfer.includes(MARK_TRANSFER),
@@ -967,7 +1099,7 @@ test('@core E2E 20 temporary session discard and transfer', async ({ page, brows
     evidence('e2e20-result', result);
     assert(result.ok, `E2E 20 checks failed: ${JSON.stringify(
       Object.fromEntries(Object.entries(result.checks)
-        .filter(([, v]) => !v.pass).map(([k]) => [k, true])), null, 2)}`);
+        .filter(([, v]) => !v.pass).map(([k, v]) => [k, v.detail])), null, 2)}`);
   } catch (error) {
     result.ok = false;
     result.error = error.message;

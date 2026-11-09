@@ -9,7 +9,12 @@
   Restore is a whole-store operation.  A partial export is rejected, because
   deleting the partitions it omits would be data loss.  The caller must state
   that writers are quiescent; the adapter takes the commit lock, but it cannot
-  prove that an Owner elsewhere has stopped."
+  prove that an Owner elsewhere has stopped.
+
+  Rebuildable derived partitions (currently the `search` full-text index) are
+  not current state.  Validation and restore planning exclude them, so a
+  restore never resurrects an old index generation; the caller rebuilds the
+  layer from the restored session records."
 
   (:require [clojure.string :as str]
             [hc.server.storage.error :as err]
@@ -17,6 +22,21 @@
             [hc.server.storage.migration :as migration]))
 
 (def format-version 1)
+
+(def derived-partitions
+  "Partitions that are rebuildable derived layers, not current state.
+
+  Root AGENTS.md §7.1 item 1: full-text search is derived from the session
+  records and every hit is revalidated against the main store.  A whole-store
+  restore must never resurrect an older index generation, and a backup need
+  not carry it.  The caller rebuilds this layer after restore from the
+  restored session records."
+  #{"search"})
+
+(defn derived-partition?
+  "True when PARTITION is a rebuildable derived layer."
+  [partition]
+  (contains? derived-partitions partition))
 
 (def ^:private reserved-doc-kinds #{:obligation :blob-ref})
 
@@ -93,7 +113,9 @@
 (defn validate
   "Validate a complete export package and return a normalized copy.
 
-  Throws `:STORAGE_INVALID_EXPORT` on any shape error.  Nothing is written."
+  Throws `:STORAGE_INVALID_EXPORT` on any shape error.  Nothing is written.
+  Rebuildable derived partitions are omitted from the normalized copy; they
+  are reconstructed from current state after restore."
   [export]
   (when-not (map? export)
     (invalid "an export package must be a map" {:export export}))
@@ -117,36 +139,38 @@
     (invalid "export comes from another storage engine"
              {:found (:engine export) :expected :datalevin-kv}))
   (let [partitions (into (sorted-map)
-                         (map (fn [[p data]]
-                                (check-partition p)
-                                (when-not (map? data)
-                                  (invalid "export partition data must be a map"
-                                           {:partition p}))
-                                (let [version     (:version data)
-                                      _           (when-not (and (integer? version) (not (neg? version)))
-                                                    (invalid "export partition :version must be a non-negative integer"
-                                                             {:partition p :version version}))
-                                      docs        (mapv validate-doc (:docs data))
-                                      obligations (mapv validate-obligation (:obligations data))
-                                      blob-refs   (mapv validate-blob-ref (:blob-refs data))
-                                      dup-docs    (duplicate-keys docs (juxt :kind :session-id :id))
-                                      dup-obs     (duplicate-keys obligations :id)
-                                      dup-blobs   (duplicate-keys blob-refs :id)]
-                                  (when (seq dup-docs)
-                                    (invalid "duplicate export documents"
-                                             {:partition p :duplicates dup-docs}))
-                                  (when (seq dup-obs)
-                                    (invalid "duplicate export obligations"
-                                             {:partition p :duplicates dup-obs}))
-                                  (when (seq dup-blobs)
-                                    (invalid "duplicate export blob references"
-                                             {:partition p :duplicates dup-blobs}))
-                                  [p {:version version
-                                      :meta (or (:meta data) {})
-                                      :last-commit (:last-commit data)
-                                      :docs docs
-                                      :obligations obligations
-                                      :blob-refs blob-refs}])))
+                         (comp
+                          (remove (fn [[p _]] (derived-partition? p)))
+                          (map (fn [[p data]]
+                                 (check-partition p)
+                                 (when-not (map? data)
+                                   (invalid "export partition data must be a map"
+                                            {:partition p}))
+                                 (let [version     (:version data)
+                                       _           (when-not (and (integer? version) (not (neg? version)))
+                                                     (invalid "export partition :version must be a non-negative integer"
+                                                              {:partition p :version version}))
+                                       docs        (mapv validate-doc (:docs data))
+                                       obligations (mapv validate-obligation (:obligations data))
+                                       blob-refs   (mapv validate-blob-ref (:blob-refs data))
+                                       dup-docs    (duplicate-keys docs (juxt :kind :session-id :id))
+                                       dup-obs     (duplicate-keys obligations :id)
+                                       dup-blobs   (duplicate-keys blob-refs :id)]
+                                   (when (seq dup-docs)
+                                     (invalid "duplicate export documents"
+                                              {:partition p :duplicates dup-docs}))
+                                   (when (seq dup-obs)
+                                     (invalid "duplicate export obligations"
+                                              {:partition p :duplicates dup-obs}))
+                                   (when (seq dup-blobs)
+                                     (invalid "duplicate export blob references"
+                                              {:partition p :duplicates dup-blobs}))
+                                   [p {:version version
+                                       :meta (or (:meta data) {})
+                                       :last-commit (:last-commit data)
+                                       :docs docs
+                                       :obligations obligations
+                                       :blob-refs blob-refs}]))))
                          (:partitions export))]
     {:format-version format-version
      :complete? true
@@ -159,9 +183,18 @@
   "Build one atomic op vector that replaces all current state with `export`.
 
   `existing-keys` is every key currently under `d/`, `o/`, `b/`, `r/`, `i/`
-  and `m/p/`.  `ctx` supplies `:tx-version`, `:at`, `:migration-id`."
+  and `m/p/`.  `ctx` supplies `:tx-version`, `:at`, `:migration-id`.
+
+  Rebuildable derived partitions are never restored, even when a package
+  produced by `export-state` still contains them.  The caller rebuilds those
+  layers from the restored current state."
   [export existing-keys {:keys [tx-version at migration-id]}]
-  (let [{:keys [store-id partitions]} export
+  (let [{:keys [store-id partitions]}
+        (update export :partitions
+                (fn [partitions]
+                  (into (empty partitions)
+                        (remove (fn [[p _]] (derived-partition? p)))
+                        partitions)))
         _        (when-not (non-empty-string? migration-id)
                    (invalid "restore needs a migration-id" {:migration-id migration-id}))
         receipt  {:migration-id migration-id

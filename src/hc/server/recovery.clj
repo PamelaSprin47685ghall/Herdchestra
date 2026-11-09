@@ -229,7 +229,12 @@
         (let [code (storage/error-code e)
               p    (layout/path (storage/store-path store))]
           {:status :error
-           :error (storage/error-describe e)
+           :error (assoc (storage/error-describe e)
+                         :details
+                         {:cause code
+                          :cause-details
+                          (not-empty (dissoc (ex-data e)
+                                             :error :storage/expected?))})
            :path (str p)
            :hint (layout/recovery-hint code p)
            :recovery-entry {:action :operator

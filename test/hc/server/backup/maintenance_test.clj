@@ -64,13 +64,17 @@
 (deftest stop-failure-does-not-restore
   (let [calls (atom [])
         result (maintenance/run!
-                {:stop! #(throw (ex-info "stop failed" {:error :TEST_STOP}))
+                {:stop! #(throw (ex-info "stop failed"
+                                         {:error :TEST_STOP
+                                          :path "/workspace"}))
                  :restore! #(swap! calls conj :restore)
                  :start! #(swap! calls conj :start)})]
     (is (= :stop-failed (:status result)))
     (is (= [] @calls))
     (is (false? (:restore-attempted? result)))
-    (is (= :TEST_STOP (get-in result [:stop :error :cause-code])))))
+    (is (= :TEST_STOP (get-in result [:stop :error :cause-code])))
+    (is (= "/workspace"
+           (get-in result [:stop :error :cause-details :path])))))
 
 (deftest restore-failure-still-restarts
   (let [calls (atom [])

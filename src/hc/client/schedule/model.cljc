@@ -1070,6 +1070,17 @@
 
     {:state state :effects []}))
 
+(defn- scheduler-action-text
+  "Success text for a scheduler mutation.  The outer `apply-success` branch
+  narrows the known kinds; this default is the defensive fallback."
+  [kind]
+  (case kind
+    :scheduler/enable "任务已启用。"
+    :scheduler/pause "任务已暂停；正在运行的任务不会被取消，可在运行记录中单独停止。"
+    :scheduler/resume "任务已恢复；暂停期间错过的计划记为未运行，不会补跑。"
+    :scheduler/repair "任务已修复并重新启用。"
+    "服务器已接受调度命令，但返回了未识别的成功类型。"))
+
 (defn- apply-success
   [state command result]
   (let [kind (:kind command)
@@ -1130,11 +1141,7 @@
       (:scheduler/enable :scheduler/pause :scheduler/resume :scheduler/repair)
       (let [schedule (:schedule domain)
             state (if schedule (upsert-schedule state schedule) state)
-            text (case kind
-                   :scheduler/enable "任务已启用。"
-                   :scheduler/pause "任务已暂停；正在运行的任务不会被取消，可在运行记录中单独停止。"
-                   :scheduler/resume "任务已恢复；暂停期间错过的计划记为未运行，不会补跑。"
-                   :scheduler/repair "任务已修复并重新启用。")]
+            text (scheduler-action-text kind)]
         (if schedule
           {:state (notice state :ok text) :effects []}
           (let [{:keys [state effects]}

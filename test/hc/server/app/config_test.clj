@@ -1,6 +1,8 @@
 (ns hc.server.app.config-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [hc.compose.steward.loop :as steward-loop]
+            [hc.server.app.steward-runtime :as steward-runtime]
             [hc.server.app.config :as config])
   (:import (java.nio.file Files)
            (java.nio.file.attribute FileAttribute)))
@@ -35,6 +37,93 @@
                           (config/normalize {:fleet {:gc-interval-ms 0}})))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":fleet must be a map"
                           (config/normalize {:fleet "nope"})))))
+
+(deftest steward-defaults-and-overrides
+  (let [config (config/load-config {:args [] :env {}})]
+    (is (= 60000 (get-in config [:steward :interval-ms])))
+    (is (= 600000 (get-in config [:steward :plan-stall-ms]))))
+  (testing "a partial steward map keeps the other default"
+    (let [config (config/normalize {:steward {:interval-ms 5000}})]
+      (is (= 5000 (get-in config [:steward :interval-ms])))
+      (is (= 600000 (get-in config [:steward :plan-stall-ms])))))
+  (testing "invalid steward values are structured errors with the key"
+    (doseq [[value pattern]
+            [[{:interval-ms 500} #"steward interval-ms"]
+             [{:plan-stall-ms 0} #"steward plan-stall-ms"]
+             [{:plan-stall-ms "x"} #"steward plan-stall-ms"]]]
+      (let [error (try
+                    (config/normalize {:steward value})
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))
+            key (if (contains? value :interval-ms)
+                  [:steward :interval-ms]
+                  [:steward :plan-stall-ms])]
+        (is (some? error) (pr-str value))
+        (is (re-find pattern (.getMessage ^Exception error)) (pr-str value))
+        (is (= :config-invalid (:error/kind (ex-data error))) (pr-str value))
+        (is (= key (:key (ex-data error))) (pr-str value))
+        (is (= key (:field (ex-data error))) (pr-str value))
+        (is (= (get value (second key)) (:value (ex-data error)))
+            (pr-str value))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":steward must be a map"
+                          (config/normalize {:steward "nope"}))))
+  (testing "an unknown steward key is rejected explicitly"
+    (let [error (try
+                  (config/normalize {:steward {:unknown 1}})
+                  nil
+                  (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? error))
+      (is (= :config-invalid (:error/kind (ex-data error))))
+      (is (= :unknown-key (:code (ex-data error))))
+      (is (= [:steward :unknown] (:key (ex-data error))))
+      (is (= [:steward :unknown] (:field (ex-data error))))
+      (is (= 1 (:value (ex-data error)))))))
+
+(deftest steward-timer-defaults-do-not-drift
+  (testing "the plan-stall default has one compose-level source"
+    (is (= steward-loop/default-plan-stall-ms
+           (get-in config/defaults [:steward :plan-stall-ms]))))
+  (testing "the configured interval default is a sane positive timer"
+    (let [interval (get-in config/defaults [:steward :interval-ms])]
+      (is (and (integer? interval) (<= 1000 interval)))))
+  (testing "the runtime fallback equals the configured interval default"
+    (is (= steward-runtime/default-interval-ms
+           (get-in config/defaults [:steward :interval-ms])))
+    (is (and (integer? steward-runtime/default-interval-ms)
+             (<= 1000 steward-runtime/default-interval-ms)))))
+
+(deftest retention-defaults-are-normalized-and-validated
+  (let [config (config/load-config {:args [] :env {}})]
+    (is (= 30 (get-in config [:retention :session-days])))
+    (is (= 7 (get-in config [:retention :blob-days])))
+    (is (= (* 24 60 60 1000) (get-in config [:retention :interval-ms])))
+    (is (false? (get-in config [:retention :run-immediately?]))))
+  (testing "a partial retention map keeps the other defaults"
+    (let [config (config/normalize {:retention {:session-days 10}})]
+      (is (= 10 (get-in config [:retention :session-days])))
+      (is (= 7 (get-in config [:retention :blob-days])))
+      (is (= (* 24 60 60 1000)
+             (get-in config [:retention :interval-ms])))))
+  (testing "invalid retention values are structured configuration errors"
+    (doseq [[value pattern]
+            [[{:session-days 0} #"retention session-days"]
+             [{:session-days "30"} #"retention session-days"]
+             [{:blob-days -1} #"retention blob-days"]
+             [{:blob-days 1.5} #"retention blob-days"]
+             [{:interval-ms 999} #"retention interval-ms"]
+             [{:interval-ms 1000.5} #"retention interval-ms"]
+             [{:run-immediately? "yes"} #"retention run-immediately\?"]
+             [{:retention-days 30} #"unknown retention"]]]
+      (let [error (try
+                    (config/normalize {:retention value})
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? error) (pr-str value))
+        (is (re-find pattern (.getMessage ^Exception error)) (pr-str value))
+        (is (= :config-invalid (:error/kind (ex-data error))) (pr-str value))
+        (is (= :retention (first (:field (ex-data error)))) (pr-str value))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":retention must be a map"
+                          (config/normalize {:retention "nope"})))))
 
 (deftest gateway-defaults-are-normalized
   (let [config (config/load-config {:args [] :env {}})]

@@ -75,10 +75,11 @@
     #?(:cljs
        (when (and (some? value)
                   (not (number? value))
-                  (not (string? value))
-                  (some? (.-tag value))
-                  (some? (.-rep value)))
-         (.-rep value))
+                  (not (string? value)))
+         (let [^js tagged value]
+           (when (and (some? (.-tag tagged))
+                      (some? (.-rep tagged)))
+             (.-rep tagged))))
        :clj
        (try
          (when (some? (.tag value))

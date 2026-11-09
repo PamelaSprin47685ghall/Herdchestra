@@ -91,7 +91,15 @@
     (check (includes? html "未知")
            "unknown pricing is missing")
     (check (not (includes? html "免费"))
-           "unknown pricing was labelled free"))
+           "unknown pricing was labelled free")
+    (check (not (includes? html "<h1"))
+           "the settings tree must not own the page h1")
+    (check (includes? html "设置与数据中心</h2>")
+           "the settings header is an h2 below the workbench h1")
+    (check (includes? html "hc-tabs-collapsible")
+           "the section tabs are not collapsible")
+    (check (includes? html "设置分区：模型与角色")
+           "the collapsed summary does not name the current section"))
 
   (let [provider-state (-> state
                            (act {:type :settings/select-connection
@@ -204,6 +212,17 @@
     (check (includes? html "减少动态") "reduced-motion control missing")
     (check (includes? html "aria-pressed=\"true\"") "theme pressed state missing")
     (check (includes? html "type=\"button\"") "theme button type missing"))
+
+  (let [data-state (assoc-in state [:ui :section] :data)
+        html (react-dom-server/renderToStaticMarkup
+              (settings/settings-element data-state (fn [_]) true))]
+    (check (includes? html "hc-data-subnav") "data subnav missing")
+    (check (includes? html "href=\"#hc-data-diagnostics\"")
+           "diagnostics anchor missing")
+    (check (includes? html "href=\"#hc-data-backup\"")
+           "backup anchor missing")
+    (check (includes? html "统计与诊断") "diagnostics subnav label missing")
+    (check (includes? html "备份与恢复") "backup subnav label missing"))
 
   (let [auth-state (-> (settings/initial-state
                         {:sync {:phase :synced :command-epoch 7}

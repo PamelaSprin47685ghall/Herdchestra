@@ -621,6 +621,54 @@
             :sessions (sessions/list-sessions (:sessions loaded) opts)}
        :error loaded))))
 
+(defn get-committed-session-summary
+  "Read one committed session without its message bodies.
+
+  Retention and other lifecycle callers must use the committed record: a
+  live Owner can lag, while `:status` and `:deleted-at` decide whether the
+  record is reclaimable.  The persistence adapter point-reads its derived
+  `:session-summary` document when it has one; otherwise the summary view is
+  derived from the record."
+  [registry session-id]
+  (ports/read-session-summary (:persistence registry) session-id))
+
+(defn deleted-session-summaries
+  "Read every committed soft-deleted session as a compact summary.
+
+  This intentionally does not call `list-sessions`: that path deserializes
+  every session record, including message bodies that a retention scan never
+  needs.  It point-reads the session index and then one summary per id.
+
+  A read that is neither `:found` nor `:missing` fails the whole scan; a
+  shorter list would silently postpone or skip a deletion.  The order is the
+  index order."
+  [registry]
+  (let [ids-result (ports/list-session-ids (:persistence registry))]
+    (if (= :ok (:status ids-result))
+      (let [loaded (mapv (fn [session-id]
+                           (ports/read-session-summary
+                            (:persistence registry)
+                            session-id))
+                         (:ids ids-result))
+            failure (first (keep read-session-failure loaded))]
+        (if failure
+          failure
+          {:status :ok
+           :sessions (vec (keep (fn [result]
+                                  (when (= :found (:status result))
+                                    (let [session (:session result)]
+                                      (when (= :deleted (:status session))
+                                        session))))
+                                loaded))}))
+      (if (= :error (:status ids-result))
+        ids-result
+        {:status :error
+         :error (or (:error ids-result)
+                    {:code :SESSION_LIST_FAILED
+                     :message
+                     "session list read did not return ok or error"
+                     :details {:status (:status ids-result)}})}))))
+
 (defn update-session!
   "Submit one session-metadata command through the session Owner.
 
@@ -773,6 +821,58 @@
                      :session (:session commit)
                      :commit commit))))))))
 
+(defn- stop-owner-before-hard-delete!
+  "Stop and forget the live Owner for SESSION-ID, if one is registered.
+
+  A hard delete must not race a live Owner.  The Owner must explicitly
+  report both `:stopped?` and `:drained?`; a bare `{:ok? true}` is not
+  evidence of a drain.  On success the route is removed so `purge-session!`
+  sees no active Owner.  On failure the route stays registered, leaving the
+  record retryable.
+
+  Returns `{:ok? true :owner? boolean}` or `{:ok? false :error stop-failure}`."
+  [registry session-id]
+  (let [owner (owner-for registry session-id)
+        stopped
+        (when owner
+          (if (ifn? (:stop! owner))
+            (try
+              ((:stop! owner))
+              (catch Exception exception
+                {:ok? false
+                 :error {:code :OWNER_STOP_FAILED
+                         :message (str "session Owner could not stop: "
+                                       (.getMessage exception))}}))
+            {:ok? false
+             :error {:code :OWNER_STOP_UNAVAILABLE
+                     :message "live Owner cannot be stopped by the registry"}}))
+        stop-failure
+        (cond
+          (nil? owner) nil
+          (nil? stopped)
+          {:code :OWNER_STOP_INCOMPLETE
+           :message "session Owner returned no stop result"}
+          (false? (:ok? stopped))
+          (or (:error stopped)
+              {:code :OWNER_STOP_FAILED
+               :message "session Owner stop failed"})
+          (not (true? (:stopped? stopped)))
+          {:code :OWNER_STOP_INCOMPLETE
+           :message "session Owner did not stop before deletion"
+           :details {:stopped? (:stopped? stopped)
+                     :drained? (:drained? stopped)}}
+          (not (true? (:drained? stopped)))
+          {:code :OWNER_STOP_INCOMPLETE
+           :message "session Owner did not drain before deletion"
+           :details {:stopped? (:stopped? stopped)
+                     :drained? (:drained? stopped)}})]
+    (if stop-failure
+      {:ok? false :owner? (some? owner) :error stop-failure}
+      (do
+        (when owner
+          (swap! (:state registry) update :owners dissoc session-id))
+        {:ok? true :owner? (some? owner)}))))
+
 (defn purge-session!
   "Permanently remove one deleted session record.
 
@@ -828,6 +928,50 @@
                                   :session-id session-id)
                   result)))))))))
 
+(defn purge-deleted-session!
+  "Stop the live Owner, then permanently remove one soft-deleted session.
+
+  This is the retention scheduler's permanent-delete order: stop the Owner
+  and require `:stopped?`/`:drained?`, forget its route, then call
+  `purge-session!` on the committed record.  A session without a live Owner
+  is purged directly.  A stop failure leaves both the record and the route
+  in place so the next sweep can retry.
+
+  The existing purge guard applies unchanged: only a `:deleted` committed
+  record can be purged.  External workspace files are never touched."
+  [registry session-id]
+  (locking (:lock registry)
+    ;; Check the committed lifecycle before stopping anything: a session may
+    ;; have been restored between the retention scan and this call, and a
+    ;; restored session must not lose its live Owner.
+    (let [loaded (ports/read-session-summary
+                  (:persistence registry)
+                  session-id)]
+      (case (:status loaded)
+        ;; Another sweep or an operator may have removed the record after
+        ;; the listing.  That is the same final state, not a new failure.
+        :missing {:status :purged
+                  :session-id session-id
+                  :already-missing? true}
+        :error loaded
+        :found
+        (let [session (:session loaded)]
+          (if (not= :deleted (:status session))
+            (assoc (error :SESSION_NOT_DELETED
+                          "only a soft-deleted session can be purged"
+                          {:status (:status session)})
+                   :session-id session-id)
+            (let [stopped (stop-owner-before-hard-delete! registry session-id)]
+              (if (:ok? stopped)
+                (purge-session! registry session-id)
+                (assoc (error (or (get-in stopped [:error :code])
+                                  :OWNER_STOP_INCOMPLETE)
+                              (or (get-in stopped [:error :message])
+                                  "session Owner did not stop and drain before purge")
+                              (merge {:session-id session-id}
+                                     (get-in stopped [:error :details])))
+                       :session-id session-id)))))))))
+
 (defn discard-session!
   "Discard one temporary session when no live Owner exists.
 
@@ -838,83 +982,48 @@
   non-temporary session is refused."
   [registry session-id]
   (locking (:lock registry)
-    (let [owner (owner-for registry session-id)
-          stopped
-          (when owner
-            (if (ifn? (:stop! owner))
-              (try
-                ((:stop! owner))
-                (catch Exception exception
-                  {:ok? false
-                   :error {:code :OWNER_STOP_FAILED
-                           :message (str "session Owner could not stop: "
-                                         (.getMessage exception))}}))
-              {:ok? false
-               :error {:code :OWNER_STOP_UNAVAILABLE
-                       :message "live Owner cannot be stopped by the registry"}}))]
-      (let [stop-failure
-            (cond
-              (nil? owner) nil
-              (nil? stopped)
-              {:code :OWNER_STOP_INCOMPLETE
-               :message "session Owner returned no stop result"}
-              (false? (:ok? stopped))
-              (or (:error stopped)
-                  {:code :OWNER_STOP_FAILED
-                   :message "session Owner stop failed"})
-              (not (true? (:stopped? stopped)))
-              {:code :OWNER_STOP_INCOMPLETE
-               :message "session Owner did not stop before discard"
-               :details {:stopped? (:stopped? stopped)
-                         :drained? (:drained? stopped)}}
-              (not (true? (:drained? stopped)))
-              {:code :OWNER_STOP_INCOMPLETE
-               :message "session Owner did not drain before discard"
-               :details {:stopped? (:stopped? stopped)
-                         :drained? (:drained? stopped)}})]
-        (if stop-failure
-          (assoc (error (or (:code stop-failure) :OWNER_STOP_INCOMPLETE)
-                        (or (:message stop-failure)
-                            "session Owner did not stop and drain before discard")
-                        (merge {:session-id session-id}
-                               (:details stop-failure)))
-                 :session-id session-id)
-        (do
-          (when owner
-            (swap! (:state registry) update :owners dissoc session-id))
-          (let [loaded (ports/read-session (:persistence registry) session-id)]
-            (case (:status loaded)
-              :missing (error :SESSION_NOT_FOUND
-                              "session does not exist"
-                              {:session-id session-id})
-              :error loaded
-              :found
-              (let [session (:session loaded)]
-                (if-not (:temporary? session)
-                  (error :NOT_TEMPORARY
-                         "only a temporary session can be discarded directly"
-                         {:session-id session-id})
-                  (let [result (ports/delete-session!
-                                (:persistence registry)
-                                (:revision session)
-                                session-id)]
-                    (case (:status result)
-                      :deleted {:status :discarded
-                                :session-id session-id
-                                :external-effects (:external-effects result)}
-                      :missing {:status :discarded
-                                :session-id session-id
-                                :already-missing? true
-                                :external-effects (:external-effects result)}
-                      :conflict (assoc (error :SESSION_COMMIT_CONFLICT
-                                              "session changed before discard"
-                                              {:revision (:revision result)})
-                                       :session-id session-id)
-                      :unknown (assoc (error :SESSION_COMMIT_UNKNOWN
-                                             "discard outcome is unknown"
-                                             {:error (:error result)})
-                                      :session-id session-id)
-                      result))))))))))))
+    (let [stopped (stop-owner-before-hard-delete! registry session-id)]
+      (if-not (:ok? stopped)
+        (assoc (error (or (get-in stopped [:error :code])
+                          :OWNER_STOP_INCOMPLETE)
+                      (or (get-in stopped [:error :message])
+                          "session Owner did not stop and drain before discard")
+                      (merge {:session-id session-id}
+                             (get-in stopped [:error :details])))
+               :session-id session-id)
+        (let [loaded (ports/read-session (:persistence registry) session-id)]
+          (case (:status loaded)
+            :missing (error :SESSION_NOT_FOUND
+                            "session does not exist"
+                            {:session-id session-id})
+            :error loaded
+            :found
+            (let [session (:session loaded)]
+              (if-not (:temporary? session)
+                (error :NOT_TEMPORARY
+                       "only a temporary session can be discarded directly"
+                       {:session-id session-id})
+                (let [result (ports/delete-session!
+                              (:persistence registry)
+                              (:revision session)
+                              session-id)]
+                  (case (:status result)
+                    :deleted {:status :discarded
+                              :session-id session-id
+                              :external-effects (:external-effects result)}
+                    :missing {:status :discarded
+                              :session-id session-id
+                              :already-missing? true
+                              :external-effects (:external-effects result)}
+                    :conflict (assoc (error :SESSION_COMMIT_CONFLICT
+                                            "session changed before discard"
+                                            {:revision (:revision result)})
+                                     :session-id session-id)
+                    :unknown (assoc (error :SESSION_COMMIT_UNKNOWN
+                                           "discard outcome is unknown"
+                                           {:error (:error result)})
+                                    :session-id session-id)
+                    result))))))))))
 
 (defn stop-all!
   "Enqueue an internal `:session/stop` to every registered Owner and clear

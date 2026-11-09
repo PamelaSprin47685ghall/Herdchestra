@@ -7,6 +7,8 @@
   in a temporary directory; nothing is mocked."
 
   (:require [clojure.java.io :as io]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
@@ -15,7 +17,8 @@
             [hc.server.storage.engine.datalevin :as engine]
             [hc.server.storage.keys :as keys]
             [hc.server.storage.layout :as layout]
-            [hc.server.storage.support :as support]))
+            [hc.server.storage.support :as support]
+            [hc.server.storage.view :as view]))
 
 (defn- error-code [f]
   (try
@@ -23,6 +26,150 @@
     nil
     (catch clojure.lang.ExceptionInfo e
       (storage/error-code e))))
+
+;; ---------------------------------------------------------------------------
+;; Committed-kind audit
+;;
+;; Every document kind a production namespace commits must be registered in
+;; `view/known-document-kinds`, otherwise a narrowed `session-view` silently
+;; hides it.  This audit is deliberately conservative: it scans every source
+;; file that calls `commit-migration!`, removes strings and comments, extracts
+;; `:kind` literals, follows `(def ...kind... :keyword)` constants (the
+;; variable-built puts), and parses the diagnostics `kinds` map whose values
+;; are passed as `:kind` variables.
+
+(def ^:private kind-literal-pattern
+  #":kind\s+(:[A-Za-z0-9_][A-Za-z0-9_./?!<>+*=-]*)")
+
+(def ^:private kind-definition-pattern
+  #"(?i)\(def\s+(?:\^[^\s()]+\s+)*[^\s()]*kind[^\s()]*\s+(:[A-Za-z0-9_][A-Za-z0-9_./?!<>+*=-]*)")
+
+(def ^:private kinds-map-pair-pattern
+  #"(:[A-Za-z0-9_-]+)\s+(:[A-Za-z0-9_][A-Za-z0-9_./?!<>+*=-]*)")
+
+(defn- code-only
+  "Return TEXT with Clojure string literals and `;` comments removed.
+
+  The audit must inspect executable forms only: a `:kind` named in a docstring
+  or a comment is documentation, not a committed document."
+  [^String text]
+  (let [n (.length text)
+        ^StringBuilder out (StringBuilder.)]
+    (loop [i 0 in-string? false in-comment? false]
+      (if (>= i n)
+        (.toString out)
+        (let [c (.charAt text i)]
+          (cond
+            in-comment?
+            (if (= c \newline)
+              (do (.append out c) (recur (inc i) false false))
+              (recur (inc i) false true))
+
+            in-string?
+            (if (= c \\)
+              (recur (+ i 2) true false)
+              (if (= c \")
+                (recur (inc i) false false)
+                (recur (inc i) true false)))
+
+            (= c \;)
+            (recur (inc i) false true)
+
+            (= c \")
+            (recur (inc i) true false)
+
+            :else
+            (do (.append out c) (recur (inc i) false false))))))))
+
+(defn- balanced-braces
+  "Return the balanced `{...}` block starting at START in TEXT."
+  [^String text start]
+  (let [n (.length text)]
+    (loop [i start depth 0]
+      (if (>= i n)
+        (subs text start n)
+        (let [c (.charAt text i)]
+          (cond
+            (= c \{) (recur (inc i) (inc depth))
+            (= c \})
+            (let [next-depth (dec depth)]
+              (if (zero? next-depth)
+                (subs text start (inc i))
+                (recur (inc i) next-depth)))
+            :else (recur (inc i) depth)))))))
+
+(defn- kinds-map-values
+  "Return the values of `(def kinds {...})`, whose values become `:kind` variables."
+  [^String code]
+  (or
+   (when-let [def-index (str/index-of code "(def kinds")]
+     (when-let [brace (str/index-of code "{" def-index)]
+       (->> (re-seq kinds-map-pair-pattern (balanced-braces code brace))
+            (keep #(nth % 2 nil))
+            (map #(keyword (subs % 1)))
+            set)))
+   #{}))
+
+(defn- committed-kind-candidates
+  "Return every kind literal or traced kind constant a migration can commit."
+  []
+  (let [root (io/file "src")]
+    (when-not (.isDirectory ^java.io.File root)
+      (throw (ex-info "the committed-kind audit needs the source tree"
+                      {:path (str root)})))
+    (reduce
+     (fn [kinds ^java.io.File file]
+       (let [raw (slurp file)]
+         (if (str/includes? raw "commit-migration!")
+           (let [code (code-only raw)]
+             (into kinds
+                   (concat
+                    (map (comp #(keyword (subs % 1)) second)
+                         (re-seq kind-literal-pattern code))
+                    (map (comp #(keyword (subs % 1)) second)
+                         (re-seq kind-definition-pattern code))
+                    (kinds-map-values code))))
+           kinds)))
+     #{}
+     (->> (file-seq root)
+          (filter (fn [^java.io.File f] (.isFile f)))
+          (filter (fn [^java.io.File f]
+                    (boolean (re-find #"\.clj[c]?$" (.getName f)))))))))
+
+(def ^:private exempt-committed-kinds
+  "Kinds the conservative audit sees in migration-writing files that are not
+  current-state document kinds.  Each entry states why no `session-view` can
+  return it.  Keep this list short and explicit; it is a review surface, not a
+  second registry."
+  {:file
+   "artifact descriptor :inputs/:media field kind, embedded in a document"
+
+   :tool
+   "artifact :producer field kind, embedded in a document"
+
+   :log
+   "artifact request kind for a generated log file; storage writes an :artifact document"
+
+   :managed-blob-store
+   "artifact :save-location field kind, embedded in a document"
+
+   :id
+   "keyword selection [:kind :id] and artifact input reference kind, not a document kind"
+
+   :role-bindings
+   "backup export item kind, materialized as the :app-config document"
+
+   :instruction-card
+   "backup export item kind, materialized as :materials-instruction-card"
+
+   :instruction-session
+   "backup export item kind, materialized as :materials-instruction-session"
+
+   :worldbook-entry
+   "backup export item kind, materialized as :materials-worldbook-entry"
+
+   :worldbook-session
+   "backup export item kind, materialized as :materials-worldbook-session"})
 
 (deftest create-commit-reopen-test
   (let [dir (support/temp-dir "hc-store-")]
@@ -194,6 +341,245 @@
                           store
                           {:migration-id "v3" :partition "p" :expected-version 1
                            :put [{:kind :task :id "t3" :doc {}}]})))))))
+
+(deftest lightweight-commit-return-skips-the-partition-view-test
+  (support/with-temp-store [store {}]
+    (is (= 1 (:version (storage/commit-migration!
+                        store
+                        {:migration-id "seed" :partition "p"
+                         :put [{:kind :task :id "t1" :doc {}}]}))))
+    (let [light (storage/commit-migration!
+                 store
+                 {:migration-id "light" :partition "p"
+                  :lightweight-return? true
+                  :put [{:kind :task :id "t2" :doc {}}]})
+          replay (storage/commit-migration!
+                  store
+                  {:migration-id "light" :partition "p"
+                   :lightweight-return? true
+                   :put [{:kind :task :id "t2" :doc {}}]})
+          scoped (storage/commit-migration!
+                  store
+                  {:migration-id "scoped" :partition "p"
+                   :include-partition-scope? false
+                   :put [{:kind :task :id "t3" :doc {}}]})
+          full (storage/commit-migration!
+                store
+                {:migration-id "full" :partition "p"
+                 :put [{:kind :task :id "t4" :doc {}}]})]
+      (is (:ok? light))
+      (is (= 2 (:version light)))
+      (is (not (contains? light :view)))
+      (is (:replayed? replay))
+      (is (= 2 (:version replay)))
+      (is (not (contains? replay :view)))
+      (is (= 3 (:version scoped)))
+      (is (not (contains? scoped :view)))
+      (is (= 4 (:version full)))
+      (is (= ["t1" "t2" "t3" "t4"]
+             (mapv :storage/id (:tasks (:board (:view full)))))))))
+
+(deftest read-session-view-passes-the-scan-options-test
+  (support/with-temp-store [store {}]
+    (let [seen (atom [])]
+      (with-redefs [view/session-view
+                    (fn [_engine opts]
+                      (swap! seen conj opts)
+                      {:version 0})]
+        (storage/read-session-view store {:partition "p"
+                                          :include-partition-scope? false
+                                          :include-unknown-kinds? true})
+        (storage/read-session-view store {:partition "p"})
+        (storage/read-session-view store "s1"))
+      (is (= [{:partition "p"
+               :session-id nil
+               :include-partition-scope? false
+               :include-unknown-kinds? true}
+              {:partition "p"
+               :session-id nil
+               :include-partition-scope? true
+               :include-unknown-kinds? false}
+              {:partition "master"
+               :session-id "s1"
+               :include-partition-scope? true
+               :include-unknown-kinds? false}]
+             @seen)))))
+
+(deftest session-view-narrows-known-kinds-and-honors-the-escape-test
+  (support/with-temp-store [store {}]
+    (storage/commit-migration!
+     store
+     {:migration-id "narrow"
+      :partition "p"
+      :put [{:kind :task :id "t1" :doc {:value 1}}
+            {:kind :unlisted-kind :id "u1" :doc {:value 2}}]})
+    (let [default (storage/read-session-view store {:partition "p"})
+          escaped (storage/read-session-view
+                   store
+                   {:partition "p" :include-unknown-kinds? true})]
+      (is (= ["t1"] (mapv :storage/id (:tasks (:board default)))))
+      (is (nil? (get-in default [:records :unlisted-kind])))
+      (is (= ["u1"]
+             (mapv :storage/id
+                   (get-in escaped [:records :unlisted-kind])))))))
+
+(deftest commit-view-honors-include-unknown-kinds-test
+  (support/with-temp-store [store {}]
+    (let [result (storage/commit-migration!
+                  store
+                  {:migration-id "unknown-view"
+                   :partition "p"
+                   :include-unknown-kinds? true
+                   :put [{:kind :unlisted-kind :id "u1" :doc {:value 1}}]})]
+      (is (= ["u1"]
+             (mapv :storage/id
+                   (get-in result [:view :records :unlisted-kind])))))))
+
+(deftest commit-migration-passes-the-scan-options-to-its-view-test
+  (support/with-temp-store [store {}]
+    (let [seen (atom nil)]
+      (with-redefs [view/session-view
+                    (fn [_engine opts]
+                      (reset! seen opts)
+                      {:version 1})]
+        (is (:ok? (storage/commit-migration!
+                   store
+                   {:migration-id "scan-options"
+                    :partition "p"
+                    :include-partition-scope? true
+                    :include-unknown-kinds? true
+                    :put [{:kind :task :id "t1" :doc {}}]}))))
+      (is (= {:partition "p"
+              :session-id nil
+              :include-partition-scope? true
+              :include-unknown-kinds? true}
+             @seen)))))
+
+(deftest session-view-include-partition-scope-false-skips-partition-docs-test
+  (support/with-temp-store [store {}]
+    (storage/commit-migration!
+     store
+     {:migration-id "partition-task"
+      :partition "p"
+      :put [{:kind :task :id "part-task" :doc {:value 1}}]})
+    (storage/commit-migration!
+     store
+     {:migration-id "session-state"
+      :partition "p"
+      :session-id "s1"
+      :put [{:kind :owner-state :id "s1" :doc {:value 2}}]})
+    (let [narrow (storage/read-session-view
+                  store
+                  {:partition "p"
+                   :session-id "s1"
+                   :include-partition-scope? false})
+          wide (storage/read-session-view
+                store
+                {:partition "p" :session-id "s1"})]
+      (is (= "s1" (:storage/id (:state narrow))))
+      (is (empty? (:tasks (:board narrow))))
+      (is (= "s1" (:storage/id (:state wide))))
+      (is (= ["part-task"]
+             (mapv :storage/id (:tasks (:board wide))))))))
+
+(deftest include-partition-scope-false-skips-the-partition-scan-test
+  (support/with-temp-store [store {}]
+    (let [scans (atom [])]
+      (with-redefs [engine/scan
+                    (fn [_engine prefix]
+                      (swap! scans conj prefix)
+                      [])]
+        (view/session-view
+         (:engine store)
+         {:partition "p"
+          :session-id "s1"
+          :include-partition-scope? false
+          :include-unknown-kinds? true}))
+      (is (some #(= (keys/session-doc-prefix "p" "s1") %) @scans))
+      (is (not-any? #(= (keys/session-doc-prefix "p" nil) %) @scans))
+      (is (not-any? #(= (keys/partition-doc-prefix "p") %) @scans)))))
+
+(deftest known-document-kinds-covers-every-committed-kind-test
+  (let [candidates (committed-kind-candidates)
+        registered (set/union (set view/known-document-kinds)
+                              (set (keys exempt-committed-kinds)))
+        missing (sort (set/difference candidates registered))]
+    (is (empty? missing)
+        (str "known-document-kinds is missing committed document kinds: "
+             (pr-str (vec missing))
+             ". Add each to hc.server.storage.view/known-document-kinds, or "
+             "add a reviewed entry with a reason to exempt-committed-kinds."))))
+
+(deftest search-document-kinds-are-registered-in-session-view-test
+  (support/with-temp-store [store {}]
+    (is (:ok? (storage/commit-migration!
+               store
+               {:migration-id "search-kind-registration"
+                :partition "p"
+                :put [{:kind :search-index :id "meta" :doc {:v 1}}
+                      {:kind :search-posting :id "term" :doc {:v 2}}
+                      {:kind :search-session
+                       :id "s1"
+                       :doc {:session-id "s1"}}]})))
+    (let [view (storage/read-session-view store {:partition "p"})]
+      (is (= ["meta"]
+             (mapv :storage/id (get-in view [:records :search-index]))))
+      (is (= ["term"]
+             (mapv :storage/id (get-in view [:records :search-posting]))))
+      (is (= ["s1"]
+             (mapv :storage/id (get-in view [:records :search-session])))))))
+
+(def ^:private non-storage-module-roots
+  ["src/hc/server/extensions"
+   "src/hc/server/speech"
+   "src/hc/server/attachments"
+   "src/hc/server/model_auth"
+   "src/hc/server/browser"
+   "src/hc/server/program"
+   "src/hc/server/search"])
+
+(deftest non-storage-modules-carry-no-current-state-document-writes-test
+  (doseq [root non-storage-module-roots]
+    (doseq [^java.io.File file (->> (io/file root)
+                                    file-seq
+                                    (filter (fn [^java.io.File f]
+                                              (.isFile f)))
+                                    (filter (fn [^java.io.File f]
+                                              (boolean
+                                               (re-find #"\.clj[c]?$"
+                                                        (.getName f))))))]
+      (let [text (slurp file)]
+        (is (not (str/includes? text "commit-migration!"))
+            (str file " writes current-state storage; register its kinds "
+                 "and extend the committed-kind audit"))
+        (is (not (str/includes? text "read-session-view"))
+            (str file " reads a storage view; register its kinds "
+                 "and extend the committed-kind audit"))))))
+
+(deftest restore-drops-rebuilt-session-documents-test
+  (support/with-temp-store [store {}]
+    (storage/commit-migration!
+     store
+     {:migration-id "seed-derived"
+      :partition "sessions"
+      :put [{:kind :session-record
+             :id "s1"
+             :doc {:session-id "s1" :revision 0}}
+            {:kind :session-summary
+             :id "s1"
+             :doc {:session-id "s1" :revision 0}}
+            {:kind :session-ref-index
+             :id "sessions"
+             :doc {:id "sessions" :counts {"sha256-x" 1}}}]})
+    (let [export (storage/export-state store {})]
+      (is (= 3 (count (get-in export [:partitions "sessions" :docs]))))
+      (is (:ok? (storage/restore-state! store export
+                                        {:migration-id "restore-derived"
+                                         :quiescent? true})))
+      (is (= [:session-record]
+             (mapv :kind (get-in (storage/export-state
+                                  store {:partition "sessions"})
+                                 [:partitions "sessions" :docs])))))))
 
 (deftest delete-and-meta-test
   (support/with-temp-store [store {}]

@@ -34,7 +34,11 @@
    :max-search-results 200
    :max-search-dirs 500
    :max-search-entries 10000
-   :max-search-depth 12})
+   :max-search-depth 12
+   :max-search-content-file-bytes 524288
+   :max-search-content-total-bytes 8388608
+   :max-search-content-files 2000
+   :max-search-snippet-chars 160})
 
 ;; ---------------------------------------------------------------------------
 ;; Results
@@ -119,7 +123,9 @@
 
   Options: `:root` (required), `:max-file-bytes`, `:max-entries`,
   `:max-search-results`, `:max-search-dirs`, `:max-search-entries`,
-  `:max-search-depth`."
+  `:max-search-depth`, `:max-search-content-file-bytes`,
+  `:max-search-content-total-bytes`, `:max-search-content-files`,
+  `:max-search-snippet-chars`."
   [{:keys [root] :as opts}]
   (when-not (and (string? root) (not (str/blank? root)))
     (throw (ex-info "Workspace files service requires a root"
@@ -362,94 +368,312 @@
     (when (:ok? result)
       (merge result {:name name}))))
 
+(defn- unicode-lower-case
+  "Unicode lower-case with the root locale, so the result does not depend on
+  the server's default locale."
+  ^String [value]
+  (.toLowerCase ^String (str value) java.util.Locale/ROOT))
+
+(defn- code-points
+  "Split TEXT into Unicode code points.  Clojure string sequences expose
+  UTF-16 code units, which would split a supplementary character in two."
+  ^ints [^String text]
+  (let [length (.length text)
+        total (.codePointCount text 0 length)
+        points (int-array total)]
+    (loop [index 0
+           cursor 0]
+      (if (>= index length)
+        points
+        (let [code-point (.codePointAt text index)]
+          (aset-int points cursor code-point)
+          (recur (+ index (Character/charCount code-point)) (inc cursor)))))))
+
+(defn- points->string
+  [^ints points start end]
+  (let [n (- (long end) (long start))]
+    (if (pos? n)
+      (String. points (int start) (int n))
+      "")))
+
+(defn- count-occurrences
+  "Count non-overlapping occurrences of NEEDLE in HAYSTACK."
+  ^long [^String haystack ^String needle]
+  (let [step (.length needle)]
+    (loop [from 0
+           total 0]
+      (let [index (.indexOf haystack needle (int from))]
+        (if (neg? index)
+          total
+          (recur (+ index step) (inc total)))))))
+
+(defn- content-line-hit
+  "Locate the first occurrence of NEEDLE on LINE.  The snippet keeps at most
+  80 code points on each side of the match and at most SNIPPET-LIMIT code
+  points in total."
+  [^String line ^String needle snippet-limit]
+  (let [^String lower (.toLowerCase line java.util.Locale/ROOT)
+        index (.indexOf lower needle)]
+    (when (>= index 0)
+      (let [column (inc (.codePointCount lower 0 index))
+            needle-length (.codePointCount needle 0 (.length needle))
+            limit (long snippet-limit)
+            points (code-points line)
+            total (alength points)
+            match-start (min total (dec column))
+            match-end (min total (+ match-start needle-length))
+            visible (min needle-length limit)
+            left-budget (min 80 (max 0 (- limit visible)))
+            start (max 0 (- match-start left-budget))
+            left-taken (- match-start start)
+            right-budget (min 80 (max 0 (- limit visible left-taken)))
+            end (if (> needle-length limit)
+                  (min total (+ match-start limit))
+                  (min total (+ match-end right-budget)))]
+        {:column column
+         :snippet (points->string points start end)}))))
+
+(defn- content-hit
+  "Find the first matching line in TEXT and count every match in the file."
+  [^String text ^String needle snippet-limit]
+  (let [lines (str/split text #"\n" -1)]
+    (loop [index 0
+           match-count 0
+           first-hit nil]
+      (if (>= index (count lines))
+        (when first-hit
+          (assoc first-hit :match-count match-count))
+        (let [^String line (nth lines index)
+              ^String lower (.toLowerCase line java.util.Locale/ROOT)
+              occurrences (count-occurrences lower needle)]
+          (recur (inc index)
+                 (+ match-count occurrences)
+                 (or first-hit
+                     (when (pos? occurrences)
+                       (assoc (content-line-hit line needle snippet-limit)
+                              :line (inc index))))))))))
+
+(defn- content-file-result
+  "Read one entry and classify the outcome.  A hit carries the read stamp, so
+  the reported size and stamp describe exactly the text that matched."
+  [svc entry ^String needle]
+  (try
+    (let [result (wg/read-file
+                  (:root svc) (:path entry)
+                  {:max-file-bytes
+                   (long (:max-search-content-file-bytes svc))})]
+      (cond
+        (= :FILE_CONFLICT (:status result))
+        {:skip :unstable}
+
+        (= :OBSERVED (:status result))
+        (if-let [hit (content-hit (:text result) needle
+                                  (long (:max-search-snippet-chars svc)))]
+          {:hit (merge {:path (:path entry)
+                        :name (:name entry)
+                        :kind :file
+                        :exists? true
+                        :size (:size result)
+                        :stamp (:stamp result)}
+                       hit)}
+          {})
+
+        :else
+        {:skip :unstable}))
+    (catch clojure.lang.ExceptionInfo t
+      (case (:status (ex-data t))
+        :LIMIT_EXCEEDED {:skip :too-large}
+        (:FILE_CONFLICT :STRUCTURE_CONFLICT) {:skip :unstable}
+        :UNSUPPORTED_OPERATION {:skip :binary}
+        {:skip :unstable}))
+    (catch java.io.IOException _
+      {:skip :unstable})))
+
+(defn- content-candidate?
+  [{:keys [kind exists? outside? broken?]}]
+  (and (= :file kind) (boolean exists?) (not outside?) (not broken?)))
+
+(defn- zero-content-state
+  []
+  {:scanned-bytes 0
+   :scanned-files 0
+   :skipped {:binary 0 :unstable 0 :too-large 0}})
+
+(defn- content-step
+  "Scan the regular files among ENTRIES.  Stops without reading more when the
+  result, file or byte budget is reached."
+  [svc entries needle limit results state]
+  (let [max-files (long (:max-search-content-files svc))
+        max-total (long (:max-search-content-total-bytes svc))
+        max-file (long (:max-search-content-file-bytes svc))
+        finish (fn [results state stop? truncated?]
+                 (merge state
+                        {:results results
+                         :stop? (boolean stop?)
+                         :truncated? (boolean truncated?)}))]
+    (loop [files (filterv content-candidate? entries)
+           results results
+           state state]
+      (cond
+        (empty? files)
+        (finish results state false false)
+
+        (>= (count results) limit)
+        (finish results state true true)
+
+        (>= (long (:scanned-files state)) max-files)
+        (finish results state true true)
+
+        :else
+        (let [entry (first files)
+              size (long (or (:size entry) 0))]
+          (cond
+            (> size max-file)
+            (recur (subvec files 1) results
+                   (update-in state [:skipped :too-large] (fnil inc 0)))
+
+            (> (+ (long (:scanned-bytes state)) size) max-total)
+            (finish results state true true)
+
+            :else
+            (let [outcome (content-file-result svc entry needle)]
+              (recur (subvec files 1)
+                     (if-let [hit (:hit outcome)]
+                       (conj results hit)
+                       results)
+                     (cond-> (-> state
+                                 (update :scanned-bytes + size)
+                                 (update :scanned-files inc))
+                       (:skip outcome)
+                       (update-in [:skipped (:skip outcome)]
+                                  (fnil inc 0)))))))))))
+
+(defn- search-response
+  [query mode results truncated? visited-dirs visited-entries content-state]
+  (ok (merge {:query query
+              :mode mode
+              :results results
+              :truncated? (boolean truncated?)
+              :visited-dirs visited-dirs
+              :visited-entries visited-entries}
+             (when (= :content mode)
+               (select-keys content-state
+                            [:scanned-bytes :scanned-files :skipped])))))
+
 (defn search
-  "Search file and directory names below the root.
+  "Search file names or file contents below the root.
 
-  The walk is bounded by `:max-search-dirs`, `:max-search-entries`,
-  `:max-search-results` and `:max-search-depth`.  A truncated result says so;
-  it is never presented as complete.  Content search is not implemented and
-  is rejected rather than imitated."
+  `:name` mode compares entry names case-insensitively.  `:content` mode
+  reads regular UTF-8 files and reports the first matching line per file
+  plus the number of matches in that file.  Both walks are bounded by
+  `:max-search-dirs`, `:max-search-entries`, `:max-search-results` and
+  `:max-search-depth`; content reads add `:max-search-content-file-bytes`,
+  `:max-search-content-total-bytes` and `:max-search-content-files`.  A
+  truncated result says so; it is never presented as complete."
   [svc {:keys [query mode limit] :or {limit (:max-search-results svc)}}]
-  (cond
-    (and mode (not= mode :name))
-    (failure :UNSUPPORTED_OPERATION
-             "当前文件浏览器只支持按名称搜索，未执行内容搜索"
-             {:mode mode})
+  (let [mode (or mode :name)]
+    (cond
+      (not (contains? #{:name :content} mode))
+      (failure :UNSUPPORTED_OPERATION
+               "未知的文件搜索模式"
+               {:mode mode
+                :allowed [:name :content]})
 
-    (str/blank? (str query))
-    (failure :INVALID_QUERY "搜索词不能为空" {})
+      (str/blank? (str query))
+      (failure :INVALID_QUERY "搜索词不能为空" {})
 
-    :else
-    (let [needle (str/lower-case (str/trim (str query)))
-          limit (min (long (or limit (:max-search-results svc)))
-                     (long (:max-search-results svc)))]
-      (loop [queue [{:path "" :depth 0}]
-             visited-dirs 0
-             visited-entries 0
-             results []
-             truncated? false]
-        (if (or (empty? queue) (>= (count results) limit))
-          (ok {:query (str/trim (str query))
-               :mode :name
-               :results results
-               :truncated? (boolean (or truncated? (seq queue)))
-               :visited-dirs visited-dirs
-               :visited-entries visited-entries})
-          (let [{:keys [path depth]} (first queue)
-                queue (subvec queue 1)]
-            (cond
-              (> depth (long (:max-search-depth svc)))
-              (recur queue visited-dirs visited-entries results true)
+      :else
+      (let [query-text (str/trim (str query))
+            needle (if (= :content mode)
+                     (unicode-lower-case query-text)
+                     (str/lower-case query-text))
+            limit (min (long (or limit (:max-search-results svc)))
+                       (long (:max-search-results svc)))]
+        (loop [queue [{:path "" :depth 0}]
+               visited-dirs 0
+               visited-entries 0
+               results []
+               truncated? false
+               content-state (zero-content-state)]
+          (if (or (empty? queue) (>= (count results) limit))
+            (search-response query-text mode results
+                             (if (= :content mode)
+                               (or truncated? (seq queue)
+                                   (>= (count results) limit))
+                               (or truncated? (seq queue)))
+                             visited-dirs visited-entries content-state)
+            (let [{:keys [path depth]} (first queue)
+                  queue (subvec queue 1)]
+              (cond
+                (> depth (long (:max-search-depth svc)))
+                (recur queue visited-dirs visited-entries results true
+                       content-state)
 
-              (>= visited-dirs (long (:max-search-dirs svc)))
-              (ok {:query (str/trim (str query))
-                   :mode :name
-                   :results results
-                   :truncated? true
-                   :visited-dirs visited-dirs
-                   :visited-entries visited-entries})
+                (>= visited-dirs (long (:max-search-dirs svc)))
+                (search-response query-text mode results true
+                                 visited-dirs visited-entries content-state)
 
-              :else
-              (let [listing (list-entries svc path)]
-                (if-not (:ok? listing)
-                  (recur queue (inc visited-dirs) visited-entries results
-                         truncated?)
-                  (let [entries (:entries listing)
-                        all-matches (filter #(str/includes?
-                                              (str/lower-case (str (:name %)))
-                                              needle)
-                                            entries)
-                        remaining (- limit (count results))
-                        matched (->> all-matches
-                                     (take remaining)
-                                     (keep #(search-match svc %))
-                                     vec)
-                        more-matches? (> (count all-matches)
-                                         (count matched))
-                        child-dirs (->> entries
-                                        (filter #(= :directory (:kind %)))
-                                        (remove :outside?)
-                                        (map (fn [e]
-                                               {:path (:path e)
-                                                :depth (inc depth)})))
-                        next-visited (+ visited-entries (count entries))
-                        truncated? (or truncated?
-                                       more-matches?
-                                       (> (+ visited-entries
-                                             (count entries))
-                                          (long (:max-search-entries svc))))]
-                    (if truncated?
-                      (ok {:query (str/trim (str query))
-                           :mode :name
-                           :results (into results matched)
-                           :truncated? true
-                           :visited-dirs (inc visited-dirs)
-                           :visited-entries next-visited})
-                      (recur (into queue child-dirs)
-                             (inc visited-dirs)
-                             next-visited
-                             (into results matched)
-                             false))))))))))))
+                :else
+                (let [listing (list-entries svc path)]
+                  (if-not (:ok? listing)
+                    (recur queue (inc visited-dirs) visited-entries results
+                           truncated? content-state)
+                    (let [entries (:entries listing)
+                          next-visited (+ visited-entries (count entries))
+                          over-entries? (> next-visited
+                                           (long (:max-search-entries svc)))
+                          child-dirs (->> entries
+                                          (filter #(= :directory (:kind %)))
+                                          (remove :outside?)
+                                          (map (fn [e]
+                                                 {:path (:path e)
+                                                  :depth (inc depth)})))]
+                      (if (= :content mode)
+                        (let [step (content-step svc entries needle limit
+                                                 results content-state)
+                              step-state (select-keys step
+                                                      [:scanned-bytes
+                                                       :scanned-files
+                                                       :skipped])
+                              truncated? (or truncated?
+                                             (:truncated? step)
+                                             over-entries?)]
+                          (if (or (:stop? step) truncated?)
+                            (search-response query-text mode (:results step)
+                                             true (inc visited-dirs)
+                                             next-visited step-state)
+                            (recur (into queue child-dirs)
+                                   (inc visited-dirs)
+                                   next-visited
+                                   (:results step)
+                                   false
+                                   step-state)))
+                        (let [all-matches (filter #(str/includes?
+                                                    (str/lower-case
+                                                     (str (:name %)))
+                                                    needle)
+                                                  entries)
+                              remaining (- limit (count results))
+                              matched (->> all-matches
+                                           (take remaining)
+                                           (keep #(search-match svc %))
+                                           vec)
+                              more-matches? (> (count all-matches)
+                                               (count matched))
+                              truncated? (or truncated?
+                                             more-matches?
+                                             over-entries?)]
+                          (if truncated?
+                            (search-response query-text mode
+                                             (into results matched)
+                                             true (inc visited-dirs)
+                                             next-visited content-state)
+                            (recur (into queue child-dirs)
+                                   (inc visited-dirs)
+                                   next-visited
+                                   (into results matched)
+                                   false
+                                   content-state)))))))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Dispatch

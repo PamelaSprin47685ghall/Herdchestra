@@ -89,6 +89,34 @@
                         (contains? #{"m1" "m2"} (:message-id entry)))
                       (:messages out)))))))
 
+(deftest edited-source-invalidates-the-summary-and-restores-its-range
+  (let [session (applied-session)
+        edited (command session :history/edit-message
+                        {:message-id "m1"
+                         :content "事实：项目代号是 B。"}
+                        5000)
+        edited-session (:session edited)
+        out (context/outbound-context edited-session)
+        compression (get-in edited-session [:context :compressions "c1"])]
+    (is (:ok? edited))
+    (testing "the stale summary never enters the model request"
+      (is (= [] (:summary-ids out)))
+      (is (not-any? #(= :context-summary (:kind %)) (:messages out)))
+      (is (not-any? #(= reviewed-summary (:content %)) (:messages out))))
+    (testing "the reviewed range returns as source messages"
+      (is (= ["m1" "m2" "m3" "m4" "m5" "m6" "m7" "m8"]
+             (:message-ids out)))
+      (is (= "事实：项目代号是 B。"
+             (get-in (context/model-messages out) [0 :text])))
+      (is (empty? (filter #(= :replaced-by-context-summary (:reason %))
+                          (:excluded out)))))
+    (testing "the compression stays readable and marked stale"
+      (is (= :applied (:state compression)))
+      (is (true? (context/compression-stale? edited-session compression)))
+      (is (= [:user :assistant :user :assistant
+              :user :assistant :user :assistant]
+             (mapv :role (:messages (context/reading-context edited-session))))))))
+
 (deftest undo-restores-the-range-without-deleting-later-answers
   (let [session (applied-session)
         undone (command session :history/undo-compression

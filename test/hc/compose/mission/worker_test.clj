@@ -184,3 +184,37 @@
     (is (some #(= :WORKER_PENDING_STATE_INVALID (:code %)) violations)
         "a running worker without a pending call is a broken lifecycle")
     (is (empty? (worker/check-worker idle)))))
+
+(deftest stewardship-role-tables-are-narrow
+  (is (= #{:cat :stat :ls :where :whereAll :park :unpark
+           :fork :join :fleet-state :assume}
+         (worker/capabilities-for :clj-steward)))
+  (is (= worker/steward-capabilities
+         (get worker/role-capabilities :clj-steward)))
+  (is (= #{:cat :stat :ls :where :whereAll}
+         (worker/capabilities-for :clj-meditator)))
+  (is (= worker/meditator-capabilities
+         (get worker/role-capabilities :clj-meditator)))
+  (is (nil? (worker/capabilities-for :clj-worker))
+      "the swarm worker surface is owned by hc.server.program.capability")
+  (testing "the Steward has no write, shell, review, or board authority"
+    (doseq [capability [:write :mkdir :rm :mv :call :review
+                        :split :claim :finish :cancel :replace :release
+                        :reopen :comment :update :take-or-die :park-slot
+                        :board :token :wake-all]]
+      (is (not (contains? worker/steward-capabilities capability))
+          (str "steward grants " capability))
+      (is (contains? worker/steward-forbidden-capabilities capability)
+          (str "steward forbids " capability))))
+  (testing "the Meditator is strictly read-only"
+    (doseq [capability [:write :mkdir :rm :mv :park :unpark :call :review
+                        :split :claim :finish :take-or-die]]
+      (is (not (contains? worker/meditator-capabilities capability))
+          (str "meditator grants " capability)))
+    (is (contains? worker/meditator-forbidden-capabilities :park))
+    (is (contains? worker/meditator-forbidden-capabilities :assume)))
+  (testing "each role's capability and forbidden sets are disjoint"
+    (doseq [role [:plan-worker :clj-steward :clj-meditator]]
+      (is (not-any? (worker/capabilities-for role)
+                    (worker/forbidden-capabilities-for role))
+          (str role)))))

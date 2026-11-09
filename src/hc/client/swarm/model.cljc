@@ -825,6 +825,19 @@
                                (when (some? held?) (boolean held?)))
            :at-version (get* value :at-version))))
 
+(defn- write-gate-mode-label
+  "Label for the W mode.  `mode` is produced by a closed `cond` below; the
+  default is the defensive fallback for a future mode."
+  [mode]
+  (case mode
+    :unreported "W 状态未上报"
+    :recovery "W 为恢复所持 — 存在结果未知动作未结清"
+    :applying "W 持有中 — 正在应用受保护批次"
+    :shell "W 持有中 — 托管 shell 运行中"
+    :write "W 持有中 — 受保护写入进行中"
+    :idle "W 空闲"
+    "W 状态未知"))
+
 (defn write-gate-view
   "Describe W for one worktree: held or free, current action, and the FIFO
   queue.  A missing W report is shown as unreported; it is never rendered as
@@ -878,13 +891,7 @@
                     (= :shell (:kind current))) :shell
                held? :write
                :else :idle)
-        mode-label (case mode
-                     :unreported "W 状态未上报"
-                     :recovery "W 为恢复所持 — 存在结果未知动作未结清"
-                     :applying "W 持有中 — 正在应用受保护批次"
-                     :shell "W 持有中 — 托管 shell 运行中"
-                     :write "W 持有中 — 受保护写入进行中"
-                     :idle "W 空闲")
+        mode-label (write-gate-mode-label mode)
         explanation (case mode
                       :unreported
                       "服务器未上报该 worktree 的 W。动作阶段单独显示；不要推断 W 空闲。"
@@ -920,7 +927,7 @@
                            (when-let [id (:action-id current)] (str "（动作 " id "）"))
                            (when-let [phase (:phase current)] (str "（阶段 " (name phase) "）"))
                            "。")
-                      "")
+                      "W 状态未知。")
         acknowledgement-text
         (when recovery-acknowledgement
           (str (if (true? (:acknowledged? recovery-acknowledgement))

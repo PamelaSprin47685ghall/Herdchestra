@@ -1,0 +1,134 @@
+{
+  "test": "E2E 17 S3 target",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-09T11:09:09.871Z",
+  "checks": {
+    "fixtureKeysAligned": true,
+    "defaultTargetIsWebdav": true,
+    "hasWebdavTarget": true,
+    "hasS3Target": true,
+    "webdavBackupIdFound": true,
+    "webdavWroteObject": true,
+    "s3BackupIdFound": true,
+    "backupIdsDistinct": true,
+    "s3WroteObject": true,
+    "s3BucketPrefix": true,
+    "targetsIsolated": true,
+    "restoreRowSelectable": true,
+    "previewVisible": true
+  },
+  "diagnostics": {
+    "defaultTargetId": "webdav",
+    "targetRows": [
+      "WebDAV · webdav",
+      "S3 · s3"
+    ],
+    "webdavBackup": {
+      "resultText": "最近一次备份\n\n备份已写入并通过校验\n\n备份 ID\nfba2beb5-c1d6-4a97-b4a5-8c78623321f3\n取样时间\n2026-11-09T11:09:26.941745110Z\n创建时间\n2026-11-09T11:09:26.937679901Z\n设备\nJYSZ\n加密\n是\n大小\n9 KiB\n位置\n未提供\n目标\n{:crypto-version 1, :plaintext-size 8011, :size 8835, :encrypted? true, :deduplicated? false, :encryption :aes-gcm, :id \"fba2beb5-c1d6-4a97-b4a5-8c78623321f3\", :app-version \"0.0.3\", :backup-id \"fba2beb5-c1d6-4a97-b4a5-8c78623321f3\", :url \"http://127.0.0.1:34853/backups/fba2beb5-c1d6-4a97-b4a5-8c78623321f3.hcb\", :sampled-at \"2026-11-09T11:09:26.941745110Z\", :sha256 \"4eddb06ed96793f5f965dc5d693f19c68809f5f25c46750dad67a76604d82c51\", :format-version 1, :device \"JYSZ\", :integrity :verified, :created-at \"2026-11-09T11:09:26.937679901Z\", :payload-size 8027}\n类别\t记录数\n对话与附件\t1\n助手配置\t0\n模型服务配置\t0\n工具与 MCP 配置\t0\n技能\t0\n工作区\t1\n世界书\t0\n记忆与画像\t0\n外观偏好\t1\n任务配置\t1\n\n附件：0 个；0 字节。\n\n缺失引用\nhc-session-eb0fcd70-4229-410b-b3e5-d23b59faa21e\n\n密钥处理：未包含；已移除 0 个密钥字段",
+      "backupId": "fba2beb5-c1d6-4a97-b4a5-8c78623321f3"
+    },
+    "webdavObjects": [
+      "/dav/readme.txt",
+      "/backups/fba2beb5-c1d6-4a97-b4a5-8c78623321f3.hcb"
+    ],
+    "s3Backup": {
+      "resultText": "最近一次备份\n\n备份已写入并通过校验\n\n备份 ID\n0479eccb-653b-4288-a11e-91d792b106c1\n取样时间\n2026-11-09T11:09:27.437274360Z\n创建时间\n2026-11-09T11:09:27.436494110Z\n设备\nJYSZ\n加密\n是\n大小\n9 KiB\n位置\n未提供\n目标\n{:crypto-version 1, :plaintext-size 8011, :size 8835, :encrypted? true, :deduplicated? false, :encryption :aes-gcm, :id \"0479eccb-653b-4288-a11e-91d792b106c1\", :app-version \"0.0.3\", :backup-id \"0479eccb-653b-4288-a11e-91d792b106c1\", :url \"http://127.0.0.1:44163/mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb\", :sampled-at \"2026-11-09T11:09:27.437274360Z\", :sha256 \"c13d296deead9163ea7a22938d6d5e51b7708d05cb214735baf11718bc97ad4b\", :format-version 1, :device \"JYSZ\", :integrity :verified, :created-at \"2026-11-09T11:09:27.436494110Z\", :payload-size 8027}\n类别\t记录数\n对话与附件\t1\n助手配置\t0\n模型服务配置\t0\n工具与 MCP 配置\t0\n技能\t0\n工作区\t1\n世界书\t0\n记忆与画像\t0\n外观偏好\t1\n任务配置\t1\n\n附件：0 个；0 字节。\n\n缺失引用\nhc-session-eb0fcd70-4229-410b-b3e5-d23b59faa21e\n\n密钥处理：未包含；已移除 0 个密钥字段",
+      "backupId": "0479eccb-653b-4288-a11e-91d792b106c1"
+    },
+    "s3Objects": [
+      "mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb"
+    ],
+    "previewText": "恢复预览合并选中类别执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。项目数量本地记录4备份记录4新增1替换0移除0跳过（相同或已导入）3冲突1过期删除项跳过0记忆待审0合并冲突同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。workspace工作区 · 相同 ID、内容不同本地 IDapp-workspace备份 IDapp-workspace当前选择两份都保留（默认）保留本地版本使用备份版本两份都保留（默认）缺失的助手（已建立待配置占位）default缺失的关联hc-session-eb0fcd70-4229-410b-b3e5-d23b59faa21e需要重新定位的工作区app-workspace需要重新审核的项defaultapp-workspace@backup-512616b9bb需要重新配置的项hc-session-eb0fcd70-4229-410b-b3e5-d23b59faa21edefaultapp-workspacedefaultapp-workspace@backup-512616b9bb恢复后的权限默认值自动备份停用后台运行停用浏览器登录需要重新登录模型连接需要重新验证外部工作区需要重新定位外部写入停用完全访问停用隐式授权否记忆待审核来自备份是计划任务暂停技能已安装，待审核系统授权需要重新授权工具已停用，待审核恢复点要求执行前建立恢复点状态:will-create保留策略最近 7 个成功点 + 4 周 + 3 月代表副本"
+  },
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
+  },
+  "sourceTreeSha256": "80e9321c460d118dc936d05fd01321f0d64d5dfdbb485104d350851b39a246dd",
+  "fixtureKeys": {
+    "ok": true,
+    "modelAuthFixtureKeys": [
+      "allow-insecure-http?",
+      "pkce?",
+      "supports-refresh?"
+    ],
+    "serverProviderKeys": [
+      "account-claims",
+      "allow-insecure-http?",
+      "authorization-endpoint",
+      "authorization-params",
+      "base-url",
+      "client-id",
+      "client-id-env",
+      "client-secret",
+      "client-secret-env",
+      "default-scopes",
+      "description",
+      "device-authorization-endpoint",
+      "device-client-secret?",
+      "enabled?",
+      "flows",
+      "id",
+      "issuer",
+      "issuer-prefixes",
+      "model-access-note",
+      "name",
+      "official-hosts",
+      "pkce?",
+      "revocation-endpoint",
+      "supports-refresh?",
+      "token-endpoint",
+      "userinfo-endpoint"
+    ],
+    "missingFromServerSource": [],
+    "missingFromFixture": [],
+    "pathStyleDeclared": true,
+    "pathStyleEmitted": true
+  },
+  "s3Requests": [
+    {
+      "at": "2026-11-09T11:09:27.261Z",
+      "method": "GET",
+      "path": "/mock-bucket"
+    },
+    {
+      "at": "2026-11-09T11:09:27.523Z",
+      "method": "GET",
+      "path": "/mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb"
+    },
+    {
+      "at": "2026-11-09T11:09:27.526Z",
+      "method": "PUT",
+      "path": "/mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb"
+    },
+    {
+      "at": "2026-11-09T11:09:27.529Z",
+      "method": "GET",
+      "path": "/mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb"
+    },
+    {
+      "at": "2026-11-09T11:09:27.588Z",
+      "method": "GET",
+      "path": "/mock-bucket"
+    },
+    {
+      "at": "2026-11-09T11:09:27.590Z",
+      "method": "GET",
+      "path": "/mock-bucket/backups/0479eccb-653b-4288-a11e-91d792b106c1.hcb"
+    }
+  ],
+  "diagnosticOnly": [
+    "defaultTargetId",
+    "previewText",
+    "s3Backup",
+    "s3Objects",
+    "targetRows",
+    "webdavBackup",
+    "webdavObjects"
+  ],
+  "failedChecks": [],
+  "ok": true,
+  "finishedAt": "2026-11-09T11:09:30.223Z"
+}

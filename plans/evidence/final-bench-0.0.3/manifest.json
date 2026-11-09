@@ -1,0 +1,100 @@
+{
+  "bundleSha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+  "bundleBytes": 3151319,
+  "sourceTreeSha256": "80e9321c460d118dc936d05fd01321f0d64d5dfdbb485104d350851b39a246dd",
+  "sourceTreeFiles": 1157,
+  "bundleStable": true,
+  "generatedAt": "2026-11-09T19:48:27+08:00",
+  "environment": {
+    "TMPDIR": "/var/tmp/hc-e2e",
+    "mode": "serial (one benchmark at a time, no concurrent JVM/benchmark)"
+  },
+  "benchmarks": {
+    "p-bench1-1000-sessions": {
+      "ok": true,
+      "verdict": "PASS",
+      "json": "plans/evidence/final-bench-0.0.3/bench-1000.json",
+      "copy": "plans/evidence/p-bench1/bench-1000-final7517.json",
+      "startedAt": "2026-11-09T11:43:20.348Z",
+      "finishedAtFileMtime": "2026-11-09 19:43:53 +08:00",
+      "bundleStable": true,
+      "metrics": {
+        "seedMs": 12246,
+        "listenMs": 16682,
+        "healthMs": 16721,
+        "listOpenMs": 1997,
+        "selectMs": 101,
+        "syncMs": 1452,
+        "sessionItems": 200,
+        "expectedSessions": 1000,
+        "totalNodes": 2591,
+        "messageNodes": 20,
+        "messageDomNodes": 337,
+        "peakRssMiB": 1062.4
+      }
+    },
+    "p-bench2-2000-activity": {
+      "ok": true,
+      "verdict": "PASS",
+      "json": "plans/evidence/final-bench-0.0.3/bench-2000.json",
+      "copy": "plans/evidence/p-bench2/bench-2000-final7517.json",
+      "startedAt": "2026-11-09T11:44:36.274Z",
+      "finishedAtFileMtime": "2026-11-09 19:45:07 +08:00",
+      "bundleStable": true,
+      "metrics": {
+        "seedMs": 8299,
+        "listOpenMs": 2030,
+        "syncMs": 1459,
+        "openMs": 44,
+        "messageNodes": 200,
+        "messageDomNodes": 2943,
+        "totalNodes": 3199,
+        "scrollProbe": {
+          "verdict": "PASS",
+          "beforeCount": 200,
+          "afterCount": 400,
+          "clicks": 1,
+          "moreVisible": true
+        },
+        "restoreProbe": {
+          "verdict": "PASS",
+          "anchorFound": true,
+          "restoredExact": true,
+          "restored": true,
+          "windowDelta": 41,
+          "pixelDelta": 10435,
+          "beforeTopId": "bench-2000-0000-m1759",
+          "afterTopId": "bench-2000-0000-m1759"
+        }
+      }
+    },
+    "p-bench3-20k-draft": {
+      "ok": true,
+      "verdict": "PASS",
+      "json": "plans/evidence/final-bench-0.0.3/bench-20k.json",
+      "copy": "plans/evidence/p-bench3/bench-20k-final7517.json",
+      "startedAt": "2026-11-09T11:45:52.416Z",
+      "finishedAtFileMtime": "2026-11-09 19:47:02 +08:00",
+      "bundleStable": true,
+      "metrics": {
+        "pasteMs": 6,
+        "keyLatencyP95": {
+          "keys": 36,
+          "p50": 3,
+          "p95": 5,
+          "max": 55
+        },
+        "selectionMs": 0,
+        "undoMs": 303,
+        "undoLimitMs": 500,
+        "draftLength": 20036,
+        "draftSha256": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+        "draftRestored": true,
+        "serverPeakMiB": 934.4,
+        "serverPeakLimitMiB": 2048,
+        "combinedPeakMiB": 2087.4,
+        "combinedPeakInformational": true
+      }
+    }
+  }
+}

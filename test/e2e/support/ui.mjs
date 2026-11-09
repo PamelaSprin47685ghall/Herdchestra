@@ -69,7 +69,44 @@ export function composer(page) {
 
 export async function newSession(page) {
   const button = page.locator('button[aria-label="新建会话"]').first();
+  const list = page.locator('.wb-session-list').first();
+  if ((await list.count()) === 0) {
+    // Some callers may create a session from a route without the session
+    // list.  Keep the legacy behavior there instead of waiting on a list
+    // that cannot appear.
+    await button.click();
+    await composer(page).waitFor({ state: 'visible', timeout: 15000 });
+    return;
+  }
+  const beforeCount = await page.locator('.wb-session-list .wb-list-button').count();
+  const beforeSelected = await page.evaluate(() => {
+    const row = document.querySelector(
+      '.wb-session-list .wb-list-button[aria-current="true"]');
+    return row ? (row.innerText || row.textContent || '').trim() : null;
+  });
+  const beforeMessages = await page.locator('.hc-conversation .hc-message').count();
   await button.click();
+  if (beforeMessages === 0) {
+    // The current session is already blank; reuse of that blank session is a
+    // valid outcome of New here, so there is nothing to switch away from.
+    await composer(page).waitFor({ state: 'visible', timeout: 15000 });
+    return;
+  }
+  // New must wait for the :session/create accepted receipt to select the
+  // created/reused session.  Waiting only for the composer (always visible)
+  // let E2E 02 send session B's message into session A before the receipt
+  // selected the empty session.
+  await page.waitForFunction(({ beforeCount, beforeSelected, beforeMessages }) => {
+    const rows = [...document.querySelectorAll('.wb-session-list .wb-list-button')];
+    if (rows.length > beforeCount) return true;
+    const selected = rows.find((row) => row.getAttribute('aria-current') === 'true');
+    const selectedText = selected
+      ? (selected.innerText || selected.textContent || '').trim()
+      : null;
+    if (selected && selectedText !== beforeSelected) return true;
+    const messages = document.querySelectorAll('.hc-conversation .hc-message').length;
+    return Boolean(selected) && messages === 0 && beforeMessages > 0;
+  }, { beforeCount, beforeSelected, beforeMessages }, { timeout: 30000 });
   await composer(page).waitFor({ state: 'visible', timeout: 15000 });
 }
 
@@ -122,18 +159,38 @@ export function stopButton(page) {
 }
 
 export async function turnLive(page) {
-  const last = page.locator('.hc-message-in:not(.hc-message-process)').last();
-  // Same zero-match hazard as lastAssistantText: `innerText` waits for an
-  // element to appear, bounded only by the test timeout.
-  const lastText = (await last.count()) === 0 ? '' : await last.innerText().catch(() => '');
-  if (/已停止/.test(lastText)) return false;
-  if (await page.getByText('当前轮仍在生成').count()) return true;
-  const stop = stopButton(page);
-  if (await stop.count()) {
-    if (!(await stop.isDisabled())) return true;
-  }
-  const status = await last.locator('.hc-message-status').innerText().catch(() => '');
-  return /正在生成|生成中/.test(status);
+  // One atomic in-page read.  A zero-match locator.innerText() waits for the
+  // element to appear and ignores .catch until the whole test timeout; the
+  // same applies to hidden/duplicate stop buttons.  Do not reintroduce any
+  // Playwright locator call in this function.
+  return page.evaluate(() => {
+    const incoming = document.querySelectorAll(
+      '.hc-message-in:not(.hc-message-process)');
+    const last = incoming.length ? incoming[incoming.length - 1] : null;
+    const lastText = last ? (last.innerText || last.textContent || '') : '';
+    if (lastText.includes('已停止')) return false;
+    if ((document.body.innerText || document.body.textContent || '')
+        .includes('当前轮仍在生成')) return true;
+    const buttons = document.querySelectorAll(
+      'button[aria-label="停止当前生成"], button[aria-label="停止无人值守运行"]');
+    for (const button of buttons) {
+      const visible = button.offsetParent !== null
+        || button.getClientRects().length > 0;
+      if (!visible) continue;
+      const aria = button.getAttribute('aria-label') || '';
+      const text = (button.innerText || button.textContent || '').trim();
+      if (aria === '停止无人值守运行'
+          || /正在生成|正在停止|停止无人值守运行/.test(text)) {
+        return true;
+      }
+    }
+    if (last) {
+      const status = last.querySelector('.hc-message-status');
+      const statusText = status ? (status.innerText || status.textContent || '') : '';
+      if (/正在生成|生成中/.test(statusText)) return true;
+    }
+    return false;
+  });
 }
 
 export async function waitForAssistant(page, options = {}) {
@@ -173,7 +230,10 @@ export async function ensureIdle(page, timeout = 30000) {
   while (Date.now() - started < timeout) {
     if (!(await turnLive(page))) return true;
     const stop = stopButton(page);
-    if (await stop.count()) await stop.click().catch(() => {});
+    if (await stop.count()) {
+      const visible = await stop.isVisible().catch(() => false);
+      if (visible) await stop.click({ timeout: 1500 }).catch(() => {});
+    }
     await page.waitForTimeout(1000);
   }
   return !(await turnLive(page));
@@ -247,6 +307,36 @@ export async function settingsEnableConfiguredConnection(page, options) {
   await card.waitFor({ state: 'visible', timeout: 30000 });
 }
 
+export async function dismissSettingsMessages(page) {
+  const closeButtons = page.locator('.hc-message')
+    .getByRole('button', { name: '关闭', exact: true });
+  const count = await closeButtons.count();
+  for (let index = 0; index < count; index++) {
+    const button = closeButtons.nth(index);
+    if (await button.isVisible().catch(() => false)) {
+      await button.click({ timeout: 1500 }).catch(() => {});
+    }
+  }
+}
+
+function isConnectionSaveReceipt(text) {
+  return text.includes('连接已保存')
+    && (text.includes('草稿已清理')
+        || text.includes('服务器已保存提交版本'));
+}
+
+async function waitForNewConnectionSaveReceipt(page, beforeCount,
+                                               timeout = 45000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const texts = await page.locator('.hc-message').allInnerTexts();
+    const receipts = texts.filter(isConnectionSaveReceipt);
+    if (receipts.length > beforeCount) return receipts[receipts.length - 1];
+    await page.waitForTimeout(250);
+  }
+  throw new Error('connection save did not produce a new receipt');
+}
+
 export async function settingsEnableModelAndBindMain(page, options) {
   const { modelId, connectionName, declareTools = false } = options;
   await page.getByRole('button', { name: '模型与角色', exact: true }).first().click();
@@ -261,7 +351,19 @@ export async function settingsEnableModelAndBindMain(page, options) {
   await page.waitForTimeout(500);
   const row = page.locator('.hc-model-row').filter({ hasText: modelId }).first();
   await row.waitFor({ state: 'visible', timeout: 30000 });
-  let savedForTools = false;
+
+  // Enable the model first.  Capability declarations are changes to the same
+  // connection draft, so one save below commits both instead of racing two
+  // separate saves and reading the first save's stale banner.
+  let needsSave = false;
+  const checkbox = row.locator('input[type="checkbox"]').first();
+  if (await checkbox.count()) {
+    if (!(await checkbox.isChecked())) {
+      await checkbox.check();
+      needsSave = true;
+    }
+  }
+
   let toolsDeclared = false;
   if (declareTools) {
     // A typed model has unknown capabilities.  Declaring tool support is an
@@ -269,39 +371,53 @@ export async function settingsEnableModelAndBindMain(page, options) {
     // The capability editor is already visible when the connection draft is
     // selected; only fall back to the "编辑能力" button when it is not.
     let editor = row.locator('.hc-capability-editor').first();
-    if (!(await editor.count()) || !(await editor.isVisible())) {
+    if ((await editor.count()) === 0) {
       const editCapabilities = row.getByRole('button', { name: '编辑能力', exact: true }).first();
       if (await editCapabilities.count()) {
-        await editCapabilities.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(300);
-        editor = row.locator('.hc-capability-editor').first();
+        await editCapabilities.click();
       }
+      editor = row.locator('.hc-capability-editor').first();
     }
-    if (await editor.count()) {
-      await editor.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
-      const toolSelect = editor.getByLabel('工具能力');
-      await toolSelect.selectOption('known').catch(() => {});
-      const toolValue = await toolSelect.inputValue().catch(() => '');
-      if (toolValue === 'known') {
-        await editor.getByRole('button', { name: '保存连接', exact: true })
-          .click({ timeout: 5000 }).catch(() => {});
-        // The initial connection save left an older "连接已保存" banner.  Wait
-        // for the capability badge itself, not that stale banner.
-        toolsDeclared = await row.getByText('工具：已声明支持').first()
-          .waitFor({ state: 'visible', timeout: 15000 })
-          .then(() => true)
-          .catch(() => false);
-        savedForTools = toolsDeclared;
-      }
+    await editor.waitFor({ state: 'visible', timeout: 10000 });
+    const toolSelect = editor.getByLabel('工具能力');
+    await toolSelect.selectOption('known');
+    let toolValue = await toolSelect.inputValue();
+    // React applies the controlled <select> value on the next render; read
+    // it back with a short bounded poll instead of trusting the immediate
+    // pre-render DOM value.
+    for (let attempt = 0;
+         toolValue !== 'known' && attempt < 20;
+         attempt++) {
+      await page.waitForTimeout(100);
+      toolValue = await toolSelect.inputValue();
+    }
+    if (toolValue !== 'known') {
+      throw new Error(`工具能力 did not switch to known: ${toolValue}`);
+    }
+    toolsDeclared = true;
+    needsSave = true;
+  }
+
+  if (needsSave) {
+    // Close the old banner first; otherwise this spec's receipt matcher sees
+    // the first connection save and proves nothing about this save.
+    await dismissSettingsMessages(page);
+    const beforeCount = (await page.locator('.hc-message').allInnerTexts())
+      .filter(isConnectionSaveReceipt).length;
+    const saveButton = row.getByRole('button', { name: '保存连接', exact: true }).first();
+    await saveButton.waitFor({ state: 'visible', timeout: 15000 });
+    if (await saveButton.isDisabled()) {
+      throw new Error('保存连接 is disabled; refusing to treat the draft badge as saved');
+    }
+    await saveButton.click();
+    await waitForNewConnectionSaveReceipt(page, beforeCount);
+    if (declareTools) {
+      // The receipt clears the draft and the capability editor goes away.
+      await row.locator('.hc-capability-editor').first()
+        .waitFor({ state: 'hidden', timeout: 15000 });
     }
   }
-  const checkbox = row.locator('input[type="checkbox"]').first();
-  if (!savedForTools && !(await checkbox.isChecked())) {
-    await checkbox.check();
-    await row.getByRole('button', { name: '保存连接', exact: true }).first().click();
-    await page.getByText('连接已保存', { exact: false }).first()
-      .waitFor({ state: 'visible', timeout: 30000 });
-  }
+
   await row.getByRole('button', { name: '选为当前角色', exact: true }).first().click();
   const saveRole = page.getByRole('button', { name: '保存角色绑定', exact: true }).first();
   await saveRole.waitFor({ state: 'visible', timeout: 15000 });

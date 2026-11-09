@@ -269,6 +269,18 @@
          (history-snapshot/session-summary-fields
           (get-in history [:session/history id])))]))
 
+(defn- presence-fields
+  "Publish the Owner's client presence for one session.
+
+  The two keys are the only source the takeover UI has.  They are always
+  emitted: a session without a live Owner publishes `nil` / `[]`, never a
+  stale value.  Presence lives in the Owner state, not in the committed
+  session record, so this is merged after the versioned summary cache."
+  [owner]
+  (let [state (:state owner)]
+    {:session/controller-id (:controller-id state)
+     :session/observer-ids (vec (:observer-ids state))}))
+
 (def ^:private call-view-keys
   "Call fields safe to publish to the browser.
 
@@ -691,17 +703,22 @@
                    [:conversation :history :summary]))))
 
 (defn- history-window-tail-ids
-  "The newest HISTORY-WINDOW-SIZE visible message ids of SESSION, or nil
-  when no tail window applies.  Fetched windows are unioned on top by the
-  caller; this is only the default tail."
+  "The newest HISTORY-WINDOW-SIZE visible message ids of SESSION.
+
+  A positive size selects the newest ids, a zero size selects none (the
+  caller must not materialize message entities for that session), and nil
+  selects all.  Fetched windows are unioned on top by the caller; this is
+  only the default tail."
   [session history-window-size]
-  (when (and (integer? history-window-size) (pos? history-window-size))
-    (let [visible-ids (->> (or (:message-order session) [])
-                           (keep #(get-in session [:messages %]))
-                           (remove #(or (:deleted? %) (:folded? %)))
-                           (map :message-id)
-                           vec)]
-      (when (pos? (count visible-ids))
+  (when (and (integer? history-window-size)
+             (not (neg? history-window-size)))
+    (if (zero? history-window-size)
+      []
+      (let [visible-ids (->> (or (:message-order session) [])
+                             (keep #(get-in session [:messages %]))
+                             (remove #(or (:deleted? %) (:folded? %)))
+                             (map :message-id)
+                             vec)]
         (vec (take-last history-window-size visible-ids))))))
 
 (defn- history-window-ids
@@ -710,13 +727,22 @@
   The window is the union of the newest HISTORY-WINDOW-SIZE visible ids and
   any ids the client already fetched through `:history/messages` (tracked in
   PUBLISHED-WINDOWS).  A nil window publishes every visible message, which is
-  the pre-windowing behavior."
+  the pre-windowing behavior; a zero window publishes no entities and still
+  returns an explicit empty set."
   [session session-id published-windows history-window-size]
   (let [published (when published-windows
                     (get @published-windows session-id))]
-    (when (or published
-              (and (integer? history-window-size)
-                   (pos? history-window-size)))
+    (cond
+      ;; A zero window with nothing fetched is the large session list's
+      ;; common case: answer without walking the session's messages at all.
+      (and (nil? published)
+           (integer? history-window-size)
+           (zero? history-window-size))
+      #{}
+
+      (or published
+          (and (integer? history-window-size)
+               (not (neg? history-window-size))))
       (let [visible (set (map :message-id
                               (filter (fn [m]
                                         (not (or (:deleted? m)
@@ -728,7 +754,9 @@
             ids (into #{}
                       (comp (filter visible) (distinct))
                       (concat published tail))]
-        (not-empty ids)))))
+        ids)
+
+      :else nil)))
 
 (defn- history-window-key
   "Cache fingerprint for one session's window: the window id set is stable
@@ -767,18 +795,28 @@
                       has already fetched; merged into each session's window
     :history-window-size newest message entities published per session when
                       no fetched window exists (default: all messages)
+    :inactive-history-window-size newest message entities published for a
+                      session that is not the presentation active session.
+                      Defaults to 0, so a large session list publishes no
+                      entities for sessions nobody opened.  An explicit nil
+                      means all messages for those sessions.
     :now             epoch ms
 
   Returns a plain map ready for `STATE_SNAPSHOT`."
   [{:keys [sessions session-records owner-snapshots active-session board
            gate-status swarm-id config sync now outbound-opts-fn
-           session-cache published-windows history-window-size]
+           session-cache published-windows history-window-size
+           inactive-history-window-size]
+    :as opts
     :or {sessions [] session-records [] owner-snapshots {} swarm-id nil
          config {}}}]
   (let [visible-ids (set (map :session-id sessions))
         active-session (if (contains? visible-ids active-session)
                          active-session
                          (:session-id (first sessions)))
+        inactive-window (if (contains? opts :inactive-history-window-size)
+                          inactive-history-window-size
+                          0)
         active-owner (get owner-snapshots active-session)
         active-state (:state active-owner)
         visible-owners (select-keys owner-snapshots visible-ids)
@@ -823,6 +861,11 @@
         hidden-message-ids
         (set
          (for [record session-records
+               ;; Only an owner-backed session can contribute conversation
+               ;; entities, so only its record can hide one.  Scanning every
+               ;; committed record here was a full message walk over the
+               ;; whole session list on each publish.
+               :when (contains? visible-owners (:session-id record))
                [_ message] (:messages record)
                :when (or (:deleted? message)
                          (:folded? message)
@@ -836,10 +879,15 @@
                       ;; The message window bounds every session, active
                       ;; included: `:session/history` keeps the full visible
                       ;; id list while older entities are fetched through
-                      ;; `:history/messages`.
+                      ;; `:history/messages`.  A non-active session defaults
+                      ;; to a zero window, so a large session list publishes
+                      ;; no message entities for sessions nobody opened.
+                      window-size (if active?
+                                    history-window-size
+                                    inactive-window)
                       window-ids (history-window-ids session session-id
                                                       published-windows
-                                                      history-window-size)
+                                                      window-size)
                       window-opts {:messages-window
                                    (when window-ids {:ids window-ids})}]
                   (if (and session-cache (not active?))
@@ -848,16 +896,18 @@
                      [(:revision session)
                       (history-window-key session session-id
                                           published-windows
-                                          history-window-size)]
+                                          window-size)]
                      #(history-snapshot/session-history
                        session
-                       (merge window-opts
+                       (merge {:context? active?}
+                              window-opts
                               (if (and outbound-opts-fn active?)
                                 (or (outbound-opts-fn session) {})
                                 {}))))
                     (history-snapshot/session-history
                      session
                      (merge
+                      {:context? active?}
                       (if (and outbound-opts-fn active?)
                         (or (outbound-opts-fn session) {})
                         {})
@@ -976,8 +1026,16 @@
                                       settings-connections
                                       settings-models)])))
                         sessions)
+        presence (into {}
+                       (map (fn [session]
+                              (let [session-id (:session-id session)]
+                                [session-id
+                                 (presence-fields
+                                  (get visible-owners session-id))])))
+                       sessions)
         summaries (merge-with merge
                               summaries
+                              presence
                               (unresolved-call-summaries visible-owners)
                               (worker-program-summaries visible-owners))]
     (when session-cache

@@ -1,6 +1,6 @@
 (ns hc.core.steward-sphinx.cognition-test
   (:require [clojure.test :refer [deftest is]]
-            [clojure.test.check :as tc]
+            [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hc.core.steward-sphinx.cognition :as cognition]))
@@ -349,37 +349,31 @@
                     paths))
             (gen/vector gen-path 1 8)))
 
-(deftest duplicate-ingestion-is-idempotent-property
-  (is (:result
-       (tc/quick-check
-        40
-        (prop/for-all [commits gen-commits]
-          (let [ingest-all (fn [state evidences]
-                             (reduce (fn [state evidence]
-                                       (:state (cognition/ingest-evidence state evidence)))
-                                     state
-                                     evidences))
-                once (ingest-all (cognition/initial-cognition) commits)
-                twice (ingest-all once commits)]
-            (and (= once twice)
-                 (= (count commits) (cognition/evidence-count once)))))))))
+(defspec duplicate-ingestion-is-idempotent-property 40
+  (prop/for-all [commits gen-commits]
+    (let [ingest-all (fn [state evidences]
+                       (reduce (fn [state evidence]
+                                 (:state (cognition/ingest-evidence state evidence)))
+                               state
+                               evidences))
+          once (ingest-all (cognition/initial-cognition) commits)
+          twice (ingest-all once commits)]
+      (and (= once twice)
+           (= (count commits) (cognition/evidence-count once))))))
 
 (def gen-confidence
   (gen/fmap #(/ % 100.0) (gen/choose 0 100)))
 
-(deftest confidence-stays-in-unit-interval-property
-  (is (:result
-       (tc/quick-check
-        40
-        (prop/for-all [confidences (gen/vector gen-confidence 0 6)]
-          (let [c1 (state-after (ingest (cognition/initial-cognition) 1 ["src/a.clj"]))
-                claims (mapv (fn [index confidence]
-                               (claim (str "k" index) confidence ["git:c1"]))
-                             (range)
-                             confidences)
-                result (revise c1 "weighted" [] claims)]
-            (and (:ok? result)
-                 (<= 0.0 (get-in result [:best-answer :confidence]) 1.0))))))))
+(defspec confidence-stays-in-unit-interval-property 40
+  (prop/for-all [confidences (gen/vector gen-confidence 0 6)]
+    (let [c1 (state-after (ingest (cognition/initial-cognition) 1 ["src/a.clj"]))
+          claims (mapv (fn [index confidence]
+                         (claim (str "k" index) confidence ["git:c1"]))
+                       (range)
+                       confidences)
+          result (revise c1 "weighted" [] claims)]
+      (and (:ok? result)
+           (<= 0.0 (get-in result [:best-answer :confidence]) 1.0)))))
 
 (deftest non-finite-claim-weight-cannot-poison-confidence
   (let [state (assoc-in (cognition/initial-cognition)
@@ -395,29 +389,26 @@
         answer (cognition/rebuild-best-answer state)]
     (is (<= 0.0 (:confidence answer) 1.0))))
 
-(deftest invalidation-is-monotonic-property
-  (is (:result
-       (tc/quick-check
-        40
-        (prop/for-all [watch gen-path
-                       first-path gen-path
-                       second-path gen-path]
-          (let [c1 (state-after (ingest (cognition/initial-cognition) 1 ["base"]))
-                r1 (revise c1 "assume"
-                           [{:assumption-id "a1"
-                             :statement "watched"
-                             :confidence 0.7
-                             :watch-paths [watch]
-                             :basis ["git:c1"]}]
-                           [])
-                c2 (state-after r1)
-                c3 (state-after (ingest c2 2 [first-path]))
-                c4 (state-after (ingest c3 3 [second-path]))
-                invalidated? (fn [state]
-                               (= :invalidated
-                                  (get-in (cognition/assumption-status
-                                           state
-                                           (get-in state [:assumptions "a1"]))
-                                          [:status])))]
-            (or (not (invalidated? c3))
-                (invalidated? c4))))))))
+(defspec invalidation-is-monotonic-property 40
+  (prop/for-all [watch gen-path
+                 first-path gen-path
+                 second-path gen-path]
+    (let [c1 (state-after (ingest (cognition/initial-cognition) 1 ["base"]))
+          r1 (revise c1 "assume"
+                     [{:assumption-id "a1"
+                       :statement "watched"
+                       :confidence 0.7
+                       :watch-paths [watch]
+                       :basis ["git:c1"]}]
+                     [])
+          c2 (state-after r1)
+          c3 (state-after (ingest c2 2 [first-path]))
+          c4 (state-after (ingest c3 3 [second-path]))
+          invalidated? (fn [state]
+                         (= :invalidated
+                            (get-in (cognition/assumption-status
+                                     state
+                                     (get-in state [:assumptions "a1"]))
+                                    [:status])))]
+      (or (not (invalidated? c3))
+          (invalidated? c4)))))

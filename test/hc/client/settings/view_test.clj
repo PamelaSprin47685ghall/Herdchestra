@@ -406,3 +406,111 @@
     (is (= :settings/back-draft (:type action)))
     (is (nil? (get-in after [:drafts "draft-only"])))
     (is (nil? (get-in after [:ui :selected-draft-id])))))
+
+(defn- connection-card-text
+  [state]
+  (let [tree (view/settings-tree state)]
+    (support/tree-text
+     (first (support/nodes-with-class tree "hc-connection-card")))))
+
+(deftest connection-card-hides-untested-placeholder-test
+  (let [state (support/state
+               {:connections
+                {"a" (normalized "a" "A" "https://a.example.com/v1"
+                                 {:status :untested})}})
+        text (connection-card-text state)]
+    (is (= 1 (count (re-seq #"未测试" text)))
+        "status already says 未测试; the last-test row must not repeat it")
+    (is (not (re-find #"最近测试" text)))))
+
+(deftest connection-card-shows-last-test-when-distinct-test
+  (let [state (support/state
+               {:connections
+                {"a" (normalized "a" "A" "https://a.example.com/v1"
+                                 {:status :connected
+                                  :last-tested-at "2026-11-09 10:00"})}})
+        text (connection-card-text state)]
+    (is (re-find #"最近测试" text))
+    (is (re-find #"2026-11-09 10:00" text))))
+
+(deftest connection-card-labels-all-detail-terms-test
+  ;; L-03 keeps these rows inside the card's detail list.  Each value must
+  ;; keep its own <dt>; a multi-form `when` used to return only the <dd>,
+  ;; leaving "最近测试"/"草稿"/"账号标识" unlabelled.
+  (let [state (-> (support/state
+                   {:connections
+                    {"a" (normalized "a" "A" "https://a.example.com/v1"
+                                     {:status :connected
+                                      :last-tested-at "2026-11-09 10:00"
+                                      :account-label "acct-1"})}})
+                  (support/apply-action {:type :settings/open})
+                  (support/apply-action {:type :settings/select-connection
+                                         :connection-id "a"})
+                  (support/apply-action {:type :settings/edit-field
+                                         :draft-id "a"
+                                         :field :name
+                                         :value "Draft Name"}))
+        text (connection-card-text state)]
+    (is (re-find #"最近测试" text))
+    (is (re-find #"草稿" text))
+    (is (re-find #"账号标识" text))
+    (is (re-find #"acct-1" text))))
+
+(deftest connection-card-keeps-one-row-when-status-and-test-text-match-test
+  (let [state (support/state
+               {:connections
+                {"a" (normalized "a" "A" "https://a.example.com/v1"
+                                 {:status :error
+                                  :last-tested-at "连接失败"})}})
+        text (connection-card-text state)]
+    (is (= 1 (count (re-seq #"连接失败" text))))
+    (is (not (re-find #"最近测试" text)))))
+
+(deftest section-tabs-collapse-with-current-label-test
+  (let [state (assoc-in (fixture) [:ui :section] :models)
+        tree (view/settings-tree state)
+        details (first (support/nodes-with-class tree "hc-tabs-collapsible"))
+        summary (first (filter #(= :summary (:tag %))
+                               (:children details)))
+        nav (first (filter #(= :nav (:tag %)) (:children details)))
+        action (button-action nav "数据中心")]
+    (is (= true (get-in details [:attrs :open]))
+        "the collapsed details starts open so desktop CSS only hides the summary")
+    (is (= "hc-tabs-summary" (get-in summary [:attrs :class])))
+    (is (= "设置分区：模型与角色" (support/tree-text summary)))
+    (is (= :settings/select-section (:type action)))
+    (is (= :data (:section action)))
+    (is (= "hc-tabs" (get-in nav [:attrs :class]))
+        "the inner tab navigation keeps its class and actions")))
+
+(deftest data-section-has-subnav-anchors-test
+  (let [state (assoc-in (support/state) [:ui :section] :data)
+        tree (view/settings-tree state)
+        subnav (first (filter #(= "hc-data-subnav" (get-in % [:attrs :class]))
+                              (support/nodes tree)))
+        links (filter #(= :a (:tag %)) (support/nodes subnav))
+        hrefs (mapv #(get-in % [:attrs :href]) links)]
+    (is (= ["#hc-data-diagnostics" "#hc-data-backup"] hrefs))
+    (is (= "hc-data-diagnostics" view/diagnostics-anchor-id))
+    (is (= "hc-data-backup" view/backup-anchor-id))
+    (is (= view/diagnostics-anchor-id
+           (subs (first hrefs) 1))
+        "the link and the panel wrapper share one anchor id")
+    (is (re-find #"统计与诊断" (support/tree-text subnav)))
+    (is (re-find #"备份与恢复" (support/tree-text subnav)))))
+
+(deftest workspace-tab-titles-follow-workbench-tabs-test
+  (is (= ["设置与数据中心" "定时任务" "语音与朗读" "独立翻译" "快捷键"]
+         (mapv view/workspace-tab-title
+               ["settings" "schedule" "speech" "translation" "shortcuts"])))
+  (is (= "设置与数据中心" (view/workspace-tab-title nil))))
+
+(deftest settings-header-title-is-h2-test
+  (let [tree (view/settings-tree (fixture))
+        headings (filter #(contains? #{:h1 :h2} (:tag %))
+                         (support/nodes tree))]
+    (is (not-any? #(= :h1 (:tag %)) headings)
+        "the workbench owns the single page h1")
+    (is (some #(and (= :h2 (:tag %))
+                    (= "设置与数据中心" (support/tree-text %)))
+              headings))))

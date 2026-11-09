@@ -71,7 +71,8 @@
     :quiescent?       true only when the caller has stopped all writers.  A
                       restore plan may also carry `:quiescent? true`.
     :extensions-root  extension catalog/skill root (default disabled)
-    :extensions       an existing extension component; its :repository is used
+    :extensions       an existing extension component; its :repository is
+                      used for the catalog and its :root for skill files
     :blob-store       a `hc.server.gateway.ports/BlobStorePort`
     :blob-root        local blob root; used to build a BlobStorePort when
                       :blob-store is absent
@@ -84,9 +85,12 @@
      (err/fail! :BACKUP_STORAGE_CLOSED
                 "Backup adapter needs an open storage handle"
                 {:path (try (storage/store-path store) (catch Exception _ nil))}))
-   (let [repository (or (:extensions-repository opts)
-                        (some-> (:extensions opts) :repository)
-                        (some-> (:extensions-root opts) extensions-durable/open))
+   (let [extensions (:extensions opts)
+         extensions-root (or (:extensions-root opts)
+                             (:root extensions))
+         repository (or (:extensions-repository opts)
+                        (:repository extensions)
+                        (some-> extensions-root extensions-durable/open))
          blob-store (or (:blob-store opts)
                         (some-> (:blob-root opts) blob-port/blob-store-port))
          workspace-store (or (:workspace-store opts)
@@ -94,6 +98,7 @@
                                (workspace/store (:workspace-store-root opts)
                                                 {:workspaces (:workspaces opts)})))]
      (->StorageDomain store (assoc opts
+                                   :extensions-root extensions-root
                                    :extensions-repository repository
                                    :blob-store blob-store
                                    :workspace-store workspace-store
@@ -298,9 +303,27 @@
                    "The extension catalog could not be read"
                    {:error (:error loaded)})))))
 
+(defn- tool-item
+  "One MCP server entry without transport credentials.
+
+  `:headers` and `:env` are credentials, not portable configuration: a
+  server restored without them must be re-authorized explicitly.  An
+  explicit `:include-secrets? true` keeps them, matching the rest of the
+  backup secret policy.  They are removed before the generic secret walker,
+  so the manifest's secret count describes document keys, not this
+  transport-only omission; the restored server stays disabled for review."
+  [id server include-secrets?]
+  (let [server (assoc server :id id)]
+    (if include-secrets?
+      server
+      (cond-> (dissoc server :headers :env)
+        (map? (:transport server))
+        (update :transport dissoc :headers :env)))))
+
 (defn- tool-items
-  [catalog]
-  (mapv (fn [[id server]] (assoc server :id id))
+  [catalog include-secrets?]
+  (mapv (fn [[id server]]
+          (tool-item id server include-secrets?))
         (get-in catalog [:mcp :servers] {})))
 
 (defn- skill-item
@@ -411,7 +434,14 @@
       (catch Throwable e
         (err/fail! :BACKUP_BLOBS_UNAVAILABLE
                    "A referenced attachment blob could not be read"
-                   {:blob-id id :message (.getMessage ^Throwable e)}
+                   {:blob-id id
+                    :message (.getMessage ^Throwable e)
+                    :cause-code (or (:code (ex-data e))
+                                    (:error (ex-data e)))
+                    :cause-details
+                    (not-empty (dissoc (ex-data e)
+                                       :code :error
+                                       :storage/expected?))}
                    e)))))
 
 (defn- attachment-map
@@ -445,7 +475,13 @@
                           (catch Throwable e
                             (err/fail! :BACKUP_BLOBS_UNAVAILABLE
                                        "Attachment metadata could not be read"
-                                       {:message (.getMessage ^Throwable e)}
+                                       {:message (.getMessage ^Throwable e)
+                                        :cause-code (or (:code (ex-data e))
+                                                        (:error (ex-data e)))
+                                        :cause-details
+                                        (not-empty (dissoc (ex-data e)
+                                                           :code :error
+                                                           :storage/expected?))}
                                        e)))
                   limit (get-in domain [:opts :max-attachment-total-bytes])]
               (when (and (integer? limit) (> (long total) (long limit)))
@@ -512,7 +548,10 @@
      {:conversations {:items conversations}
       :assistants {:items (assistant-items config)}
       :connections {:items (connection-items config)}
-      :tools {:items (if (contains? selected :tools) (tool-items catalog) [])}
+      :tools {:items (if (contains? selected :tools)
+                       (tool-items catalog
+                                   (boolean (:include-secrets? request)))
+                       [])}
       :skills {:items (if (contains? selected :skills) (skill-items domain catalog) [])}
       :workspaces {:items workspaces}
       :worldbooks {:items (worldbook-items export)}
@@ -1414,19 +1453,18 @@
              :command-retired-through (:command-retired-through fence)))))
 
 (defn restore-safety
-  "Return the durable restore-safety record, or nil.
+  "Return the durable restore-safety record, or nil when none exists.
 
   The record is written in the same transaction as the restored categories.
   Startup must read it before enabling imported schedules, auto-backup,
-  device control, full access or external writes."
+  device control, full access or external writes.  A read failure throws:
+  it is not evidence that no restore happened."
   [store]
-  (try
-    (let [view (storage/read-session-view store {:partition "config"})
-          doc (first (get-in view [:records :restore-safety] []))]
-      (when doc
-        (dissoc doc :storage/id :storage/kind :storage/partition
-                :storage/session-id :storage/version :storage/updated-at)))
-    (catch Throwable _ nil)))
+  (let [view (storage/read-session-view store {:partition "config"})
+        doc (first (get-in view [:records :restore-safety] []))]
+    (when doc
+      (dissoc doc :storage/id :storage/kind :storage/partition
+              :storage/session-id :storage/version :storage/updated-at))))
 
 ;; ---------------------------------------------------------------------------
 ;; Port

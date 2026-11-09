@@ -1,9 +1,10 @@
 (ns hc.compose.mission.model
-  "Model ownership for the Plan/Reviewer/Swarm role lifecycle.
+  "Model ownership for the Steward/Meditator/Plan/Reviewer/Swarm roles.
 
   Root AGENTS.md §1.1 #8 and §5.4 fix the ownership:
 
-    Steward, Plan, and the centralized Reviewer use the main model.
+    Steward, Meditator, Plan, and the centralized Reviewer use the main
+    model.
     The Plan dedicated worker, ordinary swarm workers, and the holder use
     the user-selected task model.
 
@@ -14,8 +15,9 @@
   (:require [clojure.string :as str]))
 
 (def role->model-role
-  "The model class for each task-cycle role."
+  "The model class for each mission role."
   {:steward :main
+   :meditator :main
    :plan :main
    :reviewer :main
    :plan-worker :task
@@ -25,7 +27,7 @@
 
 (def main-roles
   "Roles that must use the main model."
-  #{:steward :plan :reviewer})
+  #{:steward :meditator :plan :reviewer})
 
 (def task-roles
   "Roles that must use the user-selected task model."
@@ -59,12 +61,23 @@
 (defn role-requires-tools?
   "True for a mission role whose unattended protocol needs its program tool."
   [role]
-  (contains? #{:plan :reviewer} (when role (keyword role))))
+  ;; This answer must equal `program-role-requires-tools?` for the same
+  ;; mission role.  Plan, Reviewer, and Steward are main-model roles; ordinary
+  ;; workers and the holder run the whole Swarm protocol through tool calls,
+  ;; so a text-only model would leave every primitive unavailable.  The
+  ;; Meditator publishes text, and the Plan dedicated worker enforces its own
+  ;; `:required-capabilities [:tools]` contract through its own runner.
+  (contains? #{:plan :reviewer :steward :worker :holder}
+             (when role (keyword role))))
 
 (defn program-role-requires-tools?
   "True for a program role that cannot run without a tool surface."
   [program-role]
-  (contains? #{:clj-plan :clj-review} (when program-role (keyword program-role))))
+  ;; `:clj-worker` covers both the ordinary swarm worker and the holder: every
+  ;; primitive they own is a tool call.  `:dedicated-worker` is not decorated
+  ;; by `hc.server.app.prompts`; its devops runner owns its own tool contract.
+  (contains? #{:clj-plan :clj-review :clj-steward :clj-worker}
+             (when program-role (keyword program-role))))
 
 (defn- invalid-models!
   [message details]

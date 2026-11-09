@@ -9,7 +9,9 @@
 - `stat` 返回存在性、类型与 `(mtime-sec, mtime-nsec, size)`；
 - `read` 返回 UTF-8 文本与整文件 `stamp`；读取前后 `stamp` 变化时返回 `:FILE_CONFLICT`，不把不稳定内容当成快照；
 - `list` 用纯探查目录列表，再对每个条目单独 `stat`；目录时间从不解释为子树版本；
-- `search` 只按名称匹配，带目录数、条目数、深度与结果上限；达到上限时返回 `:truncated? true`。
+- `search` 支持 `:name`（默认）与 `:content` 两种模式，带目录数、条目数、
+  深度与结果上限；达到上限时返回 `:truncated? true`。内容模式读取普通
+  UTF-8 文件，返回首个命中行与文件内匹配数。
 
 本包不写文件、不删除、不移动、不创建目录，也不提供“忽略 stamp 继续”的入口。浏览器路径空间被限制在工作区根内，这一点比代理侧 `workspace-gate` 更窄：绝对路径、`..`、NUL、盘符路径与解析到根外的符号链接一律拒绝。
 
@@ -25,10 +27,11 @@
 (files/stat-path svc "sub/a.txt")
 (files/read-text svc "sub/a.txt")
 (files/search svc {:query "a" :mode :name})
+(files/search svc {:query "needle" :mode :content})
 (files/dispatch svc :list {:path "sub"})
 ```
 
-`service` 选项：`:root`（必填）、`:max-file-bytes`（默认 2 MiB）、`:max-entries`（2000）、`:max-search-results`（200）、`:max-search-dirs`（500）、`:max-search-entries`（10000）、`:max-search-depth`（12）。根不存在时服务仍可构造，读取返回普通拒绝，不使整个应用启动失败。
+`service` 选项：`:root`（必填）、`:max-file-bytes`（默认 2 MiB）、`:max-entries`（2000）、`:max-search-results`（200）、`:max-search-dirs`（500）、`:max-search-entries`（10000）、`:max-search-depth`（12）。内容搜索另有固定上限：`:max-search-content-file-bytes`（524288）、`:max-search-content-total-bytes`（8388608）、`:max-search-content-files`（2000）与 `:max-search-snippet-chars`（160）。根不存在时服务仍可构造，读取返回普通拒绝，不使整个应用启动失败。
 
 成功结果带 `:ok? true`；拒绝结果带 `:ok? false :error {:code :message :details}`。
 浏览器路径只接受 `/` 分隔符；反斜杠按 `:INVALID_PATH` 拒绝，不做平台翻译。
@@ -43,7 +46,7 @@
 | `:FILE_TOO_LARGE` / `:LIMIT_EXCEEDED` | 超出单文件或搜索上限 |
 | `:BINARY_FILE` | 不是可显示的规范 UTF-8 文本 |
 | `:FILE_CONFLICT` | 读取期间 `stamp` 变化 |
-| `:UNSUPPORTED_OPERATION` | 例如内容搜索；不伪装成已执行 |
+| `:UNSUPPORTED_OPERATION` | 二进制或无法无损解码的内容读取；不伪装成已执行 |
 | `:INVALID_QUERY` | 空搜索词或非法 `limit` |
 | `:IO_ERROR` | 操作系统拒绝读取或发生其他 I/O 失败 |
 
@@ -68,7 +71,7 @@
 | GET/HEAD | `/api/workspace/list` | `path` |
 | GET/HEAD | `/api/workspace/stat` | `path` |
 | GET/HEAD | `/api/workspace/read` | `path` |
-| GET/HEAD | `/api/workspace/search` | `q`、可选 `limit`、`mode=name` |
+| GET/HEAD | `/api/workspace/search` | `q`、可选 `limit`、`mode=name|content` |
 
 响应为 `application/edn`，`cache-control: no-store`。写方法返回 405；未知 `/api/workspace/*` 返回 404，绝不落入 SPA 回退。状态码映射：路径错误 400、根外 403、不存在 404、stamp 冲突 409、过大 413、二进制 415、未实现能力 501。
 
@@ -110,5 +113,8 @@ bash test/js/verify_files_ui.sh
 - `(mtime, size)` 相同不证明内容相同（F08）；本包不增加隐藏哈希。
 - 目录列表不是全工作区一致快照；读取期间其他提交或外部编辑器仍可改变文件。
 - 符号链接按操作系统默认跟随；根外目标只显示链接本身。
-- 搜索是尽力而为的有界遍历，不宣称完整；内容搜索未实现。
+- 搜索是尽力而为的有界遍历，不宣称完整。内容模式对二进制/无法无损解码
+  记 `:skipped :binary`，读取期 `:FILE_CONFLICT`/`:STRUCTURE_CONFLICT` 记
+  `:skipped :unstable`，单文件超限记 `:skipped :too-large`；总量或文件数
+  预算耗尽时只返回截断结果。根外符号链接不跟随。
 - HTTP 响应在内存中组装整段文本，受单文件 2 MiB 默认上限约束。

@@ -11,7 +11,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Dual-hash requirement from the 0.0.1 manual evidence: the client bundle
 // hash alone does not pin the server-side code the specs exercise.
 export function sourceTreeSha256() {
-  const script = 'find src test -type f | sort | xargs sha256sum | sha256sum';
+  // `LC_ALL=C` pins the collation order.  The release evidence tooling uses
+  // the same command, so a locale change must not move this hash.
+  const script = 'find src test -type f | LC_ALL=C sort | xargs sha256sum | sha256sum';
   const out = execFileSync('bash', ['-c', script], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -47,23 +49,38 @@ export async function collectMockState(mocks) {
   return states;
 }
 
+// Strict aggregate for automated checks.  Diagnostic values (strings,
+// arrays, counts) must stay out of `checks`; mixing them in silently makes
+// `Object.values(checks).every(Boolean)` meaningless.
+export function checksOk(checks) {
+  const values = Object.values(checks || {});
+  return values.length > 0 && values.every((value) => value === true);
+}
+
 // Write the standard result envelope.  `extra` merges top-level fields such
 // as appUrl, mockUrls, chromeVersion or error.
 export function recordEvidence({ dir, name = 'result', test, mode = 'automated',
                                  mock = true, startedAt, finishedAt, extra = {},
                                  checks, ok, evidence }) {
+  const clientBundle = clientBundleInfo();
+  const normalizedChecks = checks || {};
   const result = {
     test,
     mode,
     mock,
     startedAt,
     finishedAt: finishedAt || new Date().toISOString(),
-    clientBundle: clientBundleInfo(),
+    // `clientBundle.sha256` is the release-visible client pin; the extra
+    // mtime/path fields travel beside it.
+    clientBundle,
     sourceTreeSha256: sourceTreeSha256(),
-    checks: checks || {},
+    checks: normalizedChecks,
     screenshots: [],
     ...extra,
-    ok: Boolean(ok),
+    // When the caller omits `ok`, derive it strictly from booleans.  A
+    // non-boolean diagnostic left in `checks` makes the result false rather
+    // than letting a truthy string or count masquerade as a passed check.
+    ok: ok === undefined ? checksOk(normalizedChecks) : Boolean(ok),
     evidence: evidence || null,
   };
   if (!result.evidence) {

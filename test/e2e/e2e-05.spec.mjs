@@ -22,7 +22,7 @@ import { startApp, REPO_ROOT } from './support/app.mjs';
 import { startMockModel } from './support/mock-model.mjs';
 import {
   assert, assertEqual, assistantBodies, assistantTexts, clientBundleInfo, composer,
-  goto, lastAssistantText, newSession, send, sessionModelLabel, shot, turnLive, userTexts,
+  goto, newSession, send, sessionModelLabel, shot, turnLive, userTexts,
   waitForShell, waitForSync, writeJson,
 } from './support/ui.mjs';
 import { sourceTreeSha256, collectMockState } from './support/evidence.mjs';
@@ -70,6 +70,55 @@ async function mockState(mock) {
   return response.json();
 }
 
+// One atomic in-page read.  Do not use locator.innerText() for a transient
+// status node here: a zero-match locator waits for the element to appear, and
+// a node that disappears between count() and innerText() waits until the test
+// timeout.
+async function readTurnSnapshot(page) {
+  return page.evaluate(() => {
+    const incoming = document.querySelectorAll(
+      '.hc-message-in:not(.hc-message-process)');
+    const last = incoming.length ? incoming[incoming.length - 1] : null;
+    const lastText = last ? (last.innerText || last.textContent || '') : '';
+    // Preserve the previous selector's coverage: any incoming status,
+    // including a process-owned one; the last matched status wins.
+    const statuses = document.querySelectorAll(
+      '.hc-message-in .hc-message-status');
+    const status = statuses.length ? statuses[statuses.length - 1] : null;
+    const statusText = status ? (status.innerText || status.textContent || '') : '';
+    const buttons = document.querySelectorAll(
+      'button[aria-label="停止当前生成"], button[aria-label="停止无人值守运行"]');
+    let stopVisible = false;
+    let stopAria = '';
+    let stopText = '';
+    for (const button of buttons) {
+      const visible = button.offsetParent !== null
+        || button.getClientRects().length > 0;
+      if (!visible) continue;
+      stopVisible = true;
+      stopAria = button.getAttribute('aria-label') || '';
+      stopText = (button.innerText || button.textContent || '').trim();
+      break;
+    }
+    // `getByText(...).count()` matched text regardless of visibility, so use
+    // textContent for the waiting indicator rather than innerText.
+    const bodyText = document.body.textContent || '';
+    return {
+      lastText,
+      statusText,
+      stopVisible,
+      stopAria,
+      stopText,
+      bodyHasWaiting: bodyText.includes('当前轮仍在生成'),
+    };
+  });
+}
+
+async function safeInnerText(locator, timeout = 1000) {
+  if ((await locator.count()) === 0) return '';
+  return locator.innerText({ timeout }).catch(() => '');
+}
+
 // A turn is done for this spec when the scripted reply marker is visible,
 // no "正在生成" indicator is on screen, and the mock has been quiet.  The
 // server may keep `:run-status :running` while its review ledger is open
@@ -82,44 +131,54 @@ async function waitTurnDone(page, mock, marker, timeout = 300000) {
   let lastMockCount = -1;
   let stablePolls = 0;
   let quietSince = null;
-  while (Date.now() - started < timeout) {
-    if (Date.now() - lastLog > 30000) {
-      lastLog = Date.now();
-      console.log(`${tag} t=${Math.round((Date.now() - started) / 1000)}s polling`);
-    }
-    const texts = await assistantTexts(page).catch(() => []);
-    const replied = texts.some((text) => text.includes(marker));
-    const generating = await page.getByText('当前轮仍在生成').count().catch(() => 0);
-    const statusLocator = page.locator('.hc-message-in .hc-message-status').last();
-    const liveStatus = (await statusLocator.count()) === 0
-      ? ''
-      : await statusLocator.innerText().catch(() => '');
-    const streamLive = /正在生成|生成中/.test(liveStatus);
-    let mockQuiet = true;
-    if (mock) {
-      const state = await mockState(mock).catch(() => null);
-      const count = state ? state.requests : -1;
-      if (count !== lastMockCount) {
-        lastMockCount = count;
-        stablePolls = 0;
-      } else {
-        stablePolls += 1;
+  let lastSnapshot = null;
+  try {
+    while (Date.now() - started < timeout) {
+      if (Date.now() - lastLog > 30000) {
+        lastLog = Date.now();
+        console.log(`${tag} t=${Math.round((Date.now() - started) / 1000)}s polling`);
       }
-      mockQuiet = stablePolls >= 4;
+      const texts = await assistantTexts(page).catch(() => []);
+      const replied = texts.some((text) => text.includes(marker));
+      lastSnapshot = await readTurnSnapshot(page);
+      const generating = lastSnapshot.bodyHasWaiting ? 1 : 0;
+      const streamLive = /正在生成|生成中/.test(lastSnapshot.statusText);
+      let mockQuiet = true;
+      if (mock) {
+        const state = await mockState(mock).catch(() => null);
+        const count = state ? state.requests : -1;
+        if (count !== lastMockCount) {
+          lastMockCount = count;
+          stablePolls = 0;
+        } else {
+          stablePolls += 1;
+        }
+        mockQuiet = stablePolls >= 4;
+      }
+      if (replied && generating === 0 && !streamLive && mockQuiet) {
+        if (quietSince === null) quietSince = Date.now();
+        if (Date.now() - quietSince >= 2000) return true;
+      } else {
+        quietSince = null;
+      }
+      await page.waitForTimeout(500);
     }
-    if (replied && generating === 0 && !streamLive && mockQuiet) {
-      if (quietSince === null) quietSince = Date.now();
-      if (Date.now() - quietSince >= 2000) return true;
-    } else {
-      quietSince = null;
-    }
-    await page.waitForTimeout(500);
+  } catch (error) {
+    waitTurnDone.lastDiagnostics = {
+      pageClosed: true,
+      error: String(error),
+      lastAssistant: lastSnapshot?.lastText || '',
+      pageTextTail: lastSnapshot?.lastText || '',
+      lastSnapshot,
+    };
+    return false;
   }
   const diagnostics = {
-    pageTextTail: (await page.locator('body').innerText().catch(() => '')).slice(-3000),
-    lastAssistant: await lastAssistantText(page).catch(() => ''),
+    pageTextTail: (await safeInnerText(page.locator('body'), 1000)).slice(-3000),
+    lastAssistant: ((await assistantTexts(page).catch(() => [])).slice(-1)[0] || ''),
     turnLive: await turnLive(page).catch(() => null),
     mockRequests: mock ? (await mockState(mock).catch(() => null))?.requests : null,
+    lastSnapshot,
   };
   waitTurnDone.lastDiagnostics = diagnostics;
   return false;
@@ -185,8 +244,8 @@ async function openContextPanel(page) {
   return panel;
 }
 
-function panelHeaderText(panel) {
-  return panel.locator('.hc-context-header').first().innerText();
+async function panelHeaderText(panel) {
+  return safeInnerText(panel.locator('.hc-context-header').first());
 }
 
 function compressionRows(page) {
@@ -441,7 +500,7 @@ test('@core E2E 05 压缩后继续与撤销', async ({ page, browser }) => {
       .fill(SUMMARY_TEXT);
     await draftRow.getByRole('button', { name: '使用摘要', exact: true }).first().click();
     const appliedRow = await waitForCompressionRow(page, '压缩 已采用：', 30000);
-    const appliedRowText = await appliedRow.innerText();
+    const appliedRowText = await safeInnerText(appliedRow);
     result.appliedRowText = appliedRowText;
     checks.appliedVerbatim = appliedRowText.includes(SUMMARY_TEXT);
     checks.assumptionNotUpgraded =
@@ -530,7 +589,7 @@ test('@core E2E 05 压缩后继续与撤销', async ({ page, browser }) => {
       .first().click();
     // The live client must mark the row reverted without a reload.
     const revertedRow = await waitForCompressionRow(page, '压缩 已撤销：', 30000);
-    const revertedRowText = await revertedRow.innerText();
+    const revertedRowText = await safeInnerText(revertedRow);
     result.revertedRowText = revertedRowText;
     checks.undoMarkedLive = revertedRowText.includes('压缩 已撤销');
     assert(checks.undoMarkedLive, `undo not marked live: ${revertedRowText}`);

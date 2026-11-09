@@ -32,7 +32,8 @@
             [hc.compose.fleet.git :as git]
             [hc.compose.fleet.restore :as restore]
             [hc.compose.fleet.runtime :as runtime]
-            [hc.compose.fleet.state :as state]))
+            [hc.compose.fleet.state :as state]
+            [hc.core.swarm-stm :as swarm]))
 
 (declare runtime board-snapshot wake-actors! accept-actor-event!
          continue-actor-after-tool! actor-state worktree-runtimes
@@ -478,6 +479,8 @@
   Other options: `:master-ref` (default \"master\"), `:resolve-conflict!`,
   `:clock`, `:retention-ms`, `:max-rebase-rounds`, `:limits`, `:preflight?`
   (default true), `:models {:main <id> :task <id>}`, `:slot-ids`,
+  `:on-join-result!` (a `(fn [service result opts])` callback invoked after
+  every `join!`, used by the application to synchronize Owner state),
   `:state-file` (durable EDN path), or `:store` (a
   `hc.compose.fleet.restore/SnapshotStore`).
 
@@ -505,7 +508,8 @@
   service is constructed but does not fork anything."
   [{:keys [mission-id repo worktree-root master-ref git launch-swarm!
            stop-swarm! resolve-conflict! clock retention-ms max-rebase-rounds
-           limits preflight? models slot-ids evaluate-factory state-file store]
+           limits preflight? models slot-ids evaluate-factory state-file store
+           on-join-result!]
     :or {master-ref "master"
          preflight? true
          clock #(System/currentTimeMillis)}}]
@@ -718,6 +722,7 @@
                          :runtime-for-workspace (fn [workspace]
                                                   (runtime-for-workspace @self workspace))
                          :gc! (fn [service] (gc! service))
+                         :on-join-result! on-join-result!
                          :models models
                          :slot-ids slot-ids
                          :limits limits
@@ -873,6 +878,14 @@
   ([service opts]
    (let [result (control/join! (:control service) opts)]
      (sync-runtime-status! service)
+     ;; The callback is an application observation seam (for example, an
+     ;; Owner update): it runs after the service state reflects the join and
+     ;; never changes the joined result.  A callback failure must not turn a
+     ;; real Git fast-forward into a reported join failure.
+     (when-let [on-result! (:on-join-result! service)]
+       (try
+         (on-result! service result opts)
+         (catch Throwable _ nil)))
      result)))
 
 (defn- stop-named-swarm!
@@ -898,6 +911,163 @@
       (stop-named-swarm! service swarm-id reason))
     (sync-runtime-status! service)
     result))
+
+(defn- normalize-workspace
+  "Return WORKSPACE as an absolute path string, or nil."
+  [workspace]
+  (when (some? workspace)
+    (str (.getAbsoluteFile (io/file (str workspace))))))
+
+(defn- swarm-id-for-workspace
+  "Find the swarm that owns WORKSPACE, or nil.
+
+  The live runtime selector answers first.  The control state is the
+  fallback because a terminal swarm may no longer have a runtime while its
+  registered `:workspace` is still authoritative."
+  [service workspace]
+  (or (some-> (runtime-for-workspace service workspace) :swarm-id)
+      (let [wanted (normalize-workspace workspace)]
+        (some (fn [[swarm-id swarm]]
+                (when (= wanted (normalize-workspace (:workspace swarm)))
+                  swarm-id))
+              (:swarms (control/snapshot (:control service)))))))
+
+(defn- terminated-holder-board
+  "Return BOARD with the current token holder logically terminated.
+
+  Pure.  The holder's claims, actions, ordinary ownership, park registration,
+  and token slot are cleared in the same immutable value, so the published
+  board still satisfies the board invariants.  The identity row remains with
+  `:life-state :terminated` and one `:holder-terminated` event records why.
+  Park registrations are cleared because the whole worktree runtime is being
+  discarded; a parked sibling must not survive it."
+  [board reason]
+  (let [holder (get-in board [:token-slot :holder-id])]
+    (if (nil? holder)
+      board
+      (let [version (inc (long (or (:board-version board) 0)))
+            event-seq (inc (long (or (:event-seq board) 0)))
+            removed-claim-ids (into #{}
+                                    (keep (fn [[claim-id claim]]
+                                            (when (= holder (:agent-id claim))
+                                              claim-id)))
+                                    (:claims board))
+            claims (into {}
+                         (remove (fn [[_ claim]]
+                                   (= holder (:agent-id claim))))
+                         (:claims board))
+            actions (into {}
+                          (remove (fn [[_ action]]
+                                    (= holder (:agent-id action))))
+                          (:actions board))
+            tasks (into {}
+                        (map (fn [[task-id task]]
+                               [task-id
+                                (cond-> task
+                                  (contains? removed-claim-ids (:claim-id task))
+                                  (assoc :claim-id nil)
+
+                                  (= holder (:owner-id task))
+                                  (assoc :owner-id nil))]))
+                        (:tasks board))
+            event {:type :holder-terminated
+                   :agent-id holder
+                   :reason reason
+                   :event-seq event-seq
+                   :at-version version}]
+        (swarm/derive
+         (-> board
+             (assoc :claims claims
+                    :actions actions
+                    :tasks tasks
+                    :board-version version
+                    :event-seq event-seq)
+             (assoc :waiters {})
+             (assoc-in [:token-slot :holder-id] nil)
+             (assoc-in [:token-slot :term-id]
+                       (inc (long (or (get-in board [:token-slot :term-id]) 0))))
+             (assoc-in [:token-slot :state] :free)
+             (update-in [:actors holder]
+                        #(-> %
+                             (assoc :role :normal)
+                             (assoc :life-state :terminated)
+                             (assoc :active-action-id nil)
+                             (assoc :dead-at-version version)))
+             (update :events conj event)))))))
+
+(defn- terminate-holder!
+  "Mark RUNTIME's current token holder terminated with a board compare-and-set.
+
+  A concurrent board command is retried against the newer board instead of
+  being overwritten.  The function is a no-op when no holder exists."
+  [runtime reason]
+  (if-not (:kernel runtime)
+    {:ok? true :terminated? false}
+    (loop [attempt 0]
+      (let [kernel (:kernel runtime)
+            before (swarm/snapshot kernel)
+            holder (get-in before [:token-slot :holder-id])]
+        (cond
+          (nil? holder)
+          {:ok? true :terminated? false}
+
+          (swarm/replace-board! kernel before
+                                (terminated-holder-board before reason))
+          {:ok? true
+           :terminated? true
+           :holder-id holder
+           :board (swarm/snapshot kernel)}
+
+          (< attempt 32)
+          (recur (inc attempt))
+
+          :else
+          {:ok? false
+           :error {:code :BOARD_TERMINATION_CONFLICT
+                   :message
+                   "the swarm board kept changing; the holder was not marked terminated"
+                   :swarm-id (:swarm-id runtime)}})))))
+
+(defn abandon-by-workspace!
+  "Abandon the swarm that owns WORKSPACE after an explicit REASON.
+
+  This is the holder-side selector for a request that names only its
+  worktree.  A blank reason is refused before any state changes.  The swarm
+  is located through `runtime-for-workspace` or the control state's
+  normalized `:workspace`; an unknown worktree is `:SWARM_NOT_FOUND`.
+
+  A real swarm runs the normal `abandon!` transition, then stops its live
+  worktree runtime and marks the current token holder `:terminated` on the
+  board.  The worktree itself is retained for the configured retention
+  window; abandonment is not deletion."
+  [service workspace reason]
+  (let [reason-text (some-> reason str)]
+    (cond
+      (str/blank? reason-text)
+      (fail :ABANDON_REASON_REQUIRED
+            "abandon requires a non-blank :reason string"
+            {:workspace (some-> workspace str)})
+
+      :else
+      (if-let [swarm-id (swarm-id-for-workspace service workspace)]
+        (let [result (abandon! service swarm-id reason)]
+          (if-not (:ok? result)
+            (assoc result :kind :abandon :swarm-id swarm-id)
+            (let [rt (get @(:runtimes service) swarm-id)
+                  termination (when rt (terminate-holder! rt reason))]
+              (when rt
+                (runtime/stop! rt))
+              (persist-runtime! service)
+              (cond-> {:ok? true
+                       :kind :abandon
+                       :swarm-id swarm-id
+                       :status :abandoned
+                       :reason reason}
+                (false? (:ok? termination))
+                (assoc :termination-error (:error termination))))))
+        (fail :SWARM_NOT_FOUND
+              "no swarm owns this worktree"
+              {:workspace (some-> workspace str)})))))
 
 (defn fail!
   [service swarm-id error]

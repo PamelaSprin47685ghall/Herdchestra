@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hc.compose.mission :as mission]
             [hc.compose.mission.surface :as surface]
-            [hc.compose.mission.support :as support]))
+            [hc.compose.mission.support :as support]
+            [hc.compose.mission.worktree :as worktree]))
 
 (defn- cmd!
   [state command]
@@ -11,13 +12,45 @@
     result))
 
 (deftest program-role-map-is-complete
+  (is (= {:plan :clj-plan
+          :reviewer :clj-review
+          :worker :clj-worker
+          :holder :clj-worker
+          :plan-worker :dedicated-worker
+          :dedicated-worker :dedicated-worker
+          :steward :clj-steward
+          :meditator :clj-meditator}
+         surface/program-roles))
   (is (= :clj-plan (surface/program-role-for :plan)))
   (is (= :clj-review (surface/program-role-for :reviewer)))
   (is (= :clj-worker (surface/program-role-for :worker)))
   (is (= :clj-worker (surface/program-role-for :holder)))
   (is (= :dedicated-worker (surface/program-role-for :plan-worker)))
   (is (= :dedicated-worker (surface/program-role-for :dedicated-worker)))
+  (testing "the repository-stewardship roles keep their own program role"
+    (is (= :clj-steward (surface/program-role-for :steward)))
+    (is (= :clj-meditator (surface/program-role-for :meditator)))
+    (is (not= :clj-plan (surface/program-role-for :steward)))
+    (is (not= :clj-worker (surface/program-role-for :steward)))
+    (is (not= :clj-plan (surface/program-role-for :meditator)))
+    (is (not= :clj-worker (surface/program-role-for :meditator))))
   (is (nil? (surface/program-role-for :unknown))))
+
+(deftest worktree-program-role-map-knows-stewardship
+  (is (= :clj-plan (worktree/program-role-for {:role :plan})))
+  (is (= :clj-review (worktree/program-role-for {:role :reviewer})))
+  (is (= :clj-worker (worktree/program-role-for {:role :holder
+                                                 :holder? true})))
+  (is (= :clj-steward (worktree/program-role-for {:role :steward})))
+  (is (= :clj-meditator (worktree/program-role-for {:role :meditator})))
+  (is (= :clj-steward (worktree/program-role-for {:role :steward
+                                                  :holder? true}))
+      "a spoofed holder flag cannot promote the Steward to a swarm worker")
+  (is (= :clj-meditator (worktree/program-role-for {:role :meditator
+                                                    :holder? true})))
+  (is (= :clj-steward (worktree/program-role-for
+                       {:role :steward :program-role :clj-steward}))
+      "an explicit program role still wins"))
 
 (deftest plan-context-carries-s1-and-write-unlock
   (let [state (mission/initial-state

@@ -131,6 +131,37 @@
          | {:status :unknown :error e}.
     This is the durable business point for a blank-session reuse."))
 
+(defprotocol SessionSummaryRead
+  (read-session-summary-doc
+    [persistence session-id]
+    "Return `{:status :found :session summary}`, `{:status :missing}` or
+    `{:status :unknown :error e}` for one committed session without its
+    message bodies.
+
+    An adapter that keeps a derived summary document must point-read that
+    document and fall back to the session record only when the summary is
+    absent.  The summary carries the committed record fields, a
+    `:visible-message-count` and `:has-draft?`; it never carries `:messages`
+    or `:message-order`."))
+
+(defprotocol SessionHistoryIndex
+  (session-committed!
+    [index session]
+    "Advisory notification that SESSION is durable.
+
+    A derived history or search index implements this to update itself after
+    a commit.  The call runs after the storage transaction succeeded and its
+    failure never changes the commit result; a later rebuild must be possible
+    from the current state alone.")
+
+  (session-deleted!
+    [index session-id]
+    "Advisory notification that SESSION-ID is no longer stored.
+
+    Same failure rule as `session-committed!`: the index must be able to
+    rebuild from the current state, so a failed notification cannot make the
+    deletion unproven."))
+
 (defprotocol OwnerPort
   (enqueue!
     [owner message]
@@ -177,31 +208,41 @@
   [owner effects]
   (mapv (fn [effect] (enqueue! owner effect)) effects))
 
+(defn session-summary-view
+  "Return SESSION without its message bodies, with `:visible-message-count`.
+
+  Only a session that carries its messages can be summarized this way.
+  Adapters that keep a derived summary point-read it and call this helper
+  only as a per-record fallback."
+  [session]
+  (let [visible-count
+        (count (filter (fn [id]
+                         (let [m (get-in session [:messages id])]
+                           (and m
+                                (not (:deleted? m))
+                                (not (:folded? m)))))
+                       (:message-order session)))]
+    (-> session
+        (dissoc :messages :message-order)
+        (assoc :visible-message-count visible-count))))
+
 (defn read-session-summary
   "Read one session record without its message bodies.
 
   List and preflight callers need the committed session fields (status,
   revision, drafts, model binding) but never the `:messages` map or
-  `:message-order`.  Adapters that store the record as one document still pay
-  the document read; this helper strips the bodies before the value reaches
+  `:message-order`.  An adapter that implements `SessionSummaryRead`
+  point-reads its derived summary; every other adapter falls back to
+  `read-session` and this helper strips the bodies before the value reaches
   the caller so list scans stay small.  Returns the same result shape as
   `read-session`."
   [persistence session-id]
-  (let [result (read-session persistence session-id)]
-    (if (= :found (:status result))
-      (let [session (:session result)
-            visible-count
-            (count (filter (fn [id]
-                             (let [m (get-in session [:messages id])]
-                               (and m
-                                    (not (:deleted? m))
-                                    (not (:folded? m)))))
-                           (:message-order session)))]
-        (assoc result :session
-               (-> session
-                   (dissoc :messages :message-order)
-                   (assoc :visible-message-count visible-count))))
-      result)))
+  (if (satisfies? SessionSummaryRead persistence)
+    (read-session-summary-doc persistence session-id)
+    (let [result (read-session persistence session-id)]
+      (if (= :found (:status result))
+        (assoc result :session (session-summary-view (:session result)))
+        result))))
 
 (defn- commit-error
   [message data]

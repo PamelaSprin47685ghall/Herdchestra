@@ -59,7 +59,14 @@
   empty queue falls back to the corresponding `:default-*` result.  The double
   records every call so a test can prove that a failure did not fabricate a
   fast-forward.  `:create-hook!` runs before each worktree result and is used
-  by the allocation-blocking test to stall fork."
+  by the allocation-blocking test to stall fork.
+
+  `:clean?` and `:ff-ready` configure the `worktree-clean?` / `ff-ready?`
+  answers.  `:clean?` accepts a literal boolean, a map keyed by directory, or
+  a function of the directory.  `:ff-ready` accepts a literal result map or a
+  function of `[directory target-ref]`.  The defaults keep every existing
+  test unchanged: clean is true and ff-ready reports
+  `{:ready? true :reason :ready}`."
   [opts]
   (let [calls (atom [])
         heads (atom (or (:heads opts) {}))
@@ -75,6 +82,24 @@
         delete-results (atom (vec (or (:delete-results opts) [])))
         create-hook! (or (:create-hook! opts) (fn [_] nil))
         head-seq (atom 0)
+        clean? (fn [directory]
+                 (let [configured (:clean? opts true)]
+                   (cond
+                     (fn? configured) (boolean (configured directory))
+                     (map? configured) (boolean (get configured directory true))
+                     :else (boolean configured))))
+        ff-ready (fn [directory target-ref]
+                   (let [configured (:ff-ready opts)]
+                     (cond
+                       (fn? configured) (configured directory target-ref)
+                       (map? configured) configured
+                       (some? configured) configured
+                       :else
+                       {:ready? true
+                        :head (get @heads directory @repo-head)
+                        :target-head (get @branch-heads target-ref @repo-head)
+                        :clean? true
+                        :reason :ready})))
         next-head! (fn []
                      (str "head-" (swap! head-seq inc)))
         pop! (fn [q default]
@@ -133,6 +158,14 @@
        (ancestor? [_ directory ref]
          (swap! calls conj [:ancestor? directory ref])
          {:status :ok :ancestor? true :ref ref})
+
+       (worktree-clean? [_ directory]
+         (swap! calls conj [:worktree-clean? directory])
+         (clean? directory))
+
+       (ff-ready? [_ directory target-ref]
+         (swap! calls conj [:ff-ready? directory target-ref])
+         (ff-ready directory target-ref))
 
        (create-worktree! [_ {:keys [workspace branch base]}]
          (swap! calls conj [:create-worktree workspace branch base])

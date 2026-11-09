@@ -1,0 +1,112 @@
+{
+  "env": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 12,
+    "totalMemBytes": 66924290048,
+    "freeMemBytes": 36679081984,
+    "chrome": "157.0.8103.38"
+  },
+  "config": {
+    "root": "/var/tmp/hc-e2e/hc-bench2-HWkqDN",
+    "sessions": 1,
+    "messages": 2000,
+    "msgChars": 400,
+    "jvmOpts": [
+      "-J-Xmx384m",
+      "-J-XX:MaxDirectMemorySize=192m",
+      "-J-XX:MaxMetaspaceSize=384m",
+      "-J-Xss512k",
+      "-J-XX:+ExitOnOutOfMemoryError"
+    ],
+    "staticRoot": "resources/public"
+  },
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "seed": {
+    "elapsedMs": 8299,
+    "log": "{:seeded {:sessions 1, :elapsed-ms 386.215863}}"
+  },
+  "app": {
+    "url": "http://127.0.0.1:40029",
+    "pid": 2753879,
+    "listenMs": 16281,
+    "healthMs": 16313,
+    "healthStatus": 200,
+    "healthOkFlag": true,
+    "peak": {
+      "hwmKb": 1049956,
+      "rssKb": 1049956
+    },
+    "logTail": "CompileCommand: exclude taoensso/nippy/io$read_typed.invokeStatic intx exclude = 1111\nCompileCommand: exclude taoensso/nippy/io$read_typed.invoke intx exclude = 1111\nCompileCommand: exclude taoensso/nippy/io$read_typed.invokePrim intx exclude = 1111\nWARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nHerdchestra 0.0.3 git=721c1b2ea857 dirty=true\nHerdchestra listening on http://127.0.0.1:40029/\nworkspace: /var/tmp/hc-e2e/hc-bench2-HWkqDN/workspace\nstore:     /var/tmp/hc-e2e/hc-bench2-HWkqDN/data/db\n[hc-ws-close-status] {:status :going-away, :at 1794224707162}\n[hc-ws-close] {:code 1001, :reason \"\", :at 1794224707163}\n"
+  },
+  "dom": {
+    "listOpenMs": 2030,
+    "syncMs": 1459,
+    "sessionItems": 1,
+    "totalNodes": 3199,
+    "openMs": 44,
+    "messageNodes": 200,
+    "messageDomNodes": 2943,
+    "totalAfterOpen": 3199,
+    "scrollMetrics": {
+      "scrollHeight": 51651,
+      "scrollTop": 0,
+      "clientHeight": 338
+    },
+    "scrollProbe": {
+      "moreVisible": true,
+      "clicks": 1,
+      "beforeCount": 200,
+      "afterCount": 400,
+      "verdict": "PASS"
+    },
+    "restoreProbe": {
+      "beforeCount": 400,
+      "targetScrollTop": 41197,
+      "beforeScrollTop": 41197,
+      "beforeTopId": "bench-2000-0000-m1759",
+      "afterScrollTop": 51632,
+      "afterCount": 441,
+      "afterTopId": "bench-2000-0000-m1759",
+      "metricsAfter": {
+        "scrollHeight": 113429,
+        "clientHeight": 294
+      },
+      "windowDelta": 41,
+      "anchorFound": true,
+      "restoredExact": true,
+      "restored": true,
+      "tolerance": 1,
+      "pixelDelta": 10435,
+      "verdict": "PASS"
+    },
+    "expectedSessions": 1,
+    "expectedMessages": 2000,
+    "synced": true,
+    "badgeText": "●已同步"
+  },
+  "startedAt": "2026-11-09T11:44:36.274Z",
+  "bundleAfter": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "bundleStable": true,
+  "checks": {
+    "appListening": true,
+    "bundleStable": true,
+    "synced": true,
+    "sessions": true,
+    "messages": true,
+    "scrollProbe": true,
+    "restoreProbe": true
+  },
+  "verdict": "PASS"
+}

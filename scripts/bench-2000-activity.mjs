@@ -22,6 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,7 @@ import { chromium } from 'playwright';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
+const BUNDLE_PATH = 'resources/public/js/main.js';
 const PIXI_CLOJURE = path.join(REPO_ROOT, '.pixi/envs/default/bin/clojure');
 const JVM_OPTS = (process.env.HC_JVM_OPTS ||
   '-J-Xmx384m,-J-XX:MaxDirectMemorySize=192m,-J-XX:MaxMetaspaceSize=384m,-J-Xss512k,-J-XX:+ExitOnOutOfMemoryError')
@@ -46,6 +48,17 @@ function clojureCommand() {
 }
 
 function ednString(v) { return JSON.stringify(String(v)); }
+
+function bundleInfo() {
+  const file = path.join(REPO_ROOT, BUNDLE_PATH);
+  const bytes = fs.readFileSync(file);
+  return {
+    path: BUNDLE_PATH,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    mtime: fs.statSync(file).mtime.toISOString(),
+  };
+}
 
 function writeWorkspace(root, files = {}) {
   for (const [rel, content] of Object.entries(files)) {
@@ -113,6 +126,29 @@ function statusField(pid, field) {
   } catch { return null; }
 }
 
+function messageIndex(id) {
+  const match = /-m(\d+)$/.exec(String(id || ''));
+  return match ? Number(match[1]) : null;
+}
+
+function sameTopMessage(beforeId, afterId) {
+  if (beforeId == null || afterId == null) return false;
+  if (beforeId === afterId) return true;
+  const before = messageIndex(beforeId);
+  const after = messageIndex(afterId);
+  return before != null && after != null && Math.abs(before - after) <= 1;
+}
+
+async function topVisibleMessageId(scroller) {
+  return scroller.evaluate((el) => {
+    const containerTop = el.getBoundingClientRect().top;
+    const node = Array.from(el.querySelectorAll('[data-message-id]'))
+      .find((candidate) =>
+        candidate.getBoundingClientRect().bottom > containerTop);
+    return node ? node.getAttribute('data-message-id') : null;
+  }).catch(() => null);
+}
+
 function startMemSampler(pid, intervalMs = 250) {
   const samples = [];
   const timer = setInterval(() => {
@@ -176,6 +212,7 @@ async function main() {
     },
     config: { root, sessions, messages, msgChars,
               jvmOpts: JVM_OPTS, staticRoot: 'resources/public' },
+    bundle: bundleInfo(),
     seed: null, app: null, dom: null,
     startedAt: new Date().toISOString(),
   };
@@ -319,6 +356,10 @@ async function main() {
       scrollProbe.afterCount = await page.locator('[data-message-id]').count();
       scrollProbe.clicks = 1;
     }
+    scrollProbe.verdict = (scrollProbe.moreVisible
+                           && scrollProbe.clicks > 0
+                           && scrollProbe.afterCount > scrollProbe.beforeCount)
+      ? 'PASS' : 'FAIL';
 
     // ---- scroll position restore ----------------------------------------
     // The stream reducer stores :scroll-top per session and the view writes
@@ -328,6 +369,7 @@ async function main() {
     // navigate away and back) and check the restored offset.
     const restoreProbe = {};
     const sc = page.locator('.hc-conversation-messages').first();
+    restoreProbe.beforeCount = await page.locator('[data-message-id]').count();
     const metrics0 = await sc.evaluate((el) => ({
       scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
     })).catch(() => null);
@@ -340,6 +382,8 @@ async function main() {
       return el.scrollTop;
     }, target).catch(() => null);
     restoreProbe.beforeScrollTop = restoreProbe.targetScrollTop;
+    await page.waitForTimeout(200);
+    restoreProbe.beforeTopId = await topVisibleMessageId(sc);
     // Navigate away to #/board, then back to #/sessions and reselect.
     await page.evaluate(() => { window.location.hash = '#/board'; });
     await page.waitForTimeout(800);
@@ -350,12 +394,24 @@ async function main() {
       .waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(600);
     restoreProbe.afterScrollTop = await sc.evaluate((el) => el.scrollTop).catch(() => null);
+    restoreProbe.afterCount = await page.locator('[data-message-id]').count();
+    restoreProbe.afterTopId = await topVisibleMessageId(sc);
     restoreProbe.metricsAfter = await sc.evaluate((el) => ({
       scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
     })).catch(() => null);
-    restoreProbe.restored = (restoreProbe.afterScrollTop != null &&
-                             Math.abs(restoreProbe.afterScrollTop -
-                                      (restoreProbe.beforeScrollTop || 0)) < 50);
+    restoreProbe.windowDelta = restoreProbe.afterCount - restoreProbe.beforeCount;
+    restoreProbe.anchorFound = (restoreProbe.beforeTopId != null
+                                && restoreProbe.afterTopId != null);
+    restoreProbe.restoredExact = (restoreProbe.beforeTopId != null
+                                  && restoreProbe.beforeTopId === restoreProbe.afterTopId);
+    restoreProbe.restored = sameTopMessage(restoreProbe.beforeTopId,
+                                           restoreProbe.afterTopId);
+    restoreProbe.tolerance = 1;
+    restoreProbe.pixelDelta = (restoreProbe.afterScrollTop != null
+                               && restoreProbe.beforeScrollTop != null)
+      ? restoreProbe.afterScrollTop - restoreProbe.beforeScrollTop
+      : null;
+    restoreProbe.verdict = restoreProbe.restored ? 'PASS' : 'FAIL';
 
     result.dom = {
       listOpenMs, syncMs, sessionItems, totalNodes,
@@ -387,15 +443,47 @@ async function main() {
   finish(result, root, jsonOut, keepTemp, evidenceDir);
 }
 
+function verdictFor(result) {
+  const dom = result.dom || {};
+  const checks = {
+    appListening: !result.app?.error && !!result.app?.url,
+    bundleStable: result.bundleStable !== false,
+    synced: dom.synced === true,
+    sessions: dom.sessionItems === result.config?.sessions,
+    messages: Number.isInteger(dom.messageNodes) && dom.messageNodes > 0,
+    scrollProbe: dom.scrollProbe?.verdict === 'PASS',
+    restoreProbe: dom.restoreProbe?.verdict === 'PASS',
+  };
+  const failed = Object.entries(checks)
+    .filter(([, ok]) => !ok)
+    .map(([name]) => name);
+  return {
+    checks,
+    verdict: failed.length ? `FAIL (${failed.join(', ')})` : 'PASS',
+  };
+}
+
 function finish(result, root, jsonOut, keepTemp, evidenceDir) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const jsonPath = jsonOut || path.join(evidenceDir, `bench-2000-${stamp}.json`);
+  result.bundleAfter = bundleInfo();
+  result.bundleStable = (result.bundleAfter.sha256 === result.bundle.sha256
+                         && result.bundleAfter.bytes === result.bundle.bytes);
+  const judged = verdictFor(result);
+  result.checks = judged.checks;
+  result.verdict = judged.verdict;
   fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
   fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2));
   const peakHwmMiB = result.app?.peak?.hwmKb ? result.app.peak.hwmKb / 1024 : null;
   const peakRssMiB = result.app?.peak?.rssKb ? result.app.peak.rssKb / 1024 : null;
   console.log(JSON.stringify({
     json: jsonPath,
+    verdict: result.verdict,
+    checks: result.checks,
+    bundleSha256: result.bundle?.sha256,
+    bundleBytes: result.bundle?.bytes,
+    bundleStable: result.bundleStable,
+    bundleAfterSha256: result.bundleAfter?.sha256,
     seedMs: result.seed?.elapsedMs,
     listenMs: result.app?.listenMs,
     healthMs: result.app?.healthMs,
@@ -411,6 +499,7 @@ function finish(result, root, jsonOut, keepTemp, evidenceDir) {
     scrollProbe: result.dom?.scrollProbe,
     restoreProbe: result.dom?.restoreProbe,
   }, null, 2));
+  process.exitCode = result.verdict === 'PASS' ? 0 : 1;
 }
 
 main().catch((e) => {

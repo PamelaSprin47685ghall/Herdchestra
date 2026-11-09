@@ -1,13 +1,16 @@
 # hc.client.copy — 用户可见失败文案单一事实来源
 
-> 权威顺序：根 `AGENTS.md` §7.4 旅程 8（设置与诊断） / §7.7 > `src/AGENTS.md` >
+> 权威顺序：根 `AGENTS.md` §7.4 旅程 8（设置与诊断）与 §7.4 旅程 8.5
+> （排障与未交付理由） > `src/AGENTS.md` >
 > `src/hc/client/AGENTS.md` > 本文件。
 
 ## 1 责任
 
 `hc.client.copy.failures/failure-copy` 把错误码和少量上下文转换成统一的
 `{:title :body :primary-action {:label :command} :secondary-action :severity}`。
-它是 24 类失败文案的唯一事实来源；view 只渲染结果，不再各自拼字符串。
+它是 24 类内部错误码到文案的唯一映射；view 只渲染结果，不再各自拼字符串。
+用户侧交付状态只有进行中、已交付、未交付（附理由与教训）；
+「正在生成」「已停止」等即时文案是操作回执，不是第四种状态。
 
 24 类文案按根 `AGENTS.md` §7.4 第 8 段重组为十类「未交付理由」分类：
 `failure-reason-categories` 给出十类的编号、名称、类别说明与成员 kind，

@@ -15,7 +15,12 @@
   :dev
   {:extra-paths ["test"]
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]
+              "-XX:+ExitOnOutOfMemoryError"
+              ;; nippy's typed reader crashes some C2-compiled shapes with
+              ;; SIGSEGV; keep those three methods in the interpreter.
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]
    :extra-deps {org.clojure/test.check {:mvn/version "1.1.3"}
                 ;; Real WebSocket roundtrip for the Sente boundary test.
                 org.java-websocket/Java-WebSocket {:mvn/version "1.6.0"}}}
@@ -25,14 +30,20 @@
   :browser-test
   {:extra-paths ["test"]
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]}
+              "-XX:+ExitOnOutOfMemoryError"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]}
 
   ;; Run every clojure.test namespace under test/.
   ;; clojure.test.check properties are ordinary clojure.test tests.
   :test
   {:extra-paths ["test"]
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]
+              "-XX:+ExitOnOutOfMemoryError"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]
    :extra-deps {org.clojure/test.check {:mvn/version "1.1.3"}
                 ;; Real WebSocket roundtrip for the Sente boundary test.
                 org.java-websocket/Java-WebSocket {:mvn/version "1.6.0"}
@@ -83,7 +94,10 @@
                 org.bytedeco/leptonica$macosx-arm64 {:mvn/version "1.87.0-1.5.14"}
                 org.bytedeco/leptonica$windows-x86_64 {:mvn/version "1.87.0-1.5.14"}}
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]}
+              "-XX:+ExitOnOutOfMemoryError"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]}
 
   ;; Browser client. Framework7 React itself is an npm dependency and belongs
   ;; in the client package manifest, not in deps.edn.
@@ -96,7 +110,10 @@
   {:extra-deps {org.clojure/clojurescript {:mvn/version "1.12.145"}
                 thheller/shadow-cljs {:mvn/version "3.5.11"}}
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]
+              "-XX:+ExitOnOutOfMemoryError"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]
    :main-opts ["-m" "cljs.main"]}
 
   ;; shadow-cljs CLI only.  Keep :main-opts out of this alias: with -A,
@@ -105,4 +122,7 @@
   :shadow
   {:extra-deps {thheller/shadow-cljs {:mvn/version "3.5.11"}}
    :jvm-opts ["-Xmx1g" "-XX:MaxDirectMemorySize=512m"
-              "-XX:+ExitOnOutOfMemoryError"]}}}
+              "-XX:+ExitOnOutOfMemoryError"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokeStatic"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invoke"
+              "-XX:CompileCommand=exclude,taoensso/nippy/io$read_typed.invokePrim"]}}}

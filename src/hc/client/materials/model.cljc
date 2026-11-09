@@ -286,6 +286,20 @@
   (let [ids (vec (or (:card-ids selection) []))]
     (vec (filter #(contains? cards %) ids))))
 
+(defn- snapshot-key-present?
+  [snapshot key]
+  (or (contains? snapshot key)
+      (contains? snapshot (name key))))
+
+(defn- materials-snapshot?
+  "True when SNAPSHOT carries at least one server-owned materials field.
+  `:assistants` is a read-only projection and alone must not count as a
+  materials snapshot."
+  [snapshot]
+  (boolean
+   (some #(snapshot-key-present? snapshot %)
+         (remove #{:assistants} snapshot-keys))))
+
 (defn- placeholder-keys
   [cards]
   (->> cards
@@ -302,10 +316,21 @@
   whose materials revision is older than the current one is ignored so a
   delayed publisher cannot undo a newer command snapshot."
   [state snapshot]
-  (let [ready? (true? (field snapshot :materials/ready?))
-        revision (field snapshot :materials/revision)
+  (if-not (materials-snapshot? snapshot)
+    state
+    (let [ready-present? (snapshot-key-present? snapshot :materials/ready?)
+        ready? (if ready-present?
+                 (true? (field snapshot :materials/ready?))
+                 (:ready? state))
+        revision-value (field snapshot :materials/revision)
+        revision (if (and (snapshot-key-present? snapshot :materials/revision)
+                          (integer? revision-value))
+                   revision-value
+                   (:revision state))
         current-revision (:revision state)
-        snapshot-session (field snapshot :materials/session)
+        session-present? (snapshot-key-present? snapshot :materials/session)
+        snapshot-session (when session-present?
+                           (field snapshot :materials/session))
         snapshot-session-id (get-in snapshot-session [:session-id])
         selected-session-id (:selected-session-id state)
         cross-session? (and (non-blank-string? selected-session-id)
@@ -317,9 +342,19 @@
                     (< revision current-revision))]
     (if (or stale? cross-session?)
       state
-      (let [memories (or (field snapshot :memory/by-id) {})
-            books (or (field snapshot :worldbook/by-id) {})
-            entries (or (field snapshot :worldbook-entry/by-id) {})
+      (let [memory-table? (snapshot-key-present? snapshot :memory/by-id)
+            book-table? (snapshot-key-present? snapshot :worldbook/by-id)
+            entry-table? (snapshot-key-present?
+                          snapshot :worldbook-entry/by-id)
+            memories (if memory-table?
+                       (or (field snapshot :memory/by-id) {})
+                       (:memories state))
+            books (if book-table?
+                    (or (field snapshot :worldbook/by-id) {})
+                    (:books state))
+            entries (if entry-table?
+                      (or (field snapshot :worldbook-entry/by-id) {})
+                      (:entries state))
             cards (or (field snapshot :instruction-card/by-id) {})
            ;; The card table is authoritative only when the snapshot carries
            ;; it.  A partial or failed snapshot that omits the key must not
@@ -378,18 +413,31 @@
                       (assoc :ready? ready?
                              :selected-session-id
                              (or selected-session-id snapshot-session-id)
-                             :revision (when (integer? revision) revision)
-                             :error (field snapshot :materials/error)
-                             :settings (or (field snapshot :materials/settings)
-                                           {:memory-read? false
-                                            :memory-suggest? false})
-                             :session (field snapshot :materials/session)
+                             :revision revision
+                             :error (if (snapshot-key-present?
+                                         snapshot :materials/error)
+                                      (field snapshot :materials/error)
+                                      (:error state))
+                             :settings (if (snapshot-key-present?
+                                            snapshot :materials/settings)
+                                         (or (field snapshot :materials/settings)
+                                             (:settings state))
+                                         (:settings state))
+                             :session (if session-present?
+                                        (field snapshot :materials/session)
+                                        (:session state))
                              :memories memories
-                             :memory-order (memory-order
-                                            memories
-                                            (field snapshot :memory/order))
-                             :memory-counts (or (field snapshot :memory/counts)
-                                                (count-by-status memories))
+                             :memory-order (if (snapshot-key-present?
+                                                snapshot :memory/order)
+                                             (memory-order
+                                              memories
+                                              (field snapshot :memory/order))
+                                             (:memory-order state))
+                             :memory-counts (if (snapshot-key-present?
+                                                 snapshot :memory/counts)
+                                              (or (field snapshot :memory/counts)
+                                                  (count-by-status memories))
+                                              (:memory-counts state))
                              :books books
                              :entries entries
                              ;; A partial snapshot without the card table must
@@ -418,9 +466,12 @@
                                  (:instruction-turn state)))
                              :instruction-mode (or (:instruction-mode state) :turn)
                              :temporary-read?
-                             (and (true? (:temporary? snapshot-session))
-                                  (or (true? (:temporary-read? state))
-                                      (true? (:temporary-read? snapshot-session))))
+                             (if session-present?
+                               (and (true? (:temporary? snapshot-session))
+                                    (or (true? (:temporary-read? state))
+                                        (true? (:temporary-read?
+                                                snapshot-session))))
+                               (:temporary-read? state))
                              :turn-card-ids
                              (if cards-present?
                                (vec (filter #(contains? cards %)
@@ -431,7 +482,11 @@
                                (select-keys (:instruction-values state)
                                             (placeholder-keys cards))
                                (:instruction-values state))
-                             :worldbook-session (field snapshot :worldbook-session)
+                             :worldbook-session
+                             (if (snapshot-key-present?
+                                  snapshot :worldbook-session)
+                               (field snapshot :worldbook-session)
+                               (:worldbook-session state))
                              :memory-draft memory-draft
                              :book-draft book-draft
                              :entry-draft entry-draft
@@ -442,7 +497,7 @@
                              :selected-book-id selected-book
                              :selected-card-id
                              (keep-selected (:selected-card-id state) cards)))]
-        state))))
+        state)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Initial state and local actions
@@ -811,6 +866,7 @@
          :ready? false
          :revision nil
          :error nil
+         :last-error nil
          :memories {}
          :memory-order []
          :memory-counts {:candidate 0 :active 0 :archived 0 :rejected 0
@@ -1301,15 +1357,6 @@
   [state]
   (and (= :synced (get-in state [:sync :phase]))
        (integer? (get-in state [:sync :command-epoch]))))
-
-(defn- command-pending?
-  [state key]
-  (boolean
-   (some (fn [[_ command]]
-           (when (and (= key (:key command))
-                      (contains? pending-statuses (:status command)))
-             command))
-         (:commands state))))
 
 (defn command-pending?
   "True when a command with `key` is still queued or submitting.  The view

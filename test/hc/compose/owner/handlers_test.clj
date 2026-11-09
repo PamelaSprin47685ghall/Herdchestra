@@ -296,6 +296,46 @@
                            [:state :relay :lanes :execution "tenure-2"
                             :swarm-phase])))))
 
+(deftest git-ff-ready-is-recorded-in-mission-state
+  (let [fixture (initial {:plan-milestone :pending
+                          :draft {:path "plans/demo.md" :content "# plan"}})
+        started (apply! fixture (command "c1" 1 {:kind :review/submit
+                                                 :lane :plan
+                                                 :tenure-id "tenure-1"
+                                                 :findings []}))
+        recorded (handlers/apply-message
+                  (:state started)
+                  {:type :git/ff-ready
+                   :ready? true
+                   :source :join
+                   :ff-commit "abc123"
+                   :at 4242}
+                  (context (:registry fixture) 3000))
+        state (:state recorded)]
+    (testing "the fact lives in mission state with its evidence"
+      (is (true? (get-in state [:mission :ff-ready?])))
+      (is (= {:ready? true
+              :source :join
+              :ff-commit "abc123"
+              :at 4242}
+             (get-in state [:mission :ff-ready]))))
+    (testing "board facts read the mission fact"
+      (is (true? (:ff-ready? (state/board-facts state)))))
+    (testing "a failed join clears the mission readiness"
+      (let [cleared (handlers/apply-message
+                     state
+                     {:type :git/ff-ready
+                      :ready? false
+                      :source :join
+                      :at 4243}
+                     (context (:registry fixture) 3000))]
+        (is (false? (get-in cleared [:state :mission :ff-ready?])))
+        (is (false? (:ff-ready? (state/board-facts (:state cleared)))))))
+    (testing "a new mission starts unready"
+      (is (false? (:ff-ready? (state/board-facts
+                               (state/initial-state
+                                {:session-id "fresh-mission"}))))))))
+
 (deftest board-finish-needs-a-write-gate-proof
   (let [fixture (initial {:plan-milestone :pending
                           :draft {:path "plans/demo.md" :content "# plan"}})

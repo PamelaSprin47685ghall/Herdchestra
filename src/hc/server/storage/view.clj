@@ -64,6 +64,37 @@
                                      (keys/doc-key partition session-id kind id))]
     (unwrap [nil entry])))
 
+(defn read-documents
+  "Return every document of one KIND in one session scope.
+
+  The key prefix includes both the partition and the scope, so this never
+  deserializes a document of another kind.  Use it for compact, index-like
+  kinds; session records and message bodies belong to `session-view`."
+  [engine {:keys [partition session-id kind]}]
+  (->> (read-stable
+        engine
+        (fn []
+          {:docs (mapv unwrap
+                       (engine/scan engine
+                                    (keys/kind-doc-prefix partition session-id kind)))}))
+       :docs))
+
+(defn read-partition-documents
+  "Return every document of one KIND in PARTITION, across all scopes.
+
+  This is a full partition scan.  It exists only for one-time derived-index
+  rebuilds; a steady-state caller must use `read-doc` or `read-documents`."
+  [engine {:keys [partition kind]}]
+  (->> (read-stable
+        engine
+        (fn []
+          {:docs (->> (engine/scan engine (keys/partition-doc-prefix partition))
+                      (keep (fn [[k v]]
+                              (when (= kind (:storage/kind v))
+                                (unwrap [k v]))))
+                      vec)}))
+       :docs))
+
 (defn- group-by-kind [entries]
   (group-by (fn [[_ v]] (:storage/kind v)) entries))
 
@@ -116,12 +147,75 @@
 (def ^:private partition-kinds
   #{:task :action :actor :token-slot})
 
+(def known-document-kinds
+  "Every document kind a `session-view` caller reads in this build.
+
+  The default view scans these kind prefixes and never deserializes another
+  kind.  A new current-state kind must be added here, or its reader must pass
+  `:include-unknown-kinds? true` and accept the wider scan.  The explicit
+  escape exists so a reader can still see a document written by a newer
+  writer instead of silently losing it."
+  (into
+   #{;; session persistence documents
+     :session-record :session-summary :session-index :session-command
+     :session-ref-index
+     ;; derived full-text index documents; read point-wise today, registered
+     ;; here so a future view reader cannot silently lose them
+     :search-index :search-posting :search-session
+     ;; artifacts and the durable command gate use the owner partition too
+     :artifact
+     ;; app configuration and backup restore safety
+     :app-config :restore-safety :backup-import
+     ;; materials
+     :materials-root :materials-memory
+     :materials-worldbook-book :materials-worldbook-entry
+     :materials-worldbook-session
+     :materials-instruction-card :materials-instruction-session
+     :materials-instruction-turn
+     ;; scheduler
+     :scheduler-root :scheduler-schedule :scheduler-run
+     ;; diagnostics
+     :diagnostics-request :diagnostics-user-send :diagnostics-tool-call
+     :diagnostics-service-usage :diagnostics-price
+     :diagnostics-log-policy :diagnostics-log-entry
+     ;; repository Steward
+     :steward-state
+     ;; storage disk-smoke documents
+     :smoke}
+   (concat session-kinds partition-kinds)))
+
+(defn- scan-document-scope
+  "Scan one document scope, either by known kind or across every kind."
+  [engine partition session-id include-unknown-kinds?]
+  (if include-unknown-kinds?
+    (engine/scan engine (keys/session-doc-prefix partition session-id))
+    (mapcat (fn [kind]
+              (engine/scan engine
+                           (keys/kind-doc-prefix partition session-id kind)))
+            known-document-kinds)))
+
 (defn session-view
   "Return the consistent view for one session inside one partition.
 
-  `opts`: `:partition` (required), `:session-id` (optional).  Without a
-  session the view covers the partition-scoped board and documents."
-  [engine {:keys [partition session-id] :as opts}]
+  `opts`: `:partition` (required), `:session-id` (optional),
+  `:include-partition-scope?` (default true), `:include-unknown-kinds?`
+  (default false).
+
+  Without a session the view covers the partition-scoped board and documents.
+  With true a session view also merges the partition scope.  The scan is
+  narrowed to `known-document-kinds`, so a board or diagnostics view does not
+  deserialize unrelated session records or messages.  A caller that must see
+  a kind that is not in that set passes `:include-unknown-kinds? true`, which
+  scans the full scopes instead.
+
+  `:include-partition-scope? false` skips the partition-scope documents and
+  obligations entirely; callers that need one partition-scoped document use
+  `read-doc` instead."
+  [engine {:keys [partition session-id include-partition-scope?
+                  include-unknown-kinds?]
+           :or {include-partition-scope? true
+                include-unknown-kinds? false}
+           :as opts}]
   (when-not (and (string? partition) (seq partition))
     (err/raise :STORAGE_INVALID_OPTIONS "read-session-view needs :partition"
                {:opts opts}))
@@ -129,13 +223,29 @@
    engine
    (fn []
      (let [session-entries   (if session-id
-                               (engine/scan engine (keys/session-doc-prefix partition session-id))
+                               (scan-document-scope engine partition session-id
+                                                    include-unknown-kinds?)
                                [])
-           partition-entries (engine/scan engine (keys/session-doc-prefix partition nil))
-           ob-entries        (concat (if session-id
-                                       (engine/scan engine (keys/session-obligation-prefix partition session-id))
-                                       [])
-                                     (engine/scan engine (keys/session-obligation-prefix partition nil)))
+           partition-entries (when include-partition-scope?
+                               (scan-document-scope engine partition nil
+                                                    include-unknown-kinds?))
+           ob-entries        (cond
+                               (not include-partition-scope?)
+                               (if session-id
+                                 (engine/scan engine
+                                              (keys/session-obligation-prefix partition session-id))
+                                 [])
+
+                               session-id
+                               (concat
+                                (engine/scan engine
+                                             (keys/session-obligation-prefix partition session-id))
+                                (engine/scan engine
+                                             (keys/session-obligation-prefix partition nil)))
+
+                               :else
+                               (engine/scan engine
+                                            (keys/session-obligation-prefix partition nil)))
            grouped           (merge-with into
                                          (group-by-kind session-entries)
                                          (group-by-kind partition-entries))
@@ -292,8 +402,12 @@
     `:at` optional
     `:sections` optional set of `:docs`, `:obligations`, `:blob-refs`
                 (default all).  A caller that only needs references can
-                avoid copying every document."
-  [engine {:keys [partition at sections]}]
+                avoid copying every document.
+    `:exclude-partition?` optional predicate applied before any partition is
+                assembled.  A whole-store export uses it to skip rebuildable
+                derived partitions instead of reading and then discarding
+                them.  An explicit `:partition` selection is always honored."
+  [engine {:keys [partition at sections exclude-partition?]}]
   (let [sections (or sections export-sections)]
     (when-not (and (set? sections) (every? export-sections sections))
       (err/raise :STORAGE_INVALID_OPTIONS
@@ -307,7 +421,12 @@
                              (if (contains? all-partitions partition)
                                {partition (get all-partitions partition)}
                                {})
-                             all-partitions)
+                             (if exclude-partition?
+                               (into (sorted-map)
+                                     (remove (fn [[p _]]
+                                               (exclude-partition? p)))
+                                     all-partitions)
+                               all-partitions))
              exported      (into (sorted-map)
                                  (map (fn [[p version]]
                                         [p (export-partition engine p version sections)]))

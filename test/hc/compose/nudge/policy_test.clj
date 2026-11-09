@@ -97,6 +97,10 @@
    :token-slot {:holder-id nil}
    :inputs {}})
 
+(defn- utf8-byte-length
+  ^long [^String s]
+  (alength (.getBytes s "UTF-8")))
+
 ;; ---------------------------------------------------------------------------
 ;; Centralized role and user-wait distinctions
 
@@ -265,6 +269,120 @@
       (is (true? (:enabled? decision)))
       (is (= :milestone-open (:reason decision)))
       (is (= (relay/central-nudge-message {}) (:message decision))))))
+
+(deftest central-ledger-item-cap-test
+  (let [value (apply str (repeat 10240 "v"))
+        original-line (str "- long: " value)
+        message (policy/central-message (sorted-map "long" value))
+        line (first (filter #(str/includes? % "- long:")
+                            (str/split-lines message)))
+        marker-index (str/index-of line "…[+")
+        kept (subs line 0 (or marker-index 0))
+        n (parse-long (or (second (re-find #"…\[\+(\d+) bytes\]" line))
+                          "0"))]
+    (is (<= (utf8-byte-length line) 2048))
+    (is (some? marker-index))
+    (is (str/includes? line "(truncated)"))
+    (is (= (- (utf8-byte-length original-line)
+              (utf8-byte-length kept))
+           n)
+        "the marker's N is the exact number of removed bytes")
+    (is (<= (utf8-byte-length message) 16384))
+    (is (str/includes? message "系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。"))
+    (is (str/includes? message "立刻去做"))))
+
+(deftest central-message-whole-cap-test
+  (let [ledger (into (sorted-map)
+                     (map (fn [i]
+                            [(format "key-%03d" i)
+                             (str "value-" i "-" (apply str (repeat 200 "x")))])
+                          (range 200)))
+        message (policy/central-message ledger)
+        m (some-> (re-find #"\(另有 (\d+) 项未列出，见 review 台账\)" message)
+                  second
+                  parse-long)
+        kept (count (re-seq #"(?m)^- key-" message))]
+    (is (<= (utf8-byte-length message) 16384))
+    (is (some? m))
+    (is (pos? m))
+    (is (= (- 200 kept) m)
+        "the omission footer reports the exact number of omitted items")
+    (is (str/includes? message "key-000"))
+    (is (not (str/includes? message "key-199"))
+        "the lexicographically last items are the omitted ones")
+    (is (str/includes? message "系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。"))
+    (is (str/includes? message "立刻去做"))))
+
+(deftest central-empty-ledger-test
+  (let [message (policy/central-message {})]
+    (is (= (relay/central-nudge-message {}) message))
+    (is (str/includes? message "当前里程碑尚未完成"))
+    (is (not (str/includes? message "另有")))
+    (is (not (str/includes? message "未完成事项")))
+    (is (str/includes? message "系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。"))
+    (is (str/includes? message "立刻去做"))))
+
+(deftest ledger-item-cap-boundary-test
+  (let [prefix "- k: "
+        prefix-bytes (utf8-byte-length prefix)
+        at-value (apply str (repeat (- 2048 prefix-bytes) "a"))
+        over-value (apply str (repeat (inc (- 2048 prefix-bytes)) "a"))
+        at-line (str prefix at-value)
+        over-line (str prefix over-value)
+        at-message (policy/central-message (sorted-map "k" at-value))
+        over-message (policy/central-message (sorted-map "k" over-value))
+        over-rendered (first (filter #(str/includes? % "- k:")
+                                     (str/split-lines over-message)))]
+    (is (= 2048 (utf8-byte-length at-line)))
+    (is (str/includes? at-message at-line))
+    (is (not (str/includes? at-message "…[+")))
+    (is (= 2049 (utf8-byte-length over-line)))
+    (is (str/includes? over-message "…[+"))
+    (is (<= (utf8-byte-length over-rendered) 2048))))
+
+(deftest ledger-item-surrogate-cap-test
+  (let [value (apply str (repeat 600 "😀"))
+        message (policy/central-message (sorted-map "emoji" value))
+        line (first (filter #(str/includes? % "- emoji:")
+                            (str/split-lines message)))]
+    (is (<= (utf8-byte-length line) 2048))
+    (when-let [marker-index (str/index-of line "…[+")]
+      (let [kept (subs line 0 marker-index)
+            kept-bytes (utf8-byte-length kept)
+            prefix-bytes (utf8-byte-length "- emoji: ")]
+        (is (= kept (String. (.getBytes ^String kept "UTF-8") "UTF-8"))
+            "the kept prefix stays valid UTF-8 with no isolated surrogate")
+        (is (not (Character/isHighSurrogate (last kept))))
+        (is (zero? (mod (- kept-bytes prefix-bytes) 4))
+            "the kept emoji bytes form whole 4-byte code points")))))
+
+(deftest nudge-messages-never-drop-the-directive-test
+  (let [long-ledger (sorted-map "long" (apply str (repeat 10240 "x")))
+        many-ledger (into (sorted-map)
+                          (map (fn [i]
+                                 [(format "key-%03d" i)
+                                  (str "value-" i "-"
+                                       (apply str (repeat 200 "y")))])
+                               (range 200)))
+        worker-responsibility (mapv #(keyword (str "task-" %))
+                                    (range 5000))
+        messages [{:name :long-ledger
+                   :message (policy/central-message long-ledger)}
+                  {:name :many-ledger
+                   :message (policy/central-message many-ledger)}
+                  {:name :empty-ledger
+                   :message (policy/central-message {})}
+                  {:name :worker-large
+                   :message (policy/worker-message :worker
+                                                   worker-responsibility
+                                                   [:ready-task])}]]
+    (doseq [{:keys [name message]} messages]
+      (testing (str name)
+        (is (<= (utf8-byte-length message) 16384))
+        (is (str/includes?
+             message
+             "系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。"))
+        (is (str/includes? message "立刻去做"))))))
 
 (deftest plain-response-exit-test
   (testing "a proven tool-free success with an empty ledger is a legal stop"
@@ -874,11 +992,16 @@
 ;; ---------------------------------------------------------------------------
 ;; Property tests
 
-(def gen-nonblank
-  (gen/such-that #(not (str/blank? %)) gen/string-alphanumeric 50))
+(def gen-short-nonblank
+  (gen/fmap (fn [s] (subs s 0 (min 24 (count s))))
+            (gen/such-that #(not (str/blank? %)) gen/string-alphanumeric 50)))
 
 (def gen-ledger
-  (gen/map gen-nonblank gen-nonblank))
+  ;; Keep the property's ledgers below both byte caps so it can assert the
+  ;; verbatim relay-listing contract.  The cap tests cover long values.
+  (gen/fmap (fn [pairs] (into (sorted-map) pairs))
+            (gen/vector (gen/tuple gen-short-nonblank gen-short-nonblank)
+                        0 10)))
 
 (def gen-central-role-milestone
   (gen/one-of
@@ -1183,3 +1306,12 @@
       (and (false? (:enabled? decision))
            (some? (:exit decision))
            (= exit-kind (get-in decision [:exit :kind]))))))
+
+(deftest stewardship-roles-stay-outside-the-nudge-cycle
+  (doseq [role [:steward :meditator]]
+    (let [decision (policy/decide {:role role
+                                   :turn-ended? true
+                                   :tenure (tenure {})})]
+      (is (false? (:enabled? decision)) (str role))
+      (is (= :unsupported-role (:reason decision)) (str role))
+      (is (= role (get-in decision [:details :role])) (str role)))))

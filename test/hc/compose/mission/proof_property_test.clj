@@ -17,10 +17,14 @@
          (identical? (proof/token) (proof/token)))))
 
 (defspec proof-token-is-a-single-identity 50
-  (prop/for-all [_ (gen/return nil)]
-    (let [a (proof/token)
-          b (proof/token)]
-      (and (identical? a b)
-           (proof/valid? a)
-           (proof/valid? b)
-           (not (proof/valid? (Object.)))))))
+  (prop/for-all [noise (gen/vector gen/any 0 16)
+                 repetitions (gen/choose 1 32)]
+    ;; No generated value can name or copy the opaque singleton; repeated
+    ;; access must keep returning the same object even amid arbitrary EDN.
+    (and (every? #(not (proof/valid? %)) noise)
+         (every? (fn [_]
+                   (let [token (proof/token)]
+                     (and (identical? token (proof/token))
+                          (proof/valid? token))))
+                 (range repetitions))
+         (not (proof/valid? (Object.))))))

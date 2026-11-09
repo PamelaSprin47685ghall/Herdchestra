@@ -2,6 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [hc.compose.mission :as mission]
+            [hc.compose.mission.host :as mission-host]
             [hc.compose.mission.proof :as proof]
             [hc.compose.mission.support :as support]
             [hc.core.relay.barrier :as barrier]))
@@ -691,6 +692,48 @@
                            (first (support/root-task-ids h second-id))
                            :state])))
     (is (:ok? (mission/check-invariants (mission/snapshot h))))))
+
+(deftest abandon-swarm-marks-the-tenure-and-clears-its-board
+  (let [h (support/host)
+        _ (support/drive-plan-to-pending! h)
+        _ (support/start-execution! h)
+        tenure-id (support/sole-execution-id h)
+        _ (support/start-swarm! h tenure-id [{:key "slice-a" :value "work"}])
+        _ (support/register-worker! h tenure-id :slot-a)
+        result (mission-host/abandon-swarm! h {:swarm-id "swarm-1"
+                                               :slice-id "slice-a"
+                                               :reason "master moved"
+                                               :at 4242})]
+    (is (:ok? result) (pr-str (:error result)))
+    (is (= tenure-id (:tenure-id result)))
+    (let [state (:state result)
+          tenure (get-in state [:relay :lanes :execution tenure-id])
+          board* (get-in state [:boards tenure-id])]
+      (is (= :abandoned (:status tenure)))
+      (is (= "master moved" (:abandoned-reason tenure)))
+      (is (= 4242 (:retired-at tenure)))
+      (is (empty? (:tasks board*)))
+      (is (empty? (:claims board*)))
+      (is (empty? (:actions board*)))
+      (is (= :free (get-in board* [:token-slot :state])))
+      (is (some #(= :swarm-abandoned (:type %)) (:events board*)))
+      (is (= :active (get-in state [:relay :lanes :plan :status])))
+      (is (= :abandoned
+             (get-in state [:bindings :execution tenure-id
+                            :reviewer :status])))
+      (is (= tenure-id (get-in state [:swarm-abandonments "swarm-1"]))))
+    (is (:ok? (mission/check-invariants (:state result)))
+        (pr-str (:violations (mission/check-invariants (:state result)))))
+    (testing "a repeated abandon is idempotent and keeps the original record"
+      (let [again (mission-host/abandon-swarm! h {:swarm-id "swarm-1"
+                                                  :slice-id "slice-a"
+                                                  :reason "again"})]
+        (is (:ok? again) (pr-str (:error again)))
+        (is (true? (:already? again)))
+        (is (= "master moved"
+               (get-in again
+                       [:state :relay :lanes :execution tenure-id
+                        :abandoned-reason])))))))
 
 (deftest plan-dedicated-worker-reuses-and-resets-per-tenure
   (let [h (support/host)

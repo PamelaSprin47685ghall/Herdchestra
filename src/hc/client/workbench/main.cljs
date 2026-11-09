@@ -13,6 +13,7 @@
             [hc.client.backup.ui :as backup-ui]
             [hc.client.conversation.stream :as stream]
             [hc.client.diagnostics :as diagnostics]
+            [hc.client.search.history-view :as history]
             [hc.client.workbench.app :as app]
             [hc.client.workbench.browser-bridge :as browser-bridge]
             [hc.client.workbench.commands :as commands]
@@ -22,6 +23,7 @@
             [hc.client.workbench.materials-bridge :as materials-bridge]
             [hc.client.workbench.model :as model]
             [hc.client.workbench.mutations :as mutations]
+            [hc.client.workbench.presence-bridge :as presence-bridge]
             [hc.client.workbench.routing :as routing]
             [hc.client.workbench.schedule-bridge :as schedule-bridge]
             [hc.client.workbench.settings-bridge :as settings-bridge]
@@ -149,6 +151,23 @@
                    (browser-bridge/sync-from-db! new)
                    (materials-bridge/sync-from-db! new)
                    (extensions-bridge/sync-from-db! new))
+                 (let [old-session-id (model/selected-session-id old)
+                       new-session-id (model/selected-session-id new)]
+                   ;; The Owner is created lazily.  Its `:session/ensure`
+                   ;; receipt publishes the per-session command epoch on the
+                   ;; session row, but no server-revision/connection change
+                   ;; accompanies it.  Re-project the session-scoped bridges
+                   ;; when that epoch arrives so the materials snapshot (and
+                   ;; the other session-scoped reads) are not left waiting
+                   ;; forever on a nil epoch.
+                   (when (and (some? new-session-id)
+                              (= old-session-id new-session-id)
+                              (not= (model/session-command-epoch old old-session-id)
+                                    (model/session-command-epoch new new-session-id)))
+                     (settings-bridge/sync-from-db! new)
+                     (browser-bridge/sync-from-db! new)
+                     (materials-bridge/sync-from-db! new)
+                     (extensions-bridge/sync-from-db! new)))
                  (when (or (not= (:ui/theme old) (:ui/theme new))
                            (not= (:ui/font-scale old) (:ui/font-scale new))
                            (not= (:ui/contrast old) (:ui/contrast new))
@@ -232,11 +251,7 @@
 
       (and meta? shift? (= "f" lower))
       (do (.preventDefault event)
-          (routing/navigate! app :sessions nil)
-          (focus-session-search! app)
-          (commands/show-notice!
-           app :info
-           "全局搜索尚未接入服务器索引；已聚焦当前会话过滤。"))
+          (history/open!))
 
       (and meta? (= "f" lower))
       (do (.preventDefault event)
@@ -254,6 +269,11 @@
       (do (.preventDefault event)
           (routing/navigate! app :sessions nil)
           (commands/create-session! app {:title "新会话"}))
+
+      (and (= key "Escape") (history/open?))
+      (do (.preventDefault event)
+          (.stopPropagation event)
+          (history/close!))
 
       (= key "Escape")
       (let [db (application/current-state app)
@@ -398,6 +418,8 @@
       (apply-appearance! initial)
       (bridge/set-app! app)
       (conversation-bridge/install! app)
+      (presence-bridge/install! app)
+      (history/install!)
       (settings-bridge/install! app)
       (settings-bridge/sync-from-db! initial)
       (diagnostics/install! app)

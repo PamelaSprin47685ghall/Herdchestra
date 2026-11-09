@@ -243,11 +243,115 @@
                                {:query "a"})]
       (is (:ok? result))
       (is (= 1 (count (:results result))))
-      (is (:truncated? result))))
-  (testing "content mode is not imitated"
-    (let [result (files/search (svc) {:query "alpha" :mode :content})]
-      (is (false? (:ok? result)))
-      (is (= :UNSUPPORTED_OPERATION (get-in result [:error :code]))))))
+      (is (:truncated? result)))))
+
+(deftest content-search-reports-line-column-snippet-and-match-count
+  (write-file! "content/notes.txt"
+               "first line\nfind MEE here\nsecond MEE line\n")
+  (let [result (files/search (svc) {:query "mee" :mode :content})
+        hit (first (:results result))]
+    (is (:ok? result))
+    (is (= :content (:mode result)))
+    (is (= ["content/notes.txt"]
+           (mapv :path (:results result))))
+    (is (= :file (:kind hit)))
+    (is (= 2 (:line hit)))
+    (is (= 6 (:column hit)))
+    (is (= "find MEE here" (:snippet hit)))
+    (is (= 2 (:match-count hit)))
+    (is (map? (:stamp hit)))
+    (is (= 41 (:size hit)))
+    (is (= 1 (get-in result [:skipped :binary])))))
+
+(deftest content-search-skips-binary-and-oversized-files
+  (let [result (files/search (svc) {:query "alpha" :mode :content})]
+    (is (:ok? result))
+    (is (= ["alpha.txt"] (mapv :path (:results result))))
+    (is (= 1 (get-in result [:skipped :binary])))
+    (is (zero? (get-in result [:skipped :too-large]))))
+  (let [result (files/search (svc {:max-search-content-file-bytes 2})
+                             {:query "alpha" :mode :content})]
+    (is (:ok? result))
+    (is (empty? (:results result)))
+    (is (= 5 (get-in result [:skipped :too-large])))
+    (is (zero? (get-in result [:skipped :binary])))))
+
+(deftest content-search-marks-budget-truncation
+  (testing "file budget"
+    (let [result (files/search (svc {:max-search-content-files 1})
+                               {:query "alpha" :mode :content})]
+      (is (:ok? result))
+      (is (:truncated? result))
+      (is (= 1 (:scanned-files result)))
+      (is (= ["alpha.txt"] (mapv :path (:results result))))))
+  (testing "byte budget stops before reading"
+    (let [result (files/search (svc {:max-search-content-total-bytes 1})
+                               {:query "alpha" :mode :content})]
+      (is (:ok? result))
+      (is (:truncated? result))
+      (is (zero? (:scanned-bytes result)))
+      (is (empty? (:results result))))))
+
+(deftest content-search-records-unstable-reads
+  (let [result (with-redefs [wg/read-file
+                             (fn [_ _ _]
+                               {:status :FILE_CONFLICT
+                                :stamp {:mtime-sec 1
+                                        :mtime-nsec 0
+                                        :size 1}})]
+                 (files/search (svc) {:query "alpha" :mode :content}))]
+    (is (:ok? result))
+    (is (empty? (:results result)))
+    (is (= 5 (get-in result [:skipped :unstable])))
+    (is (zero? (get-in result [:skipped :binary])))))
+
+(deftest content-search-does-not-follow-outside-symlinks
+  (let [outside (temp-root)]
+    (try
+      (Files/write (.resolve outside "secret.txt")
+                   (.getBytes "secretneedle\n" StandardCharsets/UTF_8)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/createSymbolicLink (.resolve ^Path @root "outside-content-link")
+                                (.resolve outside "secret.txt")
+                                (make-array FileAttribute 0))
+      (let [result (files/search (svc) {:query "secretneedle" :mode :content})]
+        (is (:ok? result))
+        (is (empty? (:results result)))
+        (is (zero? (get-in result [:skipped :unstable])))
+        (is (zero? (get-in result [:skipped :too-large])))
+        (is (= 1 (get-in result [:skipped :binary])))
+        (is (= 5 (:scanned-files result))))
+      (finally
+        (delete-tree! outside)))))
+
+(deftest search-rejects-unknown-and-blank-modes
+  (let [result (files/search (svc) {:query "alpha" :mode :fuzzy})]
+    (is (false? (:ok? result)))
+    (is (= :UNSUPPORTED_OPERATION (get-in result [:error :code])))
+    (is (= :fuzzy (get-in result [:error :details :mode])))
+    (is (= [:name :content] (get-in result [:error :details :allowed]))))
+  (let [result (files/search (svc) {:query "   " :mode :content})]
+    (is (false? (:ok? result)))
+    (is (= :INVALID_QUERY (get-in result [:error :code])))))
+
+(deftest http-content-search-passes-the-mode
+  (let [response (http {:uri "/api/workspace/search"
+                        :query-string "q=gamma&mode=content"
+                        :request-method :get})]
+    (is (= 200 (:status response)))
+    (is (= :content (get-in response [:body :mode])))
+    (is (= ["sub/gamma.clj"]
+           (mapv :path (get-in response [:body :results]))))
+    (is (= 1 (get-in response [:body :results 0 :match-count])))
+    (is (= 1 (get-in response [:body :results 0 :line])))
+    (is (= 5 (get-in response [:body :results 0 :column])))
+    (is (= "(ns gamma)" (get-in response [:body :results 0 :snippet]))))
+  (let [response (http {:uri "/api/workspace/search"
+                        :query-string "q=alpha&mode=fuzzy"
+                        :request-method :get})]
+    (is (= 501 (:status response)))
+    (is (= [:name :content]
+           (get-in response [:body :error :details :allowed])))))
 
 ;; ---------------------------------------------------------------------------
 ;; HTTP

@@ -9,6 +9,52 @@
   Root AGENTS.md §7.1: an open failure must stop side-effect dispatch and
   offer a recovery entry.  It must never create or replace an empty database.")
 
+(defn unwritable?
+  "True when THROWABLE reports a permission problem or a read-only mount.
+
+  Walks the cause chain because a native engine wraps errno in its own
+  exception.  Lock contention (MDB_BUSY/EBUSY/EAGAIN) must not match."
+  [^Throwable throwable]
+  (let [permission-text
+        #"(?i)permission denied|operation not permitted|read-only file system"]
+    (loop [e throwable]
+      (cond
+        (nil? e) false
+
+        (instance? java.nio.file.AccessDeniedException e) true
+
+        (instance? java.nio.file.ReadOnlyFileSystemException e) true
+
+        (and (instance? java.nio.file.FileSystemException e)
+             (let [reason (.getReason ^java.nio.file.FileSystemException e)]
+               (and (string? reason)
+                    (boolean (re-find permission-text reason)))))
+        true
+
+        :else
+        (let [message (or (ex-message e) (str e))]
+          (if (and (string? message)
+                   (re-find permission-text message))
+            true
+            (recur (ex-cause e))))))))
+
+(defn locked?
+  "True when THROWABLE reports lock contention.
+
+  Covers our own `store.lock` conflict (handled before this predicate) and
+  LMDB's MDB_BUSY/EBUSY/EAGAIN when a foreign process bypasses that lock."
+  [^Throwable throwable]
+  (let [lock-text
+        #"(?i)MDB_BUSY|device or resource busy|resource temporarily unavailable|EAGAIN|EBUSY"]
+    (loop [e throwable]
+      (if (nil? e)
+        false
+        (let [message (or (ex-message e) (str e))]
+          (if (and (string? message)
+                   (re-find lock-text message))
+            true
+            (recur (ex-cause e))))))))
+
 (def codes
   "Every expected error code this package raises."
   #{:STORAGE_ALREADY_OPEN
@@ -27,6 +73,7 @@
     :STORAGE_NOT_A_STORE
     :STORAGE_NOT_FOUND
     :STORAGE_NOT_INITIALIZED
+    :STORAGE_NOT_WRITABLE
     :STORAGE_OPEN_FAILED
     :STORAGE_READ_FAILED
     :STORAGE_READ_UNSTABLE

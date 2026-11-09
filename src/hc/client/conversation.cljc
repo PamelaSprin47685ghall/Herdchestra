@@ -135,7 +135,12 @@
                      (:session/current-run-id session))]
       (boolean
        (cond
-         (contains? #{:finished :idle :completed} status) false
+         ;; A cancelled/stopped run is no longer active.  Leaving it in the
+         ;; active branch blocks the next send with "当前轮仍在生成" until a
+         ;; different event clears the session run id.
+         (contains? #{:finished :idle :completed :cancelled :canceled
+                      :stopped}
+                    status) false
          (contains? #{:running :streaming :starting :dispatching
                       :applying :stopping} status) true
          :else (or (:unattended? session)
@@ -169,12 +174,41 @@
          {:text (or (:text snapshot) "")
           :attachments (vec (or (:attachments snapshot) []))}))
 
+(defn- same-send-content?
+  "True when the live draft and the captured snapshot describe the same work.
+
+  A send snapshot takes `:text` from the uncontrolled textarea but `:version`
+  from the last render, so an input/composition edit that has reached the app
+  state but not React can leave the snapshot version one step behind.  When
+  text, attachments and quotes are identical, that version gap is only a
+  duplicate edit/render of the same content; adopting the live version is
+  safe.  If any content differs, the operator really typed or attached
+  something after capture, and the old version must keep the guard."
+  [live snapshot]
+  (and (= (or (:text live) "") (or (:text snapshot) ""))
+       (= (vec (or (:attachments live) []))
+          (vec (or (:attachments snapshot) [])))
+       (= (vec (or (:quotes live) []))
+          (vec (or (:quotes snapshot) [])))))
+
 (defn- submit-send
   ([state session-id at] (submit-send state session-id at {}))
   ([state session-id at {:keys [ignore-command-pending? snapshot]}]
   (let [captured? (some? snapshot)
         {:keys [draft stream] :as base} (send-context state session-id)
+        live (:draft base)
         draft (if captured? (draft-from-snapshot snapshot) draft)
+        submitted-version (if (and captured?
+                                   (same-send-content? live snapshot))
+                            (:version live)
+                            (:version draft))
+        payload (if captured?
+                  (-> snapshot
+                      (assoc :version submitted-version)
+                      ;; The bridge-local marker selects deferral semantics; it
+                      ;; is not part of the wire payload or a draft snapshot.
+                      (dissoc :deferred?))
+                  (draft/snapshot draft))
         context (cond-> (assoc base :draft draft)
                   ignore-command-pending? (assoc :command-pending? false)
                   captured? (assoc :run-active? false :command-pending? false))
@@ -200,13 +234,12 @@
             (enqueue-command state
                              {:kind :send
                               :session-id session-id
-                              :payload (if captured? snapshot (draft/snapshot draft))
-                              :submitted-version (:version draft)
+                              :payload payload
+                              :submitted-version submitted-version
                               :at at})
             ;; Clear the live draft, not the captured view: newer text typed
             ;; while the stop was in flight must survive the captured send.
-            cleared (draft/clear-submitted (session-draft state session-id)
-                                           (:version draft))]
+            cleared (draft/clear-submitted live submitted-version)]
         (-> next-state
             (assoc-in [:drafts session-id] cleared)
             ;; A send is independent evidence of a new visible run.  The
@@ -216,7 +249,7 @@
             (assoc :now at)
             (outcome :send :queued
                      {:command-id (:command-id command)
-                      :submitted-version (:version draft)})))))))
+                      :submitted-version submitted-version})))))))
 
 (defn- request-send
   [state session-id at snapshot]
@@ -346,11 +379,13 @@
             ;; The Owner fences observer commands with :NOT_CONTROLLER.
             ;; Surface the transfer instead of a generic "not delivered".
             control-refused? (= :NOT_CONTROLLER (:code error))
-            state (-> state
-                      (assoc-in [:commands command-id :status] status)
-                      (assoc-in [:commands command-id :acked-at] at)
-                      (assoc-in [:commands command-id :error] error)
-                      (assoc :now at))]
+            state (cond-> (-> state
+                              (assoc-in [:commands command-id :status] status)
+                              (assoc-in [:commands command-id :acked-at] at)
+                              (assoc-in [:commands command-id :error] error)
+                              (assoc :now at))
+                    control-refused?
+                    (assoc-in [:commands command-id :action] :takeover))]
         (case (:kind command)
           :send
           (if accepted?
@@ -366,13 +401,15 @@
                                     (assoc stream-state :decision nil)
                                     error)))
                   (outcome :command :rejected
-                           {:command-id command-id :kind :send
-                            :restored? restored?
-                            :message (if control-refused?
-                                       "另一客户端正在控制本会话；请先接管控制"
-                                       (if restored?
-                                         "发送未送达，草稿已恢复"
-                                         "发送未送达，已保留较新草稿"))}))))
+                           (cond-> {:command-id command-id :kind :send
+                                    :restored? restored?
+                                    :message (if control-refused?
+                                               "另一客户端正在控制本会话；请先接管控制"
+                                               (if restored?
+                                                 "发送未送达，草稿已恢复"
+                                                 "发送未送达，已保留较新草稿"))}
+                             control-refused?
+                             (assoc :action :takeover))))))
 
           :stop
           (if accepted?
@@ -391,10 +428,12 @@
                                (or error :stop-rejected))
                 (update-stream (:session-id command) dissoc :pending-send)
                 (outcome :command :rejected
-                         {:command-id command-id :kind :stop
-                          :message (if control-refused?
-                                     "控制权在另一客户端；停止未发送"
-                                     "停止请求未送达，当前轮可能仍在继续")})))
+                         (cond-> {:command-id command-id :kind :stop
+                                  :message (if control-refused?
+                                             "控制权在另一客户端；停止未发送"
+                                             "停止请求未送达，当前轮可能仍在继续")}
+                           control-refused?
+                           (assoc :action :takeover)))))
 
           :unpark
           (let [session-id (:session-id command)
@@ -406,11 +445,13 @@
                                (ask/ack ask command-id accepted? at)
                                ask)))
                 (outcome :command (if accepted? :accepted :rejected)
-                         {:command-id command-id :kind :unpark
-                          :message (when-not accepted?
-                                     (if control-refused?
-                                       "另一客户端正在控制本会话；请先接管控制"
-                                       "回答未送达，可再次提交"))})))
+                         (cond-> {:command-id command-id :kind :unpark
+                                  :message (when-not accepted?
+                                             (if control-refused?
+                                               "另一客户端正在控制本会话；请先接管控制"
+                                               "回答未送达，可再次提交"))}
+                           (and (not accepted?) control-refused?)
+                           (assoc :action :takeover)))))
 
           (outcome state :command status {:command-id command-id}))))))
 

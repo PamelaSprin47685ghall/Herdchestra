@@ -260,9 +260,19 @@
                    vec)]
     (into in-order extra)))
 
+(defn- snapshot-kind
+  "Classify a validated message-snapshot shape.  The default is explicit so a
+  future shape cannot fall through a case."
+  [current]
+  (case (:kind current)
+    :raw :raw
+    :normalized :normalized
+    :empty :empty
+    :unknown))
+
 (defn- update-server
   [current server by-id order]
-  (case (:kind current)
+  (case (snapshot-kind current)
     :raw
     (cond-> (assoc server (:messages-key current) (mapv by-id order))
       (:order-key current) (assoc (:order-key current) order))
@@ -275,7 +285,13 @@
     :empty
     (-> server
         (assoc :message/by-id by-id)
-        (assoc :message/order order))))
+        (assoc :message/order order))
+
+    ;; Keep the server tree and publish an explicit marker instead of
+    ;; silently claiming the snapshot was applied.
+    (assoc server :message/snapshot-kind-error
+           {:code :UNKNOWN_SNAPSHOT_KIND
+            :kind (:kind current)})))
 
 (defn apply-messages-snapshot
   "Apply `event` to `server`, returning `{:ok? true :server server' :order [...]}`

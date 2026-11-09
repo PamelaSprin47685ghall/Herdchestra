@@ -939,6 +939,25 @@ dd if=/dev/zero of=/tmp/hc-enospc-data/fill bs=1M status=progress
 适用范围：发布前故障注入验证。不要把首轮“草稿保存失败注入”写成最终 ENOSPC
 结论；本节是后续真实 ENOSPC 实测。
 
+#### 0.0.3 更新（2026-11-09）：整个 Playwright 进程必须进入 namespace
+
+`[CODE FACT，未复测]` 只在 spec 内调用 `mount` 只改变测试进程自己的挂载视图，
+被测 app 是另一个 JVM/子进程，看不到该 tmpfs。0.0.3 改为由
+`test/e2e/run-e2e.mjs` 在 Linux 上把整个 Playwright 进程 re-exec 进
+`unshare -Ur -m`；子进程用 `HC_E2E_NAMESPACE=1` 防递归。直接
+`playwright test` 时 spec 记录 `blockedReason` 并 skip；设置
+`HC_E2E_REQUIRE_DISK=1` 时 skip 变成 hard failure。
+
+- 源码位置：`test/e2e/run-e2e.mjs:47-59`（`unshare` probe/re-exec 与警告）；
+  `test/e2e/e2e-18-disk-full.spec.mjs:58-90`（mount 前置检查）与
+  `:203-206`（`HC_E2E_REQUIRE_DISK=1` 硬失败）。
+- 复检命令：
+  ```bash
+  HC_E2E_REQUIRE_DISK=1 npm run e2e:18
+  ```
+- 适用范围：Linux 上的 E2E18。无 `unshare`/`mount` 能力的主机只能得到
+  `blockedReason`，不得把 skip 写成 PASS。
+
 ### 14.4 备份 CLI 当前行为（修复后）
 
 `[MEASURED]` 2026-11-05，隔离根 `/tmp/hc-docs-verify-final`：
@@ -1182,3 +1201,616 @@ JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
 HC_E2E_KEEP_TEMP=1 JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
   node -e "import('./test/e2e/support/app.mjs').then(async m=>{const a=await m.startApp({});console.log(a.url);await a.close();})"
 ```
+
+## 17 0.0.3 实测事实与高频缺陷（2026-11-09）
+
+本节只追加 0.0.3 的新事实；旧条目保持原样。未实际复测的条目明确标
+`[CODE FACT，未复测]`，不把代码阅读写成运行结果。
+
+### 17.1 supervisor：`Thread.join(0)` 是无限等待
+
+`[MEASURED]` 环境：Pixi JDK 21.0.10 + Clojure 1.12.6，Linux x86_64；
+`hc.compose.supervisor-test`。
+
+- **现象**：`join-worker!` 曾直接 `(.join thread remaining-ms)`；当剩余预算为
+  0 时 Java 的 `join(0)` 表示无限等待，`stop-reports-a-tick-that-outlives-the-timeout`
+  因此 300s 超时。
+- **数值**：修复后同一 ns `30 tests / 180 assertions / 2.27s`，0F/0E。
+- **源码位置**：`src/hc/compose/supervisor.clj` 的 `join-worker!`（约
+  `:928-937`）；现在只有 `(pos? timeout-ms)` 才调 `.join`，否则仅做
+  `(.isAlive thread)` 非阻塞检查。
+- **复检命令**：
+  ```bash
+  clojure -M:test:compose -n hc.compose.supervisor-test
+  ```
+- **适用范围**：所有带剩余时间切片的 `Thread.join`；不要把 0 当作“立刻返回”。
+
+### 17.2 supervisor：stop 回调顺序竞态
+
+`[MEASURED]` 环境同上；`hc.compose.supervisor-test` 的逆序停止/超时用例。
+
+- **现象**：`do-stop!` 先 `request-stop!` 唤醒全部子项，worker 的 `finally`
+  若立刻自释放句柄，会抢在有序停止之前执行 `:stop!`，破坏“按成功启动逆序
+  停止”的契约。
+- **数值**：无独立计数；修复后 supervisor ns 30 tests / 180 assertions。
+- **源码位置**：`src/hc/compose/supervisor.clj` 的 per-child
+  `:stop-attempted?`/`:stop-processed?`（约 `:256-258`）、worker finally
+  （约 `:765-779`）与 `stop-child!`/`do-stop!`（约 `:940-980`）。worker 只在
+  有序停止尝试未完成（超时或未取得锁）后自释放。
+- **复检命令**：
+  ```bash
+  clojure -M:test:compose -n hc.compose.supervisor-test
+  ```
+- **适用范围**：任何“先广播停止、再逐项 join”的监督器。
+
+### 17.3 `clojure.test :refer` 漏项会伪装成“无测试摘要”
+
+`[CODE FACT，未复测]` 环境：Clojure 1.12 test-runner。
+
+- **现象**：使用 `(are ...)` 或 `(testing ...)` 但 ns 的 `:refer` 未包含
+  对应宏时，整 ns 在加载阶段编译失败；runner 先报“无测试摘要”，容易被误读
+  成“0 个测试/没有测试文件”，而不是一条正常失败。
+- **数值**：编译失败时没有 `Ran N tests` 摘要；不是 0 tests 的真实结果。
+- **源码位置**：`test/**/*_test.clj{,c}` 每个 ns 的
+  `(:require [clojure.test :refer [...]])`。当前完整写法示例：
+  `test/hc/compose/supervisor_test.clj`、`test/hc/server/app/background_loops_test.clj`
+  均 refer `are deftest is testing`。
+- **复检命令**：逐文件交叉核对 `:refer` 与文件内使用的 `clojure.test`
+  宏；再以 `clojure -M:test -n <ns>` 确认输出 `Ran N tests`。
+- **适用范围**：任何新增/修改的测试 ns；不要只看 runner 的汇总行。
+
+### 17.4 `alter-var-root` 驱动器的串行契约
+
+`[CODE FACT，未复测]` 环境：JVM 测试；`test/hc/boundary_driver.clj`。
+
+- **现象**：驱动器用 `alter-var-root` 包装
+  `prepare/prepare-plan`、`gboard/begin-apply!`、`gboard/publish-applied!`、
+  `gboard/publish-failure!`、`gate/acquire!` 等进程级 var；并发使用会互相
+  覆盖。
+- **数值**：7 个命名边界：`:read-complete`、`:queued-for-w`、
+  `:in-gate-checked`、`:dry-run-complete`、`:applying`、`:applied`、
+  `:board-published`。
+- **源码位置**：`test/hc/boundary_driver.clj` 头部契约与 `close!`；第二个
+  `new-driver` 抛 `:DRIVER_ALREADY_OPEN`。
+- **复检命令**：每个使用该驱动器的 ns 必须 `use-fixtures :each` 在
+  `finally` 调 `close!`，并 `use-fixtures :once` 断言每个 var 仍
+  `identical?` 原值：
+  ```bash
+  clojure -M:test:compose -n hc.boundary-driver-test
+  ```
+- **适用范围**：仅测试；`close!` 幂等，但两个并发 driver 不受支持。
+
+### 17.5 `set` 位置参数错位型 arity bug
+
+`[CODE FACT，未复测]` 环境：Clojure 编译器。
+
+- **现象**：`(set (remove f coll))` 少一个右括号会变成
+  `(set (remove f) coll)`；`remove` 返回函数后 `set` 收到 2 个参数，抛
+  `ArityException: Wrong number of args (2) passed to: clojure.core/set`。
+- **数值**：错误 arity = 2（`set` 期望 1）。
+- **源码位置**：历史调用栈顶层落在 `src/hc/server/app/commands.clj` 的
+  handler 行号，但真正缺括号处在被调用的嵌套表达式；修复后需全文复核
+  `(set (remove`、`(vec (remove`、`(filter` 的闭合。
+- **复检命令**：
+  ```bash
+  grep -nE '\((set|vec|filterv?|remove) \(' src test
+  clojure -M:test:server -n hc.server.app.commands-test
+  ```
+- **适用范围**：所有高阶函数嵌套；错误行号不等于缺陷行号。
+
+### 17.6 `files.clj` primitive `recur` 装箱警告
+
+`[CODE FACT，未复测]` 环境：Pixi JDK 21 / Clojure 1.12.6；`hc.server.files-test`。
+
+- **现象**：`count-occurrences` 的 `loop` 局部 `match-count` 是 primitive
+  long，但函数缺 `^long` 返回提示，导致每轮 `Object ↔ long` 装箱并打印
+  `recur arg for primitive local` 警告。
+- **数值**：每个编译单元 1 条 warning；加 `^long` 后消失（代码事实）。
+- **源码位置**：`src/hc/server/files.clj:399-401`（`^long` 返回提示）与
+  `:447-451`（`(+ match-count occurrences)` 的 recur）。
+- **复检命令**：
+  ```bash
+  clojure -M:test:server -n hc.server.files-test
+  ```
+  输出不应出现 `recur arg for primitive local`。
+- **适用范围**：所有 primitive loop 累加器；警告不是无害噪音时先补 hint。
+
+### 17.7 命名空间遮蔽 `clojure.core`
+
+`[CODE FACT，未复测]` 环境：Clojure 1.12。
+
+- **现象**：`hc.server.history.index` 的 `(def partition "search")` 遮蔽
+  `clojure.core/partition`；`hc.server.storage.keys` 的 `key` 遮蔽
+  `clojure.core/key`。编译器打印 `WARNING: ... already refers to
+  #'clojure.core/...`；同 ns 内漏写限定名会静默拿到错误绑定。
+- **数值**：2 个命名空间、2 个被遮蔽符号。
+- **源码位置**：`src/hc/server/history/index.clj:36`（
+  `(:refer-clojure :exclude [partition])`）与 `:42`；`src/hc/server/storage/keys.clj:22`
+  （`(:refer-clojure :exclude [key])`）与 `:25`。
+- **复检命令**：编译相关 ns，确认无 `already refers to` 警告；在 ns 内搜索
+  未限定调用：
+  ```bash
+  clojure -M:test:server -n hc.server.history.index-test
+  clojure -M:test:server -n hc.server.storage-test
+  ```
+- **适用范围**：任何定义与 core 同名的 var；必须显式 `:exclude`。
+
+### 17.8 `test-shards.edn` 双向对账
+
+`[MEASURED]` 环境：2026-11-09 工作树；`test/**/*_test.clj` 与
+`test/**/*_test.cljc`。
+
+- **现象**：分片清单是 `scripts/test-sharded.sh` 的输入；漏登记会让新测试
+  永远不进分片门禁。
+- **数值**：366 → **381** 个 ns（A 150 / B 73 / C 19 / D 139）；补录 15 条
+  遗漏，0 幽灵，0 重复。额外发现 `hc.server.app.commands-test` 与
+  `hc.server.history.snapshot-test`。
+- **源码位置**：`scripts/test-shards.edn`；测试源在 `test/`。
+- **复检命令**：枚举每个文件的 `(ns ...)`（**不要用路径猜命名空间**，
+  `test/hc/boundary_driver_test.clj` 的 ns 是 `hc.boundary-driver-test`），
+  与 EDN 四片并集做双向差集；再跑 `bash -n scripts/test-sharded.sh`。
+- **适用范围**：每次新增/重命名/删除测试文件后。
+
+### 17.9 E2E mock provider 键必须带 `?`
+
+`[CODE FACT，未复测]` 环境：E2E `test/e2e/support/fixtures.mjs`。
+
+- **现象**：provider 描述符是闭合 schema；`:allow-insecure-http?`、
+  `:pkce?`、`:supports-refresh?` 与 S3 `:path-style?` 写成不带 `?` 的键会
+  被 `provider-keys`/字段校验以 `:unknown-field` 拒绝，loopback OAuth 无法
+  启动。
+- **数值**：4 个必须保留 `?` 的键。
+- **源码位置**：`test/e2e/support/fixtures.mjs:78-82` 与 `:105-107`；
+  `src/hc/server/model_auth/provider.clj:16-23`（`provider-keys`）；
+  `src/hc/server/backup/s3.clj:62-68`（`:path-style?`）。
+- **复检命令**：
+  ```bash
+  npm run e2e:core
+  ```
+  观察 app 启动与 OAuth/S3 mock 是否被接受。
+- **适用范围**：E2E mock 配置；产品配置同样使用这些带 `?` 的键。
+
+### 17.10 E2E 18：mount 必须包住整个 Playwright 进程
+
+`[CODE FACT，未复测]` 见 §14.3 的「0.0.3 更新」；本节只保留索引，不重复。
+
+- **环境**：Linux + Playwright；入口 `test/e2e/run-e2e.mjs`。
+- **现象**：spec 内 mount 只影响测试进程，app JVM 看不到 tmpfs；必须由
+  `test/e2e/run-e2e.mjs` 用 `unshare -Ur -m` re-exec 整个 Playwright 进程。
+- **数值**：`HC_E2E_NAMESPACE=1` 防递归、`HC_E2E_REQUIRE_DISK=1` 将 skip
+  变成失败；E2E18 spec 的 tmpfs 为 `size=1m`，§14.3 的旧注入是 `64M`。
+- **源码位置**：`test/e2e/run-e2e.mjs:47-59`；
+  `test/e2e/e2e-18-disk-full.spec.mjs:58-90,203-206`；详见 §14.3 的
+  「0.0.3 更新」。
+- **复检命令**：
+  ```bash
+  HC_E2E_REQUIRE_DISK=1 npm run e2e:18
+  ```
+- **适用范围**：Linux E2E18；无 namespace 能力时只能 `blockedReason`。
+
+### 17.11 E2E 15：失败横幅显示 provider 原文
+
+`[CODE FACT，未复测]` 环境：E2E15 + mock STT。
+
+- **现象**：mock 返回 `mock stt failure 503`，错误横幅原样透传；断言用中文
+  `/转写失败/` 永远为 false。
+- **数值**：HTTP 503；失败断言应为结构而非文案。
+- **源码位置**：`test/e2e/e2e-15.spec.mjs:603-624`（`role="alert"` + 录音
+  `audio` + `重试` 按钮）与 `:648-650`（点击重试）。
+- **复检命令**：`npm run e2e:core`（含 E2E15）。
+- **适用范围**：E2E 错误断言；provider 原文不是稳定的用户文案。
+
+### 17.12 E2E 17：`已删除会话` 是常驻 details
+
+`[CODE FACT，未复测]` 环境：E2E17。
+
+- **现象**：已删除区是活动列表的永久 sibling，`summary` 文本始终含
+  `已删除会话`；整页 body 匹配 `/已删除会话|s-deleted/` 必然命中。
+- **数值**：1 个永久 `details.wb-deleted-sessions`。
+- **源码位置**：`test/e2e/e2e-17.spec.mjs:492-505`；断言限定到
+  `.wb-session-list .wb-list-button` 的活动行，再正向检查 deleted area。
+- **复检命令**：`npm run e2e:core`（含 E2E17）。
+- **适用范围**：任何带常驻摘要的列表断言；只查可见活动行。
+
+### 17.13 `/healthz` 的 `ok?` 不得包含慢查询
+
+`[CODE FACT，未复测]` 环境：`hc.server.app` 实时 health。
+
+- **现象**：`ok?` 只由 `store-open?` + 非 nil `gateway-stats` + 空
+  `component-errors` 决定；`session-count` 不在其中。计数走
+  `list-session-ids` 索引点读，nil/异常记 `{:count :unknown}`，绝不因此 503。
+- **数值**：3 个就绪条件；`session-count` 为诊断字段，不是 readiness 条件。
+- **源码位置**：`src/hc/server/app/health.clj:29-40`；
+  `src/hc/server/app/system.clj:5166-5188`（`health-system`）与 `:5379-5390`。
+- **复检命令**：
+  ```bash
+  pixi run app-check
+  curl -fsS http://127.0.0.1:7575/healthz
+  ```
+  前者 exit 0 且 `:ok true`；后者 `:sessions {:count :unknown}` 时仍 200。
+- **适用范围**：任何复用 health 的只读探针；不要把计数放进 readiness。
+
+### 17.14 `session_persistence` 点读迁移
+
+`[CODE FACT，未复测]` 环境：Datalevin 1.2.10 KV 当前态存储。
+
+- **现象**：`commit-session!`、`delete-session!`、`list-session-ids`、
+  `claim-session-command!` 改为点读 + `:lightweight-return? true`，不再为
+  一次提交反序列化整分区。
+- **数值**：4 个入口；2 个关键开关 `:lightweight-return?` 与
+  `:include-unknown-kinds?`。
+- **源码位置**：`src/hc/server/app/session_persistence.clj:359-427`、
+  `:449-496`、`:543-545`、`:577-611`；`src/hc/server/storage.clj:560-590`；
+  `src/hc/server/storage/view.clj:150-158`（`known-document-kinds`）。
+- **复检命令**：用 `with-redefs` 让 `read-session-view` 抛错，仍应完成
+  commit/list/delete/claim；新增 kind 必须登记到 `known-document-kinds` 或
+  显式传 `:include-unknown-kinds? true`。
+  ```bash
+  clojure -M:test:server -n hc.server.app.session-command-index-test
+  clojure -M:test:server -n hc.server.storage-test
+  ```
+- **适用范围**：当前态存储的会话/命令路径；新增文档 kind 时先改 view 清单。
+
+### 17.15 app-check exit 1：幂等 stop 的 `:stopped? false` 被当成 live writer
+
+`[实测 + CODE FACT，2026-11-09]` 环境：`pixi run app-check`。
+
+- **现象**：exit 1，输出
+  `{:error :STOP_NOT_CONFIRMED, :stop {:stopped? false, :drained? true,
+  :store-closed? false, :failures []}}`。没有组件失败，但 store 不关闭。
+- **状态（2026-11-09 09:31:22）**：**已修复**。`src/hc/server/app/system.clj`
+  冻结于该时刻（305,862 B）；`--check --port 0` exit 0，stdout 含
+  `:ok true`、`:version "0.0.3"`、`:git-hash "1623d4e4c5f6"`、
+  `:git-dirty? true`、
+  `:steward {:configured? true :started? true :status :started}`；
+  无 `:STOP_NOT_CONFIRMED`，无 `store-close-skipped`。以下保留原始根因记录。
+- **数值**：`:failures []`、`:drained? true`、`:store-closed? false`；
+  `:store-close-skipped` 落在 `:writers-live` 或
+  `:components-not-terminated` 分支。
+- **源码位置**：`src/hc/server/app/system.clj:6103-6106`
+  （`writers-stopped?` 用 `(not (false? (:stopped? evidence)))` 判定）；
+  `system.clj:5848-5851`（`stop-evidence` 原样保留 `:stopped?`）；
+  `system.clj:5853-5859`（`stop-failed?` 把 `:stopped? false` 当失败；
+  但直接 steward 分支不走 `stop-one!`）；幂等 stop 的返回在
+  `src/hc/server/app/steward_runtime.clj:1310-1317`
+  （`:ok? true, :stopped? false, :terminated? true`）。
+- **修法方向**：先把终止证据按 `:ok?`/`:terminated?` 规范化，再喂给
+  `writers-stopped?`（`system.clj:6008-6015` 已对直接 steward 结果这样做），
+  或让 `steward_runtime/stop!` 的幂等路径返回 `:stopped? true`。
+  **不要**放宽 app-check 的断言来掩盖。
+- **复检命令**：`pixi run app-check`，要求 exit 0、`:ok true`、
+  `:store-closed? true`。
+- **适用范围**：所有在后台组件停止后关闭共享 store 的关机路径。
+
+### 17.16 `.cljs` 测试不在 `test-shards.edn` 覆盖范围
+
+`[实测，2026-11-09]`
+
+- **现象**：`scripts/test-shards.edn` 只登记 JVM `clojure.test` ns；
+  `test/**/*.cljs` 有 26 个测试文件。分片 runner 用
+  `-X:test ... :nses`，既不编译 `.cljs`，也不加载 Node shim。
+- **数值**：26 个测试文件 / 26 个 `test/js/verify_*.sh` harness；
+  最终冻结树上全量 **26/26 PASS**（全部 exit 0，0 failures / 0 errors，
+  **415.07s**；其中 23 个 `cljs.test` 脚本合计 200 tests / 1,053
+  assertions，3 个纯 smoke/metrics 脚本全部通过）。绑定最终树
+  `80e9321c` / bundle `751756ec`。2026-11-09 早些时候是 19 个 harness、
+  7 个缺口；当天补齐 7 条后，`test-cljs-gate.sh` 的清单也已登记 26 条。
+  `.cljs` 门禁串行跑 26 个 harness，每个上限 600s。
+- **入口**：`bash scripts/test-cljs-gate.sh`；日志在
+  `target/cljs-gate/<timestamp>/`；`CLJS_GATE_ONLY=<substring>` 过滤单个
+  harness。样例：
+  ```bash
+  CLJS_GATE_ONLY=verify_workbench_shell_dom bash scripts/test-cljs-gate.sh
+  bash scripts/test-cljs-gate.sh   # 全量 26 个
+  ```
+  `scripts/release-gate.sh` 默认路径执行该门禁；脚本不存在时打印 `SKIP`
+  并在证据目录写明理由。
+- **适用范围**：任何「420 ns 全绿」的陈述都不覆盖这 26 个 `.cljs` 测试。
+
+### 17.17 `package-lock.json` 根版本未随 manifest 升级
+
+`[实测，2026-11-09]`
+
+- **现象**：`package.json` 已升级时，`package-lock.json` 的 `version` 或
+  `packages[""].version` 仍可能是旧值；只比对 `package.json` 的版本门禁会
+  假绿。
+- **数值**：lock 内两处版本必须彼此相等，且等于 `version.cljc`。
+- **源码位置**：`scripts/release-gate.sh:541-585`（版本一致性步骤：node
+  读取 lock 两处，写入 `versions.txt` 并逐项比较）。
+- **复检命令**：
+  ```bash
+  node -e 'const l=require("./package-lock.json");console.log(l.version, l.packages[""].version)'
+  ```
+  两个输出都应为 `0.0.3`。
+- **适用范围**：每次版本号变更；`npm install` 可能重写 lock 版本，提交前核对。
+
+### 17.18 发布门禁曾无 timeout：挂死分片会永久挂住整个 gate
+
+`[实测，2026-11-09]`
+
+- **现象**：`test-sharded.sh` 用 `kill -0` + `wait` 无限期等待分片 JVM；
+  `release-gate.sh` 的 `run_step` 也没有超时。现场出现过一次 300s 无输出与
+  一次无界 `Thread.join(0)` 的真实挂死。
+- **修法/数值**：每片
+  `timeout -k 30 ${HC_SHARD_TIMEOUT_SECONDS:-3600}`；超时记
+  `exit=124/137`、summary 追加 `TIMEOUT <shard>`、计数写 `?` 并返回非零。
+  gate 每步默认 1800s；四分片整步 15000s、E2E 5400s、bench 3600s、
+  `.cljs` 7200s。超时步骤直接 fail 并打印日志路径。
+- **源码位置**：`scripts/test-sharded.sh:208-258`；
+  `scripts/release-gate.sh:127-161`、`:184-199`。
+- **复检命令**（假 clojure + 假 pgrep，不跑真实测试）：
+  ```bash
+  HC_SHARD_TIMEOUT_SECONDS=2 bash scripts/test-sharded.sh --only A
+  ```
+  期望 exit ≠ 0，`summary.tsv` 含 `A ... 124` 与 `TIMEOUT A 2`。
+- **适用范围**：所有可能长时间无输出的发布步骤；不要用「等它自己结束」
+  代替 timeout。
+
+### 17.19 Reagent/hiccup 的 `when` 多兄弟表单只保留最后一个
+
+`[实测 + CODE FACT，2026-11-09]` 环境：`hc.client.settings.view`。
+
+- **现象**：`(when cond (el :dt ...) (el :dd ...))` 这种一个 `when` 带多个
+  兄弟表单的写法，Reagent/hiccup 只把**最后一个**表单放进返回向量；前面的
+  `<dt>` 被静默丢弃。表现为「最近测试」「草稿」「账号标识」三个标签消失，
+  而对应的值仍然显示。编译器不会报错。
+- **数值**：settings view 用例 **33 tests / 144 assertions / 0F / 0E**；
+  这是静默 UI 缺失，不是测试失败。
+- **正确形状**：`src/hc/client/settings/view.cljc:204-215` 每个节点各用一个
+  `when`（`dt` 与 `dd` 分开），或把兄弟节点包进 `(into [:<>] ...)`。
+- **复检命令**：
+  ```bash
+  clojure -M:test:client -n hc.client.settings.view-test
+  ```
+  期望 33 tests / 144 assertions / 0 failures / 0 errors；再在浏览器确认三个
+  标签可见。
+- **适用范围**：所有 Reagent/hiccup 视图；一个条件控制多个兄弟节点时必须
+  拆 `when` 或用 fragment 包装。
+
+### 17.20 发布 tag 指向错误版本：临时 index 生成 fixup 提交
+
+`[实测，2026-11-09]` 环境：0.0.2 已推送的 `origin`。
+
+- **现象**：`v0.0.2` 的树里四个 manifest 的版本号仍全是 `0.0.1`；推出去
+  就是「自称 0.0.1 的 0.0.2」。只改工作树再重新 tag 会让源码树与
+  freeze tree `956136d0` 脱节。
+- **修法**：保留原 source release 提交 `1623d4e`，用它作父提交，另建一个
+  只改版本号的 fixup 提交 `721c1b2`；annotated tag object 为 `cb87d76`，
+  `v0.0.2^{commit}` 指向 `721c1b2`。`release-0.0.2-source`（本地，指向
+  `1623d4e`）未推送，作为保底。
+- **数值**：`git diff --name-status v0.0.2^{commit}^ v0.0.2^{commit}` 恰好
+  **4 行、全部 `M`**；`git diff --stat` 为 **4 files changed, 5
+  insertions(+), 5 deletions(-)**。`package-lock.json` 第 13 行起逐字节
+  相同（**58302 B = 58302 B**），依赖树零改动。四个文件是
+  `src/hc/version.cljc`、`pixi.toml`、`package.json`、`package-lock.json`。
+- **远端现状**：`refs/heads/master = 721c1b2…`（原 `379b021`）；
+  `refs/tags/v0.0.1^{} = 40d01c8…`；`refs/tags/v0.0.2^{} = 721c1b2…`；
+  无其它 `v0.0.*` 标签。
+- **副作用**：`update-ref` 只移动 ref，不移动真实 index。之后 index 里四个
+  文件仍是旧 `0.0.1` blob，porcelain 显示 `MM`；用
+  `git reset -q -- <4 paths>` 只清 index、不碰工作树。清理后
+  `git diff --cached` 为空、状态为 ` M`，工作树 336 项脏条目与内容均未变。
+- **命令骨架**（路径与哈希按实际替换；先 `git diff` 核对 tree，再移动 ref）：
+  ```bash
+  tmpdir=$(mktemp -d)
+  export GIT_INDEX_FILE="$tmpdir/index"
+  git read-tree 1623d4e
+  for p in src/hc/version.cljc pixi.toml package.json package-lock.json; do
+    blob=$(git hash-object -w -- "$p")
+    git update-index --cacheinfo 100644 "$blob" "$p"
+  done
+  tree=$(git write-tree)
+  git diff --stat 1623d4e "$tree"      # 期望 4 files changed, 5+/5-
+  new=$(printf '%s\n' 'release: align version manifests to 0.0.2' \
+    | git commit-tree "$tree" -p 1623d4e)
+  git update-ref refs/heads/master "$new"
+  git tag -f -a v0.0.2 "$new" -m 'Herdchestra 0.0.2'
+  unset GIT_INDEX_FILE
+  # 此时真实 index 仍指向旧 0.0.1 blob；只清这四个路径，不碰工作树
+  git reset -q -- src/hc/version.cljc pixi.toml package.json package-lock.json
+  rm -rf "$tmpdir"
+  ```
+  不要用 `git checkout` / `git reset --hard` 造这条提交；临时 index 的作用
+  正是让工作树与真实 index 保持原样。若 `update-ref` 需要防误覆盖，可加
+  旧值做 compare-and-swap（`git update-ref <ref> <new> <old>`）。推送前核对
+  `git rev-parse v0.0.2^{commit}` 与远端 refs。
+- **复检**：
+  ```bash
+  git diff --name-status v0.0.2^{commit}^ v0.0.2^{commit}
+  git diff --stat v0.0.2^{commit}^ v0.0.2^{commit}
+  git rev-parse v0.0.2^{commit} v0.0.2^{tag}
+  git ls-remote origin 'refs/heads/master' 'refs/tags/v0.0.*'
+  ```
+- **适用范围**：任何已推送 tag 的元数据修正；源码/freeze tree 必须保持
+  原提交不动，修正提交只允许改 manifest 版本号。
+
+### 17.21 CLJS runner 曾打印失败摘要却 exit 0
+
+`[实测，2026-11-09]` 环境：`test/js/run_*.cjs` 与
+`scripts/test-cljs-gate.sh`。
+
+- **现象**：runner 只依赖 `process.exitCode`；真实出现过 cljs.test 打印
+  `1 failures, 0 errors`，进程却仍以 0 退出，门禁把该 harness 记成 PASS。
+- **修法**：7 个 runner 改为捕获 `console` 输出里的
+  `N failures, M errors` 摘要，并在 `beforeExit` 强制把 `process.exitCode`
+  置 1；门禁继续按 harness 进程退出码统计 PASS/FAIL。
+- **验证**：合成探针分别喂给旧/新 runner：旧 runner 在打印失败摘要后仍
+  exit 0，新 runner exit 1。不要用「正常全绿」证明退出码传播，必须用故意
+  失败的 fixture。
+- **适用范围**：所有把第三方测试框架输出包进 Node 进程的 harness。改
+  runner 后至少复跑一次合成探针，再加跑 26 条正常门禁。
+
+### 17.22 启动期同步全量 FTS 重建导致大库启动挂起
+
+`[实测，2026-11-09]` 环境：Linux x86_64；`scripts/bench-1000-dom.mjs`、
+`hc.server.app.system` 与 `hc.server.history.index`。
+
+- **现象**：`scripts/bench-1000-dom.mjs` 在 1000 会话库上等待 **300 s** 仍
+  未 listen，脚本随后 SIGKILL；服务端日志停在 JavaCPP/native-access 警告
+  之后，**无异常、无 OOM**。同一脚本在隔离环境下**连续 3 次**通过
+  （listen **17.25 s / 16.65 s / 16.34 s**），说明先前的 300 s 挂起是
+  **同步重建**造成的，资源争用只是**加剧**。
+- **根因与实测**：`hc.server.app.system/ensure-history-index!` 在
+  `http/start!` **之前**同步执行全量重建。实测 **100 会话 62,256 ms**
+  （**622 ms/会话**、**6,200 postings**），**1000 会话线性投影 ≈ 620 s**。
+  反证：同一库 `list-session-ids` **2 ms**、datalevin `open` **1.14 ms**、
+  读 100 条完整会话 **47 ms**——存储层不慢，瓶颈在分词与 posting 写入的
+  每会话常数。
+- **修复**：必需重建**延迟到 daemon 线程** `hc-history-index-bootstrap`，
+  启动返回 `{:deferred? true :state :building}`；`history-index-health` 在
+  构建期报 `:state :building`；`history/index.clj` 的 `rebuild!` **不再整轮
+  持有 store 锁**（逐会话短锁），并用 `:stale-snapshot` 跳过，防止后台重建
+  覆盖并发增量写入。
+- **语义**：`:state :building` **不**让 `/healthz` 的 `:ok` 变 false
+  （`component-errors` 保持为空）。
+- **复检命令**（可复制）：
+  ```bash
+  node scripts/bench-1000-dom.mjs --json /tmp/b1.json
+  # 期望 verdict PASS、listenMs < 60s、exit 0
+
+  clojure -M:test:server -n hc.server.storage.startup-scale-test
+  clojure -M:test:server -n hc.server.app.system-test
+  ```
+- **教训**：启动路径上任何「与请求量/数据量线性相关」的工作都必须**有界
+  或异步**；基准脚本必须把「未 listen」判为 FAIL（该脚本已修：
+  `app.error` → exit 1）。
+- **适用范围**：所有启动期索引/迁移/重建路径，以及任何以「进程已启动」
+  为成功条件的基准脚本；不要用资源争用解释可复现的线性重建。
+
+### 17.23 E2E 对可选子节点直接 `innerText()` 会绕过 `.catch` 等到超时
+
+`[实测，2026-11-09]` 环境：Playwright E2E；可选子节点、隐藏/重复的停止
+按钮。
+
+- **现象**：对可选子节点直接调 `locator.innerText()`，零命中时即使外面包了
+  `.catch`，也会一直等到 **test timeout** 才失败；隐藏/重复的停止按钮同坑。
+  `.catch` 只处理最终 reject，不能让 locator 立即返回空。
+- **根因**：Playwright 的 locator action 会等待元素出现/可操作；零命中不是
+  同步返回 `null`，而是等待超时。把「可选」当成「可能不存在」再用
+  `innerText()` 读取，会把可选探针变成 30s/60s 级挂起。
+- **修法**：先 `await locator.count()`，为 0 直接返回 `null`；或改为单次
+  `page.evaluate` 原子读取（`document.querySelector(...)?.textContent`）。
+  隐藏/重复的停止按钮要用可见性过滤/作用域 locator，不能靠 `.catch`。
+- **复检形状**：
+  ```js
+  const n = await locator.count();
+  const text = n === 0 ? null : await locator.first().innerText();
+  ```
+  或：
+  ```js
+  const text = await page.evaluate(
+    (sel) => document.querySelector(sel)?.textContent ?? null, selector);
+  ```
+- **适用范围**：所有 E2E 的可选/隐藏/重复 DOM 探针；不要用直接
+  `innerText()` + `.catch` 探测存在性。
+
+### 17.24 `/tmp` 是 32G tmpfs，写满会让 E2E 报假「连接中断」
+
+`[实测，2026-11-09]` 环境：Linux；E2E 14/15/18/19。
+
+- **现象**：E2E 14/19 出现「顶部连接中断 + 所有动作按钮 disabled」，
+  E2E 15 报「录音时长无法校验」，E2E 18 报 draft 写入失败；Playwright
+  退出码与 spec 断言都指向 SUT，但服务端日志仍
+  `RUN_FINISHED :succeeded`。
+- **根因**：`/tmp` 为 tmpfs 且已 **100% 占满（32G/32G，可用 46M）**；
+  Chromium/JVM 的临时文件写入失败。
+- **处置**：所有 E2E 运行统一 `TMPDIR=/var/tmp/hc-e2e`（`/var/tmp` 在宿盘，
+  151G 可用）；Node 的 `os.tmpdir()` 遵循 `TMPDIR`，Playwright 的
+  trace/profile/app 临时根随之迁移。
+- **复检**：`df -h /tmp`；
+  `TMPDIR=/var/tmp/hc-e2e node -e "console.log(require('os').tmpdir())"`
+  必须输出该路径。
+- **适用范围**：所有 E2E/Playwright/JVM 临时目录；看到「连接中断」先查
+  `/tmp` 占用，不要先判 SUT。
+
+### 17.25 `Input.dispatchKeyEvent` 无法构造 `isComposing: true`
+
+`[实测，2026-11-09]` 环境：Playwright CDP；E2E 19 IME。
+
+- **现象**：用 CDP `Input.imeSetComposition` + `Input.dispatchKeyEvent`
+  模拟中文输入法组词回车，SUT 会把该 Enter 当普通发送（keydown 的
+  `isComposing` 为 false）。
+- **结论**：CDP 没有 `isComposing` 字段，**不能**用它验证「组合态 Enter
+  不发送」这一不变量。正确做法是在页面内 `dispatchEvent` 真正的
+  `KeyboardEvent`（`isComposing: true`，并用 `Object.defineProperty` 补
+  `keyCode`/`which`），再断言 `defaultPrevented === false` 与「未新增 user
+  消息/未新增请求」。
+- **附带 SUT 修复**：`onKeyDown` 原先只信 native `isComposing`，未使用
+  `compositionstart` 设置的本地标志；现已加同步 `composing-ref` 传入
+  `:composing?`，覆盖嵌入式 webview 等 native 标志缺失的场景。
+- **适用范围**：所有 IME/组合态 E2E；不要用 CDP 伪造 `isComposing`。
+
+### 17.26 E2E spec 内的 `count()` + `innerText()` 仍会无界等待
+
+`[实测，2026-11-09]` 环境：E2E `e2e-05.spec.mjs`。
+
+- **现象**：spec 自己写的 turn 结束探针先 `count()` 再 `innerText()`，
+  节点在两调用之间瞬失时，`innerText()` 会等到 **900s** test timeout。
+- **处置**：统一改为单次 `page.evaluate` 原子读取，或
+  `count()` 守卫 + `innerText({timeout:1000}).catch(()=> '')`。
+- **复检**：逐 spec grep `innerText(`，凡可能零命中/瞬失的都要加守卫。
+- **适用范围**：所有 E2E 可选/瞬失节点的读取；`count()` 不是原子性保证。
+
+### 17.27 `Array.prototype.push` 吞掉 promise，导致 E2E 13 每次挂死 1800s
+
+`[实测，2026-11-09]` 环境：`test/e2e/e2e-13.spec.mjs`。
+
+- **现象**：25 个 checks 全为 true、证据 JSON 已写出 `ok=true`，进程却永不
+  退出，直到外层 `timeout` 杀掉（exit 124）。
+- **根因**：`const record = (name) => screenshots.push(shot(...).catch(...))`
+  —— `push` 返回的是**数组新长度（number）**，不是 Promise。于是全文
+  `await record(...)` 立刻返回，后续 `await page.reload()` 与仍在飞的
+  `page.screenshot` 并发，截图 promise 被 reload 打断后死锁；最后
+  `await Promise.allSettled(screenshots)` 一直等到
+  `test.setTimeout(1800000)` 到期才解锁。
+- **处置**：`record` 必须自己 `push` 再 `return` 那个 promise，并给
+  `page.screenshot` 加 `timeout: 15000` 防呆：
+  ```js
+  const record = (name) => {
+    const p = shot(...).catch(...);
+    screenshots.push(p);
+    return p;
+  };
+  ```
+- **复检**：E2E 13 应在数分钟内自然退出；
+  `await Promise.allSettled(screenshots)` 之前所有截图已完成。
+- **适用范围**：所有把 promise 放进数组再 await 的辅助函数；
+  `Array.prototype.push` 永远返回 number。
+
+### 17.28 无头 Chromium 的 MediaRecorder 可能产出零字节，静音 WAV 兜底会让「云端时长门」用例非确定性
+
+`[实测，2026-11-09]` 环境：`test/e2e/e2e-15.spec.mjs`；无头 Chromium。
+
+- **现象**：直接「开始录制后立刻点停止」，某些运行里 `MediaRecorder` 尚未
+  产生任何 media chunk，客户端回落到静音 WAV；该 WAV 时长可解析，于是
+  `:processing :cloud` 的时长门**放行**并真正请求了 provider，
+  `cloudRefusesUnverifiableDuration` 等不到 400，误判为失败。
+- **产品事实**：服务端拒绝「无法验证容器时长」的录音是**设计行为**（浏览器
+  MediaRecorder 产 WebM，`hc.server.speech.audio` 只解析 WAV），已记入
+  DEBT（D-45）。
+- **处置**：录制开始后先 `__hcRecorder.requestData()` 并等 ~450ms 再点
+  停止，保证产生真实 WebM 分块；若 UI 仍未走到时长拒绝，则用带真实 WebM
+  EBML 魔数头的 blob 直接 POST `/speech/recordings`，断言 400 +
+  `SPEECH_DURATION_UNVERIFIABLE`，使契约取证与无头音频时序解耦。
+- **复检**：两条路径任一成立即视为边界已被证明；
+  `diagnostics.cloudUiRefusal` 记录实际走的是哪条。
+- **适用范围**：无头 Chromium 的 MediaRecorder/录音时长门 E2E；不要把
+  静音 WAV 兜底当成真实 WebM 取证。
+
+### 17.29 E2E 复制/遮蔽共享 `sourceTreeSha256` 实现导致哈希口径漂移
+
+`[实测，2026-11-09]` 环境：`test/e2e/e2e-17.spec.mjs` 与
+`test/e2e/support/evidence.mjs`。
+
+- **现象**：`e2e-17.spec.mjs` 曾自带只 walk `src` + `test/e2e` 的私有
+  `sourceTreeSha256` 实现，导致它的证据永远记录 `74c18e18…`，而其他 spec
+  记录标准 `find src test` 值；一度被误判为「源树漂移」。
+- **根因**：共享实现被复制/遮蔽，spec 未从
+  `test/e2e/support/evidence.mjs` 导入。
+- **规范**：任何 spec 必须从 `test/e2e/support/evidence.mjs` 导入
+  `sourceTreeSha256`，禁止本地重写；确需自定义口径（如 E2E 21 的
+  `sha256(git HEAD tree + spec bytes)`）必须在证据中显式标记，门禁比较时
+  排除。
+- **复检**：`grep -n "sourceTreeSha256" test/e2e/*.spec.mjs` 应只看到导入/
+  使用，不应看到本地 walk 实现；比较不同 spec 的哈希前先确认口径。
+- **适用范围**：所有 E2E 证据与门禁跨 spec 哈希比较。

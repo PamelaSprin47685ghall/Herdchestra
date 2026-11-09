@@ -48,11 +48,16 @@
   (try
     (store/snapshot (:store service) (now service))
     (catch clojure.lang.ExceptionInfo t
-      {:status :error
-       :error {:code (or (try (storage/error-code t)
-                              (catch Throwable _ nil))
-                         :DIAGNOSTICS_READ_FAILED)
-               :message (or (ex-message t) "diagnostics read failed")}})))
+      (let [code (or (try (storage/error-code t)
+                          (catch Throwable _ nil))
+                     :DIAGNOSTICS_READ_FAILED)]
+        {:status :error
+         :error {:code code
+                 :message (or (ex-message t) "diagnostics read failed")
+                 :details {:cause code
+                           :cause-details
+                           (not-empty (dissoc (ex-data t)
+                                              :error :storage/expected?))}}}))))
 
 (defn statistics
   "Read statistics on demand.  A failed read is explicit and retryable."
@@ -60,7 +65,8 @@
   (let [snap (snapshot service)]
     (if (= :ok (:status snap))
       (stats/summary snap (assoc (or query {}) :now (now service)))
-      (stats/unavailable (get-in snap [:error :message])))))
+      (assoc (stats/unavailable (get-in snap [:error :message]))
+             :error (:error snap)))))
 
 (defn revision
   "Cheap partition version for the publisher's component cache.
@@ -96,7 +102,14 @@
        :retention-days detail-log/default-retention-days
        :entry-count 0
        :read-error {:code :DIAGNOSTICS_LOG_READ_FAILED
-                    :message (or (ex-message t) (str t))}})))
+                    :message (or (ex-message t) (str t))
+                    :details {:cause (or (:code (ex-data t))
+                                         (:error (ex-data t))
+                                         :DIAGNOSTICS_LOG_READ_FAILED)
+                              :cause-details
+                              (not-empty (dissoc (ex-data t)
+                                                 :code :error
+                                                 :storage/expected?))}}})))
 
 (defn- policy-op!
   [service op]

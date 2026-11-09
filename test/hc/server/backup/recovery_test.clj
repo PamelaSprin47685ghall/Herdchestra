@@ -1,5 +1,7 @@
 (ns hc.server.backup.recovery-test
   (:require [clojure.test :refer [deftest is testing]]
+            [hc.server.backup :as backup]
+            [hc.server.backup.error :as err]
             [hc.server.backup.file-recovery :as file-recovery]
             [hc.server.backup.port :as port]
             [hc.server.backup.recovery :as recovery])
@@ -134,3 +136,30 @@
     (is (contains? (set (:delete-ids plan)) "s-1"))
     (is (contains? (set (:keep-ids plan)) "f-1"))
     (is (contains? (set (:keep-ids plan)) "f-2"))))
+
+(deftest prune-failure-preserves-the-lower-code-and-details
+  (let [store (reify port/RecoveryPointPort
+                (write-recovery-point! [_ _]
+                  (throw (UnsupportedOperationException. "read-only fixture")))
+                (list-recovery-points [_]
+                  [(point "kept" "2026-11-03T00:00:00Z")
+                   (point "old" "2020-01-01T00:00:00Z")])
+                (read-recovery-point [_ _] nil)
+                (delete-recovery-point! [_ id]
+                  (err/fail! :BACKUP_STORAGE_FULL
+                             "no space to delete a recovery point"
+                             {:id id :path "/recovery/old.hcr"}))
+                (recovery-storage-info [_] {:path "memory"}))
+        result (backup/prune-recovery-points!
+                store
+                {:now "2026-11-03T00:00:00Z"
+                 :recent-limit 1
+                 :weeks 0
+                 :months 0})
+        failed (first (filter #(= :failed (:status %)) (:deleted result)))]
+    (is (= "old" (:id failed)))
+    (is (= :BACKUP_STORAGE_FULL (get-in failed [:error :code])))
+    (is (= "/recovery/old.hcr" (get-in failed [:error :details :path])))
+    (is (= "old" (get-in failed [:error :details :id])))
+    (is (not (string? (:error failed)))
+        "a partial prune failure keeps a structured error, not a log string")))

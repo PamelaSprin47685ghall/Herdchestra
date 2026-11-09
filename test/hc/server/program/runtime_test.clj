@@ -1211,3 +1211,85 @@
         (is (= 7 (:token-term @seen))
             "the host term reaches the call port through the program context"))
       (finally (program/stop! rt)))))
+
+(deftest stewardship-roles-have-independent-capability-gates
+  (let [control {:execute! (fn [_ctx {:keys [primitive]}]
+                             {:status :OK :primitive primitive})}
+        workspace {:open-session (fn [_] :session)
+                   :cat (fn [_ _] "seen")}
+        rt (make-runtime {:workspace workspace :control control})]
+    (try
+      (testing "the Steward may assume and orchestrate"
+        (doseq [source ["(defprogram steward-assume []
+                            (assume {:assumption \"the draft is sound\"}))"
+                        "(defprogram steward-fork []
+                            (fork {:slices []}))"
+                        "(defprogram steward-join [] (join {}))"
+                        "(defprogram steward-fleet [] (fleet-state {}))"]]
+          (let [result (exec! rt source {:role :clj-steward})]
+            (is (= :COMPLETED (:status result)) (pr-str result))
+            (is (= :clj-steward (:role result))))))
+      (testing "the Steward reads files but cannot write, call, or review"
+        (let [read (exec! rt "(defprogram steward-read []
+                                (cat {:path \"src/x.clj\"}))"
+                          {:role :clj-steward})]
+          (is (= :COMPLETED (:status read)))
+          (is (= "seen" (:value read))))
+        (doseq [source ["(defprogram steward-write []
+                            (write {:path \"x\" :content \"y\"}))"
+                        "(defprogram steward-call [] (call {:command \"true\"}))"
+                        "(defprogram steward-review []
+                            (review {:findings []}))"]]
+          (is (= :CAPABILITY_DENIED
+                 (:status (exec! rt source {:role :clj-steward})))
+              source)))
+      (testing "the Meditator reads files but has no continuation or write"
+        (let [read (exec! rt "(defprogram meditator-read []
+                                (cat {:path \"src/x.clj\"}))"
+                          {:role :clj-meditator})]
+          (is (= :COMPLETED (:status read)))
+          (is (= "seen" (:value read))))
+        (doseq [source ["(defprogram meditator-park [] (park {}))"
+                        "(defprogram meditator-write []
+                            (write {:path \"x\" :content \"y\"}))"]]
+          (is (= :CAPABILITY_DENIED
+                 (:status (exec! rt source {:role :clj-meditator})))
+              source)))
+      (testing "neither stewardship role can abandon, even with a spoofed
+                holder flag"
+        (doseq [role [:clj-steward :clj-meditator]]
+          (is (= :CAPABILITY_DENIED
+                 (:status (exec! rt "(defprogram abandon-anyway []
+                                        (abandon {:reason \"r\"}))"
+                                 {:role role :holder? true})))
+              (str role))))
+      (testing "a spoofed holder flag is cleared on a Steward park receipt"
+        (let [parked (exec! rt "(defprogram steward-park [] (park {}))"
+                            {:call-id "steward-park"
+                             :role :clj-steward
+                             :holder? true})]
+          (is (= :PARKED (:status parked)))
+          (is (= :clj-steward (:role parked)))
+          (is (false? (:holder? parked)))
+          (let [resumed (program/unpark! rt
+                                         {:call-id "steward-unpark"
+                                          :name "steward-park"
+                                          :role :clj-steward
+                                          :value 42
+                                          :intent long-intent})]
+            (is (= :COMPLETED (:status resumed)))
+            (is (= 42 (:value resumed)))
+            (is (= :clj-steward (:role resumed))))))
+      (testing "the Meditator cannot unpark"
+        (is (= :PARKED
+               (:status (exec! rt "(defprogram med-target [] (park {}))"
+                               {:call-id "med-target"
+                                :role :clj-worker}))))
+        (let [refused (program/unpark! rt {:call-id "med-unpark"
+                                           :name "med-target"
+                                           :role :clj-meditator
+                                           :value 1
+                                           :intent long-intent})]
+          (is (= :CAPABILITY_DENIED (:status refused)))
+          (is (= :clj-meditator (:role refused)))))
+      (finally (program/stop! rt)))))

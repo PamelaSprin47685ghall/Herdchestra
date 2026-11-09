@@ -79,6 +79,77 @@
    :last-command-id nil
    :sync {:phase :disconnected :command-epoch nil}})
 
+(def ^:private error-texts
+  "Server browser errors that would otherwise surface as English UI copy.
+  Lookup is exact; unknown values pass through unchanged."
+  {"managed browser is not connected for this session"
+   "本会话尚未连接受管浏览器。"
+   "The operator has not enabled the managed browser for this session."
+   "操作员尚未为本会话启用受管浏览器。"
+   "The operator has not enabled the managed browser."
+   "操作员尚未启用受管浏览器。"
+   "The page is not part of this browser session."
+   "该页面不属于本浏览器会话。"
+   "The page was closed; its cards remain."
+   "页面已关闭；页面卡仍保留。"
+   "The page is not open."
+   "页面未打开。"
+   "The operator controls this page; navigation waits for an explicit resume."
+   "操作员正在控制此页面；导航需等待显式恢复。"
+   "The operator controls this page; history navigation waits for an explicit resume."
+   "操作员正在控制此页面；历史导航需等待显式恢复。"
+   "The operator controls this page; reading waits for an explicit resume."
+   "操作员正在控制此页面；读取需等待显式恢复。"
+   "The site is not in the browser permission."
+   "站点不在浏览器许可范围内。"
+   "This tab is outside the current browser permission."
+   "该标签页不在当前浏览器许可范围内。"
+   "The run stopped; ask the operator to reopen the page."
+   "运行已停止；请让操作员重新打开页面。"
+   "Operator input detection is unavailable; the browser tool is fail-closed."
+   "操作员输入检测不可用；浏览器工具按失败关闭处理。"
+   "Operator input detection is unavailable; navigation is refused."
+   "操作员输入检测不可用；导航被拒绝。"
+   "Operator input detection is unavailable; agent actions are refused."
+   "操作员输入检测不可用；代理操作被拒绝。"
+   "This page contains frames whose operator input cannot be monitored; navigation is refused."
+   "此页面包含无法监测操作员输入的框架；导航被拒绝。"
+   "This page contains frames whose operator input cannot be monitored; history is refused."
+   "此页面包含无法监测操作员输入的框架；历史导航被拒绝。"
+   "This page contains frames whose operator input cannot be monitored; agent actions are refused."
+   "此页面包含无法监测操作员输入的框架；代理操作被拒绝。"
+   "The page is not paused; there is nothing to resume."
+   "页面未暂停，无需恢复。"
+   "Unknown browser action."
+   "未知的浏览器操作。"})
+
+(defn- error-message
+  [value]
+  (let [message (if (map? value) (:message value) value)
+        text (cond
+               (keyword? message) "浏览器操作失败。"
+               (some? message) (str message)
+               :else nil)]
+    (when text
+      (get error-texts text text))))
+
+(defn error-text
+  "Normalize one error value into user-facing copy.
+
+  A map keeps its fields and only `:message` is translated.  A bare value
+  becomes `{:message ...}` so `:last-error` always has one shape."
+  [error]
+  (cond
+    (nil? error) nil
+    (map? error) (if (contains? error :message)
+                   (assoc error :message (error-message error))
+                   error)
+    :else {:message (error-message error)}))
+
+(defn- fail
+  [state message]
+  {:state (assoc state :last-error (error-text message)) :ok? false})
+
 (defn command-allowed?
   "Transport/session readiness for any command, including operator actions
   such as closing a tab after the agent was stopped."
@@ -293,7 +364,7 @@
                            (:permission result))]
         (cond-> state
           (map? permission) (assoc :permission permission)
-          result-error (assoc :last-error result-error)))
+          result-error (assoc :last-error (error-text result-error))))
 
       :browser/snapshot
       (let [snapshot (or (:snapshot receipt)
@@ -302,7 +373,7 @@
         (if (and (map? snapshot) (contains? snapshot :tabs))
           (apply-snapshot state snapshot)
           (assoc state :last-error
-                 {:message "服务器未返回完整浏览器快照；保留当前页面状态。"})))
+                 (error-text "服务器未返回完整浏览器快照；保留当前页面状态。"))))
 
       :browser/cards
       (let [cards (or (:cards receipt)
@@ -311,7 +382,7 @@
         (if (and (map? cards) (contains? cards :cards))
           (apply-cards state cards)
           (assoc state :last-error
-                 {:message "服务器未返回完整页面卡；保留当前列表。"})))
+                 (error-text "服务器未返回完整页面卡；保留当前列表。"))))
 
       :browser/observe
       (let [observation (or (:observation result)
@@ -319,7 +390,7 @@
         (cond-> (if observation
                   (apply-observation state observation)
                   state)
-          result-error (assoc :last-error result-error)))
+          result-error (assoc :last-error (error-text result-error))))
 
       (:browser/resume :browser/act)
       (let [observation (or (:observation result)
@@ -337,7 +408,7 @@
               (assoc-in [:tabs (:active-tab-id state) :takeover]
                         (or takeover :agent-active)))
           (= :browser/act (:kind command)) (assoc :type-text "")
-          result-error (assoc :last-error result-error)))
+          result-error (assoc :last-error (error-text result-error))))
 
       :browser/stop
       (assoc state :stopped? true)
@@ -384,7 +455,7 @@
     (if-not command
       state
       (let [status (receipt-status receipt)
-            error (receipt-error receipt)
+            error (error-text (receipt-error receipt))
             state (update-in state [:commands command-id]
                              assoc
                              :status (if (= :refused status) :refused :accepted)
@@ -399,7 +470,8 @@
 
           (= :refused status)
           (-> state
-              (assoc :last-error (or error {:message "服务器拒绝了浏览器命令"}))
+              (assoc :last-error
+                     (or error (error-text "服务器拒绝了浏览器命令")))
               (assoc-in [:commands command-id :message]
                         (or (:message error) "服务器拒绝了浏览器命令")))
 
@@ -475,18 +547,19 @@
 
 (defn mark-send-failed
   [state command-id message]
-  (-> state
-      (update-in [:commands command-id]
-                 assoc :status :failed :message message)
-      (update :outbox
-              (fn [outbox]
-                (into [] (remove #(= command-id (:command-id %))) outbox)))
-      (assoc :last-error {:message message})))
+  (let [error (error-text message)]
+    (-> state
+        (update-in [:commands command-id]
+                   assoc :status :failed :message (:message error))
+        (update :outbox
+                (fn [outbox]
+                  (into [] (remove #(= command-id (:command-id %))) outbox)))
+        (assoc :last-error error))))
 
 (defn- queue-or-error
   [state kind payload]
   (let [{:keys [ok? state error command]} (queue-command state kind payload)]
-    {:state (if error (assoc state :last-error {:message error}) state)
+    {:state (if error (assoc state :last-error (error-text error)) state)
      :ok? (boolean ok?)
      :command command}))
 
@@ -514,18 +587,17 @@
 (defn- action-block
   [state message]
   (when-not (agent-action-allowed? state)
-    {:state (assoc state :last-error {:message message}) :ok? false}))
+    (fail state message)))
 
 (defn- read-block
   [state message]
   (when-not (read-allowed? state)
-    {:state (assoc state :last-error {:message message}) :ok? false}))
+    (fail state message)))
 
 (defn- observation-block
   [state]
   (when (nil? (observation-id state))
-    {:state (assoc state :last-error
-                   {:message "请先观察页面；动作必须引用最新观察。"}) :ok? false}))
+    (fail state "请先观察页面；动作必须引用最新观察。")))
 
 (defn reduce-action
   "Apply one UI action.  Server-bound actions append one command envelope to
@@ -545,7 +617,7 @@
             tab (get-in state [:tabs tab-id])
             url (str (or (:url tab) ""))]
         (if (str/blank? url)
-          {:state (assoc state :last-error {:message "该页面没有可重开的地址。"}) :ok? false}
+          (fail state "该页面没有可重开的地址。")
           (queue-or-error state :browser/open-tab {:url url})))
 
       :browser/select-tab
@@ -599,7 +671,7 @@
       :browser/open
       (let [url (str (or (:url action) (:address state) ""))]
         (if (str/blank? url)
-          {:state (assoc state :last-error {:message "请输入地址。"}) :ok? false}
+          (fail state "请输入地址。")
           (queue-or-error state :browser/open-tab {:url url})))
 
       :browser/navigate
@@ -607,7 +679,7 @@
           (let [url (str (or (:url action) (:address state) ""))]
             (cond
               (str/blank? url)
-              {:state (assoc state :last-error {:message "请输入地址。"}) :ok? false}
+              (fail state "请输入地址。")
 
               (nil? (:active-tab-id state))
               (queue-or-error state :browser/open-tab {:url url})
@@ -637,7 +709,7 @@
           (observation-block state)
           (let [node (selected-node state)]
             (if-not node
-              {:state (assoc state :last-error {:message "请选择一个页面元素。"}) :ok? false}
+              (fail state "请选择一个页面元素。")
               (queue-or-error state :browser/act
                               (tab-payload state
                                            {:action :click
@@ -651,14 +723,13 @@
                 text (str (or (:text action) (:type-text state) ""))]
             (cond
               (nil? node)
-              {:state (assoc state :last-error {:message "请选择一个输入字段。"}) :ok? false}
+              (fail state "请选择一个输入字段。")
 
               (true? (:sensitive? node))
-              {:state (assoc state :last-error
-                             {:message "敏感字段必须由操作员在可见页面输入。"}) :ok? false}
+              (fail state "敏感字段必须由操作员在可见页面输入。")
 
               (str/blank? text)
-              {:state (assoc state :last-error {:message "请输入普通文本。"}) :ok? false}
+              (fail state "请输入普通文本。")
 
               :else
               (queue-or-error state :browser/act
@@ -684,7 +755,7 @@
           (observation-block state)
           (let [node (selected-node state)]
             (if-not node
-              {:state (assoc state :last-error {:message "请选择一个提交目标。"}) :ok? false}
+              (fail state "请选择一个提交目标。")
               (queue-or-error state :browser/act
                               (tab-payload state
                                            {:action :submit
@@ -715,7 +786,7 @@
       :browser/close-tab
       (if-let [tab-id (or (:tab-id action) (:active-tab-id state))]
         (queue-or-error state :browser/close-tab {:tab-id tab-id})
-        {:state (assoc state :last-error {:message "没有可关闭的页面。"}) :ok? false})
+        (fail state "没有可关闭的页面。"))
 
       :browser/stop
       (queue-or-error state :browser/stop {})
@@ -726,8 +797,7 @@
             sites (parse-sites (:site-text form))]
         (cond
           (and (= :site scope) (empty? sites))
-          {:state (assoc state :last-error
-                         {:message "站点范围需要至少一个域名。"}) :ok? false}
+          (fail state "站点范围需要至少一个域名。")
 
           :else
           (queue-or-error state :browser/permission
@@ -741,8 +811,7 @@
       :browser/approve-private-read
       (queue-or-error state :browser/permission {:private-read-approved? true})
 
-      {:state (assoc state :last-error {:message (str "未知浏览器操作：" type)})
-       :ok? false})))
+      (fail state "未知的浏览器操作。"))))
 
 (defn apply-connection
   [state phase epoch session-id]

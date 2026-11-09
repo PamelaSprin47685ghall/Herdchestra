@@ -267,11 +267,14 @@
                                         :turn-selection-version])))
         (let [db (if (and live
                           (or (nil? send-command)
-                              (not= live-signature snapshot-signature)))
+                              (and (true? (:deferred? snapshot))
+                                   (not= live-signature snapshot-signature))))
                    ;; A blocked send, or newer unsent work during a captured
                    ;; stop-and-send: put the live draft back.  The captured
                    ;; snapshot is already on the command, so neither copy is
-                   ;; lost.
+                   ;; lost.  An immediate send is never deferred: its live
+                   ;; signature may lag the DOM snapshot, and restoring it
+                   ;; would undo the draft clear.
                    (conversation-state/mirror
                     db
                     (assoc-in conv [:drafts session-id] live))

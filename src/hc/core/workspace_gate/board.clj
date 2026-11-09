@@ -118,6 +118,9 @@
              (assoc-in s [:actions (:request-id permit)]
                        {:request-id (:request-id permit)
                         :phase :uncertain
+                        :last-known-stage (:last-known-stage failure)
+                        :expected-action (:expected-action failure)
+                        :failed-at (:failed-at failure)
                         :result failure})))
     {:published true}))
 

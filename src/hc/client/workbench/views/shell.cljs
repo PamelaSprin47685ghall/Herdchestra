@@ -13,7 +13,9 @@
             [hc.client.conversation.a11y :as a11y]
             [hc.client.conversation.draft :as draft]
             [hc.client.files.browser :as files]
+            [hc.client.search.history-view :as history]
             [hc.client.sessions.controls :as session-controls]
+            [hc.client.sessions.labels :as session-labels]
             [hc.client.workbench.commands :as commands]
             [hc.client.workbench.model :as model]
             [hc.client.workbench.mutations :as mutations]
@@ -36,6 +38,15 @@
 (defn- navigate! [this route session-id]
   (routing/navigate! this route session-id))
 
+(defn session-title-label
+  "Display label for a session title.
+
+  The server names the startup session \"New session\".  The workbench shows
+  its Chinese equivalent and leaves every other title untouched; server data
+  is never rewritten for display."
+  [title]
+  (session-labels/title-label title))
+
 (defn- FocusEffect
   "Apply a focus request after React commits the new drawer state."
   [js-props]
@@ -53,7 +64,13 @@
   (let [connection (:ui/connection props)
         route (:ui/route props)
         sidebar-open (:ui/sidebar-open props)
-        aux-open (:ui/aux-open props)]
+        aux-open (:ui/aux-open props)
+        overlay? (a11y/overlay-layout? (:ui/viewport-width props))
+        ;; The drawer owns the only close control while it is open.  Keeping
+        ;; the topbar trigger visible as a second overlapping "close details"
+        ;; button would sit above the drawer's own close control and steal
+        ;; its pointer events.
+        aux-toggle-hidden? (and overlay? aux-open)]
     (dom/header {:className "wb-topbar"}
                 (dom/button {:type "button"
                              :id "wb-menu"
@@ -84,6 +101,9 @@
                              :aria-label (if aux-open "关闭详情" "打开详情")
                              :aria-expanded (if aux-open "true" "false")
                              :aria-controls "wb-aux"
+                             :aria-hidden (when aux-toggle-hidden? "true")
+                             :style (when aux-toggle-hidden?
+                                      {:display "none"})
                              :onClick (fn [_]
                                         (comp/transact!
                                          this
@@ -135,6 +155,19 @@
                               (dom/span {:className "wb-nav-label"}
                                         (dom/strong {} label)
                                         (dom/span {:className "wb-nav-meta"} meta))))
+                ;; Explicit navigation entry for #hc-history-search; the
+                ;; global shortcut is Ctrl/Cmd+Shift+F.
+                (dom/button {:type "button"
+                             :id "hc-history-search"
+                             :className "wb-nav-item"
+                             :aria-label "全局历史搜索"
+                             :aria-keyshortcuts "Control+Shift+F Meta+Shift+F"
+                             :onClick (fn [_] (history/open!))}
+                            (common/icon "⌕")
+                            (dom/span {:className "wb-nav-label"}
+                                      (dom/strong {} "搜索历史")
+                                      (dom/span {:className "wb-nav-meta"}
+                                                "跨会话 · Ctrl/Cmd+Shift+F")))
                 ;; The drawer layout hides the session column.  Without this
                 ;; block a 360px window could not switch or create sessions.
                 (when overlay?
@@ -177,7 +210,9 @@
                                                  (fn [_]
                                                    (session/select-session!
                                                     this (:id session)))}
-                                                (dom/strong {} (:title session))
+                                                (dom/strong {}
+                                                            (session-title-label
+                                                             (:title session)))
                                                 (let [details
                                                       (common/session-detail
                                                        (:status session)
@@ -207,7 +242,9 @@
                                (for [session deleted]
                                  (dom/div {:className "wb-nav-deleted-row"
                                            :key (:id session)}
-                                          (dom/strong {} (:title session))
+                                          (dom/strong {}
+                                                      (session-title-label
+                                                       (:title session)))
                                           (dom/small {}
                                                      (str "删除时间："
                                                           (or (common/time-label
@@ -217,7 +254,9 @@
                                           (dom/button
                                            {:type "button"
                                             :className "wb-button wb-button-small"
-                                            :aria-label (str "恢复：" (:title session))
+                                            :aria-label (str "恢复："
+                                                             (session-title-label
+                                                              (:title session)))
                                             :onClick (fn [_]
                                                        (commands/session-metadata!
                                                         this (:id session)
@@ -226,7 +265,9 @@
                                           (dom/button
                                            {:type "button"
                                             :className "wb-button wb-button-small"
-                                            :aria-label (str "永久删除：" (:title session))
+                                            :aria-label (str "永久删除："
+                                                             (session-title-label
+                                                              (:title session)))
                                             :onClick (fn [_]
                                                        (when (js/confirm
                                                               "永久删除这份已删除会话？此操作不可撤销；工作区文件不受影响。")
@@ -261,7 +302,7 @@
                (if summary
                  (dom/div {}
                           (common/facts
-                           [["标题" (:title summary)]
+                           [["标题" (session-title-label (:title summary))]
                             ["会话 ID" (:id summary)]
                             ["状态" (or (common/session-status-label
                                         (:status summary))
@@ -271,7 +312,7 @@
                             ["分支来源"
                              (if branch
                                (if (:visible? branch)
-                                 (:title branch)
+                                 (session-title-label (:title branch))
                                  (str (:session-id branch) "（已删除或不可见）"))
                                "—")]
                             ["草稿版本" (:version draft)]
@@ -368,7 +409,7 @@
   [this props]
   (let [aux-open (:ui/aux-open props)
         tab (or (:ui/aux-tab props) :details)]
-    (dom/nav {:id "wb-aux"
+    (dom/aside {:id "wb-aux"
                 :className "wb-aux"
                 :data-open (if aux-open "true" "false")
                 :aria-label "上下文详情"}
@@ -453,6 +494,7 @@
                               (route-view this props))
                     (aux this props))
            (backdrop this props)
+           (history/panel-element (comp/any->app this))
            (notices this props)
            (dom/div {:className "wb-sr-only"
                      :role "status"

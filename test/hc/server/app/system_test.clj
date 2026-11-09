@@ -6,14 +6,21 @@
             [hc.compose.fleet.service :as fleet]
             [hc.compose.fleet.git :as fleet-git]
             [hc.compose.fleet.support :as fleet-support]
+            [hc.compose.supervisor :as supervisor]
             [hc.server.app.config :as config]
             [hc.server.app.fleet-gc :as fleet-gc]
+            [hc.server.app.retention-gc :as retention-gc]
+            [hc.server.app.session-persistence :as session-persistence]
+            [hc.server.app.snapshot :as app-snapshot]
             [hc.server.app.system :as system]
             [hc.server.backup.maintenance-journal :as journal]
             [hc.server.blob-store.refs :as blob-refs]
+            [hc.server.gateway :as gateway]
+            [hc.server.history.snapshot :as history-snapshot]
             [hc.server.model-adapter :as model-adapter]
             [hc.server.sessions :as sessions]
             [hc.server.sessions.ports :as session-ports]
+            [hc.server.sessions.registry :as registry]
             [hc.server.storage :as storage]
             [hc.server.storage.support :as storage-support])
   (:import (java.net URI)
@@ -57,6 +64,40 @@
        :storage {:path (str data "/db")}
        :log-level :warn
        :models {}}))))
+
+(defn- stale-compression-session
+  "One applied compression whose reviewed source version is no longer current."
+  []
+  {:session-id "stale-session"
+   :owner-id "stale-owner"
+   :status :active
+   :title "Stale summary"
+   :revision 0
+   :created-at 1000
+   :updated-at 2000
+   :activity-at 2000
+   :message-order ["m1"]
+   :messages {"m1" {:message-id "m1"
+                    :role :user
+                    :created-at 1000
+                    :updated-at 2000
+                    :current-version 1
+                    :versions [{:version-id "v1"
+                                :content "original"
+                                :created-at 1000}
+                               {:version-id "v2"
+                                :content "edited"
+                                :created-at 2000}]}}
+   :drafts {}
+   :context {:compressions
+             {"cmp-stale" {:compression-id "cmp-stale"
+                           :state :applied
+                           :message-ids ["m1"]
+                           :source-version-ids {"m1" "v1"}
+                           :summary "reviewed summary"
+                           :applied-at 1500
+                           :updated-at 1500}}
+             :compression-order ["cmp-stale"]}})
 
 (defn- await-fleet-gc-tick
   [gc]
@@ -167,6 +208,32 @@
       (is (true? (get-in @stopped [:components :gateway :stopped?]))))
     (testing "the store is closed after stop"
       (is (false? (:ok (system/health started)))))))
+
+(defn- commands-active-id
+  [started]
+  (get-in @(:state (:router started)) [:active-session-id]))
+
+(deftest a-fresh-store-publishes-its-default-session-in-the-first-baseline
+  (let [started (system/start! (test-config))
+        snapshot (:snapshot (gateway/snapshot (:gateway started)))]
+    (try
+      (is (false? (:blocked? started)))
+      (let [summaries (:session/by-id snapshot)
+            session-id (:session/active-id snapshot)
+            summary (get summaries session-id)]
+        (is (= 1 (count summaries))
+            "the first STATE_SNAPSHOT carries the default session")
+        (is (string? session-id)
+            "the first STATE_SNAPSHOT carries an active session id")
+        (is (= session-id (commands-active-id started))
+            "the router selects the default session, not only the snapshot")
+        (is (contains? summary :session/controller-id))
+        (is (nil? (:session/controller-id summary))
+            "a fresh session has no controller")
+        (is (= [] (:session/observer-ids summary))
+            "a fresh session has no observer"))
+      (finally
+        (system/stop! started)))))
 
 (deftest startup-blocks-on-an-unfinished-offline-restore
   (let [config (test-config)
@@ -369,21 +436,383 @@
           config (test-config root)
           started (system/start! config)
           gc (:fleet-gc started)
+          process-supervisor (:supervisor started)
           stopped (atom nil)]
       (try
         (is (false? (:blocked? started)))
         (is (some? (:fleet started)))
         (is (some? gc))
+        (is (some? process-supervisor)
+            "the background loop is supervised, not a bare timer")
+        (is (true? (:running? (supervisor/status process-supervisor))))
         (is (true? (:running? (fleet-gc/status gc))))
         (is (await-fleet-gc-tick gc)
             "the app-owned timer runs a first sweep")
         (finally
           (reset! stopped (system/stop! started))))
+      (is (true? (:stopped? (supervisor/status process-supervisor))))
+      (is (false? (:running? (supervisor/status process-supervisor))))
       (is (true? (:stopped? (fleet-gc/status gc))))
       (is (true? (:terminated? (fleet-gc/status gc))))
       (is (false? (:running? (fleet-gc/status gc))))
       (is (true? (get-in @stopped [:components :fleet-gc :terminated?]))
           "stop evidence reports the executor termination"))))
+
+(deftest stop-retires-the-supervisor-before-owners-and-the-fleet
+  (when (fleet-git/available? (fleet-git/git-cli "."))
+    (let [root (temp-dir "hc-app-fleet-root-")
+          _ (fleet-support/init-repo! root)
+          started (system/start! (test-config root))
+          order (atom [])
+          result (atom nil)
+          owner {:stop! (fn []
+                          (swap! order conj :owner)
+                          {:ok? true :stopped? true :drained? true})}
+          real-supervisor-stop supervisor/stop!
+          real-fleet-stop fleet/stop!]
+      (try
+        (is (false? (:blocked? started)))
+        (is (some? (:fleet started)))
+        (swap! (:owners started) assoc "probe-owner" owner)
+        (with-redefs [supervisor/stop!
+                      (fn [sup & args]
+                        (swap! order conj :supervisor)
+                        (apply real-supervisor-stop sup args))
+                      fleet/stop!
+                      (fn [service]
+                        (swap! order conj :fleet)
+                        (real-fleet-stop service))]
+          (reset! result (system/stop! started)))
+        (is (true? (:stopped? @result)) (pr-str @result))
+        (let [positions (zipmap @order (range))
+              supervisor-at (:supervisor positions)
+              owner-at (:owner positions)
+              fleet-at (:fleet positions)]
+          (is (some? supervisor-at))
+          (is (some? owner-at))
+          (is (some? fleet-at))
+          (is (< supervisor-at owner-at)
+              "background loops stop before session Owners")
+          (is (< fleet-at owner-at)
+              "the Fleet dispatch service stops before session Owners"))
+        (finally
+          ;; A failed stop leaves live writers; a second stop is idempotent.
+          (system/stop! started))))))
+
+(deftest retention-gc-runs-under-the-supervisor-and-stops-with-the-app
+  (let [started (system/start! (test-config))
+        retention (:retention-gc started)
+        stopped (atom nil)]
+    (try
+      (is (some? retention)
+          "retention scheduling is part of the supervised background loops")
+      (is (true? (:running? (retention-gc/status retention))))
+      (let [health (system/health started)]
+        (is (true? (get-in health [:components :retention-gc :started?]))
+            "the component snapshot reports the running scheduler")
+        (is (zero? (get-in health [:retention-gc :session-runs])))
+        (is (zero? (get-in health [:retention-gc :blob-runs])))
+        (is (nil? (get-in health [:retention-gc :session-last-error])))
+        (is (nil? (get-in health [:retention-gc :blob-last-error]))))
+      (let [response (http-get (str (:url started) "healthz"))
+            body (edn/read-string (.body response))]
+        (is (= 200 (.statusCode response)))
+        (is (contains? body :retention-gc)
+            "/healthz exposes the retention observation")
+        (is (zero? (get-in body [:retention-gc :session-runs])))
+        (is (zero? (get-in body [:retention-gc :blob-runs]))))
+      (finally
+        (reset! stopped (system/stop! started))))
+    (is (true? (:terminated? (retention-gc/status retention))))
+    (is (false? (:running? (retention-gc/status retention))))
+    (is (true? (get-in @stopped [:components :retention-gc :terminated?]))
+        "stop evidence reports the real executor state")
+    (is (true? (:stopped? @stopped)))))
+
+(deftest retention-gc-stops-before-owners-and-the-store
+  (let [order (atom [])
+        open? (atom true)
+        service {:executor nil
+                 :stopped? (atom false)
+                 :tasks (atom [])
+                 :stop-timeout-ms 5000
+                 :state (atom {:session-runs 0
+                               :blob-runs 0
+                               :session-last-result nil
+                               :blob-last-result nil
+                               :session-last-error nil
+                               :blob-last-error nil
+                               :last-run-at nil})}
+        owner {:stop! (fn []
+                        (swap! order conj :owner)
+                        {:ok? true :stopped? true :drained? true})}
+        result (atom nil)]
+    (with-redefs [retention-gc/stop!
+                  (fn [_service]
+                    (swap! order conj :retention-gc)
+                    {:stopped? true :terminated? true})
+                  retention-gc/status
+                  (fn [_service]
+                    {:running? false :terminated? true})
+                  storage/expect-ordered-close! (fn [_store] nil)
+                  storage/store-open? (fn [_store] @open?)
+                  storage/open-close-store!
+                  (fn [_store _opts]
+                    (swap! order conj :store)
+                    (reset! open? false)
+                    {:closed? true})]
+      (reset! result
+              (system/stop! {:blocked? false
+                             :partial? true
+                             :retention-gc service
+                             :owners (atom {"s1" owner})
+                             :store ::store})))
+    (is (true? (:stopped? @result)) (pr-str @result))
+    (let [positions (zipmap @order (range))
+          owner-at (:owner positions)
+          store-at (:store positions)
+          retention-at (:retention-gc positions)]
+      (is (some? retention-at))
+      (is (some? owner-at))
+      (is (some? store-at))
+      (is (< retention-at owner-at)
+          "the retention child stops before session Owners")
+      (is (< retention-at store-at)
+          "the retention child stops before the store closes"))))
+
+(deftest retention-config-reaches-the-scheduler
+  (let [config (test-config)
+        captured (atom nil)
+        fake-service {:executor nil
+                      :stopped? (atom false)
+                      :tasks (atom [])
+                      :stop-timeout-ms 5000
+                      :state (atom {:session-runs 0
+                                    :blob-runs 0
+                                    :session-last-result nil
+                                    :blob-last-result nil
+                                    :session-last-error nil
+                                    :blob-last-error nil
+                                    :last-run-at nil})}
+        started (with-redefs [retention-gc/start!
+                              (fn [options]
+                                (reset! captured options)
+                                {:ok? true :service fake-service})]
+                  (system/start! config))]
+    (try
+      (is (= 86400000 (:session-interval-ms @captured))
+          "[:retention :interval-ms] drives both sweeps")
+      (is (= 86400000 (:blob-interval-ms @captured)))
+      (is (= 30 (:session-days @captured)))
+      (is (= 7 (:blob-days @captured)))
+      (is (false? (:run-immediately? @captured)))
+      (is (= (:blob-root config) (:blob-root @captured)))
+      (is (= (:registry started) (:registry @captured)))
+      (is (= (:store started) (:store @captured)))
+      (is (not (contains? @captured :purge-session!))
+          "the registry's purge-deleted-session! stays the default")
+      (is (not (contains? @captured :blob-cleanup!))
+          "the store/blob-root cleanup coordinator stays the default")
+      (finally
+        ;; The fake runtime has no executor; report the same stop evidence a
+        ;; real terminated scheduler gives so the stop path stays honest.
+        (with-redefs [retention-gc/stop!
+                      (fn [_service]
+                        {:stopped? true :terminated? true})
+                      retention-gc/status
+                      (fn [_service]
+                        {:running? false :terminated? true})]
+          (system/stop! started))))))
+
+(deftest retention-start-failure-is-reported-without-taking-the-app-down
+  (with-redefs [retention-gc/start!
+                (fn [_options]
+                  {:ok? false
+                   :error {:code :RETENTION_TIMER_FAILED
+                           :message "timer unavailable"}})]
+    (let [started (system/start! (test-config))]
+      (try
+        (is (false? (:blocked? started)))
+        (is (some? (:url started))
+            "the rest of the application still starts")
+        (is (nil? (:retention-gc started)))
+        (let [health (system/health started)]
+          (is (false? (:ok health))
+              "a failed background component makes health explicitly unhealthy")
+          (is (= :RETENTION_TIMER_FAILED
+                 (get-in health [:component-errors
+                                 :retention-gc-error :code])))
+          (is (= :failed
+                 (get-in health [:components :retention-gc :status]))))
+        (finally
+          (system/stop! started))))))
+
+(deftest history-port-annotates-stale-compressions
+  (let [port (#'system/session-port (constantly 1000)
+                                    (constantly {})
+                                    (atom nil)
+                                    nil
+                                    nil)
+        session (stale-compression-session)]
+    (testing "a successful command returns the recomputed marker"
+      (let [result ((:apply-command port) session
+                    {:kind :session/rename :title "Renamed"})]
+        (is (true? (:ok? result)) (pr-str result))
+        (is (true? (get-in result
+                           [:session :context :compressions
+                            "cmp-stale" :stale?])))))
+    (testing "switching back to the reviewed version clears the marker"
+      (let [result ((:apply-command port) session
+                    {:kind :history/select-version
+                     :message-id "m1"
+                     :version-id "v1"})]
+        (is (true? (:ok? result)) (pr-str result))
+        (is (false? (get-in result
+                            [:session :context :compressions
+                             "cmp-stale" :stale?])))))))
+
+(deftest restart-annotates-the-initial-owner-session
+  (let [config (config/ensure-directories! (test-config))
+        seeded (assoc (stale-compression-session)
+                      :session-id "seeded-restart")
+        store (storage/open-store {:path (:db-path config) :create? true})]
+    (try
+      (let [persistence (session-persistence/persistence store)]
+        (is (= :committed
+               (:status (session-ports/commit-session! persistence 0 seeded)))))
+      (finally
+        (storage/close-store! store)))
+    (let [started (system/start! config)]
+      (try
+        (is (false? (:blocked? started)))
+        (let [owner (get @(:owners started) "seeded-restart")
+              session (get-in ((:snapshot owner)) [:state :session])]
+          (is (some? owner))
+          (is (some? session))
+          (is (true? (get-in session
+                             [:context :compressions "cmp-stale" :stale?]))
+              "a restarted Owner sees the marker before its first command"))
+        (finally
+          (system/stop! started))))))
+
+(deftest snapshot-requests-full-context-only-for-the-active-session
+  (let [captured (atom {})
+        s1 {:session-id "s1"
+            :revision 1
+            :status :active
+            :message-order []
+            :messages {}
+            :drafts {}}
+        s2 (assoc s1 :session-id "s2")]
+    (with-redefs [history-snapshot/session-history
+                  (fn [session opts]
+                    (swap! captured assoc (:session-id session) opts)
+                    {:session-id (:session-id session)
+                     :message-ids []
+                     :ordered-ids []
+                     :messages []
+                     :context {}})]
+      (app-snapshot/baseline {:sessions [s1 s2]
+                              :session-records [s1 s2]
+                              :owner-snapshots {}
+                              :active-session "s1"}))
+    (is (true? (:context? (get @captured "s1")))
+        "the active session keeps the full outbound/reading projection")
+    (is (false? (:context? (get @captured "s2")))
+        "an inactive session skips the panel-only projection")))
+
+(deftest join-results-reach-only-the-mission-owner
+  (let [messages (atom [])
+        owner {:submit! (fn [message]
+                          (swap! messages conj message)
+                          {:status :accepted})}
+        router {:state (atom {:owners {"s1" owner}})}
+        service {:mission-id "mission-1" :clock (constantly 4242)}
+        publish! (var-get #'system/publish-join-ff-ready!)]
+    (is (= "s1" (system/link-mission-session! router "mission-1" "s1")))
+    (testing "a verified fast-forward publishes true with its commit"
+      (publish! router service {:swarm-id "w1" :ff-commit "abc123"})
+      (is (= [{:type :git/ff-ready
+               :ready? true
+               :source :join
+               :at 4242
+               :ff-commit "abc123"}]
+             @messages)))
+    (testing "a merged join whose state write failed still publishes true"
+      (reset! messages [])
+      (publish! router service
+                {:fleet/error {:code :FLEET_STATE_PERSIST_FAILED
+                               :git-merged? true
+                               :ff-commit "def456"}})
+      (is (true? (:ready? (first @messages))))
+      (is (= "def456" (:ff-commit (first @messages)))))
+    (testing "any other fleet error publishes false"
+      (reset! messages [])
+      (publish! router service {:fleet/error {:code :GIT_MERGE_FAILED}})
+      (is (= [{:type :git/ff-ready
+               :ready? false
+               :source :join
+               :at 4242}]
+             @messages)))
+    (testing ":none and :no-results keep the previous Owner value"
+      (reset! messages [])
+      (publish! router service :none)
+      (publish! router service :no-results)
+      (is (empty? @messages)))
+    (testing "an unknown mission never guesses an Owner"
+      (reset! messages [])
+      (publish! router (assoc service :mission-id "mission-2")
+                {:ff-commit "abc123"})
+      (is (empty? @messages)))))
+
+(deftest health-counts-sessions-without-listing-them
+  (let [started (system/start! (test-config))
+        list-calls (atom 0)]
+    (try
+      ;; The publisher also lists sessions on its own thread; stop it first so
+      ;; the counter measures the health path only.
+      (is (true? (:stopped? ((:stop! (:publisher started))))))
+      (with-redefs [registry/list-sessions
+                    (fn [& _]
+                      (swap! list-calls inc)
+                      {:status :ok :sessions []})]
+        (let [health (system/health started)]
+          (is (true? (:ok health)))
+          (is (= 1 (get-in health [:sessions :count]))
+              "the count comes from the committed session-id index")
+          (is (zero? @list-calls)
+              "health never deserializes every session record"))
+        (let [response (http-get (str (:url started) "healthz"))
+              body (edn/read-string (.body response))]
+          (is (= 200 (.statusCode response)))
+          (is (true? (:ok body)))
+          (is (= 1 (get-in body [:sessions :count]))
+              "/healthz counts the index, not the records"))
+        (is (zero? @list-calls)
+            "the HTTP route never deserializes every session record"))
+      (finally
+        (system/stop! started)))))
+
+(deftest health-marks-an-unavailable-session-count-as-unknown
+  (testing "a system without persistence"
+    (let [health (system/health {:store nil :gateway nil})]
+      (is (= :unknown (get-in health [:sessions :count])))
+      (is (= {:count :unknown} (:sessions health)))))
+  (testing "the index read throws"
+    (let [persistence (reify session-ports/SessionPersistence
+                        (list-session-ids [_]
+                          (throw (ex-info "index unavailable" {}))))
+          health (system/health {:store nil
+                                 :gateway nil
+                                 :persistence persistence})]
+      (is (= :unknown (get-in health [:sessions :count])))))
+  (testing "the index read reports an error status"
+    (let [persistence (reify session-ports/SessionPersistence
+                        (list-session-ids [_] {:status :error}))
+          health (system/health {:store nil
+                                 :gateway nil
+                                 :persistence persistence})]
+      (is (= :unknown (get-in health [:sessions :count]))))))
 
 (deftest owner-state-preflight-distinguishes-empty-and-corrupt
   (let [dir (temp-dir "hc-owner-preflight-")

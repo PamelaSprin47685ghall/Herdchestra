@@ -9,6 +9,7 @@
             [clojure.test.check.properties :as prop]
             [hc.client.sync :as sync]
             [hc.client.sync.json-patch :as json-patch]
+            [hc.client.sync.messages :as messages]
             [hc.client.sync.normalize :as normalize]))
 
 ;; ---------------------------------------------------------------------------
@@ -1143,3 +1144,15 @@
                    special)
            (= (set (cons "u1" (map :id special)))
               (set (get-in s' [:db :message/order])))))))
+
+(deftest unknown-message-snapshot-kind-is-explicit
+  (doseq [current [{:kind :future-kind} {:kind nil} nil]]
+    (is (= :unknown (#'messages/snapshot-kind current)))
+    (let [server {:sentinel true}
+          result (#'messages/update-server current server {} [])]
+      (is (map? result))
+      (is (= true (:sentinel result)))
+      (is (= :UNKNOWN_SNAPSHOT_KIND
+             (get-in result [:message/snapshot-kind-error :code])))
+      (is (= (:kind current)
+             (get-in result [:message/snapshot-kind-error :kind]))))))

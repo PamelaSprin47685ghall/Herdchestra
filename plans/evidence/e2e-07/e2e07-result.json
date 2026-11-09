@@ -2,18 +2,18 @@
   "test": "E2E 07",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-08T04:29:41.874Z",
-  "marker": "E2E07-1794112164537",
-  "appUrl": "http://127.0.0.1:44127",
-  "modelUrl": "http://127.0.0.1:45009",
-  "searchUrl": "http://127.0.0.1:34065",
+  "startedAt": "2026-11-09T10:56:46.976Z",
+  "marker": "E2E07-1794221781170",
+  "appUrl": "http://127.0.0.1:46109",
+  "modelUrl": "http://127.0.0.1:43771",
+  "searchUrl": "http://127.0.0.1:33441",
   "chromeVersion": "157.0.8103.38",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-08T03:47:24.652Z",
-    "sha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
-  "sourceTreeSha256": "1a11afed04769ec41d97d97cefa48aa697d8459781f10715457f31d6885f6141",
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "checks": {
     "modelBound": true,
     "reply1Markers": true,
@@ -60,16 +60,16 @@
   ],
   "browserEvents": [],
   "modelLabel": "模型：Mock Fast",
-  "reply1": "E2E07-REPLY-1 E2E07-1794112164537：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。",
+  "reply1": "E2E07-REPLY-1 E2E07-1794221781170：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。",
   "assistantTexts1": [
-    "E2E07-REPLY-1 E2E07-1794112164537：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。"
+    "E2E07-REPLY-1 E2E07-1794221781170：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。"
   ],
   "cards1": [
-    "[1]\nHerdchestra mock result one\n站点：example.test\n发布：2026-01-02T03:04:05.000Z\n抓取：2026-11-08T04:29:42.999529210Z\n摘要\nhttps://example.test/docs/one\n\nFirst mock search result with a fixed body.",
-    "[2]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-08T04:29:42.999529210Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
-    "[3]\nHerdchestra mock result two\n站点：example.test\n发布：未知\n抓取：2026-11-08T04:29:42.999529210Z\n摘要\nhttps://example.test/docs/two\n\nSecond mock search result."
+    "[1]\nHerdchestra mock result one\n站点：example.test\n发布：2026-01-02T03:04:05.000Z\n抓取：2026-11-09T10:56:50.359646798Z\n摘要\nhttps://example.test/docs/one\n\nFirst mock search result with a fixed body.",
+    "[2]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-09T10:56:50.359646798Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
+    "[3]\nHerdchestra mock result two\n站点：example.test\n发布：未知\n抓取：2026-11-09T10:56:50.359646798Z\n摘要\nhttps://example.test/docs/two\n\nSecond mock search result."
   ],
-  "datedCard": "[1]\nHerdchestra mock result one\n站点：example.test\n发布：2026-01-02T03:04:05.000Z\n抓取：2026-11-08T04:29:42.999529210Z\n摘要\nhttps://example.test/docs/one\n\nFirst mock search result with a fixed body.",
+  "datedCard": "[1]\nHerdchestra mock result one\n站点：example.test\n发布：2026-01-02T03:04:05.000Z\n抓取：2026-11-09T10:56:50.359646798Z\n摘要\nhttps://example.test/docs/one\n\nFirst mock search result with a fixed body.",
   "labels1": [
     "1",
     "3",
@@ -83,17 +83,17 @@
   "searchAfter1": {
     "requests": 1,
     "queries": [
-      "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
+      "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
     ]
   },
-  "reply2": "E2E07-REPLY-2 E2E07-1794112164537：共享文档仍见 [S1]，BETA 见 [S2]。",
+  "reply2": "E2E07-REPLY-2 E2E07-1794221781170：共享文档仍见 [S1]，BETA 见 [S2]。",
   "assistantTexts2": [
-    "E2E07-REPLY-1 E2E07-1794112164537：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。",
-    "E2E07-REPLY-2 E2E07-1794112164537：共享文档仍见 [S1]，BETA 见 [S2]。"
+    "E2E07-REPLY-1 E2E07-1794221781170：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。",
+    "E2E07-REPLY-2 E2E07-1794221781170：共享文档仍见 [S1]，BETA 见 [S2]。"
   ],
   "cards2": [
-    "[1]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-08T04:29:46.903306255Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
-    "[2]\nHerdchestra beta doc\n站点：example.test\n发布：未知\n抓取：2026-11-08T04:29:46.903306255Z\n摘要\nhttps://example.test/docs/beta\n\nBeta-only result for the second query."
+    "[1]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-09T10:56:55.918517467Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
+    "[2]\nHerdchestra beta doc\n站点：example.test\n发布：未知\n抓取：2026-11-09T10:56:55.918517467Z\n摘要\nhttps://example.test/docs/beta\n\nBeta-only result for the second query."
   ],
   "labels2": [
     "1",
@@ -106,8 +106,8 @@
   "searchAfter2": {
     "requests": 2,
     "queries": [
-      "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
-      "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
+      "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
+      "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。"
     ]
   },
   "searchOffline": {
@@ -117,11 +117,11 @@
     "queriesAfter": 2
   },
   "cardsOffline": [
-    "[1]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-08T04:29:46.903306255Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
-    "[2]\nHerdchestra beta doc\n站点：example.test\n发布：未知\n抓取：2026-11-08T04:29:46.903306255Z\n摘要\nhttps://example.test/docs/beta\n\nBeta-only result for the second query."
+    "[1]\nHerdchestra shared doc\n站点：example.test\n发布：2026-02-03T04:05:06.000Z\n抓取：2026-11-09T10:56:55.918517467Z\n摘要\nhttps://example.test/docs/shared\n\nShared across both queries.",
+    "[2]\nHerdchestra beta doc\n站点：example.test\n发布：未知\n抓取：2026-11-09T10:56:55.918517467Z\n摘要\nhttps://example.test/docs/beta\n\nBeta-only result for the second query."
   ],
   "exportFile": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-07/herdchestra-branch.txt",
-  "exportText": "你：\nE2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。\n\n助手：\nE2E07-REPLY-1 E2E07-1794112164537：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。\n\n来源：\n- Herdchestra mock result one — https://example.test/docs/one（example.test，2026-01-02T03:04:05.000Z）\n- Herdchestra shared doc — https://example.test/docs/shared（example.test，2026-02-03T04:05:06.000Z）\n- Herdchestra mock result two — https://example.test/docs/two（example.test，未知发布日期）\n\n你：\nE2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。\n\n助手：\nE2E07-REPLY-2 E2E07-1794112164537：共享文档仍见 [S1]，BETA 见 [S2]。\n\n来源：\n- Herdchestra shared doc — https://example.test/docs/shared（example.test，2026-02-03T04:05:06.000Z）\n- Herdchestra beta doc — https://example.test/docs/beta（example.test，未知发布日期）",
+  "exportText": "你：\nE2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。\n\n助手：\nE2E07-REPLY-1 E2E07-1794221781170：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。\n\n来源：\n- Herdchestra mock result one — https://example.test/docs/one（example.test，2026-01-02T03:04:05.000Z）\n- Herdchestra shared doc — https://example.test/docs/shared（example.test，2026-02-03T04:05:06.000Z）\n- Herdchestra mock result two — https://example.test/docs/two（example.test，未知发布日期）\n\n你：\nE2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。\n\n助手：\nE2E07-REPLY-2 E2E07-1794221781170：共享文档仍见 [S1]，BETA 见 [S2]。\n\n来源：\n- Herdchestra shared doc — https://example.test/docs/shared（example.test，2026-02-03T04:05:06.000Z）\n- Herdchestra beta doc — https://example.test/docs/beta（example.test，未知发布日期）",
   "exportDocOneCount": 1,
   "mockState": {
     "search": {
@@ -129,22 +129,22 @@
       "mode": "both",
       "requests": [
         {
-          "at": "2026-11-08T04:29:43.047Z",
+          "at": "2026-11-09T10:56:50.504Z",
           "path": "/res/v1/web/search",
-          "query": "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
+          "query": "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
           "params": {
-            "q": "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
+            "q": "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
             "count": "8",
             "safesearch": "moderate"
           },
           "subscriptionToken": "mock-token"
         },
         {
-          "at": "2026-11-08T04:29:46.905Z",
+          "at": "2026-11-09T10:56:55.926Z",
           "path": "/search",
-          "query": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。",
+          "query": "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。",
           "params": {
-            "q": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。",
+            "q": "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。",
             "format": "json",
             "pageno": "1",
             "safesearch": "1"
@@ -153,17 +153,18 @@
         }
       ],
       "queries": [
-        "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
-        "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
+        "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。",
+        "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。"
       ]
     },
     "model": {
       "mock": true,
-      "requests": 6,
-      "chatCompletions": 6,
+      "requests": 2,
+      "chatCompletions": 2,
       "toolCallsIssued": 0,
       "active": 0,
-      "aborted": 6,
+      "aborted": 0,
+      "completed": 2,
       "config": {
         "reply": "Mock 模型回复：这是一条可复制的固定回复。E2E-MOCK-REPLY",
         "chunkSize": 24,
@@ -174,23 +175,23 @@
         "replyScript": [
           {
             "match": "第一轮",
-            "reply": "E2E07-REPLY-1 E2E07-1794112164537：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。"
+            "reply": "E2E07-REPLY-1 E2E07-1794221781170：ALPHA-ONE 来自 [S1]，共享文档见 [S3]，无日期来源见 [S2]。"
           },
           {
             "match": "第二轮",
-            "reply": "E2E07-REPLY-2 E2E07-1794112164537：共享文档仍见 [S1]，BETA 见 [S2]。"
+            "reply": "E2E07-REPLY-2 E2E07-1794221781170：共享文档仍见 [S1]，BETA 见 [S2]。"
           },
           {
-            "reply": "E2E07-FALLBACK E2E07-1794112164537"
+            "reply": "E2E07-FALLBACK E2E07-1794221781170"
           }
         ]
       },
       "last": {
-        "at": "2026-11-08T04:29:47.818Z",
+        "at": "2026-11-09T10:56:55.965Z",
         "path": "/v1/chat/completions",
         "model": "mock-fast",
         "stream": true,
-        "messageCount": 11,
+        "messageCount": 9,
         "hasTools": true,
         "toolNames": [
           "devops",
@@ -199,13 +200,16 @@
         "toolCallMessages": [
           [
             null
+          ],
+          [
+            null
           ]
         ],
-        "user": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
+        "user": "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。"
       },
       "log": [
         {
-          "at": "2026-11-08T04:29:43.241Z",
+          "at": "2026-11-09T10:56:50.979Z",
           "path": "/v1/chat/completions",
           "model": "mock-fast",
           "stream": true,
@@ -220,50 +224,14 @@
               null
             ]
           ],
-          "user": "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
+          "user": "E2E07 第一轮 E2E07-1794221781170：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
         },
         {
-          "at": "2026-11-08T04:29:43.768Z",
+          "at": "2026-11-09T10:56:55.965Z",
           "path": "/v1/chat/completions",
           "model": "mock-fast",
           "stream": true,
-          "messageCount": 6,
-          "hasTools": true,
-          "toolNames": [
-            "devops",
-            "clj-plan"
-          ],
-          "toolCallMessages": [
-            [
-              null
-            ]
-          ],
-          "user": "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
-        },
-        {
-          "at": "2026-11-08T04:29:44.293Z",
-          "path": "/v1/chat/completions",
-          "model": "mock-fast",
-          "stream": true,
-          "messageCount": 7,
-          "hasTools": true,
-          "toolNames": [
-            "devops",
-            "clj-plan"
-          ],
-          "toolCallMessages": [
-            [
-              null
-            ]
-          ],
-          "user": "E2E07 第一轮 E2E07-1794112164537：只根据联网搜索结果回答，保留 [S1] [S2] [S3] 标注。"
-        },
-        {
-          "at": "2026-11-08T04:29:46.930Z",
-          "path": "/v1/chat/completions",
-          "model": "mock-fast",
-          "stream": true,
-          "messageCount": 11,
+          "messageCount": 9,
           "hasTools": true,
           "toolNames": [
             "devops",
@@ -277,48 +245,12 @@
               null
             ]
           ],
-          "user": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
-        },
-        {
-          "at": "2026-11-08T04:29:47.372Z",
-          "path": "/v1/chat/completions",
-          "model": "mock-fast",
-          "stream": true,
-          "messageCount": 10,
-          "hasTools": true,
-          "toolNames": [
-            "devops",
-            "clj-plan"
-          ],
-          "toolCallMessages": [
-            [
-              null
-            ]
-          ],
-          "user": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
-        },
-        {
-          "at": "2026-11-08T04:29:47.818Z",
-          "path": "/v1/chat/completions",
-          "model": "mock-fast",
-          "stream": true,
-          "messageCount": 11,
-          "hasTools": true,
-          "toolNames": [
-            "devops",
-            "clj-plan"
-          ],
-          "toolCallMessages": [
-            [
-              null
-            ]
-          ],
-          "user": "E2E07 第二轮 E2E07-1794112164537：换一个搜索服务再答一次，保留 [S1] 标注。"
+          "user": "E2E07 第二轮 E2E07-1794221781170：换一个搜索服务再答一次，保留 [S1] 标注。"
         }
       ],
       "bodies": []
     }
   },
   "ok": true,
-  "finishedAt": "2026-11-08T04:29:52.880Z"
+  "finishedAt": "2026-11-09T10:57:02.943Z"
 }

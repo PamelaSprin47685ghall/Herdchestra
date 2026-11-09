@@ -77,6 +77,54 @@
                               :onReplace (fn [_] nil)})]
       (is (not (str/includes? markup "替换当前选区"))))))
 
+(deftest settings-service-actions-collapse-under-more
+  (let [original @speech-ui/settings-state
+        service {:id "svc-1"
+                 :label "本地语音"
+                 :base-url "http://127.0.0.1:8080"
+                 :model "whisper"
+                 :enabled? true
+                 :processing :device}]
+    (try
+      (reset! speech-ui/settings-state
+              {:snapshot {:stt {:services [service]
+                                :default-service-id "svc-1"}}
+               :loading? false
+               :area :stt
+               :editing nil
+               :form nil
+               :pending nil
+               :notice nil
+               :tests {}})
+      (let [markup (rds/renderToStaticMarkup
+                    (react/createElement speech-ui/settings-element))]
+        (testing "the primary row keeps only the test and edit actions"
+          (is (str/includes? markup "测试"))
+          (is (str/includes? markup "编辑")))
+        (testing "the remaining actions live in a collapsible details block"
+          (is (str/includes? markup "<details"))
+          (is (str/includes? markup "更多"))
+          (is (str/includes? markup "上移"))
+          (is (str/includes? markup "下移"))
+          (is (str/includes? markup "删除"))))
+      (finally
+        (reset! speech-ui/settings-state original)))))
+
+(deftest read-aloud-button-reads-camel-case-props
+  (let [markup (rds/renderToStaticMarkup
+                (react/createElement speech-ui/read-aloud-button
+                                     #js {:messageId "m1"
+                                          :versionId "v1"
+                                          :text "Hello"}))]
+    (is (str/includes? markup "朗读"))
+    (is (str/includes? markup "朗读此回复"))
+    (testing "blank text disables the control instead of reading nothing"
+      (let [blank (rds/renderToStaticMarkup
+                   (react/createElement speech-ui/read-aloud-button
+                                        #js {:messageId "m1"
+                                             :versionId "v1"}))]
+        (is (str/includes? blank "disabled"))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Voice input recording handlers
 ;;

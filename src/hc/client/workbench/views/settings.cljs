@@ -13,6 +13,7 @@
             [com.fulcrologic.fulcro.dom :as dom]
             [hc.client.backup.ui :as backup-ui]
             [hc.client.diagnostics :as diagnostics]
+            [hc.client.settings.view :as settings-view]
             [hc.client.speech.translation :as speech-translation]
             [hc.client.speech.ui :as speech-ui]
             [hc.client.workbench.model :as model]
@@ -31,7 +32,6 @@
 (defn- shortcuts-panel
   []
   (dom/div {}
-           (dom/h2 {} "快捷键")
            (dom/p {:className "wb-muted"}
                   "当前版本固定这些映射；自定义与冲突检查尚未提供。")
            (dom/table {:className "wb-shortcut-table"}
@@ -56,6 +56,8 @@
         data? (data-section? db)
         [tab set-tab!] (react/useState "settings")]
     (dom/div {:data-settings-section (name (or (get-in db [:ui/settings :ui :section]) :unknown))}
+             (dom/div {:className "wb-page-title"}
+                      (dom/h1 {} (settings-view/workspace-tab-title tab)))
              (dom/div {:className "wb-tabs" :role "tablist" :aria-label "设置、语音、翻译与定时任务"}
                       (dom/button {:type "button"
                                    :role "tab"
@@ -104,9 +106,11 @@
                (dom/div {}
                         (settings-bridge/settings-element db)
                         (when data?
-                          (diagnostics/diagnostics-element db))
+                          (dom/div {:id settings-view/diagnostics-anchor-id}
+                                   (diagnostics/diagnostics-element db)))
                         (when data?
-                          (backup-ui/backup-element db)))))))
+                          (dom/div {:id settings-view/backup-anchor-id}
+                                   (backup-ui/backup-element db))))))))
 
 (defn settings-workspace-element
   "Create the settings workspace element for DB.

@@ -1,5 +1,10 @@
 (ns hc.compose.mission.worker
-  "Plan dedicated worker contract (root AGENTS.md §2.3, §4.1).
+  "Program-role contracts for the mission layer.
+
+  The Plan dedicated worker contract (root AGENTS.md §2.3, §4.1) is the
+  primary subject.  This namespace also carries the narrow capability tables
+  for the Steward and Meditator so a host can compare every non-swarm role
+  without depending on `hc.server.program.capability`.
 
   Each Plan tenure owns at most one dedicated worker.  The worker:
 
@@ -26,6 +31,63 @@
   #{:write :mkdir :rm :mv :split :claim :finish :cancel :replace :release
     :reopen :comment :update :take-or-die :review :board :token :wake-all
     :ask})
+
+(def steward-capabilities
+  "The Steward program surface (root §2.1–§2.2, §4.1).
+
+  The Steward reads the repository, observes the bounded fleet aggregate,
+  and forks/joins disjoint worktree swarms.  It never writes product code,
+  never runs a shell, and never holds the Swarm token or board."
+  #{:cat :stat :ls :where :whereAll :park :unpark
+    :fork :join :fleet-state :assume})
+
+(def steward-forbidden-capabilities
+  "Authorities the Steward must never hold."
+  #{:write :mkdir :rm :mv :call :review :devops :ask
+    :split :claim :finish :cancel :replace :release :reopen :comment :update
+    :take-or-die :park-slot :resolve-action :acknowledge-recovery :abandon
+    :askPreviousScope :negotiate :board :token :wake-all})
+
+(def meditator-capabilities
+  "The Standing Sphinx program surface: strictly read-only inspection."
+  #{:cat :stat :ls :where :whereAll})
+
+(def meditator-forbidden-capabilities
+  "The Meditator publishes text; it never touches the workspace beyond
+  reading and has no continuation, write, shell, review, or board authority."
+  #{:write :mkdir :rm :mv :park :unpark :call :review :devops :ask
+    :split :claim :finish :cancel :replace :release :reopen :comment :update
+    :take-or-die :park-slot :resolve-action :acknowledge-recovery :abandon
+    :askPreviousScope :assume :negotiate :fork :join :fleet-state
+    :board :token :wake-all})
+
+(def role-capabilities
+  "Program-role capability surface for the roles this namespace models.
+
+  The `:clj-worker` role remains owned by `hc.server.program.capability`;
+  this table keeps the Plan dedicated worker and the two repository
+  stewardship roles in one place so a host can compare them without
+  depending on the server package."
+  {:plan-worker capabilities
+   :clj-steward steward-capabilities
+   :clj-meditator meditator-capabilities})
+
+(def role-forbidden-capabilities
+  "Program-role forbidden surface, aligned with `role-capabilities`."
+  {:plan-worker forbidden-capabilities
+   :clj-steward steward-forbidden-capabilities
+   :clj-meditator meditator-forbidden-capabilities})
+
+(defn capabilities-for
+  "Capability set for PROGRAM-ROLE, or nil when this namespace has no
+  contract for it."
+  [program-role]
+  (get role-capabilities (when program-role (keyword program-role))))
+
+(defn forbidden-capabilities-for
+  "Forbidden capability set for PROGRAM-ROLE, or nil."
+  [program-role]
+  (get role-forbidden-capabilities (when program-role (keyword program-role))))
 
 (def contract
   "Declared contract for a Plan dedicated worker."

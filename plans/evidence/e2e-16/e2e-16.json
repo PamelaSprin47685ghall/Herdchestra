@@ -2,13 +2,13 @@
   "test": "E2E 16",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-08T06:57:06.105Z",
+  "startedAt": "2026-11-09T10:58:33.053Z",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-08T06:51:15.468Z",
-    "sha256": "2458e3d3d4eaa4a38e2725b8e20fa0a21ece04f4132ac586faa61137ce46d332"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
-  "sourceTreeSha256": "92890c5130b159514812adca9cae499d8a5eff24fe875fbdd5a97c83c72c90f0",
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "freeze": {
     "bundleSha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
     "treeSha256Prefix": "76cf2fd0"
@@ -16,6 +16,26 @@
   "checks": {
     "seededPausedVisible": true,
     "createdViaForm": true,
+    "manualRunOk": true,
+    "manualRunKeptPlan": true,
+    "timezoneDistinguishable": true,
+    "iosManualOnly": true,
+    "iosOffersManualRun": true,
+    "iosNoBackgroundEnable": true,
+    "iosPausedChecked": true,
+    "missedNotCaughtUp": true,
+    "missedNoCatchUpRun": true,
+    "overlapSkipped": true,
+    "overlapNoRunningRun": true,
+    "resumeMissedNotRerun": true,
+    "resumeNoCatchUpRun": true,
+    "backupSucceeded": true,
+    "restoreSucceeded": true,
+    "importDefaultPaused": true,
+    "importDidNotRun": true,
+    "importedCardNotEnabled": true
+  },
+  "diagnostics": {
     "manualRun": {
       "stub": "mock-model",
       "note": "manual run exercised against local mock model stub, not a real provider",
@@ -23,8 +43,8 @@
       "nextRun": null,
       "runCount": 1,
       "lastRun": {
-        "startedAt": 1794121050188,
-        "scheduledAt": 1794121050073,
+        "startedAt": 1794221969416,
+        "scheduledAt": 1794221969262,
         "reason": null,
         "status": "running",
         "id": "run-1",
@@ -34,20 +54,18 @@
         "endedAt": null
       }
     },
-    "manualRunOk": true,
     "timezone": {
       "deviceZone": "America/New_York",
       "followZone": "America/New_York",
       "followMode": "follow-device",
       "fixedZone": "Asia/Shanghai",
       "fixedMode": "fixed",
-      "followNextRun": 1794144600000,
+      "followNextRun": 1794231000000,
       "fixedNextRun": null
     },
-    "timezoneDistinguishable": true,
     "ios": {
       "manualOnlyNotice": true,
-      "banner": true,
+      "offersManualRun": true,
       "enableDisabled": true,
       "pausedChecked": true
     },
@@ -66,7 +84,7 @@
           "id": "sched-missed",
           "name": "E2E16 错过测试",
           "state": "enabled",
-          "nextRun": 1794184200000,
+          "nextRun": 1794270600000,
           "timezone": {
             "mode": "fixed",
             "zone": "Asia/Shanghai"
@@ -78,7 +96,7 @@
           "id": "sched-overlap",
           "name": "E2E16 重叠跳过",
           "state": "enabled",
-          "nextRun": 1794184200000,
+          "nextRun": 1794270600000,
           "timezone": {
             "mode": "follow-device",
             "zone": "Asia/Shanghai"
@@ -90,7 +108,7 @@
           "id": "sched-resume",
           "name": "E2E16 恢复暂停",
           "state": "paused",
-          "nextRun": 1793991469343,
+          "nextRun": 1794092392143,
           "timezone": {
             "mode": "follow-device",
             "zone": "Asia/Shanghai"
@@ -102,7 +120,7 @@
       "runs": [
         {
           "startedAt": null,
-          "scheduledAt": 1794097800000,
+          "scheduledAt": 1794184200000,
           "reason": "process-restart",
           "status": "missed",
           "id": "run-2",
@@ -113,7 +131,7 @@
         },
         {
           "startedAt": null,
-          "scheduledAt": 1794097800000,
+          "scheduledAt": 1794184200000,
           "reason": "previous-still-running",
           "status": "skipped",
           "id": "run-3",
@@ -124,22 +142,20 @@
         },
         {
           "startedAt": 0,
-          "scheduledAt": 1794027469343,
+          "scheduledAt": 1794128392143,
           "reason": "process-restart",
           "status": "interrupted",
           "id": "run-overlap",
           "scheduleId": "sched-overlap",
           "trigger": "scheduled",
           "attempt": 1,
-          "endedAt": 1794121091795
+          "endedAt": 1794222031755
         }
       ]
     },
-    "missedNotCaughtUp": true,
-    "overlapSkipped": true,
     "resume": {
       "state": "enabled",
-      "nextRun": 1794184200000,
+      "nextRun": 1794270600000,
       "runs": [
         {
           "status": "missed",
@@ -153,11 +169,10 @@
         }
       ]
     },
-    "resumeMissedNotRerun": true,
     "backup": {
       "ok": true,
       "status": ":complete",
-      "backupId": "69ab3efc-ff42-49b4-b81f-75792f2bab8b"
+      "backupId": "902fad84-f208-4f1d-9cd0-95fbcb61d59f"
     },
     "restore": {
       "ok": true,
@@ -174,10 +189,19 @@
       },
       "activeRunId": null,
       "paused": null
-    },
-    "importDefaultPaused": true,
-    "finishedAt": "2026-11-08T06:59:41.059Z"
+    }
   },
+  "diagnosticOnly": [
+    "manualRun",
+    "timezone",
+    "ios",
+    "recover",
+    "resume",
+    "backup",
+    "restore",
+    "importedSchedule"
+  ],
   "notes": [],
+  "finishedAt": "2026-11-09T11:02:46.121Z",
   "ok": true
 }

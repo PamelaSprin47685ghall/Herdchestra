@@ -15,7 +15,25 @@
   (:require [clojure.string :as str]
             [hc.compose.mission.devops :as devops]
             [hc.core.text-location :as text-location]
+            [hc.core.ufss :as ufss]
             [hc.server.files :as files]))
+
+(defn- structured-text
+  [value]
+  (try
+    (ufss/write-str value)
+    (catch Throwable error
+      (ufss/write-str
+       {:status :UNSUPPORTED_OPERATION
+        :message "the tool result could not be rendered as EDN+UFSS"
+        :detail (or (.getMessage error) (str error))}))))
+
+(defn- payload-text
+  [value]
+  (cond
+    (string? value) value
+    (nil? value) ""
+    :else (structured-text value)))
 
 (defn- result-text
   [result]
@@ -23,10 +41,10 @@
     (string? result) result
     (map? result)
     (cond
-      (contains? result :text) (str (:text result))
-      (contains? result :report) (str (:report result))
-      :else (pr-str result))
-    :else (str result)))
+      (contains? result :text) (payload-text (:text result))
+      (contains? result :report) (payload-text (:report result))
+      :else (structured-text result))
+    :else (structured-text result)))
 
 (defn- tool-ok
   [result]
@@ -34,7 +52,13 @@
 
 (defn- tool-failed
   [message]
-  {:status :failed :text (str message)})
+  {:status :failed
+   :text (structured-text
+          (if (map? message)
+            (cond-> message
+              (not (contains? message :status))
+              (assoc :status :failed))
+            {:status :failed :message (str message)}))})
 
 (defn- read-path
   [files-service path]
@@ -42,15 +66,17 @@
     (if (:ok? result)
       {:ok? true :text (:text result)}
       {:ok? false
-       :error (or (get-in result [:error :message])
-                  "file read failed")})))
+       :error (or (:error result)
+                  {:code :READ_FAILED
+                   :message "file read failed"})})))
 
 (defn tool-executor
   "Build the read-only tool executor for one workspace.
 
   `:files-service` is required.  `:helpers` optionally maps helper names to
   functions used by the `call` capability.  No helper is available unless the
-  host supplies it."
+  host supplies it.  Structured values are returned as EDN+UFSS text; `cat`
+  returns the file body verbatim."
   [{:keys [files-service helpers]}]
   (when-not files-service
     (throw (ex-info "devops tool executor needs :files-service"

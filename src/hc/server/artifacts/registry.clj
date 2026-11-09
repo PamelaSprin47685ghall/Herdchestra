@@ -447,7 +447,11 @@
     (err/fail! (or code :ARTIFACT_REGISTRATION_FAILED)
                (or (.getMessage ^Throwable t) "artifact registration failed")
                {:storage-error code
-                :storage-data (ex-data t)}
+                :storage-data (ex-data t)
+                :details {:cause code
+                          :cause-details
+                          (not-empty (dissoc (ex-data t)
+                                             :error :storage/expected?))}}
                t)))
 
 (defn- blob-failure
@@ -465,7 +469,11 @@
                    :ARTIFACT_REGISTRATION_FAILED)
                  (or (.getMessage ^Throwable t) "blob operation failed")
                  {:blob-error code
-                  :blob-data (ex-data t)}
+                  :blob-data (ex-data t)
+                  :details {:cause code
+                            :cause-details
+                            (not-empty (dissoc (ex-data t)
+                                               :error :storage/expected?))}}
                  t))
     :else (throw t)))
 

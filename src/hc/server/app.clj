@@ -27,7 +27,8 @@
             [hc.server.app.singleton :as singleton]
             [hc.server.app.system :as system]
             [hc.server.gateway.ports :as gateway-ports]
-            [hc.server.sessions.registry :as registry])
+            [hc.server.sessions.registry :as registry]
+            [hc.version :as version])
   (:import (java.awt Desktop Desktop$Action)
            (java.lang ProcessHandle)
            (java.net URI)
@@ -42,6 +43,14 @@
 
 (defn- blocking-promise []
   (promise))
+
+(defn- identity-line
+  "One line that names the exact tree this process was started from."
+  []
+  (let [{:keys [version git-hash git-dirty?]} (version/build-identity)]
+    (str "Herdchestra " version
+         " git=" git-hash
+         " dirty=" (boolean git-dirty?))))
 
 (defn- deliverable-blocking-promise []
   "A promise that doubles as its own delivery channel: callers deref it to
@@ -431,7 +440,7 @@
       :else
       (let [created (submit-command! router
                                      {:kind :session/create
-                                      :title "New session"})]
+                                      :title "新会话"})]
         (if (:ok? created)
           (let [sessions (session-summaries registry)
                 chosen (:session-id (first sessions))]
@@ -462,7 +471,7 @@
       :create-session
       (submit-command! (:router started)
                        {:kind :session/create
-                        :title (or (:title request) "New session")})
+                        :title (or (:title request) "新会话")})
 
       :command
       (let [payload (:payload request)]
@@ -506,6 +515,7 @@
                        {:dir (:dir handle)})]
           (when (:open-browser? options)
             (open-browser! (:url started)))
+          (println (identity-line))
           (println (str "Herdchestra listening on " (:url started)))
           (println (str "workspace: " (:workspace-root started)))
           (println (str "store:     " (:db-path started)))
@@ -579,22 +589,24 @@
   "Run the server and return the process exit code.
 
   Normal serving blocks until the JVM shutdown hook fires.  `--check`,
-  `--help`, blocked starts and second-instance requests return."
+  `--help`, `--version`, blocked starts and second-instance requests return."
   [args]
   (try
-    (let [args (vec args)
-          options (config/load-config {:args args})]
-      (if (config/help-requested? options)
-        (do (println (config/usage)) (flush) 0)
-        (do
-          (config/apply-log-level! options)
-          (let [[options temp-root] (check-options args options)]
-            (try
-              (if (:check? options)
-                (run-check! options)
-                (run-server! options))
-              (finally
-                (delete-tree! temp-root)))))))
+    (let [args (vec args)]
+      (if (some #{"--version"} args)
+        (do (println (identity-line)) (flush) 0)
+        (let [options (config/load-config {:args args})]
+          (if (config/help-requested? options)
+            (do (println (config/usage)) (flush) 0)
+            (do
+              (config/apply-log-level! options)
+              (let [[options temp-root] (check-options args options)]
+                (try
+                  (if (:check? options)
+                    (run-check! options)
+                    (run-server! options))
+                  (finally
+                    (delete-tree! temp-root)))))))))
     (catch clojure.lang.ExceptionInfo e
       (print-error! (or (ex-data e)
                         {:error :CONFIG_INVALID

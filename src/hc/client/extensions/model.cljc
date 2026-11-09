@@ -135,7 +135,8 @@
                    :archive-base64 "" :archive-name ""}
            :skill-updates {}
            :assistant-id ""}
-   :selected {:mcp nil :skill nil}})
+   :selected {:mcp nil :skill nil}
+   :confirm-delete {:mcp nil :skill nil}})
 
 (defn field
   [m k]
@@ -147,6 +148,16 @@
 (defn non-blank-string?
   [value]
   (and (string? value) (not (str/blank? value))))
+
+(defn delete-confirmed?
+  "Whether the pending deletion confirmation names this MCP server or skill.
+
+  MCP servers and skills can share an id, so each family keeps its own
+  confirmation slot."
+  [state kind id]
+  (let [id (str id)
+        confirmed (str (get-in state [:confirm-delete kind]))]
+    (and (not (str/blank? id)) (= id confirmed))))
 
 (defn transport-type
   "Normalize a transport type from a keyword or a form/select string."
@@ -624,8 +635,18 @@
                               :id (:id action)
                               :enabled? (boolean (:enabled? action))})}
 
+      :extensions/mcp-request-delete
+      {:state (assoc-in state [:confirm-delete :mcp] (:id action))}
+
+      :extensions/mcp-cancel-delete
+      {:state (assoc-in state [:confirm-delete :mcp] nil)}
+
       :extensions/mcp-remove
-      {:state (enqueue state {:kind mcp-remove-kind :id (:id action)})}
+      (if (delete-confirmed? state :mcp (:id action))
+        {:state (-> state
+                    (enqueue {:kind mcp-remove-kind :id (:id action)})
+                    (assoc-in [:confirm-delete :mcp] nil))}
+        {:state state :error {:message "请先确认删除该服务器"}})
 
       :extensions/mcp-open
       {:state (enqueue state {:kind mcp-open-kind :id (:id action)})}
@@ -708,8 +729,18 @@
                             :source (:source source)})}
           {:state state :error (:error source)}))
 
+      :extensions/skill-request-delete
+      {:state (assoc-in state [:confirm-delete :skill] (:id action))}
+
+      :extensions/skill-cancel-delete
+      {:state (assoc-in state [:confirm-delete :skill] nil)}
+
       :extensions/skill-delete
-      {:state (enqueue state {:kind skill-delete-kind :id (:id action)})}
+      (if (delete-confirmed? state :skill (:id action))
+        {:state (-> state
+                    (enqueue {:kind skill-delete-kind :id (:id action)})
+                    (assoc-in [:confirm-delete :skill] nil))}
+        {:state state :error {:message "请先确认删除该技能"}})
 
       :extensions/skill-bind
       {:state (if (non-blank-string? (get-in state [:draft :assistant-id]))

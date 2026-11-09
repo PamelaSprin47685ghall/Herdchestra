@@ -799,7 +799,7 @@
     (is (= visible-ids
            (get-in prepared [:result :compression :message-ids])))))
 
-(deftest compression-summary-marks-changed-source-versions
+(deftest compression-summary-with-changed-source-is-not-sent
   (let [session (-> (base-session)
                     (add-message "m1" :user "one" {})
                     (add-message "m2" :assistant "one answer" {}))
@@ -811,8 +811,19 @@
                          {:compression-id "c1"} 3000)
         edited (command (:session applied) :history/edit-message
                         {:message-id "m1" :content "one changed"} 4000)
-        out (context/outbound-context (:session edited))]
-    (is (true? (get-in out [:messages 0 :stale?])))))
+        edited-session (:session edited)
+        compression (get-in edited-session [:context :compressions "c1"])
+        out (context/outbound-context edited-session)]
+    (is (true? (context/compression-stale? edited-session compression))
+        "the compression row stays visible and marked stale")
+    (is (= [] (:summary-ids out)))
+    (is (= ["m1" "m2"] (:message-ids out))
+        "the edited source and the rest of its range return")
+    (is (= "one changed" (get-in out [:messages 0 :content])))
+    (is (empty? (filter #(= :context-summary (:kind %)) (:messages out))))
+    (is (= [{:role :user :text "one changed" :message-id "m1"}
+            {:role :assistant :text "one answer" :message-id "m2"}]
+           (context/model-messages out)))))
 
 (deftest branch-copies-the-path-and-preserves-attachment-identity
   (let [session (-> (base-session)

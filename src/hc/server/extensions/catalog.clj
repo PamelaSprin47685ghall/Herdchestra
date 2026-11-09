@@ -5,6 +5,7 @@
   another family's permission, and every newly created entry starts disabled.
   The catalog is deliberately not a mutable singleton: a caller applies one
   returned value only after the surrounding domain transaction commits."
+  (:refer-clojure :exclude [ensure])
   (:require [hc.server.extensions.common :as common]))
 
 (def catalog-version 1)

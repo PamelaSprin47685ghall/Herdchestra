@@ -4,6 +4,7 @@
   This namespace owns no policy: it returns status, headers and bytes, and
   refuses bodies larger than the caller's limit.  Authentication and redirect
   decisions remain with the caller."
+  (:refer-clojure :exclude [send])
   (:require [clojure.string :as str]
             [hc.server.extensions.common :as common]
             [hc.server.extensions.error :as error])

@@ -90,6 +90,15 @@
       (is (= {:controller-id "a" :observer-ids ["b"]}
              (presence (owner-state handle))))
 
+      (testing "the controller reconnecting with the same id keeps control"
+        (let [receipt (command! handle "a-reattach" "a"
+                                {:kind :session/attach-client})]
+          (is (= :accepted (:status receipt)))
+          (is (= :controller (:outcome receipt)))
+          (is (= "a" (:controller-id receipt)))
+          (is (= ["b"] (:observer-ids receipt))
+              "reattaching must not duplicate or reorder the observers")))
+
       (testing "takeover moves control and queues the old controller"
         (let [receipt (command! handle "b-takeover" "b"
                                 {:kind :session/takeover})]
@@ -122,6 +131,27 @@
         (is (wait-for #(seq @cancels) 3000)))
       (finally
         ((:stop! handle))))))
+
+(deftest takeover-puts-the-old-controller-at-the-queue-front
+  (let [requests (atom [])
+        cancels (atom [])
+        handle (start-owner requests cancels)]
+    (try
+      (command! handle "a-attach" "a" {:kind :session/attach-client})
+      (command! handle "b-attach" "b" {:kind :session/attach-client})
+      (command! handle "c-attach" "c" {:kind :session/attach-client})
+      (is (= {:controller-id "a" :observer-ids ["b" "c"]}
+             (presence (owner-state handle))))
+      (let [receipt (command! handle "c-takeover" "c"
+                              {:kind :session/takeover})]
+        (is (= :accepted (:status receipt)))
+        (is (= :taken-over (:outcome receipt)))
+        (is (= "a" (:previous-controller-id receipt)))
+        (is (= "c" (:controller-id receipt)))
+        (is (= ["a" "b"] (:observer-ids receipt))
+            "the old controller goes to the front; the rest keep their order"))
+    (finally
+      ((:stop! handle))))))
 
 (deftest observers-cannot-submit-session-work
   (let [requests (atom [])

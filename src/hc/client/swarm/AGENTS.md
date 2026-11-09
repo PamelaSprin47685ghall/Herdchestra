@@ -6,8 +6,8 @@ Authority: root `AGENTS.md` §7.3–§7.4 > `src/AGENTS.md` >
 ## Purpose
 
 `hc.client.swarm` renders the read-only Swarm/fleet topology required by root
-`AGENTS.md` §7.4 旅程 3.5（蜂群施工） and the board-view assertions in §7.5 of the source-manual
-reconciliation:
+`AGENTS.md` §7.4 旅程 3.5（蜂群施工） and the board-view assertions in
+§3.2–§3.3:
 
 - fleet overview: `slice-id`, worktree, status, root task counts, master
   version, join queue;

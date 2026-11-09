@@ -7,7 +7,7 @@
     GET /api/workspace/list     ?path=<relative>
     GET /api/workspace/stat     ?path=<relative>
     GET /api/workspace/read     ?path=<relative>
-    GET /api/workspace/search   ?q=<text>&limit=<n>
+    GET /api/workspace/search   ?q=<text>&mode=<name|content>&limit=<n>
 
   The handler returns nil for every path outside `/api/workspace`, so the
   application can compose it with the gateway and static fallback without a

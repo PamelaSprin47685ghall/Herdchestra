@@ -1,6 +1,6 @@
 (ns hc.core.steward-sphinx.docket-test
   (:require [clojure.test :refer [deftest is]]
-            [clojure.test.check :as tc]
+            [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hc.core.steward-sphinx.docket :as docket]))
@@ -707,24 +707,21 @@
 (def gen-unit
   (gen/fmap #(/ % 100.0) (gen/choose 0 100)))
 
-(deftest score-is-monotonic-in-benefits-and-costs
-  (let [policy (:value (docket/normalize-policy nil))
-        base (candidate {:evidence-ids []})
-        score (fn [candidate] (:score (docket/score-candidate policy candidate)))]
-    (is (:result
-         (tc/quick-check
-          100
-          (prop/for-all [a gen-unit
-                         b gen-unit]
-            (let [[lo hi] (sort [a b])]
-              (and
-               (<= (score (assoc base :consequence lo))
-                   (score (assoc base :consequence hi)))
-               (<= (score (assoc base :evidence-strength lo))
-                   (score (assoc base :evidence-strength hi)))
-               (<= (score (assoc base :reversibility lo))
-                   (score (assoc base :reversibility hi)))
-               (>= (score (assoc base :dependency-cost lo))
-                   (score (assoc base :dependency-cost hi)))
-               (>= (score (assoc base :opportunity-cost lo))
-                   (score (assoc base :opportunity-cost hi)))))))))))
+(defspec score-is-monotonic-in-benefits-and-costs 100
+  (prop/for-all [a gen-unit
+                 b gen-unit]
+    (let [policy (:value (docket/normalize-policy nil))
+          base (candidate {:evidence-ids []})
+          score (fn [candidate] (:score (docket/score-candidate policy candidate)))
+          [lo hi] (sort [a b])]
+      (and
+       (<= (score (assoc base :consequence lo))
+           (score (assoc base :consequence hi)))
+       (<= (score (assoc base :evidence-strength lo))
+           (score (assoc base :evidence-strength hi)))
+       (<= (score (assoc base :reversibility lo))
+           (score (assoc base :reversibility hi)))
+       (>= (score (assoc base :dependency-cost lo))
+           (score (assoc base :dependency-cost hi)))
+       (>= (score (assoc base :opportunity-cost lo))
+           (score (assoc base :opportunity-cost hi)))))))

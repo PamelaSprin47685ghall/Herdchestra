@@ -2,19 +2,19 @@
   "test": "E2E 20",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-08T05:30:47.055Z",
-  "marker": "E2E20-1794115847055",
-  "appUrl": "http://127.0.0.1:41797",
-  "mockUrl": "http://127.0.0.1:33413",
-  "searchUrl": "http://127.0.0.1:35127",
-  "webdavUrl": "http://127.0.0.1:43733",
+  "startedAt": "2026-11-09T10:58:52.505Z",
+  "marker": "E2E20-1794221932505",
+  "appUrl": "http://127.0.0.1:46377",
+  "mockUrl": "http://127.0.0.1:41671",
+  "searchUrl": "http://127.0.0.1:39145",
+  "webdavUrl": "http://127.0.0.1:43967",
   "chromeVersion": "157.0.8103.38",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-08T05:22:22.454Z",
-    "sha256": "bd3bbc8b849781a5ffcc8b41bf1fb750b56e45c44f7badfaee21aef7be184460"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
-  "sourceTreeSha256": "f3a00506bba6ff2c6b553276a20a96bf25f2a6ca1427d5187dccda2a893a41c4",
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "frozenBundleSha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
   "frozenTreeSha256": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b",
   "markers": {
@@ -38,7 +38,7 @@
     },
     "webSearchUsed": {
       "pass": true,
-      "detail": "[\"E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794115847055\"]"
+      "detail": "[\"E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794221932505\"]"
     },
     "sttUploadAccepted": {
       "pass": true,
@@ -54,11 +54,11 @@
     },
     "discardCompleted": {
       "pass": true,
-      "detail": "elapsed=538ms"
+      "detail": "elapsed=211ms"
     },
     "historyNoResidue": {
       "pass": true,
-      "detail": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794115847055\nE2E20 助手回复-合成敏感标记（第 4 次模型请求）\nNew session\n2026/11/08 13:32 · Mock E2E20"
+      "detail": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794221932505\nE2E20 助手回复-合成敏感标记（第 2 次模型请求）\nNew session\n2026/11/09 18:59 · Mock E2E20"
     },
     "searchNoResidue": {
       "pass": true,
@@ -70,11 +70,11 @@
     },
     "backupPreviewNoTempResidue": {
       "pass": true,
-      "detail": "恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n备份 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21"
+      "detail": "恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n备份 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda"
     },
     "deletedAreaNoTemp": {
       "pass": true,
-      "detail": "已删除会话"
+      "detail": "已删除会话\n加载已删除会话\n\n尚未加载，或没有普通已删除会话。临时会话不进入已删除区。"
     },
     "diagnosticsNoResidue": {
       "pass": true,
@@ -82,19 +82,19 @@
     },
     "transferTurnReplied": {
       "pass": true,
-      "detail": "E2E20 助手回复-合成敏感标记（第 8 次模型请求）"
+      "detail": "E2E20 助手回复-合成敏感标记（第 4 次模型请求）"
     },
     "transferCompleted": {
       "pass": true,
-      "detail": "elapsed=555ms"
+      "detail": "elapsed=185ms"
     },
     "transferKeepsContent": {
       "pass": true,
-      "detail": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n44\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n临时会话\n2026/11/08 13:39 · Mock E2E20\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/08 13:32 · Mock E2E20\n重命名\n置顶\n归档\n删"
+      "detail": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n32\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n会话\n2 / 2 条\n新建\n临时\n临时会话\n2026/11/09 18:59 · Mock E2E20\n重命名\n置顶\n归档\n删除\nNew session\n2026/11/09 "
     },
     "transferDraftKept": {
       "pass": true,
-      "detail": "E2E20 转存探针-合成敏感标记-转存后保留 草稿保留 E2E20-1794115847055-draft"
+      "detail": "E2E20 转存探针-合成敏感标记-转存后保留 草稿保留 E2E20-1794221932505-draft"
     },
     "transferBannerGone": {
       "pass": true,
@@ -102,7 +102,7 @@
     },
     "transferNoDuplicateExternal": {
       "pass": true,
-      "detail": "{\"chatBefore\":10,\"chatAfter\":10,\"suggestBefore\":1,\"suggestAfter\":1,\"transcriptions\":1,\"searchQueriesBefore\":2,\"searchQueriesAfter\":2}"
+      "detail": "{\"chatBefore\":4,\"chatAfter\":4,\"suggestBefore\":1,\"suggestAfter\":1,\"transcriptions\":1,\"searchQueriesBefore\":2,\"searchQueriesAfter\":2}"
     },
     "transferredSessionListed": {
       "pass": true,
@@ -129,141 +129,145 @@
   "phases": [
     {
       "name": "gotoSessions",
-      "at": "2026-11-08T05:30:47.886Z",
-      "elapsedMs": 790
+      "at": "2026-11-09T10:58:53.672Z",
+      "elapsedMs": 1104
     },
     {
       "name": "createTemporarySession-1",
-      "at": "2026-11-08T05:30:48.115Z",
-      "elapsedMs": 1019
+      "at": "2026-11-09T10:58:54.098Z",
+      "elapsedMs": 1530
     },
     {
       "name": "enableRequiredSearch-temp1",
-      "at": "2026-11-08T05:30:48.287Z",
-      "elapsedMs": 1191
+      "at": "2026-11-09T10:58:54.320Z",
+      "elapsedMs": 1752
     },
     {
       "name": "sendTurn-1",
-      "at": "2026-11-08T05:32:50.186Z",
-      "elapsedMs": 123090
+      "at": "2026-11-09T10:59:02.191Z",
+      "elapsedMs": 9623
     },
     {
       "name": "sttUpload",
-      "at": "2026-11-08T05:32:50.215Z",
-      "elapsedMs": 123119
+      "at": "2026-11-09T10:59:02.297Z",
+      "elapsedMs": 9729
     },
     {
       "name": "sendTurn-normal-memory",
-      "at": "2026-11-08T05:36:52.081Z",
-      "elapsedMs": 364985
+      "at": "2026-11-09T10:59:09.491Z",
+      "elapsedMs": 16923
     },
     {
       "name": "gotoMaterialsMemory",
-      "at": "2026-11-08T05:36:52.548Z",
-      "elapsedMs": 365452
+      "at": "2026-11-09T10:59:09.664Z",
+      "elapsedMs": 17096
     },
     {
       "name": "enableSuggest",
-      "at": "2026-11-08T05:36:53.084Z",
-      "elapsedMs": 365988
+      "at": "2026-11-09T10:59:09.849Z",
+      "elapsedMs": 17281
     },
     {
       "name": "clickMemorySuggest",
-      "at": "2026-11-08T05:36:53.712Z",
-      "elapsedMs": 366616
+      "at": "2026-11-09T10:59:09.907Z",
+      "elapsedMs": 17339
     },
     {
       "name": "memorySuggestDone",
-      "at": "2026-11-08T05:36:53.775Z",
-      "elapsedMs": 366679
+      "at": "2026-11-09T10:59:10.108Z",
+      "elapsedMs": 17540
     },
     {
       "name": "gotoSessions-2",
-      "at": "2026-11-08T05:36:53.784Z",
-      "elapsedMs": 366688
+      "at": "2026-11-09T10:59:10.122Z",
+      "elapsedMs": 17554
     },
     {
       "name": "discardDone",
-      "at": "2026-11-08T05:36:54.523Z",
-      "elapsedMs": 367427
+      "at": "2026-11-09T10:59:10.531Z",
+      "elapsedMs": 17963
     },
     {
       "name": "memoryAfterDiscard",
-      "at": "2026-11-08T05:36:59.342Z",
-      "elapsedMs": 372246
+      "at": "2026-11-09T10:59:10.774Z",
+      "elapsedMs": 18206
     },
     {
       "name": "backupPreviewDone",
-      "at": "2026-11-08T05:37:02.025Z",
-      "elapsedMs": 374929
+      "at": "2026-11-09T10:59:12.613Z",
+      "elapsedMs": 20045
     },
     {
       "name": "deletedAreaDone",
-      "at": "2026-11-08T05:37:02.139Z",
-      "elapsedMs": 375043
+      "at": "2026-11-09T10:59:12.822Z",
+      "elapsedMs": 20254
     },
     {
       "name": "diagnosticsDone",
-      "at": "2026-11-08T05:37:02.313Z",
-      "elapsedMs": 375217
+      "at": "2026-11-09T10:59:12.972Z",
+      "elapsedMs": 20404
     },
     {
       "name": "gotoSessions-3",
-      "at": "2026-11-08T05:37:02.325Z",
-      "elapsedMs": 375229
+      "at": "2026-11-09T10:59:12.985Z",
+      "elapsedMs": 20417
     },
     {
       "name": "createTemporarySession-3",
-      "at": "2026-11-08T05:37:02.577Z",
-      "elapsedMs": 375481
+      "at": "2026-11-09T10:59:13.292Z",
+      "elapsedMs": 20724
     },
     {
       "name": "enableRequiredSearch-temp2",
-      "at": "2026-11-08T05:37:02.723Z",
-      "elapsedMs": 375627
+      "at": "2026-11-09T10:59:13.462Z",
+      "elapsedMs": 20894
     },
     {
       "name": "sendTurn-3",
-      "at": "2026-11-08T05:39:04.337Z",
-      "elapsedMs": 497241
+      "at": "2026-11-09T10:59:19.899Z",
+      "elapsedMs": 27331
     }
   ],
+  "sendTurn1": {
+    "ok": true,
+    "before": 0,
+    "after": 1
+  },
   "tempReply": "E2E20 助手回复-合成敏感标记（第 1 次模型请求）",
   "searchState": {
     "queries": [
-      "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794115847055"
+      "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794221932505"
     ]
   },
   "sttUpload": {
     "status": 200,
-    "body": "{:ok? true, :receipt {:service {:connect-timeout-ms 5000, :processing :cloud, :api-key-env nil, :request-timeout-ms 30000, :test-audio-configured? false, :response-format \"json\", :base-url \"http://127.0.0.1:33413\", :enabled? true, :status {:state :unknown}, :label \"Mock STT\", :id \"mock-stt\", :kind :openai-compatible, :transcriptions-path \"/v1/audio/transcriptions\", :key-source nil, :order 0, :has-key? false, :languages [], :processing-source :explicit, :model \"whisper-mock\"}, :usage-recorded? false, :recording-id \"rec-8c357353-e04f-4ba5-9d4b-7f9792a5c492\", :auto-send? false, :recording-persisted? true, :transcript-language nil, :usage nil, :draft {:action :insert-into-draft, :text \"E2E20 转写探针-合成敏感标记-语音转写文本（转写 1 次）\", :auto-send? false}, :status :complete, :audio {:preserved? true, :bytes 1644, :content-type \"audio/wav\"}, :transcript \"E2E20 转写探针-合成敏感标记-语音转写文本（转写 1 次）\", :attempt {:service-id \"mock-stt\", :started-at 1794115970204, :finished-at 1794115970212, :status :ok, :http-status nil, :error nil}}}"
+    "body": "{:ok? true, :receipt {:service {:connect-timeout-ms 5000, :processing :cloud, :api-key-env nil, :request-timeout-ms 30000, :test-audio-configured? false, :response-format \"json\", :base-url \"http://127.0.0.1:41671\", :enabled? true, :status {:state :unknown}, :label \"Mock STT\", :id \"mock-stt\", :kind :openai-compatible, :transcriptions-path \"/v1/audio/transcriptions\", :key-source nil, :order 0, :has-key? false, :languages [], :processing-source :explicit, :model \"whisper-mock\"}, :usage-recorded? false, :recording-id \"rec-9aedf302-468b-4aba-94dc-f79600f49bb4\", :auto-send? false, :recording-persisted? true, :transcript-language nil, :usage nil, :draft {:action :insert-into-draft, :text \"E2E20 转写探针-合成敏感标记-语音转写文本（转写 1 次）\", :auto-send? false}, :status :complete, :audio {:preserved? true, :bytes 1644, :content-type \"audio/wav\"}, :transcript \"E2E20 转写探针-合成敏感标记-语音转写文本（转写 1 次）\", :attempt {:service-id \"mock-stt\", :started-at 1794221942248, :finished-at 1794221942278, :status :ok, :http-status nil, :error nil}}}"
   },
   "suggest": {
     "before": 0,
     "after": 1
   },
   "mockAfterSuggest": {
-    "chat": 7,
+    "chat": 3,
     "memorySuggestCalls": 1
   },
   "memoryCandidateText": "工作方式\n待审\nE2E20 记忆候选-合成敏感标记-永远记住榴莲\n来源片段：E2E20 记忆候选-合成敏感标记-永远记住榴莲\n范围 全局 · 偏好 · 更新序号 1",
-  "discardElapsedMs": 538,
+  "discardElapsedMs": 211,
   "sessionFilterE2E20": "会话\n0 / 0 条\n新建\n临时\n没有匹配会话\n服务器尚未提供任何会话。连接后可在此查看当前消息与草稿。\n已删除会话",
-  "memoryPageAfterDiscard": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n30\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 4\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：hc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1；助手范围 通用助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 4\n读取最新材料\n整理记忆\n1\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n待审\nE2E20 记忆候选-合成敏感标记-永远记住榴莲\n来源片段：E2E20 记忆候选-合成敏感标记-永远记住榴莲\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n1\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n30\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n1\n世界书\n0\n指令卡\n0\n材料 revision\n4\n同步序号\n30\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "memoryPageAfterDiscard": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n22\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 4\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：hc-session-10879b7b-71c2-40ae-87c2-654001bda063；助手范围 通用助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 4\n读取最新材料\n整理记忆\n1\n待审\n0\n生效\n0\n已归档\n0\n已拒绝\n本次整理：候选 1 · 跳过 0\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n待审\nE2E20 记忆候选-合成敏感标记-永远记住榴莲\n来源片段：E2E20 记忆候选-合成敏感标记-永远记住榴莲\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n1\n世界书\n0\n指令卡\n0\nMCP 服务器\n0\n技能\n0\n同步序号\n22\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n1\n世界书\n0\n指令卡\n0\n材料 revision\n4\n同步序号\n22\n已取得服务器基线，命令可以携带 command-id 提交。",
   "memoryRows": [
     "工作方式\n待审\nE2E20 记忆候选-合成敏感标记-永远记住榴莲\n来源片段：E2E20 记忆候选-合成敏感标记-永远记住榴莲\n范围 全局 · 偏好 · 更新序号 1"
   ],
   "memoryMarkerRows": 1,
-  "backupRow": "备份 d88c8f99-c765-4b2a-8288-e87c281c167d\n\nJYSZ · 2026-11-08T05:36:59.690950012Z\n\n取样时间\n2026-11-08T05:36:59.690950012Z\n创建时间\n2026-11-08T05:36:59.687288373Z\n设备\nJYSZ\n应用版本\n0.0.1\n格式版本\n1\n加密\n是\n完整性\n:verified\n大小\n71 KiB\n选择这份备份\n删除",
-  "backupPreviewBlocker": "先选择一份备份。",
-  "backupPreview": "恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n备份 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\nworkspace\n\n工作区 · 相同 ID、内容不同\n\n本地 ID\napp-workspace\n备份 ID\napp-workspace\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\n缺失的助手（已建立待配置占位）\ndefault\n缺失的关联\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n需要重新定位的工作区\napp-workspace\n需要重新审核的项\ndefault\napp-workspace@backup-16f721cd14\n需要重新配置的项\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\ndefault\napp-workspace\ndefault\napp-workspace@backup-16f721cd14\n恢复后的权限默认值\n自动备份\n停用\n后台运行\n停用\n浏览器登录\n需要重新登录\n模型连接\n需要重新验证\n设备控制\n停用\n外部工作区\n需要重新定位\n外部写入\n停用\n完全访问\n停用\n隐式授权\n否\n记忆\n待审核\n来自备份\n是\n计划任务\n暂停\n技能\n已安装，待审核\n系统授权\n需要重新授权\n工具\n已停用，待审核\n恢复点要求\n执行前建立\n恢复点状态\n:will-create\n保留策略\n最近 7 个成功点 + 4 周 + 3 月代表副本",
+  "backupRow": "备份 e488a261-c0ff-4d1e-861d-bd122705e070\n\nJYSZ · 2026-11-09T10:59:11.175306472Z\n\n取样时间\n2026-11-09T10:59:11.175306472Z\n创建时间\n2026-11-09T10:59:11.170978021Z\n设备\nJYSZ\n应用版本\n0.0.3\n格式版本\n1\n加密\n是\n完整性\n:verified\n大小\n40 KiB\n选择这份备份\n删除",
+  "backupPreview": "恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n备份 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\nworkspace\n\n工作区 · 相同 ID、内容不同\n\n本地 ID\napp-workspace\n备份 ID\napp-workspace\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\n缺失的助手（已建立待配置占位）\ndefault\n缺失的关联\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n需要重新定位的工作区\napp-workspace\n需要重新审核的项\ndefault\napp-workspace@backup-734c4dd67f\n需要重新配置的项\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\ndefault\napp-workspace\ndefault\napp-workspace@backup-734c4dd67f\n恢复后的权限默认值\n自动备份\n停用\n后台运行\n停用\n浏览器登录\n需要重新登录\n模型连接\n需要重新验证\n外部工作区\n需要重新定位\n外部写入\n停用\n完全访问\n停用\n隐式授权\n否\n记忆\n待审核\n来自备份\n是\n计划任务\n暂停\n技能\n已安装，待审核\n系统授权\n需要重新授权\n工具\n已停用，待审核\n恢复点要求\n执行前建立\n恢复点状态\n:will-create\n保留策略\n最近 7 个成功点 + 4 周 + 3 月代表副本",
   "backupPreviewExclusions": [],
-  "deletedArea": "已删除会话",
-  "diagnosticsText": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n30\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n设置\n定时任务\n语音与朗读\n独立翻译\n快捷键\n设置与数据中心\n\n用量、费用、详细日志与备份；诊断包只在本机生成。\n\n已同步命令通道可用。\n供应商与连接\n模型与角色\n助手\n数据中心\n外观\n统计与诊断\n\n用量与费用按服务返回、估算与未知分开显示；诊断包传输状态以回执为准。\n\n用量与费用\n详细日志\n诊断包\n反馈草稿\n常见问题\n今天\n最近 7 天\n最近 30 天\n全部\n自定义\n时区\n日期口径\n当前时区\n记录发生时区\n助手\n全部助手\ndefault\n模型\n全部模型\nE2E20 Mock / Mock E2E20\n服务\n全部服务\nE2E20 Mock\n模型排行数量\n刷新统计\n清除筛选\n范围：2026-10-10 至 2026-11-08\n筛选：无筛选\n时区：Asia/Shanghai\n日期口径：查询时区\n最后更新：2026-11-08T05:36:53.120606482Z\n用户发送次数\n2\n一次被接受的用户提交\n模型请求次数\n7\n一次供应商请求，包含重试\n工具调用次数\n0\n一次已执行的工具调用\n活跃天数\n1\n有发送、请求或工具调用的自然日\nToken 用量\n项目\t数量\t来源\n输入 token\t210\t服务返回\n输出 token\t84\t服务返回\n缓存命中（输入明细）（明细）\t0\t服务返回\n缓存写入（输入明细）（明细）\t0\t服务返回\n总 token\t294\t服务返回\n\n缓存命中与缓存写入只作为输入明细；在 :input-subset 口径下不会再次加进总量。\n\n请求用量来源：服务返回 7；估算 0；未提供 0。\n\n估算费用\n\n除非服务返回实收金额，这里都是估算。不同币种分开汇总，不生成统一总额。\n\n隐藏金额\n\n估算覆盖 0 / 7 个请求；部分估算 0；未估算 7；服务实收 0。\n\n没有可估算的金额。未知单价或未知用量不会显示为 0。\n\n模型分布\n\n排行按使用量，不宣称“最好”或“最快”。颜色不是唯一标识，名称与数量始终可读。\n\nMock E2E20\nE2E20 Mock\n6 次请求\n未估算\n未知模型\n未知服务\n1 次请求\n未估算\n\n价格记录按服务与模型区分；修改价格默认影响未来请求，旧记录保留生成时的价格与币种。\n\n活跃热力图\n\n默认按当前设备时区划分自然日；切换时区可能改变日期归属，不修改记录原始发生时间。\n\n2026-11-08\n2 发送\n7 请求\n0 工具\n按轮次查看\n\n一次用户发送不等于一次模型调用。这里分别显示用户发送、模型请求与工具调用；重试是新请求。\n\n轮次 cmd-4c17f8ec-995f-4c21-9543-8aea997c031b\n发送 1 · 请求 0 · 工具 0\n2026/11/08 13:30\n轮次 call-1\n发送 0 · 请求 2 · 工具 0\n2026/11/08 13:30\n轮次 call-2\n发送 0 · 请求 2 · 工具 0\n2026/11/08 13:30\n轮次 call-3\n发送 0 · 请求 2 · 工具 0\n2026/11/08 13:30\n轮次 cmd-0aade024-f036-4e79-9498-242f503583bb\n发送 1 · 请求 0 · 工具 0\n2026/11/08 13:32\n轮次 memory-suggest-dbbef06b-a657-48e4-911a-b0c230a37cf9\n发送 0 · 请求 1 · 工具 0\n2026/11/08 13:36\n模型价格\n\n单价按每 1,000,000 tokens 计价。请填写输入、输出及已支持的缓存价格；缺失项只估算可确定部分，缓存不会默认免费。\n\n服务\n选择服务\nE2E20 Mock\n模型\n选择模型\nE2E20 Mock / Mock E2E20\n币种\n输入 / 百万 token\n输出 / 百万 token\n缓存命中 / 百万 token\n缓存写入 / 百万 token\n价格来源\n来源日期\n\n无法估算：需要输入与输出单价；缓存缺省不按免费处理。\n\n保存价格\n加密备份与恢复\n\n本地文件、WebDAV 与 S3 目标由服务器配置；界面只展示服务器实际提供的能力。\n\n已同步\n命令通道可用；点击只表示提交，回执才表示完成。\n预览已生成；发现 2 处冲突。默认两份都保留，可逐项选择后重新预览。尚未写入任何资料。\n关闭\n创建备份\n恢复与预览\n本地恢复点\n目标与状态\n\n恢复前先校验并预览。预览区分合并与替换，列出冲突、缺失关联与未打包附件；预览阶段不写入任何资料。\n\n备份目标\nWebDAV · webdav 可用\n地址：http://127.0.0.1:43733/backups /\n编辑\n删除\n已选目标\nwebdav\n备份目录\n未提供\n数据目录\n/tmp/hc-e2e20-qKlSaU/data\n恢复点目录\n/tmp/hc-e2e20-qKlSaU/data/recovery\n最近成功备份\n2026-11-08T05:36:59.690950012Z\n本机恢复点\n尚无恢复点\n数据占用\n未提供\n可用空间\n未提供\n\n目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。\n\n刷新状态\n新建目标\n选择要恢复的备份\n刷新列表\n备份 d88c8f99-c765-4b2a-8288-e87c281c167d\n\nJYSZ · 2026-11-08T05:36:59.690950012Z\n\n取样时间\n2026-11-08T05:36:59.690950012Z\n创建时间\n2026-11-08T05:36:59.687288373Z\n设备\nJYSZ\n应用版本\n0.0.1\n格式版本\n1\n加密\n是\n完整性\n:verified\n大小\n71 KiB\n已选择\n删除\n备份密码\n\n这份备份已加密；密码只用于本次校验、预览与恢复，不写入本地存储。\n\n备份密码\n校验备份\n显示密码\n复制密码\n清除密码\n恢复方式\n合并选中类别\n保留本地内容；同名或同 ID 差异默认两份都保留。\n替换选中类别\n移除本地所选类别的版本，改用备份版本；未选类别不变。\n要恢复的类别\n全选\n全不选\n对话与附件\n包含消息与已打包的附件；未打包附件会单独列出。\n助手配置\n同名不同内容默认保留两份，并加备份日期后缀。\n模型服务配置\n密钥默认不包含；恢复后连接需要重新验证。\n工具与 MCP 配置\n恢复后默认停用待审，不自动获得执行权限。\n技能\n恢复后默认停用待审。\n工作区\n外部目录只恢复配置；恢复后需要重新定位，不自动授权。\n世界书\n同名不同内容默认保留两份，并加备份日期后缀。\n记忆与画像\n已归档或删除的记忆保持停用待审，不因旧备份复活。\n外观偏好\n单例偏好；替换会覆盖当前外观设置。\n任务配置\n恢复后默认暂停，下一次运行时间清空。\n校验并生成预览\n恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n备份 ID\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\nworkspace\n\n工作区 · 相同 ID、内容不同\n\n本地 ID\napp-workspace\n备份 ID\napp-workspace\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\n缺失的助手（已建立待配置占位）\ndefault\n缺失的关联\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\n需要重新定位的工作区\napp-workspace\n需要重新审核的项\ndefault\napp-workspace@backup-16f721cd14\n需要重新配置的项\nhc-session-7565072f-8406-4b13-b8c1-9fa804f21cc1\ndefault\napp-workspace\ndefault\napp-workspace@backup-16f721cd14\n恢复后的权限默认值\n自动备份\n停用\n后台运行\n停用\n浏览器登录\n需要重新登录\n模型连接\n需要重新验证\n设备控制\n停用\n外部工作区\n需要重新定位\n外部写入\n停用\n完全访问\n停用\n隐式授权\n否\n记忆\n待审核\n来自备份\n是\n计划任务\n暂停\n技能\n已安装，待审核\n系统授权\n需要重新授权\n工具\n已停用，待审核\n恢复点要求\n执行前建立\n恢复点状态\n:will-create\n保留策略\n最近 7 个成功点 + 4 周 + 3 月代表副本\n停机恢复与重连\n\n工作台恢复会停止写入、恢复备份并重启应用。连接可能短暂中断；服务器确认前不会宣布成功。\n\n我已查看预览，理解停机/合并/替换范围，并确认执行\n停机并恢复\n\n备份文件不会在未选择目标时产生外部活动；密码不会写入本地存储；恢复失败不会伪装成功。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n本地状态\n主题\n跟随系统\n字号\n100%\n草稿存储\n可用\n订阅代号\n1\nepoch\n1\nseq\n30\n已取得服务器基线，命令可以携带 command-id 提交。",
-  "transferElapsedMs": 555,
+  "deletedArea": "已删除会话\n加载已删除会话\n\n尚未加载，或没有普通已删除会话。临时会话不进入已删除区。",
+  "diagnosticsText": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n22\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n设置与数据中心\n设置\n定时任务\n语音与朗读\n独立翻译\n快捷键\n设置与数据中心\n\n用量、费用、详细日志与备份；诊断包只在本机生成。\n\n已同步命令通道可用。\n供应商与连接\n模型与角色\n助手\n数据中心\n外观\n统计与诊断\n备份与恢复\n统计与诊断\n\n用量与费用按服务返回、估算与未知分开显示；诊断包传输状态以回执为准。\n\n用量与费用\n详细日志\n诊断包\n反馈草稿\n常见问题\n今天\n最近 7 天\n最近 30 天\n全部\n自定义\n时区\n日期口径\n当前时区\n记录发生时区\n助手\n全部助手\ndefault\n模型\n全部模型\nE2E20 Mock / Mock E2E20\n服务\n全部服务\nE2E20 Mock\n模型排行数量\n刷新统计\n清除筛选\n范围：2026-10-11 至 2026-11-09\n筛选：无筛选\n时区：Asia/Shanghai\n日期口径：查询时区\n最后更新：2026-11-09T10:59:09.928195020Z\n用户发送次数\n2\n一次被接受的用户提交\n模型请求次数\n3\n一次供应商请求，包含重试\n工具调用次数\n0\n一次已执行的工具调用\n活跃天数\n1\n有发送、请求或工具调用的自然日\nToken 用量\n项目\t数量\t来源\n输入 token\t90\t服务返回\n输出 token\t36\t服务返回\n缓存命中（输入明细）（明细）\t0\t服务返回\n缓存写入（输入明细）（明细）\t0\t服务返回\n总 token\t126\t服务返回\n\n缓存命中与缓存写入只作为输入明细；在 :input-subset 口径下不会再次加进总量。\n\n请求用量来源：服务返回 3；估算 0；未提供 0。\n\n估算费用\n\n除非服务返回实收金额，这里都是估算。不同币种分开汇总，不生成统一总额。\n\n隐藏金额\n\n估算覆盖 0 / 3 个请求；部分估算 0；未估算 3；服务实收 0。\n\n没有可估算的金额。未知单价或未知用量不会显示为 0。\n\n有 3 个请求没有币种，未并入任何币种汇总。\n\n模型分布\n\n排行按使用量，不宣称“最好”或“最快”。颜色不是唯一标识，名称与数量始终可读。\n\nMock E2E20\nE2E20 Mock\n2 次请求\n未估算\n未知模型\n未知服务\n1 次请求\n未估算\n\n价格记录按服务与模型区分；修改价格默认影响未来请求，旧记录保留生成时的价格与币种。\n\n活跃热力图\n\n默认按当前设备时区划分自然日；切换时区可能改变日期归属，不修改记录原始发生时间。\n\n2026-11-09\n2 发送\n3 请求\n0 工具\n按轮次查看\n\n一次用户发送不等于一次模型调用。这里分别显示用户发送、模型请求与工具调用；重试是新请求。\n\n轮次 cmd-c833300f-78bd-4021-9fb3-b01bdda9c3f1\n发送 1 · 请求 0 · 工具 0\n2026/11/09 18:58\n轮次 call-1\n发送 0 · 请求 2 · 工具 0\n2026/11/09 18:58\n轮次 cmd-a94d41e8-6dce-4ca9-bdc2-8f56e4fa0851\n发送 1 · 请求 0 · 工具 0\n2026/11/09 18:59\n轮次 memory-suggest-83be2d23-6c12-4e88-befa-3977d2845453\n发送 0 · 请求 1 · 工具 0\n2026/11/09 18:59\n模型价格\n\n单价按每 1,000,000 tokens 计价。请填写输入、输出及已支持的缓存价格；缺失项只估算可确定部分，缓存不会默认免费。\n\n服务\n选择服务\nE2E20 Mock\n模型\n选择模型\nE2E20 Mock / Mock E2E20\n币种\n输入 / 百万 token\n输出 / 百万 token\n缓存命中 / 百万 token\n缓存写入 / 百万 token\n价格来源\n来源日期\n\n无法估算：需要输入与输出单价；缓存缺省不按免费处理。\n\n保存价格\n加密备份与恢复\n\n本地文件、WebDAV 与 S3 目标由服务器配置；界面只展示服务器实际提供的能力。\n\n已同步\n命令通道可用；点击只表示提交，回执才表示完成。\n预览已生成；发现 2 处冲突。默认两份都保留，可逐项选择后重新预览。尚未写入任何资料。\n关闭\n创建备份\n恢复与预览\n本地恢复点\n目标与状态\n\n恢复前先校验并预览。预览区分合并与替换，列出冲突、缺失关联与未打包附件；预览阶段不写入任何资料。\n\n备份目标\nWebDAV · webdav 可用\n地址：http://127.0.0.1:43967/backups /\n编辑\n删除\n已选目标\nwebdav\n备份目录\n未提供\n数据目录\n/var/tmp/hc-e2e/hc-e2e20-MdEiLN/data\n恢复点目录\n/var/tmp/hc-e2e/hc-e2e20-MdEiLN/data/recovery\n最近成功备份\n2026-11-09T10:59:11.175306472Z\n本机恢复点\n尚无恢复点\n数据占用\n未提供\n可用空间\n未提供\n\n目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。\n\n刷新状态\n新建目标\n选择要恢复的备份\n刷新列表\n备份 e488a261-c0ff-4d1e-861d-bd122705e070\n\nJYSZ · 2026-11-09T10:59:11.175306472Z\n\n取样时间\n2026-11-09T10:59:11.175306472Z\n创建时间\n2026-11-09T10:59:11.170978021Z\n设备\nJYSZ\n应用版本\n0.0.3\n格式版本\n1\n加密\n是\n完整性\n:verified\n大小\n40 KiB\n已选择\n删除\n备份密码\n\n这份备份已加密；密码只用于本次校验、预览与恢复，不写入本地存储。\n\n备份密码\n校验备份\n显示密码\n复制密码\n清除密码\n恢复方式\n合并选中类别\n保留本地内容；同名或同 ID 差异默认两份都保留。\n替换选中类别\n移除本地所选类别的版本，改用备份版本；未选类别不变。\n要恢复的类别\n全选\n全不选\n对话与附件\n包含消息与已打包的附件；未打包附件会单独列出。\n助手配置\n同名不同内容默认保留两份，并加备份日期后缀。\n模型服务配置\n密钥默认不包含；恢复后连接需要重新验证。\n工具与 MCP 配置\n恢复后默认停用待审，不自动获得执行权限。\n技能\n恢复后默认停用待审。\n工作区\n外部目录只恢复配置；恢复后需要重新定位，不自动授权。\n世界书\n同名不同内容默认保留两份，并加备份日期后缀。\n记忆与画像\n已归档或删除的记忆保持停用待审，不因旧备份复活。\n外观偏好\n单例偏好；替换会覆盖当前外观设置。\n任务配置\n恢复后默认暂停，下一次运行时间清空。\n校验并生成预览\n恢复预览\n\n合并选中类别\n\n执行替换前会自动建立本地恢复点；若无法建立，恢复不会开始。\n\n项目\t数量\n本地记录\t8\n备份记录\t8\n新增\t2\n替换\t0\n移除\t0\n跳过（相同或已导入）\t6\n冲突\t2\n过期删除项跳过\t0\n记忆待审\t0\n合并冲突\n\n同名不同内容的助手与世界书默认保留两份并加备份日期后缀。逐项选择后需要重新预览。\n\nNew session\n\n对话与附件 · 相同 ID、内容不同\n\n本地 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n备份 ID\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\nworkspace\n\n工作区 · 相同 ID、内容不同\n\n本地 ID\napp-workspace\n备份 ID\napp-workspace\n当前选择\n两份都保留（默认）\n保留本地版本\n使用备份版本\n两份都保留（默认）\n缺失的助手（已建立待配置占位）\ndefault\n缺失的关联\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\n需要重新定位的工作区\napp-workspace\n需要重新审核的项\ndefault\napp-workspace@backup-734c4dd67f\n需要重新配置的项\nhc-session-10879b7b-71c2-40ae-87c2-654001bda063\ndefault\napp-workspace\ndefault\napp-workspace@backup-734c4dd67f\n恢复后的权限默认值\n自动备份\n停用\n后台运行\n停用\n浏览器登录\n需要重新登录\n模型连接\n需要重新验证\n外部工作区\n需要重新定位\n外部写入\n停用\n完全访问\n停用\n隐式授权\n否\n记忆\n待审核\n来自备份\n是\n计划任务\n暂停\n技能\n已安装，待审核\n系统授权\n需要重新授权\n工具\n已停用，待审核\n恢复点要求\n执行前建立\n恢复点状态\n:will-create\n保留策略\n最近 7 个成功点 + 4 周 + 3 月代表副本\n停机恢复与重连\n\n工作台恢复会停止写入、恢复备份并重启应用。连接可能短暂中断；服务器确认前不会宣布成功。\n\n我已查看预览，理解停机/合并/替换范围，并确认执行\n\n需要勾选确认后再执行恢复。\n\n停机并恢复\n\n备份文件不会在未选择目标时产生外部活动；密码不会写入本地存储；恢复失败不会伪装成功。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n本地状态\n主题\n跟随系统\n字号\n100%\n草稿存储\n可用\n订阅代号\n1\nepoch\n1\nseq\n22\n已取得服务器基线，命令可以携带 command-id 提交。",
+  "transferElapsedMs": 185,
   "externalActionCounts": {
-    "chatBefore": 10,
-    "chatAfter": 10,
+    "chatBefore": 4,
+    "chatAfter": 4,
     "suggestBefore": 1,
     "suggestAfter": 1,
     "transcriptions": 1,
@@ -271,97 +275,49 @@
     "searchQueriesAfter": 2
   },
   "sessionRowsAfter": [
-    "临时会话\n2026/11/08 13:39 · Mock E2E20",
-    "New session\n2026/11/08 13:32 · Mock E2E20"
+    "临时会话\n2026/11/09 18:59 · Mock E2E20",
+    "New session\n2026/11/09 18:59 · Mock E2E20"
   ],
   "mockFinal": {
     "chat": [
       {
-        "at": "2026-11-08T05:30:49.389Z",
+        "at": "2026-11-09T10:58:56.118Z",
         "model": "mock-e2e20",
         "stream": true,
         "messageCount": 5,
         "isSuggest": false,
-        "lastUser": "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794115847055"
+        "lastUser": "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794221932505"
       },
       {
-        "at": "2026-11-08T05:30:49.483Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 6,
-        "isSuggest": false,
-        "lastUser": "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794115847055"
-      },
-      {
-        "at": "2026-11-08T05:30:49.573Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 7,
-        "isSuggest": false,
-        "lastUser": "E2E20 用户探针-合成敏感标记-请勿外泄 E2E20-1794115847055"
-      },
-      {
-        "at": "2026-11-08T05:32:52.061Z",
+        "at": "2026-11-09T10:59:03.597Z",
         "model": "mock-e2e20",
         "stream": true,
         "messageCount": 4,
         "isSuggest": false,
-        "lastUser": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794115847055"
+        "lastUser": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794221932505"
       },
       {
-        "at": "2026-11-08T05:32:52.101Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 6,
-        "isSuggest": false,
-        "lastUser": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794115847055"
-      },
-      {
-        "at": "2026-11-08T05:32:52.173Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 7,
-        "isSuggest": false,
-        "lastUser": "E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794115847055"
-      },
-      {
-        "at": "2026-11-08T05:36:53.118Z",
+        "at": "2026-11-09T10:59:09.924Z",
         "model": "mock-e2e20",
         "stream": true,
         "messageCount": 2,
         "isSuggest": true,
-        "lastUser": "[user-cmd-0aade024-f036-4e79-9498-242f503583bb] user: E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794115847055\n\n[assistant-call-1-attempt-c27b5c92-b62e-45bc-8ee4-6d1555b0b46b--2] assistant: E2E20 助手回复-合成敏感标记（第 4 次模型请求）"
+        "lastUser": "[user-cmd-a94d41e8-6dce-4ca9-bdc2-8f56e4fa0851] user: E2E20 记忆候选-合成敏感标记-永远记住榴莲 E2E20-1794221932505\n\n[assistant-call-1-attempt-3c0927fc-8885-4f07-9df1-e37815ef1d84--2] assistant: E2E20 助手回复-合成敏感标记（第 2 次模型请求）"
       },
       {
-        "at": "2026-11-08T05:37:03.696Z",
+        "at": "2026-11-09T10:59:14.176Z",
         "model": "mock-e2e20",
         "stream": true,
         "messageCount": 5,
         "isSuggest": false,
-        "lastUser": "E2E20 转存探针-合成敏感标记-转存后保留 E2E20-1794115847055-t"
-      },
-      {
-        "at": "2026-11-08T05:37:03.744Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 6,
-        "isSuggest": false,
-        "lastUser": "E2E20 转存探针-合成敏感标记-转存后保留 E2E20-1794115847055-t"
-      },
-      {
-        "at": "2026-11-08T05:37:03.813Z",
-        "model": "mock-e2e20",
-        "stream": true,
-        "messageCount": 7,
-        "isSuggest": false,
-        "lastUser": "E2E20 转存探针-合成敏感标记-转存后保留 E2E20-1794115847055-t"
+        "lastUser": "E2E20 转存探针-合成敏感标记-转存后保留 E2E20-1794221932505-t"
       }
     ],
     "transcriptions": [
       {
-        "at": "2026-11-08T05:32:50.207Z",
+        "at": "2026-11-09T10:59:02.264Z",
         "bytes": 2041,
-        "contentType": "multipart/form-data; boundary=hc-06c6f165-32d9-40ad-96ca-6e0fde0aec1e",
+        "contentType": "multipart/form-data; boundary=hc-e8948c2b-3a73-4f0f-8062-d4295e5e62e2",
         "serviceId": null
       }
     ],
@@ -369,5 +325,5 @@
     "memorySuggestCalls": 1
   },
   "ok": true,
-  "finishedAt": "2026-11-08T05:39:06.049Z"
+  "finishedAt": "2026-11-09T10:59:20.382Z"
 }

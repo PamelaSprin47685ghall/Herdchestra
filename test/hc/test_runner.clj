@@ -62,8 +62,17 @@
 (defn test
   "Run the test suite, then release JVM-global pools so the process exits.
 
-  Returns the Cognitect runner result map unchanged; failures remain the
-  caller's exit-code decision."
+  This function does not turn a failure into a return value.  The verdict
+  belongs to `cognitect.test-runner.api/test`: that function throws
+  `ex-info \"Test failures or errors occurred.\"` as soon as the run reports
+  any failure or error, so `-X:test` exits non-zero.  A namespace that
+  throws while loading fails earlier, inside the runner's
+  `(dorun (map require nses))` step, before `clojure.test/run-tests` ever
+  runs; that exception reaches us the same way.
+
+  The `finally` block only performs teardown (`report-leaked-stores!`,
+  `shutdown-datalevin!`, `shutdown-agents`).  It does not swallow anything:
+  when it finishes, the original exception still propagates to the caller."
   [opts]
   (try
     (runner/test opts)

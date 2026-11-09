@@ -33,14 +33,20 @@
     entry))
 
 (defn- model-message
+  "Project ENTRY to one model message, or nil for a stale summary.
+
+  A stale compression summary must not reach the model.  The outbound
+  projection normally drops stale compressions already; this guard covers a
+  frozen or caller-built snapshot that still carries the marked entry."
   [entry]
-  (if (= :context-summary (:kind entry))
-    {:role :system :text (:content entry)}
-    (cond-> {:role (:role entry) :text (:content entry)}
-      (:message-id entry) (assoc :message-id (:message-id entry))
-      (seq (:attachments entry)) (assoc :attachments (vec (:attachments entry)))
-      (seq (:citations entry)) (assoc :citations (vec (:citations entry)))
-      (seq (:quotes entry)) (assoc :quotes (vec (:quotes entry))))))
+  (when-not (:stale? entry)
+    (if (= :context-summary (:kind entry))
+      {:role :system :text (:content entry)}
+      (cond-> {:role (:role entry) :text (:content entry)}
+        (:message-id entry) (assoc :message-id (:message-id entry))
+        (seq (:attachments entry)) (assoc :attachments (vec (:attachments entry)))
+        (seq (:citations entry)) (assoc :citations (vec (:citations entry)))
+        (seq (:quotes entry)) (assoc :quotes (vec (:quotes entry)))))))
 
 (defn- frozen-entries
   "Return the model entries for RUN, invalidating a stale frozen projection.
@@ -77,17 +83,19 @@
                   entries)]
     (if stale?
       (filterv (fn [entry]
-                 (or (= :context-summary (:kind entry))
-                     (contains? ids (:message-id entry))))
+                 (and (not (:stale? entry))
+                      (or (= :context-summary (:kind entry))
+                          (contains? ids (:message-id entry)))))
                entries)
-      entries)))
+      (filterv #(not (:stale? %)) entries))))
 
 (defn- model-messages
   [session run]
   (let [version-ids (get-in run [:input-snapshot :context :version-ids])]
     (->> (frozen-entries session run)
          (map #(version-entry session % version-ids))
-         (mapv model-message))))
+         (keep model-message)
+         vec)))
 
 (defn start
   "Claim the session call for a `:run-started` effect.

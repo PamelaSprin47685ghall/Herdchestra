@@ -106,8 +106,23 @@ relay builder:
 - for an empty ledger, states that the current milestone still needs review,
   successor acceptance, or handoff.
 
-The policy does not own this text, so the relay and compose layers cannot
-drift.
+For a ledger that fits both byte caps, the policy returns that text
+verbatim, so the relay and compose layers cannot drift. Above a cap, the
+policy keeps the relay directive and rebuilds only the item list:
+
+- each rendered ledger item is capped at 2048 UTF-8 bytes (code-point safe;
+  no split surrogate pair). A capped item ends with
+  `…[+N bytes] (truncated)`, where N is the exact number of bytes removed
+  from the original rendered item;
+- the whole message is capped at 16384 UTF-8 bytes. The §2.5 directive and
+  any omission footer occupy the budget first. When items must be omitted,
+  the lexicographically last items are omitted first and the message ends
+  with `(另有 M 项未列出，见 review 台账)`, where M is exact;
+- an empty ledger keeps the relay's single-sentence unfinished-milestone
+  text: no empty item list and no omission footer;
+- `worker-message` is capped at the same 16384 bytes; its Phase B directive
+  is always retained. A capped worker head ends with
+  `…[+N bytes] (truncated)` before the directive.
 
 ## Owner integration
 
@@ -257,18 +272,22 @@ prefers `wake-actors` for Phase B may use the policy message there and keep
 - A Phase B worker yields a Nudge exactly when the tenure is active in
   Phase B, the board has global progressable work, no attempt is in flight,
   and the tenure is not awaiting a human answer.
-- Central Nudge text is exactly `hc.core.relay/central-nudge-message` output,
-  so it lists every open ledger entry and includes the §2.5 hard directive.
-  Worker text never mentions the review ledger.
+- A central Nudge whose ledger is under both byte caps is exactly
+  `hc.core.relay/central-nudge-message` output, so it lists every open
+  ledger entry and includes the §2.5 hard directive. Above a cap, the
+  policy keeps that directive and adds explicit item/omission markers; it
+  never drops the directive. Worker text never mentions the review ledger.
 - The same observation yields the same decision and the same `:prepare` plan.
 
 ## Tests
 
 `test/hc/compose/nudge/policy_test.clj` covers role exits, ledger isolation,
 worker/holder responsibility, every suppression reason, the pure transition
-plan, tenure ambiguity, and `clojure.test.check` properties for the
-invariants above. Central text tests compare against
-`hc.core.relay/central-nudge-message` instead of duplicating its wording.
+plan, tenure ambiguity, the 2048/16384 byte caps, exact item/omission
+markers, surrogate-pair safety, and directive retention, plus
+`clojure.test.check` properties for the invariants above. Central text tests
+compare against `hc.core.relay/central-nudge-message` for ledgers under both
+caps instead of duplicating its wording.
 
 `test/hc/compose/nudge/owner_integration_test.clj` drives a real Owner
 runtime through committed `:turn/ended` records:
@@ -278,7 +297,9 @@ runtime through committed `:turn/ended` records:
 - Reviewer emits a centralized Nudge before swarm and is suppressed during
   swarm;
 - a worker with a claimed root task emits a Phase B Nudge whose recorded
-  responsibility contains that task.
+  responsibility contains that task;
+- a Plan ledger with one 10 KB value emits a capped Nudge that keeps the
+  §2.5 directive.
 
 ```sh
 clojure -X:test:compose :nses '[hc.compose.nudge.policy-test hc.compose.nudge.owner-integration-test]'

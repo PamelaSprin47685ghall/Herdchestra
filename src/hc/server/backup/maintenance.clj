@@ -33,7 +33,10 @@
   (cond-> {:code code :message message}
     data (assoc :details data)
     t (assoc :cause (or (ex-message t) (str t))
-             :cause-code (err/code t))))
+             :cause-code (err/code t)
+             :cause-details
+             (not-empty (dissoc (ex-data t)
+                                :error :code :storage/expected?)))))
 
 (defn- stop-confirmed?
   [result]

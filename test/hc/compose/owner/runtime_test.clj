@@ -3,12 +3,16 @@
             [hc.compose.cancel :as cancel]
             [hc.compose.guards.scheduler :as scheduler]
             [hc.compose.owner :as owner]
+            [hc.compose.owner.board :as owner-board]
             [hc.compose.owner.commands :as commands]
             [hc.compose.owner.dispatch :as dispatch]
             [hc.compose.owner.guards :as guards]
             [hc.compose.owner.runtime :as runtime]
             [hc.compose.owner.state :as state]
-            [hc.compose.owner.store :as store]))
+            [hc.compose.owner.store :as store]
+            [hc.core.swarm-stm.board :as swarm-board]
+            [hc.core.swarm-stm.kernel :as swarm-kernel]
+            [hc.core.swarm-stm-test-util :as tu]))
 
 (defn- wait-for
   [pred timeout-ms]
@@ -1461,3 +1465,89 @@
                  (get-in call [:context :attempt-id]))
               "the snapshot is bound to the Owner attempt id, not the gateway handle")
           (is (= (:attempt-id call) (:context-attempt-id call))))))))
+
+(deftest t09-cancel-intent-keeps-a-running-shell-as-responsibility
+  ;; T09: A runs a managed Shell for task X.  The user cancels X while the
+  ;; session is still inside W.  The board records the cancellation intent
+  ;; (a comment), refuses to remove X while the action is live, keeps the
+  ;; action in R(a), refuses ordinary commits on X, and retires A only after
+  ;; the Shell publishes its terminal and X is settled.
+  (let [k (swarm-kernel/create)
+        a (tu/spawn! k :a)
+        x (:task-id (tu/create-task! k a {:goal "business task X"
+                                          :remaining-work "run the managed shell"
+                                          :done-when "the shell reports"
+                                          :needs-token true}))
+        _ (tu/exec-ok! k {:op :take-or-die :actor-id a
+                          :confirm :i-hereby-confirm-i-die-without-regret})
+        claim (tu/claim! k a x)
+        handle {:execute-board! (fn
+                                  ([command] (swarm-kernel/execute! k command))
+                                  ([command _timeout-ms _opts]
+                                   (swarm-kernel/execute! k command)))
+                :board-snapshot #(swarm-kernel/snapshot k)}
+        port (owner-board/make-port handle)
+        shell (owner-board/shell-port port)
+        term-id (get-in (swarm-kernel/snapshot k) [:token-slot :term-id])
+        request {:actor-id a :task-id x :claim-id (:claim-id claim)
+                 :token-term term-id :request-id "t09-shell"}
+        eligibility ((:check-eligibility! shell) request)
+        permit ((:begin-run! shell)
+                (assoc request :expected-eligibility eligibility)
+                {:command "sleep 60"})
+        action-id (:action-id permit)]
+    (is (= :running (:phase permit)))
+    ;; The user records the cancellation intent while the session is live.
+    (let [intent (tu/exec-ok! k {:op :comment :actor-id a :task-id x
+                                 :text "user cancelled X"})]
+      (is (= 1 (:comment-count intent)))
+      (is (= ["user cancelled X"]
+             (mapv :text (get-in (swarm-kernel/snapshot k) [:comments x]))))
+      (is (some #(= :comment-added (:type %))
+                (:events (swarm-kernel/snapshot k)))))
+    ;; The kernel must not pretend that X is cancelled while it runs.
+    (let [before (swarm-kernel/snapshot k)
+          refused (tu/exec! k {:op :cancel :actor-id a :task-id x
+                               :reason "user cancelled"})]
+      (is (not (:ok? refused)))
+      (is (= :ACTION_IN_FLIGHT (:error refused)))
+      (is (some? (swarm-kernel/task k x)))
+      (is (= before (swarm-kernel/snapshot k))
+          "a refused cancellation must not mutate the board"))
+    ;; The running session remains A's open responsibility.
+    (let [snapshot (swarm-kernel/snapshot k)]
+      (is (contains? (swarm-board/responsibility snapshot a) action-id))
+      (is (contains? (swarm-board/responsibility snapshot a) x)))
+    ;; W is not open to ordinary commits on X.
+    (doseq [command [{:op :finish :actor-id a :task-id x
+                      :claim-id (:claim-id claim)
+                      :result-summary "premature"}
+                     {:op :release :actor-id a :task-id x
+                      :claim-id (:claim-id claim)}
+                     {:op :begin-action :actor-id a :task-id x
+                      :claim-id (:claim-id claim) :kind :shell}]]
+      (is (= :ACTION_IN_FLIGHT (:error (tu/exec! k command)))
+          (pr-str command)))
+    ;; The holder does not die while the action or X remains open.
+    (is (= :alive (get-in (swarm-kernel/snapshot k)
+                          [:actors a :life-state])))
+    ;; The session ends.  The action leaves R(a); X does not.
+    (is (:ok? ((:publish-finished! shell) permit {:exit 0 :stdout ""})))
+    (let [snapshot (swarm-kernel/snapshot k)]
+      (is (= :finished (get-in snapshot [:actions action-id :phase])))
+      (is (not (contains? (swarm-board/responsibility snapshot a) action-id)))
+      (is (contains? (swarm-board/responsibility snapshot a) x)))
+    ;; Only after the business task is settled may A retire.
+    (is (= :alive (get-in (swarm-kernel/snapshot k)
+                          [:actors a :life-state])))
+    (let [settled (tu/exec-ok! k {:op :cancel :actor-id a :task-id x
+                                  :reason "user cancelled"})]
+      (is (true? (:retired? settled)))
+      (is (nil? (swarm-kernel/task k x)))
+      (is (some #(= :task-cancelled (:type %))
+                (:events (swarm-kernel/snapshot k)))))
+    (let [snapshot (swarm-kernel/snapshot k)]
+      (is (= :dead (get-in snapshot [:actors a :life-state])))
+      (is (= :free (get-in snapshot [:token-slot :state])))
+      (is (empty? (swarm-board/responsibility snapshot a))))
+    (tu/assert-invariants! k)))

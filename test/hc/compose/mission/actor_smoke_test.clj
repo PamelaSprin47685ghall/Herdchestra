@@ -10,7 +10,8 @@
             [clojure.test :refer [deftest is testing]]
             [hc.compose.mission :as mission]
             [hc.compose.mission.actors :as actors]
-            [hc.compose.mission.support :as support]))
+            [hc.compose.mission.support :as support]
+            [hc.core.ufss :as ufss]))
 
 (defn- request-text
   [request]
@@ -214,6 +215,30 @@
         (is (str/includes?
              (request-text (get-in reused [:effects 0 :request]))
              "Inspect more"))))))
+
+(deftest board-work-prompt-carries-one-edn-ufss-board-block
+  (let [h (support/host)
+        _ (support/drive-plan-to-pending! h)
+        _ (support/start-execution! h)
+        execution-id (support/sole-execution-id h)
+        goal "quote \" and\nsecond line"
+        _ (support/start-swarm! h execution-id [{:key "slice" :value goal}])
+        prompt (actors/board-work-prompt (mission/snapshot h)
+                                         execution-id :worker-1)
+        text (:text (last prompt))
+        block (second
+               (re-find
+                #"(?s)\nPublic board \(EDN\+UFSS\):\n(.*)\nDecide your next legal action from this board\."
+                text))]
+    (is (some? block) "the prompt carries a structured board block")
+    (when block
+      (let [value (ufss/read-str block)]
+        (is (= execution-id (:tenure-id value)))
+        (is (= :worker-1 (:agent-id value)))
+        (is (= [goal] (mapv :goal (:ready-tasks value))))))
+    (is (not (str/includes? text "\\\""))
+        "quotes and newlines use UFSS fences, not backslash escapes")
+    (is (str/includes? text (str execution-id)))))
 
 (deftest holder-conflict-leaves-one-holder-and-rebirths-the-loser
   (let [h (support/host)

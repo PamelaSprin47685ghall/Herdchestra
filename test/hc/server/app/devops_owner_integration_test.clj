@@ -190,6 +190,9 @@
         parameters (:parameters spec)]
     (is (= #{"verbose-intent" "scope"} (set (:required parameters)))
         "the provider schema must require :scope like clj-plan")
+    (is (= "Flat Scope annotation for this turn; see # Scope in the system prompt."
+           (get-in parameters [:properties :scope :description]))
+        "the scope rules live once in the system prompt")
     (is (= ["kind"] (get-in parameters [:properties :scope :required])))
     (is (= ["reset-scope" "keep-last" "remove-last" "me-too"]
            (get-in parameters [:properties :scope :properties :kind :enum])))))

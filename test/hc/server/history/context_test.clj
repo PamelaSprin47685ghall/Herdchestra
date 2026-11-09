@@ -5,7 +5,13 @@
   visible history.  Memory bodies stay on the server; a missing estimate is
   `:unknown`, never zero."
   (:require [clojure.test :refer [deftest is testing]]
-            [hc.server.history.context :as context]))
+            [hc.compose.owner.state :as owner-state]
+            [hc.core.scope.ledger :as scope-ledger]
+            [hc.server.history :as history]
+            [hc.server.history.context :as context]
+            [hc.server.history.message :as history-message]
+            [hc.server.sessions :as sessions]
+            [hc.server.sessions.ids :as ids]))
 
 (defn- message
   ([id role text] (message id role text []))
@@ -344,3 +350,150 @@
            (get-in out [:instruction-cards 0 :body-preview])))
     (is (= "Investigate repository facts read-only."
            (get-in out [:tools 0 :description])))))
+
+(defn- history-base-session
+  []
+  (:session (sessions/new-session
+             {:session-id "s1"
+              :owner-id "o1"
+              :now 1000
+              :id-source (ids/counter-source {:prefix "t"})})))
+
+(defn- add-message
+  [session message-id role text]
+  (let [result (history-message/new-message message-id role text {:now 1000})]
+    (is (:ok? result))
+    (-> session
+        (assoc-in [:messages message-id] (:message result))
+        (update :message-order (fnil conj []) message-id))))
+
+(defn- command
+  [session kind payload now]
+  (let [result (history/apply-command session (assoc payload :kind kind)
+                                      {:now now})]
+    (is (:ok? result) (pr-str (:error result)))
+    (:session result)))
+
+(defn- applied-session
+  []
+  (-> (history-base-session)
+      (add-message "m1" :user "one")
+      (add-message "m2" :assistant "one answer")
+      (add-message "m3" :user "two")
+      (add-message "m4" :assistant "two answer")
+      (command :history/prepare-compression
+               {:compression-id "c1"
+                :message-ids ["m1" "m2"]
+                :summary "summary of one"} 2000)
+      (command :history/apply-compression
+               {:compression-id "c1"} 3000)))
+
+(deftest stale-summary-is-not-applied-to-the-outbound-projection
+  (let [session (-> (applied-session)
+                    (command :history/edit-message
+                             {:message-id "m1" :content "one changed"} 4000))
+        compression (get-in session [:context :compressions "c1"])
+        out (context/outbound-context session)]
+    (is (true? (context/compression-stale? session compression)))
+    (testing "the sources return and the stale summary is dropped"
+      (is (= ["m1" "m2" "m3" "m4"] (:message-ids out)))
+      (is (= [] (:summary-ids out)))
+      (is (= ["m1" "m2" "m3" "m4"]
+             (mapv :message-id (:messages out))))
+      (is (not-any? #(= :context-summary (:kind %)) (:messages out)))
+      (is (= "one changed" (get-in out [:messages 0 :content])))
+      (is (empty? (filter #(= :replaced-by-context-summary (:reason %))
+                          (:excluded out)))))
+    (testing "the reading projection keeps the full visible history"
+      (is (= ["m1" "m2" "m3" "m4"]
+             (mapv :message-id (:messages (context/reading-context session))))))
+    (testing "the model receives the edited source, not the stale summary"
+      (let [model (context/model-messages out)]
+        (is (= ["m1" "m2" "m3" "m4"] (mapv :message-id model)))
+        (is (= "one changed" (get-in model [0 :text])))
+        (is (not-any? #(= :system (:role %)) model))))))
+
+(deftest a-current-compression-still-replaces-its-range
+  (let [session (applied-session)
+        out (context/outbound-context session)
+        compression (get-in session [:context :compressions "c1"])]
+    (is (false? (context/compression-stale? session compression)))
+    (is (= ["m3" "m4"] (:message-ids out)))
+    (is (= ["c1"] (:summary-ids out)))
+    (is (= [:context-summary :user :assistant]
+           (mapv #(or (:kind %) (:role %)) (:messages out))))
+    (is (= "summary of one" (get-in (context/model-messages out)
+                                    [0 :text])))))
+
+(deftest model-messages-drops-a-marked-stale-entry
+  (is (= [{:role :user :text "kept"}]
+         (context/model-messages
+          {:messages [{:kind :context-summary
+                       :role :system
+                       :content "stale summary"
+                       :stale? true}
+                      {:role :user :content "kept"}]}))
+      "a stale summary entry never becomes a model message"))
+
+(defn- owner-state-with-compression
+  [compression conversation]
+  {:scope {:book (scope-ledger/new-book)}
+   :session {:session-id "s1"
+             :context {:compressions {(:compression-id compression)
+                                      compression}
+                       :compression-order [(:compression-id compression)]}}
+   :conversation conversation})
+
+(deftest owner-projection-never-substitutes-a-stale-compression
+  (let [conversation [{:role :user :text "one" :message-id "m1"}
+                      {:role :assistant :text "one answer" :message-id "m2"}
+                      {:role :user :text "two" :message-id "m3"}]
+        stale {:compression-id "c1"
+               :state :applied
+               :stale? true
+               :message-ids ["m1" "m2"]
+               :summary "stale summary"}
+        current (assoc stale :stale? false :summary "current summary")]
+    (testing "a stale applied compression leaves its sources in place"
+      (let [result (owner-state/project-conversation
+                    (owner-state-with-compression stale conversation)
+                    conversation)]
+        (is (:ok? result) (pr-str (:error result)))
+        (is (= ["one" "one answer" "two"]
+               (mapv :text (:messages result))))
+        (is (not-any? #(= "stale summary" (:text %)) (:messages result)))))
+    (testing "a current applied compression still substitutes"
+      (let [result (owner-state/project-conversation
+                    (owner-state-with-compression current conversation)
+                    conversation)]
+        (is (:ok? result) (pr-str (:error result)))
+        (is (= ["current summary" "two"]
+               (mapv :text (:messages result))))))))
+
+(deftest annotate-compressions-writes-the-owner-visible-marker
+  (let [fresh (context/annotate-compressions (applied-session))
+        session (-> (applied-session)
+                    (command :history/edit-message
+                             {:message-id "m1" :content "one changed"} 4000))
+        annotated (context/annotate-compressions session)
+        annotated-compression (get-in annotated
+                                      [:context :compressions "c1"])]
+    (is (false? (get-in fresh [:context :compressions "c1" :stale?]))
+        "a current compression is explicitly marked current")
+    (is (not (contains? (get-in session [:context :compressions "c1"])
+                        :stale?))
+        "the stored session is not mutated")
+    (is (true? (:stale? annotated-compression)))
+    (is (= :applied (:state annotated-compression)))
+    (testing "the annotated session makes the Owner projection drop the summary"
+      (let [conversation [{:role :user :text "one changed" :message-id "m1"}
+                          {:role :assistant :text "one answer" :message-id "m2"}]
+            result (owner-state/project-conversation
+                    {:scope {:book (scope-ledger/new-book)}
+                     :session annotated
+                     :conversation conversation}
+                    conversation)]
+        (is (:ok? result) (pr-str (:error result)))
+        (is (= ["one changed" "one answer"]
+               (mapv :text (:messages result))))
+        (is (not-any? #(= "summary of one" (:text %)) (:messages result)))))))

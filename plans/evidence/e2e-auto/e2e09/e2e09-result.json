@@ -2,14 +2,15 @@
   "test": "E2E 09",
   "mode": "automated-server-side",
   "mock": false,
-  "startedAt": "2026-11-06T05:15:33.439Z",
-  "appUrl": "http://127.0.0.1:36477",
-  "workspaceRoot": "/tmp/hc-e2e-WhiB5q/workspace",
+  "startedAt": "2026-11-09T10:59:19.498Z",
+  "appUrl": "http://127.0.0.1:32859",
+  "workspaceRoot": "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-06T05:02:42.384Z",
-    "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "checks": {
     "driverOk": true,
     "conflictStatus": true,
@@ -29,7 +30,7 @@
   },
   "driverExitCode": 0,
   "driverSignal": null,
-  "driverMs": 1327,
+  "driverMs": 2402,
   "driverLog": "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e09/e2e09-driver.log",
   "driver": {
     "retry": {
@@ -49,14 +50,14 @@
           "read-set-count": 2,
           "check-count": 2,
           "changed-paths": [
-            "/tmp/hc-e2e-WhiB5q/workspace/report.csv"
+            "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace/report.csv"
           ]
         },
         "op-count": 1,
         "applied-ops": [
           {
             "op": "write",
-            "path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+            "path": "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace/report.csv",
             "create?": false,
             "size": 20
           }
@@ -67,8 +68,8 @@
       }
     },
     "original-stamp": {
-      "mtime-sec": 1793942134,
-      "mtime-nsec": 732467645,
+      "mtime-sec": 1794221961,
+      "mtime-nsec": 819908372,
       "size": 20
     },
     "after-conflict": "name,value\n原稿,1\n外部编辑,42\n",
@@ -78,10 +79,10 @@
       "request-id": "e2e09-retry",
       "status": "finished",
       "path": "report.csv",
-      "real-path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+      "real-path": "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace/report.csv",
       "stamp": {
-        "mtime-sec": 1793942134,
-        "mtime-nsec": 752467600,
+        "mtime-sec": 1794221961,
+        "mtime-nsec": 872908546,
         "size": 20
       }
     },
@@ -100,22 +101,22 @@
       "conflict-code": true
     },
     "external-stamp": {
-      "mtime-sec": 1793942134,
-      "mtime-nsec": 736467636,
+      "mtime-sec": 1794221961,
+      "mtime-nsec": 827908399,
       "size": 36
     },
-    "root": "/tmp/hc-e2e-WhiB5q/workspace",
+    "root": "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace",
     "ok": true,
     "expected": [
       {
-        "mtime-sec": 1793942134,
-        "mtime-nsec": 736467636,
-        "size": 36
+        "mtime-sec": 1794221961,
+        "mtime-nsec": 819908372,
+        "size": 20
       },
       {
-        "mtime-sec": 1793942134,
-        "mtime-nsec": 732467645,
-        "size": 20
+        "mtime-sec": 1794221961,
+        "mtime-nsec": 827908399,
+        "size": 36
       }
     ],
     "reread": "name,value\n原稿,1\n外部编辑,42\n",
@@ -141,7 +142,7 @@
           "read-set-count": 2,
           "check-count": 2,
           "changed-paths": [
-            "/tmp/hc-e2e-WhiB5q/workspace/report.csv"
+            "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace/report.csv"
           ]
         },
         "op-count": 1,
@@ -149,13 +150,13 @@
       }
     },
     "final-stamp": {
-      "mtime-sec": 1793942134,
-      "mtime-nsec": 752467600,
+      "mtime-sec": 1794221961,
+      "mtime-nsec": 872908546,
       "size": 20
     },
     "actual": {
-      "mtime-sec": 1793942134,
-      "mtime-nsec": 736467636,
+      "mtime-sec": 1794221961,
+      "mtime-nsec": 827908399,
       "size": 36
     },
     "conflict": {
@@ -163,22 +164,22 @@
       "result": {
         "status": "FILE_CONFLICT",
         "code": "stamp-mismatch",
-        "path": "/tmp/hc-e2e-WhiB5q/workspace/report.csv",
+        "path": "/var/tmp/hc-e2e/hc-e2e-9MWJ8g/workspace/report.csv",
         "expected": [
           {
-            "mtime-sec": 1793942134,
-            "mtime-nsec": 736467636,
-            "size": 36
+            "mtime-sec": 1794221961,
+            "mtime-nsec": 819908372,
+            "size": 20
           },
           {
-            "mtime-sec": 1793942134,
-            "mtime-nsec": 732467645,
-            "size": 20
+            "mtime-sec": 1794221961,
+            "mtime-nsec": 827908399,
+            "size": 36
           }
         ],
         "actual": {
-          "mtime-sec": 1793942134,
-          "mtime-nsec": 736467636,
+          "mtime-sec": 1794221961,
+          "mtime-nsec": 827908399,
           "size": 36
         },
         "message": "File stamp no longer matches the read basis",
@@ -191,13 +192,13 @@
   },
   "serverReadStatus": 200,
   "serverStatStatus": 200,
-  "serverRead": "{:ok? true, :path \"report.csv\", :text \"name,value\\nworker,7\\n\", :stamp {:mtime-sec 1793942134, :mtime-nsec 752467600, :size 20}, :size 20, :kind :file, :changed-during-read? false}",
-  "serverStat": "{:ok? true, :path \"report.csv\", :stamp {:mtime-sec 1793942134, :mtime-nsec 752467600, :size 20}, :size 20, :symlink? false, :exists? true, :kind :file, :mtime-nsec 752467600, :mtime-sec 1793942134}",
+  "serverRead": "{:ok? true, :path \"report.csv\", :text \"name,value\\nworker,7\\n\", :stamp {:mtime-sec 1794221961, :mtime-nsec 872908546, :size 20}, :size 20, :kind :file, :changed-during-read? false}",
+  "serverStat": "{:ok? true, :path \"report.csv\", :stamp {:mtime-sec 1794221961, :mtime-nsec 872908546, :size 20}, :size 20, :symlink? false, :exists? true, :kind :file, :mtime-nsec 872908546, :mtime-sec 1794221961}",
   "serverStamp": {
-    "mtime-sec": 1793942134,
-    "mtime-nsec": 752467600,
+    "mtime-sec": 1794221961,
+    "mtime-nsec": 872908546,
     "size": 20
   },
   "ok": true,
-  "finishedAt": "2026-11-06T05:15:34.775Z"
+  "finishedAt": "2026-11-09T10:59:21.945Z"
 }

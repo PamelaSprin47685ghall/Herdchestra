@@ -113,6 +113,53 @@
   [root props content]
   (act! #(render! root (with-content props content))))
 
+(defn- mount-with-send-result!
+  [send-result]
+  (let [base (base-props "回复")
+        props (-> base
+                  (assoc :stream (stream/initial)
+                         :draft (assoc draft/empty-draft :text "待发送文本")
+                         :callbacks (assoc (:callbacks base)
+                                           :send! (fn [_] send-result)))
+                  (assoc-in [:session :model] {:id "m1"})
+                  (assoc-in [:session :status] :active))
+        container (.createElement js/document "div")
+        _ (.appendChild js/document.body container)
+        root (rdc/createRoot container)]
+    (act! #(render! root props))
+    {:container container :root root}))
+
+(defn- composer-node
+  [container]
+  (.querySelector container "textarea[aria-label='消息输入']"))
+
+(defn- click-send!
+  [container]
+  (let [button (.querySelector container "button[aria-label='发送消息']")]
+    (is (some? button) "send button exists")
+    (act! #(.click button))))
+
+(deftest accepted-send-clears-the-visible-composer
+  (let [{:keys [container root]} (mount-with-send-result! {:ok? true})]
+    (try
+      (let [node (composer-node container)]
+        (is (= "待发送文本" (.-value node)))
+        (click-send! container)
+        (is (= "" (.-value node))
+            "an accepted send clears the visible textarea immediately"))
+      (finally
+        (unmount! {:container container :root root})))))
+
+(deftest blocked-send-keeps-the-visible-composer
+  (let [{:keys [container root]} (mount-with-send-result! {:ok? false})]
+    (try
+      (let [node (composer-node container)]
+        (click-send! container)
+        (is (= "待发送文本" (.-value node))
+            "a blocked or transport-failed send preserves the operator text"))
+      (finally
+        (unmount! {:container container :root root})))))
+
 (deftest streamed-growth-keeps-the-readers-selection
   (clear-selection!)
   (let [{:keys [container root]} (mount! "第一段：可选择的文字。\n\n第二段：继续阅读。")
@@ -370,33 +417,117 @@
   (when (pos? (+ (:fail m) (:error m)))
     (set! (.-exitCode js/process) 1)))
 
+(defn- message-list-props
+  [session-id message-count]
+  (-> (base-props (str "session " session-id))
+      (assoc :session {:id session-id :title session-id :status :running})
+      (assoc :messages
+             (mapv (fn [index]
+                     {:message/id (str "m" index)
+                      :message/role (if (even? index) :user :assistant)
+                      :message/content (str "消息 " index " 的可读正文。")
+                      :message/status :completed
+                      :message/created-at "2026-11-09T00:00:00Z"})
+                   (range message-count)))))
+
+(defn- with-message-rects!
+  "Install a deterministic 20px message layout for the anchor test.
+
+  jsdom has no layout engine; anchor restoration needs nonzero geometry to
+  distinguish the top visible message from index 0.  Non-message elements
+  keep the original jsdom rectangle."
+  [f]
+  (let [proto (.-prototype js/HTMLElement)
+        original (.-getBoundingClientRect proto)]
+    (js/Object.defineProperty
+     proto "getBoundingClientRect"
+     #js {:configurable true
+          :value (fn []
+                   (this-as this
+                     (cond
+                       (some? (.getAttribute this "data-message-id"))
+                       (let [scroller (.closest this ".hc-conversation-messages")
+                             nodes (array-seq
+                                    (.querySelectorAll
+                                     scroller "[data-message-id]"))
+                             index (.indexOf (to-array nodes) this)]
+                         #js {:top (- (* index 20) (.-scrollTop scroller))
+                              :left 0 :width 0 :height 20})
+
+                       (and (some? (.-classList this))
+                            (.contains (.-classList this)
+                                       "hc-conversation-messages"))
+                       #js {:top 0 :left 0 :width 0 :height 600}
+
+                       :else
+                       (.call original this))))})
+    (try
+      (f)
+      (finally
+        (js/Object.defineProperty
+         proto "getBoundingClientRect"
+         #js {:configurable true :value original})))))
+
+(defn- scroll-visible-id
+  [container]
+  (let [scroller (messages-node container)]
+    (some (fn [node]
+            (let [rect (.getBoundingClientRect node)]
+              (when (> (+ (.-top rect) (.-height rect)) 0)
+                (.getAttribute node "data-message-id"))))
+          (array-seq (.querySelectorAll scroller "[data-message-id]")))))
+
 (deftest per-session-scroll-position-is-restored
-  (let [saved (atom nil)
-        props-for
-        (fn [session-id content]
-          (-> (base-props content)
-              (assoc :session {:id session-id :title session-id :status :running})
-              (assoc-in [:callbacks :scroll!]
-                        (fn [{:keys [scroll-top]}]
-                          (reset! saved scroll-top)))))
-        s0 (props-for "s0" "s0 的长消息")
-        s1 (props-for "s1" "s1 的另一条消息")
+  (let [captured (atom nil)
+        s0 (-> (message-list-props "s0" 200)
+               (assoc-in [:callbacks :scroll!]
+                         (fn [payload] (reset! captured payload))))
+        s1 (-> (base-props "s1 的另一条消息")
+               (assoc :session {:id "s1" :title "s1" :status :running})
+               (assoc-in [:callbacks :scroll!]
+                         (fn [payload] (reset! captured payload))))
         container (.createElement js/document "div")
         _ (.appendChild js/document.body container)
         root (rdc/createRoot container)]
     (try
-      (act! #(render! root s0))
-      (let [node (messages-node container)]
-        (set! (.-scrollTop node) 12345)
-        (act! #(.dispatchEvent node (js/Event. "scroll" #js {:bubbles true})))
-        (is (= 12345 @saved) "the surface reports the real scroll offset")
-        ;; Switch away and clear the reused DOM node to make the restore
-        ;; observable, then switch back to the session with the saved offset.
-        (act! #(render! root s1))
-        (set! (.-scrollTop (messages-node container)) 0)
-        (act! #(render! root (assoc-in s0 [:stream :scroll-top] @saved)))
-        (is (= 12345 (.-scrollTop (messages-node container)))
-            "returning to the session restores the reading position"))
+      (with-message-rects!
+        (fn []
+          (act! #(render! root s0))
+          (let [node (messages-node container)
+                target (+ (* 100 20) 5)]
+            (set! (.-scrollTop node) target)
+            (act! #(.dispatchEvent node (js/Event. "scroll"
+                                                   #js {:bubbles true})))
+            (is (= "m100" (:anchor-message-id @captured))
+                "the scroll event records the top visible message id")
+            (is (= target (:scroll-top @captured)))
+            (is (= "m100" (scroll-visible-id container)))
+            ;; Switch away, clear the reused DOM node, then switch back to
+            ;; the session whose anchor is m100 at delta 5.
+            (act! #(render! root s1))
+            (set! (.-scrollTop (messages-node container)) 0)
+            (act! #(render! root (assoc-in s0 [:stream :scroll-top] target)))
+            (is (= "m100" (scroll-visible-id container))
+                "returning to the session restores the same message anchor")
+            (is (= target (.-scrollTop (messages-node container)))
+                "the anchor top plus its relative delta is restored"))))
+      (finally
+        (act! #(.unmount root))
+        (.remove container)))))
+
+(deftest per-session-pixel-fallback-without-an-anchor
+  (let [props (-> (base-props "pixel fallback")
+                  (assoc :session {:id "pixel-fallback"
+                                   :title "pixel fallback"
+                                   :status :running})
+                  (assoc-in [:stream :scroll-top] 12345))
+        container (.createElement js/document "div")
+        _ (.appendChild js/document.body container)
+        root (rdc/createRoot container)]
+    (try
+      (act! #(render! root props))
+      (is (= 12345 (.-scrollTop (messages-node container)))
+          "without an anchor the saved pixel offset is still the fallback")
       (finally
         (act! #(.unmount root))
         (.remove container)))))
@@ -518,12 +649,35 @@
 
 
 
+(deftest empty-conversation-shows-the-first-run-guide
+  (let [props (-> (base-props "")
+                  (assoc :messages [])
+                  (assoc :stream (stream/initial)))
+        container (.createElement js/document "div")
+        _ (.appendChild js/document.body container)
+        root (rdc/createRoot container)]
+    (try
+      (act! #(render! root props))
+      (let [text (.-textContent container)]
+        (is (str/includes? text "开始第一次对话"))
+        (is (str/includes? text "连接模型"))
+        (is (str/includes? text "恢复已有资料"))
+        (is (str/includes? text "稍后设置"))
+        (is (str/includes? text "整理会议记录"))
+        (is (str/includes? text "解释这段代码"))
+        (is (str/includes? text "起草一封邮件"))
+        (is (str/includes? text "只填入输入框，不会发送")))
+      (finally
+        (act! #(.unmount root))
+        (.remove container)))))
+
 (deftest round-context-panel-shows-sections-and-unknowns
   (let [props (assoc (base-props "普通内容")
                      :session
                      {:id "s1" :title "上下文"
                       :context
-                      {:outbound
+                      {:reading {:message-count 24 :deleted-count 2}
+                       :outbound
                        {:source :last-run
                         :system {:prompt-bytes :unknown :modules ["pair-hint"]}
                         :assistant {:id "a1" :name "Steward" :revision 3}
@@ -563,10 +717,14 @@
         (is (str/includes? text "命中但未提供 e2"))
         (is (str/includes? text "命中但未提供 长偏好"))
         (is (str/includes? text "超出本轮预算"))
-        (is (str/includes? text "格式卡 · turn"))
-        (is (str/includes? text "files.read · read"))
+        (is (str/includes? text "格式卡 · 本轮"))
+        (is (str/includes? text "files.read · 只读"))
+        (is (str/includes? text "scan.pdf · PDF"))
         (is (str/includes? text "读取工作区文件"))
         (is (str/includes? text "页 2,3"))
+        (is (str/includes? text "阅读 24 条 · 已删除 2"))
+        (is (str/includes? text "当前可见 2 条"))
+        (is (str/includes? text "差额来自系统提示"))
         (is (str/includes? text "未知")))
       (finally
         (act! #(.unmount root))

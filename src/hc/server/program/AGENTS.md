@@ -141,13 +141,17 @@ not a boolean success flag. `:state` is the lifecycle state.
 ## 3 Capability map
 
 The static sets live in `hc.server.program.capability/roles`. They mirror
-root §4.1, with two deliberate worker-only extensions that root §4.1's table
-does not list yet: `:resolve-action` (close the caller's own `:uncertain`
-file action after inspecting the worktree) and `:acknowledge-recovery`
-(the swarm kernel's recovery acknowledgement).  Both are required by the
-F13 recovery flow and by the worker system prompt, so they stay
-program-visible; removing them would break a documented recovery path.  A
-spec owner should eventually add them to §4.1 or retire them.  Dynamic gates:
+root §4.1, with three deliberate program-surface extensions that root §4.1's
+table does not list yet: `:resolve-action` (close the caller's own
+`:uncertain` file action after inspecting the worktree),
+`:acknowledge-recovery` (the swarm kernel's recovery acknowledgement), and
+`:negotiate` (ask the immediately preceding Scope for clarification; granted
+to Reviewer and worker).  The first two are worker-only and required by the
+F13 recovery flow and the worker system prompt; `:negotiate` is already
+listed in the local role sets for Reviewer and worker.  They stay
+program-visible because removing them would break documented paths.  This
+local table is finer than root §4.1; a spec owner should eventually add them
+to §4.1 or retire them.  Dynamic gates:
 
 - `ask` requires `:clj-plan` **and** `:s1? true`.
 - `call` requires `:dedicated-worker`, or `:clj-worker` with `:holder? true`.

@@ -302,6 +302,10 @@ rev，仅作为单次调用的基线。`:batch` 内的 `:split` 子命令不自�
 拒绝立即移除（根 §3.3）。运行中取消意图由用户输入事件或 `:comment` 记录，
 动作结束并结清责任后再提交 `cancel` / `replace`；内核不把“拒绝”当成已取消。
 
+`:cancelled` 与 `:replaced` 是事件日志的专用事件（`:type :task-cancelled` /
+`:task-replaced`，携带 `:event :cancelled` / `:replaced`），不是 `Task.state`
+值，也不进入看板状态投影；事件保留原因与替代前后的任务 id。
+
 ## 6. 责任集合与持令者退休
 
 严格按根规格 §3.2：
@@ -414,6 +418,82 @@ clojure -X:test
 竞态无漏唤醒，以及带种子的随机命令序列逐步检查不变量。随机反例必须缩成
 确定性场景后再修复，不能只保留种子。
 
+### 9.1 T01–T13 验收矩阵
+
+根 §3.4/§8.3 的令牌竞争推演；“先/后”指 STM 提交顺序。每行必须同时检查
+状态、责任归属与旧资格是否仍可用。
+
+| # | 场景 | 必须 | 禁止 | 本地覆盖入口 |
+|---|---|---|---|---|
+| T01 | A、B 同时看到令牌空闲并用不同 request-id 竞争 | 同一任期恰好一赢一输；输者移交剩余责任并逻辑死亡 | 两个 holder；输者继续普通工作 | `boundary-driver-test/token-competition-has-only-win-or-lose-outcomes`；property |
+| T02 | 赢家事务已提交但响应丢失 | 原 request-id 重放仍是 `:attempt-won`；责任不重复转移 | 再竞争；把未收到响应当输；第二 holder | `boundary-driver-test/dropped-response-replays-the-same-conclusion-without-board-advance` |
+| T03 | 输家事务已提交但响应丢失，重发请求或旧提交 | 重发仍是 `:attempt-lost`；旧提交因身份已死被拒 | 先回输再异步移交；旧资格仍可用 | 同上；`swarm-stm-test` 死亡/迟到提交 |
+| T04 | 竞争失败者拥有等待子项的普通父项 P | P 进入公共可接续，子项完成后回 `:ready` | P 消失、仍归死者或自动完成 | `swarm-stm-matrix-test`（显式 T04） |
+| T05 | holder 责任清空 | 退休与 `R(a)=∅` 同一提交 | 先退休后移交或反向 | property / `swarm-stm-test` retire |
+| T06 | 同槽新个体与旧任期 | 新个体不继承旧资格/私有上下文 | 旧资格复活或追溯旧任期 | `swarm-stm-matrix-test`（显式 T06） |
+| T07 | 子项完成 | 只把等待集为空的直接父项置 `:ready` | 自动 `:done` 或沿祖先级联 | `swarm-stm-test` / property |
+| T08 | 普通任务归属与 holder | 他人持令不改变普通归属；holder 不吸收普通父项 | 归属转移或父项自动完成 | `swarm-stm-matrix-test`（显式 T08） |
+| T09 | holder 无责退休与令牌槽 | 退休同事务释放身份/令牌 | 留下可提交旧身份 | property / `swarm-stm-test` |
+| T10 | holder 与普通个体并发 | 普通任务不被 holder 抢占；holder 不被误杀 | 自动完成父项或杀死 holder | `swarm-stm-matrix-test`（显式 T10） |
+| T11 | 失去资格个体的迟到提交 | 入口按 `:life-state` 拒绝 | 旧 attempt 写入新任期 | `swarm-stm-test` 迟到请求/死身份 |
+| T12 | 新个体看到 holder 已存在且自己无工作 | 不发起必败竞争；继续找公共工作 | 预留令牌/内核选人 | `swarm-stm-matrix-test`（显式 T12） |
+| T13 | 令牌空闲但无令牌责任 | 未发出时不抢空令牌；已发出的合法竞争仍得赢/输，赢且 `R(a)=∅` 同事务退休 | 给已受理竞争增加退回出口 | `boundary-driver-test/token-competition-has-only-win-or-lose-outcomes` |
+
+以上是验收目标，不等于每条都已有独立断言；逐条缺口以根 §3.4 与测试注释
+为准，不能把随机调度偶尔通过当作边界证据。
+
+### 9.2 七边界确定性驱动器（测试侧契约）
+
+`test/hc/boundary_driver.clj` 用于第一层控制状态与第二层文件入口的确定
+交错，不覆盖第三层传输适配。
+
+**(a) 公开 API**
+
+```clojure
+(new-driver world)
+;; => driver；第二个未关闭 driver 抛 :DRIVER_ALREADY_OPEN
+(step! driver participant command)
+;; command: {:op :read|:commit|:finish|:claim|:split|:take-token|...}
+;; => {:status :parked|:completed|:waiting|:error :boundary .. :observation ..}
+(resume! driver participant) ; => 同上
+(run-until! driver participant boundary)
+(run-to-done! driver participant command)
+(environment! driver action) ; :shell-write/:external-write/:drop-response/:hard-failure...
+(replay driver recorded-log) ; => {:final-observation .. :log ..}
+(close! driver)             ; 幂等，恢复全部 alter-var-root
+```
+
+七个边界：`:read-complete`、`:queued-for-w`、`:in-gate-checked`、
+`:dry-run-complete`、`:applying`、`:applied`、`:board-published`。
+
+**(b) 失败/拒绝**
+
+| code/结果 | 触发 |
+|---|---|
+| `:DRIVER_ALREADY_OPEN` | 同一 JVM 已有未关闭 driver |
+| `:waiting` | 参与者停在等 `$W$`/外部条件，不能用 `run-to-done!` 静默通过 |
+| `:error` + `:boundary` | 参与者命令失败；记录所在边界与观察 |
+| `:UNKNOWN_COMMAND`/`:INVALID_COMMAND` | `step!` 收到未知/非法 command（代码事实） |
+
+**(c) 不变量**
+
+保证：一次只开一个 driver；每个边界可精确暂停/恢复；`close!` 取消剩余
+线程并逐 var `identical?` 恢复；`replay` 重放每个边界观察与最终 world；
+`record-failure!` 输出可粘贴的 `deftest`。
+
+不保证：不保证生产入口本身有暂停钩子（驱动用 `alter-var-root` 包装）；
+不保证并发/多 driver；不保证第三层传输；不保证 `:waiting` 会自行完成；
+不保证外部自由写入受 `$W$` 保护。
+
+**(d) 验证**
+
+```bash
+clojure -M:test:compose -n hc.boundary-driver-test
+```
+
+代码事实，未复测（2026-11-09 当前文件）：19 deftest + 2 defspec
+（21 个测试入口）/ 196 个 `is`。
+
 ## 10. 阶段边界与装配点
 
 - **阶段一（本包当前）**：文件动作是无副作用替身；`finish` 的非空
@@ -471,10 +551,17 @@ clojure -X:test
   的 `:wait-for` 会移除被取消项，等待集为空时回到 `:ready` 并发布
   `:dependency-cancelled`，由个体重新决定结构，不伪造完成。
 - `replace` 在父项/外部等待者中原子换 id；根任务 `:ledger-key` 转移到替代项。
+- `:uncertain` 与 `:applying` / `:running` 同属在途动作集合：`split`、
+  `cancel`、`replace`、`finish`、`take-or-die`、`release` 与 `begin-action`
+  都拒绝在 `:uncertain` 上继续改写结构。根 §3.3 的最小拒绝集只列
+  `:applying` / `:running`；本实现更严，因为 `:uncertain` 表示外部效果
+  未知，此时改写任务结构会丢失对账依据。这是本地实现选择，不改变根规格。
 - `reopen` 只恢复 `:ready` 与根台账，不把已恢复的父项重新阻塞。
 - 根任务 `:ledger-key` 在任务完成后仍保留在任务记录上，因此 `create-task` 把历史任务也视为键占用者；新任务不得复用旧键。`reopen` 只重新登记同一任务的原键，若键已被任何当前 ledger 条目占用则拒绝 `:LEDGER_KEY_IN_USE`。
 - `reopen` 会清除已死 `:owner-id`，避免重开的任务落到无法提交的旧身份；
   原 owner 仍存活时保留其普通责任。
-- `abandon`、多 worktree `fork`/`join`、master 集成锁、真实 Shell 会话、
-  持久化恢复扫描、模型提示注入不在阶段一范围；实现前必须按根 §8.4 维护者
-  检查表重新核对责任集合与生命周期不变量。
+- `abandon`、多 worktree `fork`/`join`、master 集成锁与真实 Git 由组合层
+  实现：`hc.compose.fleet` 负责 worktree/fork/join，`hc.compose.fleet.git`
+  负责真实 Git，`abandon` 由 holder 程序原语经 fleet 转发；内核只维护单个
+  worktree 的看板控制记录。持久化恢复扫描与模型提示注入属于 server/组合层
+  适配，不在内核内实现。

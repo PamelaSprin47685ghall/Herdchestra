@@ -1,7 +1,7 @@
 (ns hc.compose.fleet.git-test
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [hc.compose.fleet.git :as git]
             [hc.compose.fleet.support :as support]))
 
@@ -192,6 +192,9 @@
                                  (head [_ _] {:status :failed})
                                  (current-branch [_ _] {:status :failed})
                                  (ancestor? [_ _ _] {:status :failed})
+                                 (worktree-clean? [_ _] false)
+                                 (ff-ready? [_ _ _] {:ready? false
+                                                      :reason :GIT_CHECK_FAILED})
                                  (create-worktree! [_ _] {:status :failed})
                                  (remove-worktree! [_ _] {:status :failed})
                                  (delete-branch! [_ _] {:status :failed})
@@ -210,3 +213,102 @@
           {:status :failed
            :out ""
            :err "fatal: unable to allocate memory"}))))
+
+(deftest reports-whether-a-real-worktree-is-clean
+  (support/with-temp-dir [repo "hc-fleet-git-"]
+    (support/init-repo! repo)
+    (let [adapter (git/git-cli repo)
+          workspace (str repo "/swarm-1")]
+      (is (= :ok (:status (git/create-worktree! adapter
+                                                {:workspace workspace
+                                                 :branch "hc/mission/swarm-1"
+                                                 :base "master"}))))
+      (testing "a fresh worktree is clean"
+        (is (true? (git/worktree-clean? adapter workspace))))
+      (testing "an untracked file makes it dirty"
+        (spit (io/file workspace "wip.txt") "wip\n")
+        (is (false? (git/worktree-clean? adapter workspace))))
+      (testing "a missing directory is never optimistically clean"
+        (is (false? (git/worktree-clean? adapter (str repo "/missing"))))))))
+
+(deftest fake-git-exposes-configurable-ff-readiness
+  (testing "the default fake stays clean and ready"
+    (let [fake (support/fake-git {})]
+      (is (true? (git/worktree-clean? (:git fake) "/worktree")))
+      (is (= {:ready? true
+              :head "master-0"
+              :target-head "master-0"
+              :clean? true
+              :reason :ready}
+             (git/ff-ready? (:git fake) "/worktree" "master")))))
+  (testing "directory and functional overrides expose the failure branches"
+    (let [fake (support/fake-git
+                {:clean? {"/dirty" false}
+                 :ff-ready
+                 (fn [directory target-ref]
+                   {:ready? false
+                    :head "head-1"
+                    :target-head "head-0"
+                    :clean? false
+                    :reason :TARGET_NOT_ANCESTOR
+                    :directory directory
+                    :target-ref target-ref})})
+          adapter (:git fake)]
+      (is (false? (git/worktree-clean? adapter "/dirty")))
+      (is (true? (git/worktree-clean? adapter "/clean")))
+      (is (= {:ready? false
+              :head "head-1"
+              :target-head "head-0"
+              :clean? false
+              :reason :TARGET_NOT_ANCESTOR
+              :directory "/dirty"
+              :target-ref "master"}
+             (git/ff-ready? adapter "/dirty" "master")))
+      (is (= [[:worktree-clean? "/dirty"]
+              [:worktree-clean? "/clean"]
+              [:ff-ready? "/dirty" "master"]]
+             @(:calls fake))))))
+
+(deftest ff-ready-requires-a-clean-descendant-worktree
+  (support/with-temp-dir [repo "hc-fleet-git-"]
+    (support/init-repo! repo)
+    (let [adapter (git/git-cli repo)
+          workspace (str repo "/swarm-1")
+          branch "hc/mission/swarm-1"]
+      (is (= :ok (:status (git/create-worktree! adapter
+                                                {:workspace workspace
+                                                 :branch branch
+                                                 :base "master"}))))
+      (testing "a fresh worktree contains master and is clean"
+        (let [ready (git/ff-ready? adapter workspace "master")]
+          (is (true? (:ready? ready)) (pr-str ready))
+          (is (true? (:clean? ready)))
+          (is (= (:head ready) (:target-head ready)))
+          (is (= :ready (:reason ready)))))
+      (testing "uncommitted work refuses the check"
+        (spit (io/file workspace "wip.txt") "wip\n")
+        (let [ready (git/ff-ready? adapter workspace "master")]
+          (is (false? (:ready? ready)))
+          (is (false? (:clean? ready)))
+          (is (= :WORKTREE_DIRTY (:reason ready)))))
+      (support/git! workspace "clean" "-fd")
+      (support/commit-file! workspace "work.txt" "work\n" "swarm work")
+      (testing "a clean descendant of master is ff-ready"
+        (let [ready (git/ff-ready? adapter workspace "master")]
+          (is (true? (:ready? ready)) (pr-str ready))
+          (is (true? (:clean? ready)))))
+      (support/commit-file! repo "later.txt" "later\n" "master moves")
+      (testing "an outdated worktree is not ff-ready"
+        (let [ready (git/ff-ready? adapter workspace "master")]
+          (is (false? (:ready? ready)))
+          (is (= :TARGET_NOT_ANCESTOR (:reason ready)))))
+      (testing "an unreadable target ref is reported, not guessed"
+        (let [ready (git/ff-ready? adapter workspace "does-not-exist")]
+          (is (false? (:ready? ready)))
+          (is (nil? (:target-head ready)))
+          (is (= :TARGET_HEAD_UNREADABLE (:reason ready)))))
+      (testing "a missing worktree is reported, not guessed"
+        (let [ready (git/ff-ready? adapter (str repo "/missing") "master")]
+          (is (false? (:ready? ready)))
+          (is (false? (:clean? ready)))
+          (is (= :HEAD_UNREADABLE (:reason ready))))))))

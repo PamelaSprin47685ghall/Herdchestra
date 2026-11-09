@@ -1294,7 +1294,13 @@
                          :intent intent
                          :capabilities (cap/narrowed role capabilities)
                          :context (or (:context request) {})
-                         :holder? (boolean (:holder? request))
+                         ;; §3.4: only a Swarm worker can compete for the
+                         ;; token.  Plan, Reviewer, the dedicated worker, the
+                         ;; Steward, and the Meditator are never holders; a
+                         ;; caller-supplied flag on those roles must not leak
+                         ;; into receipts or unlock holder-only capabilities.
+                         :holder? (boolean (and (= :clj-worker role)
+                                                (:holder? request)))
                          :s1? (boolean (:s1? request)))}))))
 
 (defn- begin-call!

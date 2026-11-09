@@ -61,6 +61,44 @@
    [:account-login "使用账号登录"]
    [:local-service "新建本地模型服务连接"]])
 
+(def ^:private section-tabs-data
+  [[:providers "供应商与连接"]
+   [:models "模型与角色"]
+   [:assistants "助手"]
+   [:data "数据中心"]
+   [:appearance "外观"]])
+
+(defn- section-label
+  [section]
+  (or (some (fn [[id label]] (when (= id section) label))
+            section-tabs-data)
+      "设置"))
+
+(def diagnostics-anchor-id
+  "DOM id of the data-center diagnostics panel wrapper."
+  "hc-data-diagnostics")
+
+(def backup-anchor-id
+  "DOM id of the data-center backup panel wrapper."
+  "hc-data-backup")
+
+(def ^:private data-subnav-items
+  [[diagnostics-anchor-id "统计与诊断"]
+   [backup-anchor-id "备份与恢复"]])
+
+(def ^:private workspace-tab-titles
+  [["settings" "设置与数据中心"]
+   ["schedule" "定时任务"]
+   ["speech" "语音与朗读"]
+   ["translation" "独立翻译"]
+   ["shortcuts" "快捷键"]])
+
+(defn workspace-tab-title
+  "Return the page heading for the workbench settings TAB."
+  [tab]
+  (or (some (fn [[id title]] (when (= id tab) title)) workspace-tab-titles)
+      "设置与数据中心"))
+
 (defn- field
   [label control & [hint]]
   (el :label {:class "hc-field"}
@@ -81,20 +119,26 @@
 
 (defn- section-tabs
   [state]
-  (let [section (get-in state [:ui :section] :providers)
-        tabs [[:providers "供应商与连接"]
-              [:models "模型与角色"]
-              [:assistants "助手"]
-              [:data "数据中心"]
-              [:appearance "外观"]]]
-    (el :nav {:class "hc-tabs" :aria-label "设置分区"}
-        (mapv (fn [[id label]]
-                (button label
-                        (act :settings/select-section :section id)
-                        {:key (name id)
-                         :class (str "hc-tab" (when (= section id) " hc-tab--active"))
-                         :aria-current (when (= section id) "page")}))
-              tabs))))
+  (let [section (get-in state [:ui :section] :providers)]
+    (el :details {:class "hc-tabs-collapsible"
+                  :open true}
+        (el :summary {:class "hc-tabs-summary"}
+            (str "设置分区：" (section-label section)))
+        (el :nav {:class "hc-tabs" :aria-label "设置分区"}
+            (mapv (fn [[id label]]
+                    (button label
+                            (act :settings/select-section :section id)
+                            {:key (name id)
+                             :class (str "hc-tab" (when (= section id) " hc-tab--active"))
+                             :aria-current (when (= section id) "page")}))
+                  section-tabs-data)))))
+
+(defn- data-subnav
+  []
+  (el :nav {:class "hc-data-subnav" :aria-label "数据中心子导航"}
+      (mapv (fn [[anchor label]]
+              (el :a {:href (str "#" anchor) :key anchor} label))
+            data-subnav-items)))
 
 (defn- sync-banner
   [state can-submit?]
@@ -128,7 +172,13 @@
 (defn- connection-card
   [state summary]
   (let [can-submit? (and (commands/command-allowed? state)
-                         (get-in state [:ui :transport-available?]))]
+                         (get-in state [:ui :transport-available?]))
+        tested-label (:last-tested-label summary)
+        has-test? (or (:last-tested-at summary)
+                      (and (not (str/blank? (str tested-label)))
+                           (not= "未测试" tested-label)))
+        show-tested? (and has-test?
+                          (not= tested-label (:status-label summary)))]
     (el :article {:class (str "hc-connection-card"
                               (when (:selected? summary) " hc-connection-card--selected"))
                   :key (:connection-id summary)
@@ -148,13 +198,20 @@
             (el :dd {} (:protocol-label summary))
             (el :dt {} "状态")
             (el :dd {} (:status-label summary))
-            (el :dt {} "最近测试")
-            (el :dd {} (:last-tested-label summary))
+            ;; Each value must contribute both its term and definition.
+            ;; A single `when` returns only its last form, which silently
+            ;; dropped the `dt` label for these three detail rows.
+            (when show-tested?
+              (el :dt {} "最近测试"))
+            (when show-tested?
+              (el :dd {} tested-label))
             (when (:draft-status summary)
-              (el :dt {} "草稿")
+              (el :dt {} "草稿"))
+            (when (:draft-status summary)
               (el :dd {} (:draft-status summary)))
             (when (:account-label summary)
-              (el :dt {} "账号标识")
+              (el :dt {} "账号标识"))
+            (when (:account-label summary)
               (el :dd {} (:account-label summary))))
         (when (:host-warning summary)
           (el :p {:class "hc-warning"} (:host-warning summary)))
@@ -1190,9 +1247,8 @@
 (defn- onboarding-model-picker
   "Model step of the first-run wizard: pick the main model plus an optional
   generation-switch model."
-  [state can-submit?]
-  (let [groups (:onboarding-model-groups state)
-        selected-role :main]
+  [state groups can-submit?]
+  (let [selected-role :main]
     (el :div {:class "hc-onboarding__models"}
         (el :p {:class "hc-muted"}
             "选择一个已启用的模型作为主模型；生成中切换只用于下一轮。")
@@ -1208,8 +1264,8 @@
                       (el :div {:class "hc-model-list"}
                           (mapv #(model-row state group % selected-role
                                              can-submit?)
-                                (:rows group)))))))
-                groups)))
+                                (:rows group)))))
+                groups)))))
 (defn- onboarding-panel
   "Three-step first-run wizard: connection type, connection details, model.
 
@@ -1484,7 +1540,7 @@
         groups (model/model-groups state)]
     (el :div {:class "hc-settings" :role "region" :aria-label "设置与数据中心"}
         (el :header {:class "hc-settings__header"}
-            (el :h1 {} "设置与数据中心")
+            (el :h2 {} "设置与数据中心")
             (el :p {:class "hc-muted"}
                 (case section
                   :data "用量、费用、详细日志与备份；诊断包只在本机生成。"
@@ -1534,7 +1590,7 @@
           (el :div {:class "hc-settings__body"}
               (assistants-section state can-submit?))
 
-          :data nil
+          :data (data-subnav)
 
           :appearance
           (appearance-section state)

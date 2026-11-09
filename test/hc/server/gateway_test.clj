@@ -1,5 +1,5 @@
 (ns hc.server.gateway-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [are deftest is testing]]
             [hc.server.commands :as commands]
             [hc.server.gateway :as gateway]
             [hc.server.gateway.feed :as feed]
@@ -64,6 +64,16 @@
        (when (= "cmd-1" command-id)
          {:status :accepted :command-id command-id :command-epoch 1})))))
 
+(defn- submit-failure
+  "Submit one command to OWNER and return the receipt error map."
+  [owner]
+  (let [gw (make-gw owner)
+        _ (subscribe! gw "u1" 1)]
+    (command! gw "u1" {:command-id "cmd-failure"
+                       :command-epoch 1
+                       :payload {}})
+    (get-in (first (receipt-events gw)) [:error])))
+
 (deftest subscribe-and-command-round-trip
   (let [calls (atom [])
         gw (make-gw (fake-owner calls))
@@ -126,8 +136,75 @@
         _ (command! gw "u1" {:command-id "cmd-1"
                              :command-epoch 1
                              :payload {}})]
-    (is (= :COMMAND_SUBMIT_FAILED
-           (get-in (first (receipt-events gw)) [:error :code])))))
+    (let [err (get-in (first (receipt-events gw)) [:error])]
+      (is (= :COMMAND_SUBMIT_FAILED (:code err)))
+      (is (= :unknown (get-in err [:details :cause])))
+      (is (string? (get-in err [:details :class]))))))
+
+(deftest lower-ex-data-survives-the-stable-gateway-code
+  (testing "command submit keeps the Owner's code and details"
+    (let [gw (make-gw (ports/owner-port
+                       (fn [_ _]
+                         (throw (ex-info "lower"
+                                         {:code :SOME_SPECIFIC_CODE
+                                          :details {:field :x}})))
+                       (fn [_] nil)))
+          _ (subscribe! gw "u1" 1)
+          _ (command! gw "u1" {:command-id "cmd-ex"
+                               :command-epoch 1
+                               :payload {}})
+          err (get-in (first (receipt-events gw)) [:error])]
+      (is (= :COMMAND_SUBMIT_FAILED (:code err)))
+      (is (= :SOME_SPECIFIC_CODE (get-in err [:details :cause])))
+      (is (= {:field :x} (get-in err [:details :cause-details])))))
+  (testing "receipt read keeps the Owner's code and details"
+    (let [gw (make-gw (ports/owner-port
+                       (fn [_ _] {:ok? true})
+                       (fn [_]
+                         (throw (ex-info "receipt-low"
+                                         {:code :RECEIPT_LOWER
+                                          :details {:q 1}})))))
+          _ (subscribe! gw "u1" 1)
+          reply (atom nil)]
+      (gateway/handle-event! gw
+                             {:uid "u1"
+                              :?reply-fn #(reset! reply %)
+                              :event [:hc/receipt {:command-id "cmd-r"
+                                                   :subscription-id 1}]})
+      (is (= :COMMAND_RECEIPT_FAILED (get-in @reply [:error :code])))
+      (is (= :RECEIPT_LOWER (get-in @reply [:error :details :cause])))
+      (is (= {:q 1} (get-in @reply [:error :details :cause-details]))))))
+
+(deftest gateway-never-replaces-a-lower-code-with-an-anonymous-failure
+  (are [lower-code lower-details]
+      (let [err (submit-failure
+                 (ports/owner-port
+                  (fn [_ _]
+                    (throw (ex-info "lower"
+                                    {:code lower-code
+                                     :details lower-details})))
+                  (fn [_] nil)))
+            details (:details err)]
+        (and (= :COMMAND_SUBMIT_FAILED (:code err))
+             (not= lower-code (:code err))
+             (map? details)
+             (seq details)
+             (= lower-code (:cause details))
+             (= lower-details (:cause-details details))))
+    :ACTIVE_TURN_EXISTS {:turn-id "turn-7"}
+    :UNKNOWN_TASK {:task-id "task-9"}
+    :CLAIM_CHANGED {:expected 1 :actual 2}))
+
+(deftest a-throwable-without-ex-data-stays-diagnosable
+  (let [err (submit-failure
+             (ports/owner-port
+              (fn [_ _] (throw (RuntimeException. "plain")))
+              (fn [_] nil)))
+        details (:details err)]
+    (is (= :COMMAND_SUBMIT_FAILED (:code err)))
+    (is (= :unknown (:cause details)))
+    (is (re-find #"RuntimeException" (:class details)))
+    (is (not (contains? details :cause-details)))))
 
 (deftest command-domain-refusal-becomes-a-custom-error
   (let [domain (atom (:state (commands/issue-epoch (commands/new-state))))

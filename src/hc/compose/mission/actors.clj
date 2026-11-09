@@ -22,7 +22,8 @@
             [hc.compose.mission.host :as host]
             [hc.compose.mission.model :as model]
             [hc.core.relay :as relay]
-            [hc.core.swarm-stm.board :as board]))
+            [hc.core.swarm-stm.board :as board]
+            [hc.core.ufss :as ufss]))
 
 ;; ---------------------------------------------------------------------------
 ;; State
@@ -101,13 +102,181 @@
 ;; ---------------------------------------------------------------------------
 ;; Board-derived work
 
-(defn- task-line
+(def ^:private max-task-field-bytes
+  "UTF-8 byte cap for one rendered task field."
+  4096)
+
+(def ^:private max-board-block-bytes
+  "UTF-8 byte cap for the complete EDN+UFSS board block."
+  32768)
+
+(def ^:private omitted-task-id-limit
+  "How many omitted task ids the board block lists."
+  20)
+
+(def ^:private truncatable-task-fields
+  [:goal :remaining-work :done-when :handoff-note])
+
+(defn- utf8-byte-length
+  ^long [^String s]
+  (alength (.getBytes s "UTF-8")))
+
+(defn- utf8-code-point-length
+  ^long [^long cp]
+  (cond
+    (< cp 0x80) 1
+    (< cp 0x800) 2
+    (< cp 0x10000) 3
+    :else 4))
+
+(defn- truncate-utf8
+  "Return the longest prefix of S with at most LIMIT UTF-8 bytes.
+
+  Iteration advances by whole code points, so a valid surrogate pair is
+  never split.  A malformed lone surrogate stops the prefix instead of
+  putting an isolated surrogate into the model-facing text."
+  [^String s limit]
+  (let [n (.length s)]
+    (loop [i 0
+           used 0]
+      (if (>= i n)
+        s
+        (let [c (.charAt s i)
+              pair? (and (Character/isHighSurrogate c)
+                         (< (inc i) n)
+                         (Character/isLowSurrogate (.charAt s (inc i))))
+              cp (if pair?
+                   (Character/toCodePoint c (.charAt s (inc i)))
+                   (int c))
+              size (if (and (Character/isSurrogate c) (not pair?))
+                     0
+                     (utf8-code-point-length cp))
+              next-i (if pair? (+ i 2) (inc i))]
+          (cond
+            (zero? size) (subs s 0 i)
+            (> (+ used size) limit) (subs s 0 i)
+            :else (recur next-i (+ used size))))))))
+
+(defn- truncated-field
+  [task field]
+  (let [value (get task field)]
+    (when (and (string? value)
+               (> (utf8-byte-length value) max-task-field-bytes))
+      [field
+       (truncate-utf8 value max-task-field-bytes)
+       (utf8-byte-length value)])))
+
+(defn- truncate-task-fields
+  "Cap each rendered task field at max-task-field-bytes.
+
+  A truncated task map gains :truncated? true and :full-bytes, the largest
+  original byte length among its truncated fields.  Untouched task maps are
+  returned as the same value, preserving the existing rendered shape."
   [task]
-  (str "- " (:task-id task)
-       " [" (name (:state task)) "] "
-       (:goal task)
-       (when (:needs-token task) " (needs token)")
-       (when (:ledger-key task) (str " (ledger " (:ledger-key task) ")"))))
+  (let [truncated (keep #(truncated-field task %) truncatable-task-fields)]
+    (if (empty? truncated)
+      task
+      (reduce (fn [m [field text full-bytes]]
+                (-> m
+                    (assoc field text)
+                    (assoc :truncated? true)
+                    (update :full-bytes (fnil max 0) full-bytes)))
+              task
+              truncated))))
+
+(defn- task-needs-truncation?
+  [task]
+  (boolean
+   (some (fn [field]
+           (let [value (get task field)]
+             (and (string? value)
+                  (> (utf8-byte-length value) max-task-field-bytes))))
+         truncatable-task-fields)))
+
+(defn- public-task-view
+  "Project one task into the fields a swarm actor may act on.
+
+  The work prompt prints this view as EDN+UFSS so a goal containing quotes
+  or newlines stays one string value instead of breaking the prompt."
+  [task]
+  (truncate-task-fields
+   (cond-> (select-keys task [:task-id :state :goal])
+     (:needs-token task) (assoc :needs-token true)
+     (:ledger-key task) (assoc :ledger-key (:ledger-key task)))))
+
+(defn- task-entry
+  [board* task]
+  {:view (public-task-view task)
+   :root? (nil? (:parent-id task))
+   :progressable? (board/task-progressable? board* task)})
+
+(defn- omission-groups
+  "Tail-first omission order, keeping roots and progressable tasks longest."
+  [entries]
+  (let [tail (reverse entries)]
+    (concat
+     (filter #(and (not (:root? %)) (not (:progressable? %))) tail)
+     (filter #(and (not (:root? %)) (:progressable? %)) tail)
+     (filter #(and (:root? %) (not (:progressable? %))) tail)
+     (filter #(and (:root? %) (:progressable? %)) tail))))
+
+(defn- block-text
+  [tenure-id agent-id responsibility progressable ready-entries waiting-entries
+   omitted-ids responsibility-omitted]
+  (let [omitted (set omitted-ids)
+        ready (->> ready-entries
+                   (remove #(contains? omitted (:task-id (:view %))))
+                   (mapv :view))
+        waiting (->> waiting-entries
+                     (remove #(contains? omitted (:task-id (:view %))))
+                     (mapv :view))
+        block (cond-> {:tenure-id tenure-id
+                       :agent-id agent-id
+                       :responsibility responsibility
+                       :global-progressable-reasons (mapv name progressable)
+                       :ready-tasks ready
+                       :waiting-tasks waiting}
+                (or (pos? (count omitted-ids))
+                    (pos? responsibility-omitted))
+                (assoc :board-truncated? true
+                       :omitted-task-count (count omitted-ids)
+                       :omitted-task-ids
+                       (vec (take omitted-task-id-limit omitted-ids)))
+                (pos? responsibility-omitted)
+                (assoc :responsibility-truncated? true
+                       :omitted-responsibility-count responsibility-omitted))]
+    (ufss/write-str block)))
+
+(defn- board-work-block
+  [board* tenure-id agent-id responsibility progressable ready waiting]
+  (let [responsibility (vec responsibility)
+        ready-entries (mapv #(task-entry board* %) ready)
+        waiting-entries (mapv #(task-entry board* %) waiting)
+        omission-ids (->> (concat ready-entries waiting-entries)
+                          omission-groups
+                          (mapv (comp :task-id :view)))]
+    (loop [omitted []]
+      (let [text (block-text tenure-id agent-id responsibility progressable
+                             ready-entries waiting-entries omitted 0)]
+        (if (<= (utf8-byte-length text) max-board-block-bytes)
+          text
+          (if (< (count omitted) (count omission-ids))
+            (recur (conj omitted (nth omission-ids (count omitted))))
+            (loop [responsibility responsibility
+                   omitted-responsibility 0]
+              (let [text (block-text tenure-id agent-id responsibility
+                                     progressable ready-entries waiting-entries
+                                     omitted omitted-responsibility)]
+                (cond
+                  (<= (utf8-byte-length text) max-board-block-bytes) text
+                  (empty? responsibility)
+                  (throw (ex-info "board work prompt block exceeds its byte limit"
+                                  {:code :PROMPT_TOO_LARGE
+                                   :limit max-board-block-bytes
+                                   :bytes (utf8-byte-length text)}))
+                  :else
+                  (recur (pop responsibility)
+                         (inc omitted-responsibility)))))))))))
 
 (defn public-board-snapshot
   "Return the public board view a swarm actor may see.
@@ -118,7 +287,10 @@
   [mission tenure-id]
   (when-let [board* (host/board-of mission tenure-id)]
     {:board-version (:board-version board*)
-     :tasks (:tasks board*)
+     :tasks (let [tasks (:tasks board*)]
+              (if (some task-needs-truncation? (vals tasks))
+                (update-vals tasks truncate-task-fields)
+                tasks))
      :actors (into {}
                    (map (fn [[agent-id actor]]
                           [agent-id
@@ -137,7 +309,8 @@
   "Build a worker/holder prompt from the public board only.
 
   The Reviewer ledger, findings, private conversation, and other agents'
-  messages never enter this text."
+  messages never enter this text.  The task lists are printed as one
+  EDN+UFSS block so goal text stays a single string value."
   [mission tenure-id agent-id]
   (let [board* (host/board-of mission tenure-id)
         tasks (vals (:tasks board*))
@@ -172,14 +345,9 @@
                  (if (seq progressable)
                    (str/join ", " (map name progressable))
                    "none")
-                 "\nPublic ready tasks:\n"
-                 (if (seq ready)
-                   (str/join "\n" (map task-line ready))
-                   "- none")
-                 "\nWaiting tasks:\n"
-                 (if (seq waiting)
-                   (str/join "\n" (map task-line waiting))
-                   "- none")
+                 "\nPublic board (EDN+UFSS):\n"
+                 (board-work-block board* tenure-id agent-id responsibility
+                                   progressable ready waiting)
                  "\nDecide your next legal action from this board.")}]))
 
 ;; ---------------------------------------------------------------------------

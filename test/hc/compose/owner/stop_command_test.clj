@@ -30,6 +30,12 @@
   [handle]
   (:state ((:snapshot handle))))
 
+(defn- run-state
+  [state]
+  (get-in state [:cancel :nodes
+                 (get-in state [:cancel :active-run-id])
+                 :state]))
+
 (defn- command!
   [handle command-id payload]
   ((:submit-command! handle)
@@ -128,5 +134,59 @@
         (is (= 1 (count (filter #(= "hello" (:text %))
                                 (:conversation (owner-state handle)))))
             "a replay must not append a second user message"))
+      (finally
+        ((:stop! handle))))))
+
+(deftest stop-clears-queued-turns-and-does-not-replay-them
+  (let [requests (atom [])
+        cancels (atom [])
+        handle (start-owner requests cancels)]
+    (try
+      (command! handle "cmd-first" {:kind :send-message :text "first"})
+      (is (wait-for #(= 1 (count @requests)) 3000)
+          "the first turn starts one model request")
+
+      ;; The plan model is still live, so this turn waits in `:pending-turns`.
+      (command! handle "cmd-queued" {:kind :send-message :text "queued"})
+      (is (wait-for #(some (fn [turn] (= "queued" (:text turn)))
+                           (:pending-turns (owner-state handle)))
+                    3000)
+          "the second turn is queued behind the live model")
+
+      (let [receipt (command! handle "cmd-stop"
+                              {:kind :stop-run
+                               :origin :operator-stop
+                               :reason :user-cancel})]
+        (is (= :accepted (:status receipt)) (pr-str receipt))
+        (is (empty? (:pending-turns (owner-state handle)))
+            "a stop discards every queued turn")
+        (is (some #(= "queued" (:text %))
+                  (:conversation (owner-state handle)))
+            "the committed message stays in the conversation")
+        (is (= 1 (count @requests))
+            "no queued turn is dispatched by the stop"))
+
+      (is (wait-for
+           #(contains? #{:cancelling :cancelled}
+                       (run-state (owner-state handle)))
+           3000)
+          "the stop reaches the run")
+
+      (command! handle "cmd-after-stop"
+                {:kind :send-message :text "after-stop"})
+      (is (not-any? #(= "queued" (:text %))
+                    (:pending-turns (owner-state handle)))
+          "the new message cannot revive the old queued turn")
+      ;; If the new turn is served, every later model request must belong to
+      ;; the new command, never to the stopped queue.
+      (let [served? (wait-for #(>= (count @requests) 2) 3000)]
+        (is (not-any? #(= "cmd-queued"
+                          (get-in % [:snapshot :turn-command-id]))
+                      (rest @requests))
+            "no model request is built from the stopped queue")
+        (when served?
+          (is (= "cmd-after-stop"
+                 (get-in (last @requests)
+                         [:snapshot :turn-command-id])))))
       (finally
         ((:stop! handle))))))

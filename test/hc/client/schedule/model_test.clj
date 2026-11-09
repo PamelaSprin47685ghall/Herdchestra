@@ -779,3 +779,16 @@
       (is (= :unknown (:kind policy)))
       (is (not (str/blank? (:label policy))))
       (is (not (str/blank? (:notice policy)))))))
+
+(deftest scheduler-action-text-is-total
+  (doseq [[kind expected]
+          [[:scheduler/enable "已启用"]
+           [:scheduler/pause "已暂停"]
+           [:scheduler/resume "已恢复"]
+           [:scheduler/repair "已修复"]
+           [:future-kind "未识别"]
+           [nil "未识别"]]]
+    (let [text (#'model/scheduler-action-text kind)]
+      (is (string? text) (str kind))
+      (is (not (str/blank? text)) (str kind))
+      (is (str/includes? text expected) (str kind)))))

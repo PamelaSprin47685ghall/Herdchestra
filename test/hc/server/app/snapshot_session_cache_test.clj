@@ -47,7 +47,9 @@
                {:sessions [(active-summary)
                            (sessions/session-summary (record revision state))]
                 :session-records [(record revision state)]
-                :owner-snapshots {}
+                :owner-snapshots
+                {"s2" {:state {:controller-id "client-1"
+                               :observer-ids ["client-2" "client-3"]}}}
                 :active-session "s2"
                 :config {}
                 :sync {:phase :synced}
@@ -61,7 +63,21 @@
     (testing "the history projection agrees with the summary row"
       (is (= :reverted
              (get-in reverted [:session/history "s1" :context
-                               :compressions 0 :state]))))))
+                               :compressions 0 :state]))))
+    (testing "the active Owner's presence reaches the summary"
+      (is (= "client-1"
+             (get-in reverted [:session/by-id "s2"
+                               :session/controller-id])))
+      (is (= ["client-2" "client-3"]
+             (get-in reverted [:session/by-id "s2"
+                               :session/observer-ids]))))
+    (testing "a session without an Owner publishes empty presence"
+      (is (contains? (get-in reverted [:session/by-id "s1"])
+                     :session/controller-id))
+      (is (nil? (get-in reverted [:session/by-id "s1"
+                                  :session/controller-id])))
+      (is (= [] (get-in reverted [:session/by-id "s1"
+                                  :session/observer-ids]))))))
 
 (deftest list-session-summaries-carry-the-revision
   (testing "the snapshot cache key can see a committed change"

@@ -416,34 +416,40 @@
                              {:key (draft-key draft :reject-reason)})
                  "随拒绝命令发送；不会写入记忆正文。"))
         (error-line (:error draft))
-        (el :div {:class "hc-mat-actions"}
+        (el :div {:class "hc-mat-actions hc-mat-save-row"}
             (if edit?
               (case status
                 (:candidate :rejected)
-                (el :div {:class "wb-row"}
-                    (primary-button "批准候选（按当前范围）"
-                                    :materials/memory-approve)
-                    (danger-button "拒绝" :materials/memory-reject))
+                (primary-button "批准候选（按当前范围）"
+                                :materials/memory-approve)
 
                 :active
-                (el :div {:class "wb-row"}
-                    (primary-button "保存替换" :materials/memory-save)
-                    (action-button "归档" :materials/memory-archive))
+                (primary-button "保存替换" :materials/memory-save)
 
                 :archived
-                (el :div {:class "wb-row"}
-                    (primary-button "恢复" :materials/memory-restore)
-                    (if (:confirm-delete? draft)
-                      (el :div {:class "wb-row"}
-                          (danger-button "确认永久删除"
-                                         :materials/memory-delete)
-                          (action-button "取消"
-                                         :materials/memory-cancel-delete))
-                      (danger-button "永久删除"
-                                     :materials/memory-request-delete)))
+                (primary-button "恢复" :materials/memory-restore)
 
                 (primary-button "保存替换" :materials/memory-save))
               (primary-button "保存记忆" :materials/memory-save)))
+        (when (and edit? (contains? #{:candidate :rejected} status))
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
+              (danger-button "拒绝" :materials/memory-reject)))
+        (when (and edit? (= :active status))
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
+              (action-button "归档" :materials/memory-archive)))
+        (when (and edit? (= :archived status))
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
+              (if (:confirm-delete? draft)
+                (danger-button "确认永久删除"
+                               :materials/memory-delete)
+                (danger-button "永久删除"
+                               :materials/memory-request-delete))
+              (when (:confirm-delete? draft)
+                (action-button "取消"
+                               :materials/memory-cancel-delete))))
         (el :p {:class "wb-muted hc-mat-note"}
             "修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。"))))
 
@@ -565,17 +571,19 @@
           (when (and edit? (empty? assistant-options))
             (el :p {:class "wb-muted hc-mat-note"}
                 "当前没有可绑定的助手：先创建助手，或在会话中选择助手后再绑定世界书。"))
-        (el :div {:class "hc-mat-actions"}
+        (el :div {:class "hc-mat-actions hc-mat-save-row"}
             (primary-button (if edit? "保存世界书" "创建世界书")
-                            :materials/book-save)
-            (when edit?
+                            :materials/book-save))
+        (when edit?
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
               (if (:confirm-delete? draft)
-                (el :div {:class "wb-row"}
-                    (danger-button "确认删除世界书"
-                                   :materials/book-delete)
-                    (action-button "取消" :materials/book-cancel-delete))
+                (danger-button "确认删除世界书"
+                               :materials/book-delete)
                 (danger-button "删除世界书"
-                               :materials/book-request-delete))))
+                               :materials/book-request-delete))
+              (when (:confirm-delete? draft)
+                (action-button "取消" :materials/book-cancel-delete))))
         (when edit?
           (el :p {:class "wb-muted hc-mat-note"}
               "已绑定的世界书默认拒绝删除；先解绑所有助手。"))
@@ -602,7 +610,7 @@
                   (el :p {:class "wb-muted"}
                       "服务器尚未提供本会话的世界书运行计数。")))
               (let [{:keys [reported? rows]} (model/worldbook-omitted-rows state)]
-                (el :div {:class "hc-mat-runtime"}
+                (el :div {:class "hc-mat-runtime-sub"}
                     (el :h4 {} "命中但未提供")
                     (if reported?
                       (if (seq rows)
@@ -745,29 +753,32 @@
                   (:enabled? draft)
                   (on-checked :materials/entry-edit-field :field :enabled?))
         (error-line (:error draft))
-        (el :div {:class "hc-mat-actions"}
+        (el :div {:class "hc-mat-actions hc-mat-save-row"}
             (primary-button (if edit? "保存条目" "创建条目")
-                            :materials/entry-save)
-            (when edit?
-              (el :div {:class "wb-row"}
-                  (field "移动到"
-                         (select (:move-book-id draft)
-                                 (cons ["选择目标世界书" ""]
-                                       (for [book move-books]
-                                         [(text (:name book)) (:id book)]))
-                                 (on-change :materials/entry-edit-field
-                                            :field :move-book-id))
-                         "移动是独立操作，计数器随条目移动；当前书不在列表中。")
-                  (action-button "移动" :materials/entry-move)
-                  (when (:last-move state)
-                    (action-button "撤销移动" :materials/entry-undo-move))
-                  (if (:confirm-delete? draft)
-                    (el :div {:class "wb-row"}
-                        (danger-button "确认删除条目"
-                                       :materials/entry-delete)
-                        (action-button "取消" :materials/entry-cancel-delete))
-                    (danger-button "删除条目"
-                                   :materials/entry-request-delete))))))))
+                            :materials/entry-save))
+        (when edit?
+          (el :div {:class "hc-mat-actions"}
+              (field "移动到"
+                     (select (:move-book-id draft)
+                             (cons ["选择目标世界书" ""]
+                                   (for [book move-books]
+                                     [(text (:name book)) (:id book)]))
+                             (on-change :materials/entry-edit-field
+                                        :field :move-book-id))
+                     "移动是独立操作，计数器随条目移动；当前书不在列表中。")
+              (action-button "移动" :materials/entry-move)
+              (when (:last-move state)
+                (action-button "撤销移动" :materials/entry-undo-move))))
+        (when edit?
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
+              (if (:confirm-delete? draft)
+                (danger-button "确认删除条目"
+                               :materials/entry-delete)
+                (danger-button "删除条目"
+                               :materials/entry-request-delete))
+              (when (:confirm-delete? draft)
+                (action-button "取消" :materials/entry-cancel-delete)))))))
 
 (defn worldbook-tree [state]
   (el :div {:class "hc-mat-section"}
@@ -901,6 +912,12 @@
 
 (defn- card-selection [state]
   (let [mode (or (:instruction-mode state) :turn)
+        turn-ids (model/turn-card-ids state)
+        session-ids (model/session-card-ids state)
+        turn-count (count turn-ids)
+        session-count (count session-ids)
+        other-label (if (= :session mode) "仅本轮" "本会话持续")
+        other-count (if (= :session mode) turn-count session-count)
         conflict (model/selection-format-conflict state)
         missing (model/missing-required-placeholders state)
         pending? (model/instruction-selection-pending? state)]
@@ -909,8 +926,11 @@
             (el :h3 {} "指令卡应用方式"))
         (el :div {:class "hc-mat-mode" :role "group"
                   :aria-label "指令卡应用方式"}
-            (mode-button :turn mode "仅本轮" "默认" pending?)
-            (mode-button :session mode "本会话持续" "持久选择" pending?))
+            (mode-button :turn mode (str "仅本轮（" turn-count "）") "默认" pending?)
+            (mode-button :session mode (str "本会话持续（" session-count "）")
+                         "持久选择" pending?))
+        (el :p {:class "wb-muted hc-mat-note hc-mat-mode-hint"}
+            (str "另一集合：" other-label " " other-count " 条。"))
         (if (= :session mode)
           (session-selection-panel state pending?)
           (turn-selection-panel state pending?))
@@ -974,17 +994,19 @@
                   (on-checked :materials/card-edit-field :field :enabled?)
                   pending?)
         (error-line (:error draft))
-        (el :div {:class "hc-mat-actions"}
+        (el :div {:class "hc-mat-actions hc-mat-save-row"}
             (primary-button (if edit? "保存指令卡" "创建指令卡")
-                            :materials/card-save)
-            (when edit?
+                            :materials/card-save))
+        (when edit?
+          (el :div {:class "hc-mat-actions hc-mat-danger-row"
+                    :data-danger "true"}
               (if (:confirm-delete? draft)
-                (el :div {:class "wb-row"}
-                    (danger-button "确认删除指令卡"
-                                   :materials/card-delete)
-                    (action-button "取消" :materials/card-cancel-delete))
+                (danger-button "确认删除指令卡"
+                               :materials/card-delete)
                 (danger-button "删除指令卡"
-                               :materials/card-request-delete)))))))
+                               :materials/card-request-delete))
+              (when (:confirm-delete? draft)
+                (action-button "取消" :materials/card-cancel-delete)))))))
 
 (defn cards-tree [state]
   (el :div {:class "hc-mat-section"}

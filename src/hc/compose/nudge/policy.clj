@@ -15,6 +15,141 @@
   "The Phase B directive.  It never claims a review ledger exists."
   "立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。")
 
+(def ^:private max-ledger-item-bytes
+  "UTF-8 byte cap for one rendered review-ledger item."
+  2048)
+
+(def ^:private max-nudge-message-bytes
+  "UTF-8 byte cap for one complete Nudge message."
+  16384)
+
+(def ^:private central-directive
+  "§2.5 hard directive used when a capped message must be rebuilt."
+  "当前的 review 账本还有上述事项没有做，立刻去做！系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。")
+
+(defn- utf8-byte-length
+  ^long [^String s]
+  (alength (.getBytes s "UTF-8")))
+
+(defn- utf8-code-point-length
+  ^long [^long cp]
+  (cond
+    (< cp 0x80) 1
+    (< cp 0x800) 2
+    (< cp 0x10000) 3
+    :else 4))
+
+(defn- truncate-utf8
+  "Return the longest prefix of S with at most LIMIT UTF-8 bytes.
+
+  Iteration advances by whole code points, so a surrogate pair is never
+  split.  A malformed lone surrogate stops the prefix."
+  [^String s limit]
+  (let [n (.length s)]
+    (loop [i 0
+           used 0]
+      (if (>= i n)
+        s
+        (let [c (.charAt s i)
+              pair? (and (Character/isHighSurrogate c)
+                         (< (inc i) n)
+                         (Character/isLowSurrogate (.charAt s (inc i))))
+              cp (if pair?
+                   (Character/toCodePoint c (.charAt s (inc i)))
+                   (int c))
+              size (if (and (Character/isSurrogate c) (not pair?))
+                     0
+                     (utf8-code-point-length cp))
+              next-i (if pair? (+ i 2) (inc i))]
+          (cond
+            (zero? size) (subs s 0 i)
+            (> (+ used size) limit) (subs s 0 i)
+            :else (recur next-i (+ used size))))))))
+
+(defn- truncation-suffix
+  [n]
+  (str "…[+" n " bytes] (truncated)"))
+
+(defn- cap-ledger-line
+  "Cap one rendered ledger item at max-ledger-item-bytes.
+
+  The suffix reports the number of UTF-8 bytes removed from the original
+  rendered item, so a reader can see how much text is on the ledger."
+  [^String line]
+  (if (<= (utf8-byte-length line) max-ledger-item-bytes)
+    line
+    (let [full-bytes (utf8-byte-length line)
+          suffix (truncation-suffix full-bytes)
+          budget (max 0 (- max-ledger-item-bytes
+                           (utf8-byte-length suffix)))
+          kept (truncate-utf8 line budget)
+          cut (- full-bytes (utf8-byte-length kept))]
+      (str kept (truncation-suffix cut)))))
+
+(defn- central-directive-for
+  "Recover the relay's directive prefix from one non-empty relay message."
+  [^String full]
+  (let [marker "\n未完成事项：\n"
+        index (str/index-of full marker)]
+    (if index (subs full 0 index) central-directive)))
+
+(defn- assemble-central-message
+  [directive lines omitted]
+  (str directive
+       "\n未完成事项："
+       (when (seq lines)
+         (str "\n" (str/join "\n" lines)))
+       (when (pos? omitted)
+         (str "\n(另有 " omitted " 项未列出，见 review 台账)"))))
+
+(defn- cap-central-message
+  "Fit the capped ledger lines under max-nudge-message-bytes.
+
+  The directive and the omission footer occupy the budget first.  Items are
+  kept in key order; the lexicographically last items are omitted first.
+  The binary search finds the largest kept prefix that still fits."
+  [directive lines]
+  (let [total (count lines)
+        assemble (fn [kept-count]
+                   (assemble-central-message
+                    directive
+                    (subvec lines 0 kept-count)
+                    (- total kept-count)))
+        fits? (fn [text]
+                (<= (utf8-byte-length text) max-nudge-message-bytes))]
+    (loop [lo 0
+           hi total
+           best 0]
+      (if (> lo hi)
+        (let [text (assemble best)]
+          (if (fits? text)
+            text
+            (throw (ex-info "nudge message cannot fit its fixed directive and footer"
+                            {:code :NUDGE_MESSAGE_TOO_LARGE
+                             :limit max-nudge-message-bytes
+                             :bytes (utf8-byte-length text)}))))
+        (let [mid (quot (+ lo hi) 2)
+              text (assemble mid)]
+          (if (fits? text)
+            (recur (inc mid) hi mid)
+            (recur lo (dec mid) best)))))))
+
+(defn- cap-worker-message
+  "Keep a worker message under the whole-message cap without losing the
+  Phase B directive."
+  [^String head]
+  (let [full (str head worker-directive)]
+    (if (<= (utf8-byte-length full) max-nudge-message-bytes)
+      full
+      (let [head-bytes (utf8-byte-length head)
+            suffix (str (truncation-suffix head-bytes) "\n")
+            budget (max 0 (- max-nudge-message-bytes
+                             (utf8-byte-length worker-directive)
+                             (utf8-byte-length suffix)))
+            kept (truncate-utf8 head budget)
+            cut (- head-bytes (utf8-byte-length kept))]
+        (str kept (truncation-suffix cut) "\n" worker-directive)))))
+
 (def default-round-budget
   "Maximum consecutive Nudge rounds for one [tenure-id agent-id] before the
   policy answers `:round-boundary`.
@@ -32,7 +167,13 @@
   :round-boundary)
 
 (def role-lanes
-  "The lane that owns each task-cycle role."
+  "The lane that owns each task-cycle role.
+
+  `:steward` and `:meditator` are repository-stewardship roles.  They run
+  from evidence events and the Stewardship Decision Frontier, not from a
+  task-cycle turn, so they are deliberately absent here.  `decide` answers
+  `:unsupported-role` for them: a turn-end observation must never
+  manufacture a Nudge for a role that has no lane."
   {:plan :plan
    :reviewer :execution
    :worker :execution
@@ -283,10 +424,29 @@
 (defn central-message
   "Return the centralized-phase Nudge text for LEDGER.
 
-  Delegates to `hc.core.relay/central-nudge-message` so the relay and the
-  compose policy cannot drift."
+  A ledger that fits both byte caps delegates verbatim to
+  `hc.core.relay/central-nudge-message`, so the relay and the compose policy
+  cannot drift.  A longer ledger caps each rendered item at
+  max-ledger-item-bytes, then omits the lexicographically last items until
+  the whole message fits max-nudge-message-bytes.  The §2.5 directive and
+  an accurate omission footer stay in every capped message."
   [ledger]
-  (relay/central-nudge-message ledger))
+  (let [ledger (or ledger {})
+        entries (vec (ledger/entries ledger))
+        full (relay/central-nudge-message ledger)]
+    (if (empty? entries)
+      full
+      (let [raw-lines (mapv (fn [[k v]] (str "- " k ": " v)) entries)
+            item-too-large? (some #(> (utf8-byte-length %)
+                                      max-ledger-item-bytes)
+                                  raw-lines)
+            message-too-large? (> (utf8-byte-length full)
+                                  max-nudge-message-bytes)]
+        (if-not (or item-too-large? message-too-large?)
+          full
+          (cap-central-message
+           (central-directive-for full)
+           (mapv cap-ledger-line raw-lines)))))))
 
 (defn worker-message
   "Return the Phase B worker Nudge text.
@@ -307,10 +467,11 @@
                (str/join ", " (map reason-label reasons))
                "。")
           "全局可推进集合为空。")]
-    (str "你是" label "。\n"
-         responsibility-line "\n"
-         work-line "\n"
-         "重新观察看板并继续推进。" worker-directive)))
+    (cap-worker-message
+     (str "你是" label "。\n"
+          responsibility-line "\n"
+          work-line "\n"
+          "重新观察看板并继续推进。"))))
 
 (defn- base-decision
   [observation]

@@ -63,7 +63,9 @@
       (is (not (str/includes? markup "总结今天的会话与待办。"))))
     (testing "a running item keeps a separate stop action"
       (is (str/includes? markup "当前运行"))
-      (is (str/includes? markup "停止当前运行")))))
+      (is (str/includes? markup "停止当前运行")))
+    (testing "the toolbar keeps exactly one new-task action"
+      (is (= 1 (count (re-seq #"新建任务" markup)))))))
 
 (deftest detail-shows-prompt-runs-and-stop
   (let [markup (html (fixture/detail-state "schedule-active"))]
@@ -145,7 +147,9 @@
   (let [markup (html (assoc-in (fixture/base-state) [:server :schedules] {}))]
     (is (str/includes? markup "尚无定时任务"))
     (is (str/includes? markup "用示例填入表单"))
-    (is (str/includes? markup "点击示例只会填入表单，不会替你开启任务。"))))
+    (is (str/includes? markup "点击示例只会填入表单，不会替你开启任务。"))
+    (testing "the empty state owns the only primary new-task action"
+      (is (= 1 (count (re-seq #"新建任务" markup)))))))
 
 (deftest edit-form-hides-save-mode
   (let [base (fixture/detail-state "schedule-daily")

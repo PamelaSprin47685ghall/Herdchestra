@@ -96,6 +96,74 @@
     (str (when code (str (name code) " · "))
          (or message "工作区读取失败"))))
 
+(def settings-route-hash
+  "The workbench reads this exact hash form back into `:ui/route`.
+  `hc.client.workbench.routing` writes `#/settings` for the same page."
+  "#/settings")
+
+(defn- open-settings!
+  "Navigate to the settings page through the workbench's single hash router.
+
+  The panel receives no navigation props, so it writes the same hash the
+  sidebar and the connection badge use.  The workbench's `hashchange`
+  listener turns it into `:ui/route :settings`."
+  []
+  (when (and (exists? js/window)
+             (not= settings-route-hash (.-hash js/window.location)))
+    (set! (.-hash js/window.location) settings-route-hash)))
+
+(defn- response-code
+  [result]
+  (or (get-in result [:error :code]) (:code result)))
+
+(defn- missing-resource?
+  "A 404 means the resource is gone, not that the server is unhealthy."
+  [result]
+  (or (= 404 (:http-status result))
+      (= :NOT_FOUND (response-code result))))
+
+(defn- server-unavailable?
+  "Any 5xx means the request never reached a usable workspace service."
+  [result]
+  (let [status (:http-status result)]
+    (or (and (number? status) (<= 500 status 599))
+        (= :SERVICE_UNAVAILABLE (response-code result)))))
+
+(defn request-error-text
+  "User-facing Chinese text for one failed workspace response.
+
+  Missing resources and server outages get stable Chinese placeholders; the
+  panel never prints a response code or an English error token as the whole
+  message."
+  [result]
+  (cond
+    (server-unavailable? result)
+    "服务器暂不可用；小应用与本地数据没有改变。请稍后重试，或打开设置检查连接。"
+
+    (missing-resource? result)
+    "找不到这个工作区资源；它可能已被移动或删除。请重新选择路径，或刷新后重试。"
+
+    :else
+    (error-text result)))
+
+(defn clear-disabled?
+  "True when the selected app has no local records to clear.
+
+  The clear control stays disabled and a clear request leaves the
+  confirmation dialog closed; an empty store never produces a fake success."
+  [state]
+  (zero? (long (or (get-in state [:data :summary :keys]) 0))))
+
+(def clear-disabled-reason
+  "The disabled clear control names the missing precondition."
+  "没有可清空的本地记录")
+
+(defn- focus-relink!
+  []
+  (when (exists? js/document)
+    (when-let [node (.getElementById js/document "hc-miniapp-relink-path")]
+      (.focus node))))
+
 (defn- time-label
   [value]
   (let [value (str (or value ""))]
@@ -346,7 +414,14 @@
              (fn [result]
                (if (:ok? result)
                  (open-source! set-state! app result)
-                 (unlinked! set-state! app result)))))
+                 (if (missing-resource? result)
+                   (unlinked! set-state! app result)
+                   (set-state! assoc
+                               :app app
+                               :selected-id (:app-id app)
+                               :status :error
+                               :error (request-error-text result)
+                               :notice nil))))))
 
 (defn- open-restored!
   [set-state! app version]
@@ -394,7 +469,8 @@
              (load-current! set-state! app))
            (set-state! assoc :status :error :error "小应用记录不存在"))))
       (.catch (fn [error]
-                (set-state! assoc :status :error :error (str error))))))
+                (set-state! assoc :status :error
+                            :error (str "读取小应用失败：" error))))))
 
 (defn- create-app!
   [set-state! workspace-root result]
@@ -451,7 +527,8 @@
                                               :result result}
                                      :add-error nil)
                          :else (create-app! set-state! workspace-root result)))
-                     (set-state! assoc :add-error (error-text result))))))))
+                     (set-state! assoc :add-error
+                                 (request-error-text result))))))))
 
 (defn- relink-confirm!
   [state-ref set-state!]
@@ -497,7 +574,8 @@
 (defn- clear-data!
   [state-ref set-state!]
   (let [app (:app @state-ref)]
-    (when app
+    (when (and app
+               (not (clear-disabled? @state-ref)))
       (-> (store/kv-clear! (:app-id app))
           (.then
            (fn [_]
@@ -647,7 +725,7 @@
                              :selected nil)
                  (set-state! update :picker assoc
                              :loading? false
-                             :error (error-text result))))))
+                             :error (request-error-text result))))))
 
 (defn- open-picker!
   [set-state! payload reply!]
@@ -801,19 +879,16 @@
 
 (defn- data-panel
   [{:keys [app data versions session-grants on-export on-export-version
-           on-restore on-restore-local on-clear on-close on-revoke-grant
+           on-restore on-restore-local on-clear on-revoke-grant
            on-revoke-session]}]
   (let [summary (:summary data)
         entries (:entries data)
         grants (vec (:grants app))
-        keys (sort (keys entries))]
+        keys (sort (keys entries))
+        clearable? (pos? (long (or (:keys summary) 0)))]
     (dom/section {:className "hc-miniapp-data" :aria-label "小应用数据"}
                  (dom/div {:className "hc-sandbox-header"}
-                          (dom/h3 {} "小应用数据")
-                          (dom/button {:type "button"
-                                       :className "hc-sandbox-button"
-                                       :onClick (fn [_] (on-close))}
-                                      "关闭"))
+                          (dom/h3 {} "小应用数据"))
                  (dom/div {:className "hc-sandbox-meta"}
                           (dom/span {} (str (:keys summary) " 条记录"))
                           (dom/span {} (str "约 " (model/format-bytes (:bytes summary))))
@@ -827,6 +902,9 @@
                                       "导出数据")
                           (dom/button {:type "button"
                                        :className "hc-sandbox-button hc-sandbox-button-danger"
+                                       :disabled (not clearable?)
+                                       :title (when-not clearable?
+                                                clear-disabled-reason)
                                        :onClick (fn [_] (on-clear))}
                                       "清空数据"))
                  (when (seq keys)
@@ -903,7 +981,10 @@
                                       "工作区根目录"
                                       (:path picker))))
                  (when (:error picker)
-                   (ui/banner {:tone :danger :text (:error picker)}))
+                   (ui/banner {:tone :danger
+                               :text (:error picker)
+                               :actions [{:label "刷新目录"
+                                          :on-click #(on-load (:path picker))}]}))
                  (when (:loading? picker)
                    (dom/div {:className "hc-sandbox-muted" :role "status"} "正在读取目录…"))
                  (when (seq (:entries picker))
@@ -1075,23 +1156,29 @@
                             (set-state! assoc
                                         :apps apps
                                         :loading? false
-                                        :error nil)
+                                        :list-error nil)
                             (doseq [app apps]
                               (check-file! state-ref set-state! app)))))
                        (.catch (fn [error]
                                  (set-state! assoc
                                              :loading? false
-                                             :error (str "读取小应用列表失败：" error))))))]
+                                             :list-error
+                                             (str "读取小应用列表失败：" error))))))
+        reload! (fn []
+                  (api/root!
+                   (fn [result]
+                     (if (:ok? result)
+                       (do (swap! state-ref assoc :workspace (:workspace result))
+                           (set-state! assoc
+                                       :workspace (:workspace result)
+                                       :server-error nil)
+                           (refresh!))
+                       (set-state! assoc
+                                   :server-error (request-error-text result))))))]
     (react/useEffect
      (fn []
        (refresh!)
-       (api/root!
-        (fn [result]
-          (if (:ok? result)
-            (do (swap! state-ref assoc :workspace (:workspace result))
-                (set-state! assoc :workspace (:workspace result))
-                (refresh!))
-            (set-state! assoc :error (error-text result)))))
+       (reload!)
        (let [online! (fn [] (set-state! update :network assoc :online? (model/online?)))
              escape! (fn [event]
                        (when (and (= "Escape" (.-key event))
@@ -1118,6 +1205,10 @@
           too-large? (boolean (:too-large? snapshot))
           force-open? (boolean (:force-open? state))
           storage-blocked? (and too-large? (not force-open?))
+          clearable? (not (clear-disabled? state))
+          request-clear! (fn []
+                           (when clearable?
+                             (set-state! assoc :confirm-clear? true)))
           frame-config {:mode "app"
                         :baseUrl (str "https://mini-app.invalid/"
                                       (js/encodeURIComponent (str (:path app))))
@@ -1281,14 +1372,24 @@
                         (dom/div {:className "hc-sandbox-toolbar"}
                                  (dom/button {:type "button"
                                               :className "hc-sandbox-button"
-                                              :onClick (fn [_] (refresh!))}
+                                              :onClick (fn [_] (reload!))}
                                              "刷新")
                                  (dom/button {:type "button"
                                               :className "hc-sandbox-button"
                                               :onClick (fn [_] (set-state! update :fullscreen? not))}
                                              (if (:fullscreen? state) "退出全屏" "全屏"))))
-               (when (:error state)
-                 (ui/banner {:tone :danger :text (:error state)}))
+               (when (:list-error state)
+                 (ui/banner {:tone :danger
+                             :text (:list-error state)
+                             :actions [{:label "重试"
+                                        :on-click #(refresh!)}]}))
+               (when (:server-error state)
+                 (ui/banner {:tone :danger
+                             :text (:server-error state)
+                             :actions [{:label "刷新"
+                                        :on-click reload!}
+                                       {:label "打开设置"
+                                        :on-click open-settings!}]}))
                (dom/div {:className "hc-miniapps-grid"}
                         (dom/section {:className "hc-miniapps-panel" :aria-label "小应用列表"}
                                      (dom/div {:className "hc-miniapp-add"}
@@ -1340,7 +1441,7 @@
                                                                      :generating? false
                                                                      :generate-error
                                                                      (when-not (:ok? result)
-                                                                       (error-text result)))
+                                                                       (request-error-text result)))
                                                          (when (:ok? result)
                                                            (let [app (model/normalize-app (:app result))]
                                                              (when app
@@ -1370,7 +1471,9 @@
                                                                 :text (:generate-error state)
                                                                 :actions
                                                                 [{:label "刷新已有文件"
-                                                                  :on-click #(refresh!)}]})))
+                                                                  :on-click reload!}
+                                                                 {:label "打开设置"
+                                                                  :on-click open-settings!}]})))
                                      (when (:add-error state)
                                        (ui/banner {:tone :danger :text (:add-error state)}))
                                      (if (:loading? state)
@@ -1396,15 +1499,24 @@
                                        (ui/banner {:tone :danger
                                                    :text (str "脚本错误：" (or (:message (:runtime-error state)) "未知错误"))}))
                                      (cond
+                                       (= :error (:status state))
+                                       (ui/banner
+                                        {:tone :danger
+                                         :text (or (:error state) "读取失败")
+                                         :actions
+                                         (cond-> [{:label "打开设置"
+                                                   :on-click open-settings!}]
+                                           (:app-id app)
+                                           (conj {:label "重新读取"
+                                                  :on-click #(load-app! set-state!
+                                                                        (:app-id app))}))})
+
                                        (nil? app)
                                        (dom/div {:className "hc-sandbox-muted"}
                                                 "选择左侧的小应用，或输入路径打开一个 HTML 文件。")
 
                                        (= :loading (:status state))
                                        (dom/div {:className "hc-sandbox-muted" :role "status"} "正在读取小应用…")
-
-                                       (= :error (:status state))
-                                       (ui/banner {:tone :danger :text (or (:error state) "读取失败")})
 
                                        :else
                                        (dom/div {:className "hc-miniapps-panel"}
@@ -1446,10 +1558,17 @@
                                                 (when (= :unlinked (:status state))
                                                   (ui/banner {:tone :warn
                                                               :text "文件当前不可找到；数据仍保留。可以输入新路径重新关联，或导出/清空数据。"
-                                                              :actions [{:label "导出数据" :on-click #(export-data! state-ref)}
-                                                                        {:label "清空数据" :on-click #(set-state! assoc :confirm-clear? true)}]})
+                                                              :actions [{:label "重新关联"
+                                                                         :on-click focus-relink!}
+                                                                        {:label "导出数据"
+                                                                         :on-click #(export-data! state-ref)}
+                                                                        {:label "清空数据"
+                                                                         :disabled? (not clearable?)
+                                                                         :reason clear-disabled-reason
+                                                                         :on-click request-clear!}]})
                                                   (dom/div {:className "hc-miniapp-add"}
-                                                           (dom/input {:type "text"
+                                                           (dom/input {:id "hc-miniapp-relink-path"
+                                                                       :type "text"
                                                                        :value (or (:relink-path state) (:path app))
                                                                        :aria-label "重新关联路径"
                                                                        :onChange (fn [event]
@@ -1505,7 +1624,9 @@
                                                     :actions (cond-> [{:label "导出数据"
                                                                        :on-click #(export-data! state-ref)}
                                                                       {:label "清空数据"
-                                                                       :on-click #(set-state! assoc :confirm-clear? true)}]
+                                                                       :disabled? (not clearable?)
+                                                                       :reason clear-disabled-reason
+                                                                       :on-click request-clear!}]
                                                                storage-blocked?
                                                                (conj {:label "仍然打开（不同步 localStorage）"
                                                                       :on-click #(set-state! assoc
@@ -1547,8 +1668,7 @@
                                                                :on-export-version #(export-version! app %)
                                                                :on-restore #(restore-version! state-ref set-state! %)
                                                                :on-restore-local #(restore-version-local! state-ref set-state! %)
-                                                               :on-clear #(set-state! assoc :confirm-clear? true)
-                                                               :on-close #(set-state! assoc :show-data? false)
+                                                               :on-clear request-clear!
                                                                :on-revoke-grant (fn [grant]
                                                                                   (let [app (update app :grants
                                                                                                     (fn [grants]
@@ -1577,7 +1697,7 @@
                                            (set-state! assoc :relink nil)
                                            (create-app! set-state! (get-in state [:workspace :root]) result))
                                 :on-cancel #(set-state! assoc :relink nil)}))
-               (when (:confirm-clear? state)
+               (when (and (:confirm-clear? state) clearable?)
                  (clear-confirm-panel {:data (:data state)
                                        :on-confirm #(clear-data! state-ref set-state!)
                                        :on-cancel #(set-state! assoc :confirm-clear? false)}))

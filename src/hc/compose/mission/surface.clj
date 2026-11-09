@@ -2,10 +2,12 @@
   "Pure tool-role and model-role surface for a committed mission state.
 
   The Owner creates model and tool calls with mission roles (`:plan`,
-  `:reviewer`, `:worker`, `:holder`, `:plan-worker`).  The Clojure program
-  runtime expects program roles (`:clj-plan`, `:clj-review`, `:clj-worker`,
-  `:dedicated-worker`) plus dynamic flags that a static role cannot express:
-  Plan S1, Plan write unlock, holder eligibility, and the draft path.
+  `:reviewer`, `:worker`, `:holder`, `:plan-worker`, `:steward`,
+  `:meditator`).  The Clojure program runtime expects program roles
+  (`:clj-plan`, `:clj-review`, `:clj-worker`, `:dedicated-worker`,
+  `:clj-steward`, `:clj-meditator`) plus dynamic flags that a static role
+  cannot express: Plan S1, Plan write unlock, holder eligibility, and the
+  draft path.  The Steward and Meditator are never holders.
 
   This namespace derives that context from mission state.  It performs no
   I/O and does not mutate state.  The server/app adapter should merge the
@@ -22,7 +24,9 @@
    :worker :clj-worker
    :holder :clj-worker
    :plan-worker :dedicated-worker
-   :dedicated-worker :dedicated-worker})
+   :dedicated-worker :dedicated-worker
+   :steward :clj-steward
+   :meditator :clj-meditator})
 
 (defn program-role-for
   "Return the program role for a mission role, or nil."
@@ -242,7 +246,12 @@
   identity fields.  Failure: `{:ok? false :error {...}}`.
 
   This function does not check that the caller is the Owner; the Owner must
-  call it for the identity it has already authenticated."
+  call it for the identity it has already authenticated.
+
+  `:steward` and `:meditator` are repository-stewardship roles, not
+  tenure-bound mission roles.  `program-role-for` still maps them, but this
+  function does not invent a lane or tenure for them and answers
+  `:UNKNOWN_ROLE`."
   [state {:keys [role] :as request}]
   (case (keyword role)
     :plan (plan-context state request)

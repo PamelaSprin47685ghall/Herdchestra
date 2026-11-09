@@ -21,7 +21,7 @@
 (defn snapshot
   [{:keys [started-at store-open? session-count gateway-stats model-configured?
            config owners browser browser-errors publish-error components
-           component-errors]
+           component-errors git-hash git-dirty?]
     :or {started-at (System/currentTimeMillis)}}]
   (let [started-at (or started-at (System/currentTimeMillis))
         store-open? (if (fn? store-open?)
@@ -33,17 +33,27 @@
         gateway-stats (if (fn? gateway-stats)
                         (try (gateway-stats) (catch Throwable _ nil))
                         gateway-stats)
+        identity (if (and (some? git-hash) (some? git-dirty?))
+                   {:git-hash git-hash :git-dirty? (boolean git-dirty?)}
+                   (version/build-identity))
         component-errors (or component-errors {})
+        ;; A session count is an observation, not a readiness condition.  A
+        ;; 1000-session store can take seconds to count, and a failed or slow
+        ;; count must not turn `/healthz` into 503 while the process can
+        ;; still accept work.
         ok? (and store-open?
-                 (some? session-count)
                  (some? gateway-stats)
                  (empty? component-errors))]
     (cond-> {:ok ok?
              :uptime-ms (- (System/currentTimeMillis) started-at)
              :version version/version
+             :git-hash (:git-hash identity)
+             :git-dirty? (boolean (:git-dirty? identity))
              :store {:open? store-open?
                      :path (some-> config :db-path)}
-             :sessions {:count session-count}
+             :sessions {:count (if (some? session-count)
+                                 session-count
+                                 :unknown)}
              :gateway gateway-stats
              :models {:configured? (boolean model-configured?)}
              :components (or components {})

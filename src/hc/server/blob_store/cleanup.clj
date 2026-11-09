@@ -107,10 +107,17 @@
   (try
     (assoc entry :referenced? (boolean (ref? (:id entry))))
     (catch Exception t
-      (err/fail! :BLOB_REFERENCE_ERROR
-                 "Blob reference lookup failed"
-                 {:id (:id entry)}
-                 t))))
+      (let [data (ex-data t)
+            code (or (err/code t) (:code data) (:error data) :BLOB_IO)]
+        (err/fail! :BLOB_REFERENCE_ERROR
+                   "Blob reference lookup failed"
+                   {:id (:id entry)
+                    :details {:cause code
+                              :cause-details
+                              (not-empty (dissoc data
+                                                 :error :code
+                                                 :storage/expected?))}}
+                   t)))))
 
 (defn- delete-error
   [id ^Throwable t]

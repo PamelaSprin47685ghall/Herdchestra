@@ -1,6 +1,7 @@
 {
  :A [
   hc.client.appearance-test
+  hc.client.artifacts-test
   hc.client.backup.bridge-test
   hc.client.backup.copy-wiring-test
   hc.client.backup.model-test
@@ -19,12 +20,15 @@
   hc.client.extensions-test
   hc.client.files.diff-test
   hc.client.files.model-test
+  hc.client.generated-card-test
   hc.client.materials.model-test
   hc.client.miniapps.model-test
   hc.client.model-auth-test
   hc.client.preview.model-test
+  hc.client.render-test
   hc.client.sandbox.model-test
   hc.client.schedule.model-test
+  hc.client.search.history-test
   hc.client.search.model-test
   hc.client.sessions.controls-test
   hc.client.settings.catalog-test
@@ -40,13 +44,17 @@
   hc.client.speech.settings-model-test
   hc.client.speech.translation-model-test
   hc.client.swarm-test
+  hc.client.swarm.model-test
   hc.client.sync-feed-test
   hc.client.sync-object-test
   hc.client.sync-test
+  hc.client.workbench.contrast-test
   hc.client.workbench.conversation-bridge-test
   hc.client.workbench.events-test
   hc.client.workbench.materials-bridge-test
   hc.client.workbench.model-test
+  hc.client.workbench.presence-invariants-test
+  hc.client.workbench.visual-invariants-test
   hc.compose.cancel.reason-property-test
   hc.compose.cancel.transition-property-test
   hc.compose.cancel-integration-test
@@ -58,8 +66,12 @@
   hc.compose.fleet.control-property-test
   hc.compose.fleet.control-test
   hc.compose.fleet.e2e-conflict-test
+  hc.compose.fleet.git-property-test
+  hc.compose.fleet.git-real-test
   hc.compose.fleet.git-test
+  hc.compose.fleet.launcher-property-test
   hc.compose.fleet.launcher-test
+  hc.compose.fleet.master-integration-test
   hc.compose.fleet.restore-property-test
   hc.compose.fleet.restore-test
   hc.compose.fleet.router-property-test
@@ -77,6 +89,7 @@
   hc.compose.guards.claim-property-test
   hc.compose.guards.owner-integration-test
   hc.compose.guards.scheduler-test
+  hc.compose.mission.abandon-property-test
   hc.compose.mission.actor-smoke-test
   hc.compose.mission.actors-property-test
   hc.compose.mission.control-property-test
@@ -93,9 +106,11 @@
   hc.compose.mission.smoke-test
   hc.compose.mission.surface-property-test
   hc.compose.mission.surface-test
+  hc.compose.mission.ufss-boundary-test
   hc.compose.mission.worker-test
   hc.compose.mission.worktree-executor-test
   hc.compose.mission.worktree-property-test
+  hc.compose.mission.worktree-slice-test
   hc.compose.nudge.owner-integration-test
   hc.compose.nudge.policy-test
   hc.compose.owner.assistant-prefix-test
@@ -103,6 +118,7 @@
   hc.compose.owner.board-test
   hc.compose.owner.commands-property-test
   hc.compose.owner.compact-test
+  hc.compose.owner.compact-property-test
   hc.compose.owner.conversation-compression-test
   hc.compose.owner.conversation-stability-test
   hc.compose.owner.dispatch-property-test
@@ -110,6 +126,7 @@
   hc.compose.owner.guards-property-test
   hc.compose.owner.handlers-property-test
   hc.compose.owner.handlers-test
+  hc.compose.owner.lifecycle-layers-test
   hc.compose.owner.mailbox-test
   hc.compose.owner.multi-client-test
   hc.compose.owner.report-integration-test
@@ -131,20 +148,31 @@
   hc.compose.retry.planner-test
   hc.compose.retry.policy-test
   hc.compose.scheduler.core-test
+  hc.compose.scheduler.model-property-test
   hc.compose.scheduler.model-test
   hc.compose.scheduler.service-property-test
   hc.compose.scheduler.service-test
   hc.compose.scheduler.smoke-test
   hc.compose.scheduler.store-property-test
   hc.compose.scheduler.time-test
+  hc.compose.steward-test
+  hc.compose.steward.loop-test
+  hc.compose.supervisor-test
+  hc.compose.workspace.error-property-test
   hc.compose.workspace-integration-test
+  hc.compose.workspace-mutual-wait-test
   hc.compose.workspace-owner-integration-test
   hc.compose.workspace-test
   hc.compose.workspace-write-ahead-test
  ]
  :B [
+  hc.boundary-driver-test
+  hc.core.pair-hint.hint-property-test
+  hc.core.pair-hint.integration-property-test
+  hc.core.pair-hint.language-property-test
   hc.core.pair-hint-test
   hc.core.pair-hint-ufss-integration-test
+  hc.core.relay.tenure-test
   hc.core.relay-test
   hc.core.scope-test
   hc.core.steward-sphinx.cognition-test
@@ -153,30 +181,42 @@
   hc.core.steward-sphinx.frontier-test
   hc.core.steward-sphinx-test
   hc.core.swarm-stm-commands-property-test
+  hc.core.swarm-stm-matrix-test
+  hc.core.swarm-stm-matrix2-test
+  hc.core.swarm-stm-v-matrix-test
   hc.core.swarm-stm-property-test
   hc.core.swarm-stm-responsibility-property-test
   hc.core.swarm-stm-smoke-test
   hc.core.swarm-stm-test
   hc.core.swarm-stm-workspace-test
   hc.core.text-location-test
+  hc.core.text-location.diagnostic-property-test
   hc.core.ufss-presentation-test
+  hc.core.ufss.selection-property-test
   hc.core.ufss-test
+  hc.core.workspace-gate-boundary-test
+  hc.core.workspace-gate.error-property-test
   hc.core.workspace-gate.prepare-test
   hc.core.workspace-gate-property-test
   hc.core.workspace-gate-reader-property-test
   hc.core.workspace-gate-test
+  hc.invariants-coverage-test
   hc.server.app.assistant-default-test
+  hc.server.app.background-loops-test
   hc.server.app.cancel-hook-test
   hc.server.app.commands-dedup-test
+  hc.server.app.commands-test
   hc.server.app.config-test
   hc.server.app.control-port-test
   hc.server.app.devops-integration-test
   hc.server.app.devops-owner-integration-test
   hc.server.app.devops-test
+  hc.server.app.effect-fingerprint-consistency-test
   hc.server.app.executors-test
   hc.server.app.extension-scope-test
   hc.server.app.fleet-commands-test
   hc.server.app.fleet-gc-test
+  hc.server.app.history-search-contract-test
   hc.server.app.http-test
   hc.server.app.live-session-config-test
   hc.server.app.main-test
@@ -188,11 +228,17 @@
   hc.server.app.owner-report-restart-test
   hc.server.app.owner-session-persistence-test
   hc.server.app.owner-store-retry-test
+  hc.server.app.prompt-ufss-roundtrip-test
+  hc.server.app.prompts-common-verbatim-test
   hc.server.app.prompts-test
   hc.server.app.publisher-test
   hc.server.app.restart-smoke-test
   hc.server.app.restore-supervisor-integration-test
   hc.server.app.restore-supervisor-test
+  hc.server.app.retention-gc-test
+  hc.server.app.role-tables-consistency-test
+  hc.server.app.runtime-assembly-contract-test
+  hc.server.app.search-commands-test
   hc.server.app.send-command-test
   hc.server.app.session-command-index-test
   hc.server.app.settings-test
@@ -202,12 +248,23 @@
   hc.server.app.snapshot-session-cache-test
   hc.server.app.snapshot-unresolved-calls-test
   hc.server.app.static-test
+  hc.server.app.startup-identity-test
+  hc.server.app.steward-closed-loop-test
+  hc.server.app.steward-git-test
+  hc.server.app.steward-model-test
+  hc.server.app.steward-runtime-test
+  hc.server.app.steward-store-test
   hc.server.app.store-shutdown-stress-test
+  hc.server.app.system-lifecycle-test
   hc.server.app.system-test
  ]
  :C [
+  hc.server.history.boundary-index-test
   hc.server.history.context-test
+  hc.server.history.index-test
   hc.server.history.run-port-test
+  hc.server.history.session-scale-test
+  hc.server.history.snapshot-test
   hc.server.history-durable-smoke-test
   hc.server.history-live-smoke-test
   hc.server.history-regenerate-live-test
@@ -217,14 +274,18 @@
   hc.server.recovery-test
   hc.server.storage.disk-smoke-test
   hc.server.storage.engine-lifecycle-test
+  hc.server.storage.engine.datalevin-test
   hc.server.storage.export-benchmark-test
   hc.server.storage.export-sections-test
   hc.server.storage.owner-state-size-test
   hc.server.storage.session-erasure-test
+  hc.server.storage.startup-scale-test
   hc.server.storage-corruption-test
   hc.server.storage-test
  ]
  :D [
+  hc.server.app.backup-test
+  hc.server.app.lazy-owner-test
   hc.server.artifacts-app-smoke-test
   hc.server.artifacts-smoke-test
   hc.server.artifacts-test
@@ -277,6 +338,7 @@
   hc.server.documents.selection-test
   hc.server.documents.smoke-test
   hc.server.documents.text-test
+  hc.server.error-taxonomy-test
   hc.server.extensions.app-integration-test
   hc.server.extensions.durable-test
   hc.server.extensions.json-test
@@ -290,6 +352,7 @@
   hc.server.gateway.client-contract-test
   hc.server.gateway.diff-test
   hc.server.gateway.feed-test
+  hc.server.gateway-feed-invariants-test
   hc.server.gateway.http-test
   hc.server.gateway.patch-test
   hc.server.gateway.security-test
@@ -362,5 +425,6 @@
   hc.server.speech.loopback-test
   hc.server.speech.text-test
   hc.server.speech.usage-test
+  hc.server.trusted-command-surface-test
  ]
 }

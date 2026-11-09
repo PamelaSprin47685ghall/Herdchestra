@@ -7,7 +7,8 @@
   the session title, pinned flag, or status locally."
   (:require ["react" :as react]
             [com.fulcrologic.fulcro.dom :as dom]
-            [hc.client.sessions.controls :as model]))
+            [hc.client.sessions.controls :as model]
+            [hc.client.sessions.labels :as labels]))
 
 (defn- prop
   [props k]
@@ -128,9 +129,14 @@
         rename-state (react/useState false)
         rename? (aget rename-state 0)
         set-rename! (aget rename-state 1)
-        title-state (react/useState (or (:title session) ""))
+        original-title (:title session)
+        display-title (labels/title-label original-title)
+        title-state (react/useState (or display-title ""))
         title (aget title-state 0)
         set-title! (aget title-state 1)
+        title-dirty-state (react/useState false)
+        title-dirty? (aget title-dirty-state 0)
+        set-title-dirty! (aget title-dirty-state 1)
         confirm-state (react/useState nil)
         confirm-action (aget confirm-state 0)
         set-confirm! (aget confirm-state 1)
@@ -150,7 +156,15 @@
                              (or (model/action-reason action session connection command)
                                  "上一条会话命令仍在等待服务器回执"))
                     {:ok? false :reason :pending})
-                  (let [request (model/command-request action session {:title title})
+                  ;; The field shows the localized default title.  When the
+                  ;; operator did not edit it, send the server's original
+                  ;; title so a display-only translation never rewrites it.
+                  (let [submitted-title (if (and (not title-dirty?)
+                                                 (= title display-title))
+                                          (or original-title "")
+                                          title)
+                        request (model/command-request action session
+                                                       {:title submitted-title})
                         result (if request
                                  (try
                                    (or (on-command request)
@@ -171,14 +185,16 @@
                     result)))
         click! (fn [action]
                  (case action
-                   :rename (do (set-title! (or (:title session) ""))
+                   :rename (do (set-title! (or display-title ""))
+                               (set-title-dirty! false)
                                (set-rename! true))
                    :delete (set-confirm! :delete)
                    :purge (set-confirm! :purge)
                    (send! action)))]
     (react/useEffect
      (fn []
-       (set-title! (or (:title session) ""))
+       (set-title! (or display-title ""))
+       (set-title-dirty! false)
        js/undefined)
      #js [(:id session) (:title session)])
     (dom/div #js {:className "hc-session-controls"
@@ -189,7 +205,10 @@
                               :alignItems "center" :marginTop "4px"}}
              (mapv #(action-button % click!) actions)
              (when rename?
-               (rename-form title set-title!
+               (rename-form title
+                            (fn [value]
+                              (set-title-dirty! true)
+                              (set-title! value))
                             #(send! :rename)
                             #(set-rename! false)
                             pending?))

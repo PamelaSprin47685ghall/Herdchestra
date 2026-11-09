@@ -170,6 +170,7 @@ export async function startMockModel(options = {}) {
     toolCallsIssued: 0,
     active: 0,
     aborted: 0,
+    completed: 0,
     bodies: [],
     config: {
       reply: FAST_REPLY,
@@ -199,6 +200,7 @@ export async function startMockModel(options = {}) {
         toolCallsIssued: state.toolCallsIssued,
         active: state.active,
         aborted: state.aborted,
+        completed: state.completed,
         config: state.config,
         last: state.requests[state.requests.length - 1] || null,
         log: state.requests.slice(-50),
@@ -221,6 +223,7 @@ export async function startMockModel(options = {}) {
       state.chatCompletions = 0;
       state.toolCallsIssued = 0;
       state.aborted = 0;
+      state.completed = 0;
       return json(res, 200, { ok: true, mock: true });
     }
     if (req.method === 'POST' && (url.pathname === '/v1/chat/completions' || url.pathname === '/chat/completions')) {
@@ -298,14 +301,15 @@ export async function startMockModel(options = {}) {
       state.active += 1;
       let closed = false;
       let timer = null;
-      const stop = () => {
+      const stop = (completed = false) => {
         if (closed) return;
         closed = true;
         state.active = Math.max(0, state.active - 1);
-        state.aborted += 1;
+        if (completed) state.completed += 1;
+        else state.aborted += 1;
         clearTimeout(timer);
       };
-      res.on('close', stop);
+      res.on('close', () => stop(false));
 
       if (effectiveWantsTool) {
         sse(res, completionChunk(id, model, { role: 'assistant', content: null }));
@@ -324,6 +328,7 @@ export async function startMockModel(options = {}) {
         sse(res, completionChunk(id, model, {}, 'tool_calls'));
         res.write('data: [DONE]\n\n');
         res.end();
+        stop(true);
         return;
       }
 
@@ -336,7 +341,7 @@ export async function startMockModel(options = {}) {
           sse(res, completionChunk(id, model, {}, 'stop'));
           res.write('data: [DONE]\n\n');
           res.end();
-          stop();
+          stop(true);
           return;
         }
         if (state.config.failAfterChunks !== null

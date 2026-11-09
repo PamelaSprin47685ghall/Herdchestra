@@ -5,8 +5,10 @@
   transitions live in `hc.client.files.model`; the markup lives in
   `hc.client.files.ui`.  A stale response never replaces a newer directory
   or preview."
-  (:require [com.fulcrologic.fulcro.application :as application]
+  (:require [clojure.string :as str]
+            [com.fulcrologic.fulcro.application :as application]
             [com.fulcrologic.fulcro.components :as comp :refer [defsc]]
+            [com.fulcrologic.fulcro.mutations :as m]
             [hc.client.files.api :as api]
             [hc.client.files.model :as model]
             [hc.client.files.mutations :as mutations]
@@ -63,17 +65,40 @@
   (comp/transact! this [(mutations/navigate {:path path})])
   (load! this path))
 
+(m/defmutation set-search-mode
+  "Select `:name` or `:content` search.  It only changes the local switch;
+  callers issue a new search when a query is present."
+  [{:keys [mode]}]
+  (action [env]
+    (swap! (:state env) update :ui/files
+           (fn [files]
+             (model/set-search-mode (or files (model/initial)) mode)))))
+
 (defn- search!
-  [this query]
-  (let [request-id (new-request-id)]
-    (comp/transact! this [(mutations/search-start {:query query
-                                                    :request-id request-id})])
-    (api/search! query
-                 (fn [result]
-                   (comp/transact! this
-                                   [(mutations/search-result
-                                     {:request-id request-id
-                                      :result result})])))))
+  ([this query]
+   (search! this query (:search-mode (files-state this))))
+  ([this query mode]
+   (let [mode (model/normalize-search-mode mode)
+         request-id (new-request-id)]
+     (comp/transact! this [(set-search-mode {:mode mode})
+                           (mutations/search-start
+                            {:query query
+                             :request-id request-id})])
+     (api/search! query mode
+                  (fn [result]
+                    (comp/transact! this
+                                    [(mutations/search-result
+                                      {:request-id request-id
+                                       :result result})]))))))
+
+(defn- change-search-mode!
+  [this mode]
+  (let [state (files-state this)
+        mode (model/normalize-search-mode mode)
+        query (:search-query state)]
+    (if (str/blank? (str query))
+      (comp/transact! this [(set-search-mode {:mode mode})])
+      (search! this query mode))))
 
 (defn- clear-search!
   [this]
@@ -105,6 +130,7 @@
                        (comp/transact! this
                                        [(mutations/set-search-query
                                          {:value value})]))
+   :on-search-mode-change (fn [mode] (change-search-mode! this mode))
    :on-clear-search (fn [] (clear-search! this))
    :on-copy copy-text!})
 
@@ -114,7 +140,7 @@
   {:query [:status :path :parent :workspace :entries :total-entries
            :truncated? :error :request-id :selected-path :preview
            :preview-status :preview-error :preview-request-id :baseline
-           :diff :search-query :search]
+           :diff :search-query :search-mode :search]
    :componentDidMount (fn [this]
                         (ensure-loaded! this))}
   (ui/file-browser-element props (callbacks this)))

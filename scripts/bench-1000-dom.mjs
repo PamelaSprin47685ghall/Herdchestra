@@ -22,6 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,11 +30,23 @@ import { chromium } from 'playwright';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
+const BUNDLE_PATH = 'resources/public/js/main.js';
 const PIXI_CLOJURE = path.join(REPO_ROOT, '.pixi/envs/default/bin/clojure');
 const JVM_OPTS = (process.env.HC_JVM_OPTS ||
   '-J-Xmx384m,-J-XX:MaxDirectMemorySize=192m,-J-XX:MaxMetaspaceSize=384m,-J-Xss512k,-J-XX:+ExitOnOutOfMemoryError')
   .split(',').map((s) => s.trim()).filter(Boolean);
 const SEED_PATHS = ['src', 'resources', 'scripts', 'test'];
+
+function bundleInfo() {
+  const file = path.join(REPO_ROOT, BUNDLE_PATH);
+  const bytes = fs.readFileSync(file);
+  return {
+    path: BUNDLE_PATH,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    mtime: fs.statSync(file).mtime.toISOString(),
+  };
+}
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -181,6 +194,7 @@ async function main() {
     },
     config: { root, sessions, messages, msgChars,
               jvmOpts: JVM_OPTS, staticRoot: 'resources/public' },
+    bundle: bundleInfo(),
     seed: null, app: null, dom: null,
     startedAt: new Date().toISOString(),
   };
@@ -339,15 +353,46 @@ async function main() {
   finish(result, root, jsonOut, keepTemp, evidenceDir);
 }
 
+function verdictFor(result) {
+  const reasons = [];
+  if (result.app?.error) reasons.push('app-not-ready');
+  if (!result.dom || result.dom.error) reasons.push('dom-not-ready');
+  else {
+    if (result.dom.synced !== true) reasons.push('baseline-not-synced');
+    if (!Number.isInteger(result.dom.sessionItems)) reasons.push('session-list-missing');
+    if (!Number.isInteger(result.dom.totalNodes)) reasons.push('dom-count-missing');
+  }
+  if (result.bundleStable === false) reasons.push('bundle-changed');
+  const readiness = reasons.filter((reason) => reason !== 'bundle-changed');
+  return {
+    verdict: readiness.length
+      ? 'FAIL (app-not-ready)'
+      : (reasons.length ? 'FAIL (bundle-changed)' : 'PASS'),
+    reasons,
+  };
+}
+
 function finish(result, root, jsonOut, keepTemp, evidenceDir) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const jsonPath = jsonOut || path.join(evidenceDir, `bench-1000-${stamp}.json`);
+  result.bundleAfter = bundleInfo();
+  result.bundleStable = (result.bundleAfter.sha256 === result.bundle.sha256
+                         && result.bundleAfter.bytes === result.bundle.bytes);
+  const judged = verdictFor(result);
+  result.verdict = judged.verdict;
+  result.verdictReasons = judged.reasons;
   fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
   fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2));
   const peakHwmMiB = result.app?.peak?.hwmKb ? result.app.peak.hwmKb / 1024 : null;
   const peakRssMiB = result.app?.peak?.rssKb ? result.app.peak.rssKb / 1024 : null;
   console.log(JSON.stringify({
     json: jsonPath,
+    verdict: result.verdict,
+    verdictReasons: result.verdictReasons,
+    bundleSha256: result.bundle?.sha256,
+    bundleBytes: result.bundle?.bytes,
+    bundleStable: result.bundleStable,
+    bundleAfterSha256: result.bundleAfter?.sha256,
     seedMs: result.seed?.elapsedMs,
     listenMs: result.app?.listenMs,
     healthMs: result.app?.healthMs,
@@ -360,6 +405,7 @@ function finish(result, root, jsonOut, keepTemp, evidenceDir) {
     messageDomNodes: result.dom?.messageDomNodes,
     selectMs: result.dom?.selectMs,
   }, null, 2));
+  process.exitCode = result.verdict === 'PASS' ? 0 : 1;
   if (!keepTemp) {
     // Keep the store for inspection by default; pass --keep-temp to keep the
     // whole root.  Removing /tmp data is the operator's call.

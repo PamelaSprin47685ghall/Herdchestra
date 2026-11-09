@@ -143,7 +143,13 @@
         (is (= :MODEL_TOOLS_UNAVAILABLE (get-in event [:error :code])))
         (is (= :permanent (get-in event [:error :category])))
         (is (= program-role (get-in event [:error :program-role])))
-        (is (= mission-role (get-in event [:error :mission-role])))))))
+        (is (= mission-role (get-in event [:error :mission-role])))
+        (is (str/includes? (get-in event [:error :message])
+                           (name program-role))
+            "the refusal names the actual program role, not a stale list")
+        (is (str/includes? (get-in event [:error :message])
+                           "program tool surface"))
+        (is (str/includes? (get-in event [:error :message]) ":tools"))))))
 
 (deftest gateway-names-the-capabilities-source-in-the-refusal
   (let [owner (atom {:snapshot

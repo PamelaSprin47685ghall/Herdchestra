@@ -37,4 +37,34 @@ global.__HC_F7__ = require(path.join(
   "node_modules/framework7-react/framework7-react.js"
 ));
 
-require(path.join(out, "test.js"));
+// cljs.test reports failures through process.exitCode and a standard summary
+// line.  A runner that only requires the compiled entry point can still exit
+// 0 when that write is lost, and async tests finish after require returns.
+// Keep the summary's failure count and force the final status at beforeExit.
+let hcTestFailures = Number(process.exitCode) || 0;
+let hcTestOutput = "";
+const hcNoteTestOutput = (args) => {
+  hcTestOutput = (hcTestOutput + " " + args.map(String).join(" ")).slice(-2048);
+  const match = hcTestOutput.match(/(\d+)\s+failures?,\s*(\d+)\s+errors?/i);
+  if (match && Number(match[1]) + Number(match[2]) > 0) {
+    hcTestFailures = Math.max(hcTestFailures, 1);
+  }
+};
+for (const method of ["log", "error"]) {
+  const original = console[method];
+  console[method] = (...args) => {
+    hcNoteTestOutput(args);
+    original(...args);
+  };
+}
+process.on("beforeExit", () => {
+  if (hcTestFailures > 0) process.exitCode = 1;
+});
+
+try {
+  require(path.join(out, "test.js"));
+} catch (error) {
+  console.error(error);
+  hcTestFailures = Math.max(hcTestFailures, 1);
+  process.exitCode = 1;
+}

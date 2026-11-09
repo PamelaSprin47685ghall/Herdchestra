@@ -1065,10 +1065,17 @@
                {:reason reason})
 
       :else
-      (accepted (update state :pending-cancels conj
-                        {:command-id (:command-id message)
-                         :origin origin
-                         :at (:now ctx)})
+      ;; A stop discards every queued turn.  The committed user messages
+      ;; stay in `:conversation` as evidence, but no pending turn may be
+      ;; replayed by a later `ensure-open-run`: "stop" means the session
+      ;; waits for new operator input, not for the old queue.  The active
+      ;; turn is cancelled by `:pending-cancels` below.
+      (accepted (-> state
+                    (assoc :pending-turns [])
+                    (update :pending-cancels conj
+                            {:command-id (:command-id message)
+                             :origin origin
+                             :at (:now ctx)}))
                 {:status :accepted
                  :outcome :cancel-pending
                  :command-id (:command-id message)
@@ -3074,10 +3081,23 @@
                              state
                              (apply-mission-extension state message ctx))
     :git/ff-ready
-    {:state (assoc state :ff-ready? (true? (:ready? message)))
-     :receipt {:status :accepted
-               :outcome :ff-ready-recorded
-               :ready? (true? (:ready? message))}}
+    ;; The mission owns one workspace, so readiness is mission state, not a
+    ;; session-level flag that would survive into the next mission.  Keep
+    ;; the evidence next to the boolean for audit and diagnostics.
+    (let [ready? (true? (:ready? message))
+          fact {:ready? ready?
+                :source (:source message)
+                :ff-commit (:ff-commit message)
+                :at (or (:at message) (:now ctx))}]
+      {:state (-> state
+                  (assoc-in [:mission :ff-ready?] ready?)
+                  (assoc-in [:mission :ff-ready] fact))
+       :receipt {:status :accepted
+                 :outcome :ff-ready-recorded
+                 :ready? ready?
+                 :source (:source message)
+                 :ff-commit (:ff-commit message)
+                 :at (:at fact)}})
     :recover {:state (state/recover-state state (:now ctx))
               :receipt {:status :accepted :outcome :recovered}}
     :wake {:state state :receipt {:status :accepted :outcome :wake}}

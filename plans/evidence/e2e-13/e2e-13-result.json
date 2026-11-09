@@ -2,27 +2,21 @@
   "test": "E2E 13 skill install/bind + mini-app generation and storage isolation",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-08T09:32:54.307Z",
-  "finishedAt": "2026-11-08T09:33:16.190Z",
+  "startedAt": "2026-11-09T10:56:35.505Z",
+  "finishedAt": "2026-11-09T10:57:29.645Z",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-08T09:06:44.927Z",
-    "sha256": "41fb4643d9c85d6877d01b298d18ffded3d2a7208e06f4418391b68ffcc72da6"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
-  "sourceTreeSha256": "f12affd2eb25c705bc02b69aa64d62f484238d22e1551185b5eae526a79b7dd9",
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "checks": {
-    "skillCardText": "e2e13-reading-notes · 未标版本 · 未绑定\n来源：文本\n\nE2E13 读书条目技能：记录书名、页码与摘录到工作区笔记。\n\n未启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n269 B · 文本\n上游更新与三方对比\n\n选择文本、链接或压缩包后先比较。冲突默认保留本地版；只有明确选择才采用上游。\n\n上游来源\n文本\n链接\n压缩包\n比较更新\n应用并保留本地\n采用上游",
     "skillInstalledDisabled": true,
     "skillInstalledUnbound": true,
     "skillCardListsFiles": true,
     "skillCardNameOk": true,
     "skillCardDescriptionOk": true,
-    "assistantControlKind": "select",
-    "assistantOptions": [
-      "选择助手…",
-      "通用助手"
-    ],
-    "boundAssistant": "通用助手",
+    "skillInstallNoModelRequest": true,
     "skillEnabled": true,
     "skillBound": true,
     "appARegistered": true,
@@ -33,16 +27,52 @@
     "appBRecordWritten": true,
     "appADoesNotSeeB": true,
     "appAKeepsOwn": true,
+    "kvHasTwoApps": true,
+    "appRecordsPersisted": true,
+    "pageStorageIsolated": true,
+    "pageDoesNotSeeAppRecords": true,
+    "plainPageSeesNoAppRecord": true,
+    "brokenFileAbsent": true,
+    "existingAppViewableAfterFailure": true,
+    "clearOneKeepsOther": true,
+    "clearOneRemovesOnlyThatApp": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/02-skill-installed.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/03-skill-enabled-bound.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/04-miniapp-a-generated.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/05-miniapp-b-generated.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/06-miniapp-a-reload.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/07-miniapp-isolation.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/08-miniapp-page-isolation.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/09-generate-failure-existing-ok.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-13/10-clear-one-keeps-other.png"
+  ],
+  "appUrl": "http://127.0.0.1:40939",
+  "mockUrl": "http://127.0.0.1:36285",
+  "chromeVersion": "157.0.8103.38",
+  "bundleSha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+  "freezeBundle": "1e0bd458",
+  "freezeTree": "5af6757f",
+  "bundleNote": "final26 冻结 bundle 1e0bd458（3,086,250 B，15:46:09）+ 树 5af6757f；本次为纯 UI 路径（移除手写 Sente transit 解码），技能预览由安装卡片 frontmatter/文件列表断言替代",
+  "diagnostics": {
+    "skillCardText": "e2e13-reading-notes · 未标版本 · 未绑定\n来源：文本\n\nE2E13 读书条目技能：记录书名、页码与摘录到工作区笔记。\n\n未启用\n启用\n绑定助手\n解除绑定\n删除\nSKILL.md\n269 B · 文本\n上游更新与三方对比",
+    "assistantControlKind": "select",
+    "assistantOptions": [
+      "选择助手…",
+      "通用助手"
+    ],
+    "boundAssistant": "通用助手",
     "kvRows": [
       {
-        "app_id": "app-8ac30158-86d6-46bb-8f2d-c6521583902a",
-        "key": "miniapp:app-8ac30158-86d6-46bb-8f2d-c6521583902a:notes",
-        "value": "[\"B-record-观影《肖申克的救赎》\"]"
+        "app_id": "app-3a1e927f-11a7-45cb-90bc-b66eb42c6054",
+        "key": "miniapp:app-3a1e927f-11a7-45cb-90bc-b66eb42c6054:notes",
+        "value": "[\"A-record-读书《活着》\"]"
       },
       {
-        "app_id": "app-e61220db-d9c2-4c95-86d7-5faa67531ea5",
-        "key": "miniapp:app-e61220db-d9c2-4c95-86d7-5faa67531ea5:notes",
-        "value": "[\"A-record-读书《活着》\"]"
+        "app_id": "app-7d017826-97be-4652-a988-eb0bec6b9f40",
+        "key": "miniapp:app-7d017826-97be-4652-a988-eb0bec6b9f40:notes",
+        "value": "[\"B-record-观影《肖申克的救赎》\"]"
       }
     ],
     "kvAppCount": 2,
@@ -56,32 +86,23 @@
         "key"
       ],
       "herdchestraKeys": [
-        "miniapp:app-e61220db-d9c2-4c95-86d7-5faa67531ea5:notes"
+        "miniapp:app-3a1e927f-11a7-45cb-90bc-b66eb42c6054:notes"
       ]
     },
-    "pageStorageIsolated": true,
     "generateFailureStatus": 422,
-    "generateFailureBody": "{:ok? false, :status :error, :error {:code :INVALID_HTML, :message \"模型输出不是完整的 HTML 文档（需要 <html> 和 </html>）\", :details {:chars 22, :preview \"这不是 HTML 文档，没有 html 标签\"}}}",
-    "brokenFileAbsent": true,
-    "existingAppViewableAfterFailure": true
+    "generateFailureBody": "{:ok? false, :status :error, :error {:code :INVALID_HTML, :message \"模型输出不是完整的 HTML 文档（需要 <html> 和 </html>）\", :details {:chars 22, :preview \"这不是 HTML 文档，没有 html 标签\"}}}"
   },
-  "screenshots": [
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
-    {}
+  "diagnosticOnly": [
+    "skillCardText",
+    "assistantControlKind",
+    "assistantOptions",
+    "boundAssistant",
+    "kvRows",
+    "kvAppCount",
+    "iframeStorageProbe",
+    "generateFailureStatus",
+    "generateFailureBody"
   ],
-  "appUrl": "http://127.0.0.1:40919",
-  "mockUrl": "http://127.0.0.1:34855",
-  "chromeVersion": "157.0.8103.38",
-  "bundleSha256": "41fb4643d9c85d6877d01b298d18ffded3d2a7208e06f4418391b68ffcc72da6",
-  "freezeBundle": "1e0bd458",
-  "freezeTree": "5af6757f",
-  "bundleNote": "final26 冻结 bundle 1e0bd458（3,086,250 B，15:46:09）+ 树 5af6757f；本次为纯 UI 路径（移除手写 Sente transit 解码），技能预览由安装卡片 frontmatter/文件列表断言替代",
   "ok": true,
   "evidence": null
 }

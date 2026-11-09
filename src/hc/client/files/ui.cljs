@@ -64,7 +64,13 @@
 .hc-files-badge[data-tone=\"warn\"]{color:var(--wb-warn);border-color:var(--wb-warn)}
 .hc-files-badge[data-tone=\"danger\"]{color:var(--wb-danger);border-color:var(--wb-danger)}
 .hc-files-search{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.hc-files-search input{min-height:36px;padding:4px 8px;border:1px solid var(--wb-line);border-radius:8px;background:var(--wb-surface);color:var(--wb-ink);font:inherit;flex:1 1 180px}")
+.hc-files-search input{min-height:36px;padding:4px 8px;border:1px solid var(--wb-line);border-radius:8px;background:var(--wb-surface);color:var(--wb-ink);font:inherit;flex:1 1 180px}
+.hc-files-mode-switch{display:flex;gap:4px;align-items:center}
+.hc-files-mode-button{min-height:36px;padding:4px 10px;border:1px solid var(--wb-line);border-radius:8px;background:var(--wb-surface);color:var(--wb-ink);font:inherit;cursor:pointer}
+.hc-files-mode-button[aria-pressed=\"true\"]{background:var(--wb-accent);border-color:var(--wb-accent);color:var(--wb-accent-ink)}
+.hc-files-mode-button:focus-visible{outline:2px solid var(--wb-accent);outline-offset:2px}
+.hc-files-search-note{flex-basis:100%;font-size:.82em;color:var(--wb-ink-muted)}
+.hc-files-snippet{margin:4px 0 0;padding:4px 6px;background:var(--wb-surface-2);border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82em;white-space:pre-wrap;word-break:break-word}")
 
 (defn- status-view
   [state]
@@ -350,23 +356,55 @@
 (defn- search-view
   [state callbacks]
   (let [search (:search state)
+        mode (model/normalize-search-mode (:search-mode state))
+        view-state (model/search-view-state search)
         on-open (:on-open callbacks)
-        on-navigate (:on-navigate callbacks)]
+        on-navigate (:on-navigate callbacks)
+        change-mode (:on-search-mode-change callbacks)
+        switch! (fn [next-mode]
+                  (when change-mode
+                    (change-mode next-mode)))
+        submit! (fn [event]
+                  (.preventDefault event)
+                  (when-let [search-fn (:on-search callbacks)]
+                    (search-fn (:search-query state))))
+        shortcut! (fn [event]
+                    (when (.-altKey event)
+                      (let [key (.-key event)]
+                        (cond
+                          (contains? #{"n" "N"} key)
+                          (do (.preventDefault event) (switch! :name))
+                          (contains? #{"c" "C"} key)
+                          (do (.preventDefault event) (switch! :content))
+                          :else nil))))]
     (dom/section {:className "hc-files-panel"
-                  :aria-label "文件名称搜索"}
+                  :aria-label "工作区搜索"}
                  (dom/form {:className "hc-files-search"
-                            :onSubmit (fn [event]
-                                        (.preventDefault event)
-                                        (when-let [search-fn (:on-search callbacks)]
-                                          (search-fn (:search-query state))))}
+                            :onSubmit submit!
+                            :onKeyDown shortcut!}
                            (dom/input {:type "search"
                                        :name "workspace-file-search"
-                                       :placeholder "按名称搜索工作区"
-                                       :aria-label "按名称搜索工作区"
+                                       :placeholder (str (model/search-mode-label mode)
+                                                         "搜索工作区")
+                                       :aria-label (str (model/search-mode-label mode)
+                                                        "搜索工作区")
                                        :value (or (:search-query state) "")
                                        :onChange (fn [event]
                                                    (when-let [change (:on-search-change callbacks)]
                                                      (change (.. event -target -value))))})
+                           (dom/div {:className "hc-files-mode-switch"
+                                     :role "group"
+                                     :aria-label "搜索模式"}
+                                    (for [candidate model/search-modes]
+                                      (dom/button
+                                       {:type "button"
+                                        :key (name candidate)
+                                        :className "hc-files-mode-button"
+                                        :aria-pressed (if (= candidate mode)
+                                                        "true"
+                                                        "false")
+                                        :onClick (fn [_] (switch! candidate))}
+                                       (model/search-mode-label candidate))))
                            (dom/button {:type "submit"
                                         :className "wb-button wb-button-small"
                                         :disabled (= :loading (:status search))}
@@ -378,45 +416,79 @@
                                           :onClick (fn [_]
                                                      (when-let [clear (:on-clear-search callbacks)]
                                                        (clear)))}
-                                         "清除结果")))
-                 (case (:status search)
-                   :loading (dom/p {:className "hc-files-note"} "正在按名称搜索…")
-                   :error (dom/p {:className "hc-files-alert"} (error-text (:error search)))
-                   :loaded
+                                         "清除结果"))
+                           (dom/span {:className "hc-files-search-note"}
+                                     "快捷键：Alt+N 按名称，Alt+C 按内容。"))
+                 (cond
+                   (= :loading view-state)
+                   (dom/p {:className "hc-files-note"}
+                          (str "正在" (model/search-mode-label mode) "搜索…"))
+
+                   (= :error view-state)
+                   (dom/p {:className "hc-files-alert"}
+                          (error-text (:error search)))
+
+                   (= :results view-state)
                    (dom/div {}
                             (dom/p {:className "hc-files-note"}
-                                   (str "按名称匹配 " (count (:results search))
+                                   (str (model/search-mode-label (:mode search))
+                                        "匹配 " (count (:results search))
                                         " 项"
                                         (when (:truncated? search)
                                           "；已达到搜索上限，结果不完整")))
-                            (when (seq (:results search))
-                              (dom/ul {:className "wb-list"}
-                                      (for [entry (:results search)]
-                                        (dom/li {:key (:path entry)}
-                                                (dom/button {:type "button"
-                                                             :className "wb-list-button"
-                                                             :onClick (fn [_]
-                                                                        (if (= :directory (:kind entry))
-                                                                          (when on-navigate
-                                                                            (on-navigate (:path entry)))
-                                                                          (when on-open
-                                                                            (on-open (:path entry)))))}
-                                                            (dom/div {:className "wb-list-main"}
-                                                                     (dom/strong {} (:path entry))
-                                                                     (dom/small {}
-                                                                                (str (model/entry-type-label entry)
-                                                                                     " · "
-                                                                                     (if (:stamp entry)
-                                                                                       (stamp-text (:stamp entry))
-                                                                                       "无内容 stamp"))))))))))
-                   nil))))
+                            (dom/ul {:className "wb-list"}
+                                    (for [entry (:results search)]
+                                      (dom/li {:key (:path entry)}
+                                              (dom/button {:type "button"
+                                                           :className "wb-list-button"
+                                                           :onClick (fn [_]
+                                                                      (if (= :directory (:kind entry))
+                                                                        (when on-navigate
+                                                                          (on-navigate (:path entry)))
+                                                                        (when on-open
+                                                                          (on-open (:path entry)))))}
+                                                          (dom/div {:className "wb-list-main"}
+                                                                   (dom/strong {} (:path entry))
+                                                                   (dom/small {}
+                                                                              (str (model/entry-type-label entry)
+                                                                                   " · "
+                                                                                   (if (:stamp entry)
+                                                                                     (stamp-text (:stamp entry))
+                                                                                     "无内容 stamp")))
+                                                                   (when (:line entry)
+                                                                     (dom/div {:className "hc-files-code hc-files-muted"}
+                                                                              (str "第 " (:line entry)
+                                                                                   " 行，第 "
+                                                                                   (or (:column entry) 1)
+                                                                                   " 列"
+                                                                                   (when (:match-count entry)
+                                                                                     (str " · 匹配 "
+                                                                                          (:match-count entry)
+                                                                                          " 次")))))
+                                                                   (when (seq (:snippet entry))
+                                                                     (dom/pre {:className "hc-files-snippet"}
+                                                                              (:snippet entry)))))))))
+
+                   (= :empty view-state)
+                   (dom/p {:className "hc-files-note"}
+                          (str (model/search-mode-label (:mode search))
+                               "未匹配到任何项。"))
+
+                   (= :idle view-state)
+                   (dom/p {:className "hc-files-note"}
+                          (str "尚未搜索。输入关键词后按“搜索”；当前为"
+                               (model/search-mode-label mode) "模式。"))
+
+                   :else
+                   (dom/p {:className "hc-files-note"}
+                          "搜索状态未知；请重新搜索。")))))
 
 (defn file-browser-element
   "Render the workspace file browser.
 
   STATE is the `:ui/files` map.  CALLBACKS may contain `:on-navigate`,
   `:on-open`, `:on-refresh`, `:on-search`, `:on-search-change`,
-  `:on-clear-search` and `:on-copy`."
+  `:on-search-mode-change`, `:on-clear-search` and `:on-copy`."
   [state callbacks]
   (let [state (or state (model/initial))
         callbacks (or callbacks {})
@@ -439,7 +511,8 @@
                                               :data-tone (name (:tone status))}
                                              (:label status))))
                  (dom/div {:className "hc-files-toolbar"}
-                          (dom/nav {:className "hc-files-crumbs"
+                          (dom/div {:className "hc-files-crumbs"
+                                    :role "group"
                                     :aria-label "工作区路径"}
                                    (map-indexed
                                     (fn [index crumb]

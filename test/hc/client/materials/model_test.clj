@@ -1,5 +1,6 @@
 (ns hc.client.materials.model-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [hc.client.materials.model :as model]
             [hc.client.materials.view :as view]))
 
@@ -146,6 +147,33 @@
     (is (= 2 (count (model/memory-items state))))
     (is (= ["mem-a" "mem-b"]
            (mapv :id (model/memory-items (assoc state :memory-filter :all)))))))
+
+(deftest partial-and-empty-snapshots-preserve-the-ready-projection
+  (let [full (model/apply-snapshot
+              (synced-state)
+              (assoc snapshot :materials/revision 7))]
+    (testing "an empty snapshot is a no-op"
+      (let [next (model/apply-snapshot full {})]
+        (is (= full next))
+        (is (true? (:ready? next)))
+        (is (= 7 (:revision next)))
+        (is (= 2 (count (:memories next))))))
+    (testing "a partial snapshot without materials fields keeps the ready projection"
+      (let [next (model/apply-snapshot
+                  full
+                  {:materials/session {:session-id "s-1"}})]
+        (is (true? (:ready? next)))
+        (is (= 7 (:revision next)))
+        (is (= 2 (count (:memories next))))
+        (is (= (get-in full [:memory/by-id])
+               (get-in next [:memory/by-id])))
+        (is (= (get-in full [:settings])
+               (get-in next [:settings])))))
+    (testing "an explicit ready false still clears readiness"
+      (let [next (model/apply-snapshot full {:materials/ready? false})]
+        (is (false? (:ready? next)))
+        (is (= 7 (:revision next)))
+        (is (= 2 (count (:memories next))))))))
 
 (deftest stale-snapshot-is-ignored
   (let [current (model/apply-snapshot (synced-state) snapshot)
@@ -652,6 +680,26 @@
     (is (re-find #"仅本轮：随下一条用户消息一次性发送" rendered))
     (is (re-find #"格式冲突" rendered))))
 
+(deftest instruction-mode-shows-both-selection-counts
+  (let [base (model/apply-snapshot (synced-state) snapshot)
+        turn-state (assoc base
+                          :instruction-mode :turn
+                          :turn-card-ids ["card-1" "card-2"])
+        session-state (-> base
+                          (assoc :instruction-mode :session)
+                          (assoc-in [:instruction-session :card-ids]
+                                    ["card-1" "card-2"]))
+        turn-render (pr-str (view/panel-tree turn-state :instructions))
+        session-render (pr-str (view/panel-tree session-state :instructions))]
+    (testing "turn mode still shows the persistent count"
+      (is (re-find #"仅本轮（2）" turn-render))
+      (is (re-find #"本会话持续（1）" turn-render))
+      (is (re-find #"另一集合：本会话持续 1 条" turn-render)))
+    (testing "session mode still shows the per-turn count"
+      (is (re-find #"仅本轮（0）" session-render))
+      (is (re-find #"本会话持续（2）" session-render))
+      (is (re-find #"另一集合：仅本轮 0 条" session-render)))))
+
 (deftest candidate-card-shows-review-fields-and-scope-change
   (let [candidate (assoc memory-a
                          :assumption? true
@@ -692,6 +740,12 @@
     (mapcat tree-nodes node)
     :else []))
 
+(defn- nodes-with-class
+  [nodes class-name]
+  (filter #(some #{class-name}
+                 (str/split (str (get-in % [:attrs :class])) #"\s+"))
+          nodes))
+
 (deftest worldbook-bind-renders-assistant-select
   (let [state (-> (model/apply-snapshot (synced-state) snapshot)
                   (assoc :selected-book-id "wb-1"
@@ -721,6 +775,22 @@
            (get-in bind-node [:attrs :events :on-click :action])))
     (is (re-find #"主助手" (pr-str select-node)))
     (is (not (re-find #"助手 ID" (pr-str tree))))))
+
+(deftest worldbook-runtime-sections-share-one-container
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :book-draft (model/book-draft
+                                      {:mode :edit :book-id "wb-1"})))
+        nodes (tree-nodes (view/panel-tree state :worldbook))
+        runtimes (nodes-with-class nodes "hc-mat-runtime")
+        subs (nodes-with-class nodes "hc-mat-runtime-sub")]
+    (is (= 1 (count runtimes))
+        "the runtime block keeps one bordered container")
+    (is (= 1 (count subs))
+        "the omitted section uses the inner divider class")
+    (is (not (some #(seq (nodes-with-class (rest (tree-nodes %))
+                                           "hc-mat-runtime"))
+                   runtimes))
+        "hc-mat-runtime never nests inside itself")))
 
 (deftest worldbook-bind-renders-guidance-without-assistants
   (let [state (-> (synced-state)
@@ -1548,6 +1618,10 @@
 (deftest delete-confirmation-is-two-step
   (doseq [[section draft-key draft] [[:worldbook :book-draft
                                       (model/book-draft {:mode :edit :book-id "wb-1"})]
+                                     [:worldbook :entry-draft
+                                      (model/entry-draft {:mode :edit
+                                                          :entry-id "wbe-1"
+                                                          :book-id "wb-1"})]
                                      [:instructions :card-draft
                                       (model/card-draft {:mode :edit :card-id "card-1"})]
                                      [:memory :memory-draft
@@ -1567,13 +1641,53 @@
                     (assoc draft-key draft)
                     (cond-> (= :memory section)
                       (assoc :selected-memory-id "mem-c")))
-          first-render (pr-str (view/panel-tree state section))]
+          tree (view/panel-tree state section)
+          nodes (tree-nodes tree)
+          save-rows (nodes-with-class nodes "hc-mat-save-row")
+          danger-rows (nodes-with-class nodes "hc-mat-danger-row")
+          first-render (pr-str tree)]
       (is (re-find #"永久删除|删除条目|删除世界书|删除指令卡"
                    first-render))
       (is (not (re-find #"确认删除|确认永久删除" first-render)))
+      (is (seq save-rows)
+          (str section " renders the save row"))
+      (is (= 1 (count danger-rows))
+          (str section " renders one danger row"))
+      (is (not (re-find #"删除|拒绝|归档" (pr-str save-rows)))
+          (str section " keeps destructive actions out of the save row"))
+      (is (re-find #"删除|拒绝" (pr-str danger-rows))
+          (str section " puts destructive actions in the danger row"))
+      (is (every? #(= "true" (get-in % [:attrs :data-danger])) danger-rows))
       (let [confirmed (assoc-in state [draft-key :confirm-delete?] true)
-            second-render (pr-str (view/panel-tree confirmed section))]
-        (is (re-find #"确认" second-render))))))
+            confirmed-tree (view/panel-tree confirmed section)
+            confirmed-nodes (tree-nodes confirmed-tree)
+            confirmed-save-rows (nodes-with-class confirmed-nodes
+                                                  "hc-mat-save-row")
+            confirmed-danger-rows (nodes-with-class confirmed-nodes
+                                                    "hc-mat-danger-row")
+            danger-buttons (remove nil? (:children (first confirmed-danger-rows)))
+            second-render (pr-str confirmed-tree)]
+        (is (re-find #"确认" second-render))
+        (is (seq confirmed-save-rows))
+        (is (= 1 (count confirmed-danger-rows)))
+        (is (= 2 (count danger-buttons))
+            "the confirm pair stays together in the danger row")
+        (is (re-find #"确认.*删除" (pr-str (first danger-buttons))))
+        (is (re-find #"取消" (pr-str (second danger-buttons))))))))
+
+(deftest memory-archive-action-gets-its-own-row
+  (let [state (-> (model/apply-snapshot (synced-state) snapshot)
+                  (assoc :selected-memory-id "mem-b"
+                         :memory-draft (model/memory-draft
+                                        {:mode :edit :memory-id "mem-b"})))
+        nodes (tree-nodes (view/panel-tree state :memory))
+        save-rows (nodes-with-class nodes "hc-mat-save-row")
+        danger-rows (nodes-with-class nodes "hc-mat-danger-row")]
+    (is (= 1 (count save-rows)))
+    (is (= 1 (count danger-rows)))
+    (is (re-find #"保存替换" (pr-str save-rows)))
+    (is (not (re-find #"归档" (pr-str save-rows))))
+    (is (re-find #"归档" (pr-str danger-rows)))))
 
 (deftest instruction-selection-pending-disables-controls
   (let [state (-> (model/apply-snapshot (synced-state) snapshot)

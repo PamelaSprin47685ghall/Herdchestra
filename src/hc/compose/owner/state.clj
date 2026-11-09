@@ -164,7 +164,12 @@
             :owner-instance-id owner-instance-id})
           state
           {:session-id session-id
-           :mission mission-state
+           ;; Fast-forward readiness is mission state: a join or dry-run
+           ;; proves the mission workspace can advance, and a new mission
+           ;; must start unready.  `:ff-ready` keeps the evidence.
+           :mission (assoc mission-state
+                           :ff-ready? false
+                           :ff-ready nil)
            :actors (actors/new-state
                     {:models (:models mission-state)
                      :slot-ids (get-in config [:swarm-slots]
@@ -283,12 +288,14 @@
 (defn tenure-terminal?
   "True when every live tenure has reached its final milestone.
 
-  A retired tenure is gone from the live lanes.  A Plan tenure stays active
-  after handoff, so its milestone decides."
+  A retired tenure is gone from the live lanes; an abandoned execution
+  tenure stays as terminal evidence.  A Plan tenure stays active after
+  handoff, so its milestone decides."
   [state]
   (let [tenures (all-tenures state)]
     (and (seq tenures)
          (every? #(or (= :completed (:milestone %))
+                      (= :abandoned (:status %))
                       (= :retired (:status %)))
                  tenures))))
 
@@ -362,7 +369,9 @@
   "Owner-owned facts the mission board snapshot needs.
 
   The board itself comes from mission state.  Calls and reports belong to the
-  Owner, so they are supplied here."
+  Owner, so they are supplied here.  Fast-forward readiness is one fact
+  about the mission workspace, so it lives in mission state rather than in
+  the Owner's session-level fields."
   [state]
   (let [host (or (get-in state [:config :board-facts]) {})
         live-calls (count (filter #(contains? #{:dispatching :running
@@ -378,7 +387,9 @@
      ;; the relay barrier pass while a write is in progress.
      :pending-rebase (long (or (:pending-rebase host) 0))
      :holds-write-lock? (true? (:holds-write-lock? host))
-     :ff-ready? (true? (:ff-ready? state))}))
+     ;; Mission-scoped: a new mission starts unready, and a stale
+     ;; session-level boolean can never authorize it.
+     :ff-ready? (true? (get-in state [:mission :ff-ready?]))}))
 
 ;; ---------------------------------------------------------------------------
 ;; Call records and cancellation nodes
@@ -1442,14 +1453,15 @@
     item))
 
 (defn- applied-compressions
-  "Applied compressions in apply order.
+  "Applied, current compressions in apply order.
 
   `:compression-order` is authoritative; compressions missing from it fall
-  back to `:applied-at`.  Only `:applied` records substitute: a draft,
-  reverted or cancelled range keeps sending its raw messages.  This mirrors
-  `hc.server.history.context/applied-compressions`; compose cannot require
-  the server namespace, so the ordering rule is restated here over the
-  plain session `:context` map the Owner already carries."
+  back to `:applied-at`.  Only `:applied` records without the server's
+  `:stale? true` marker substitute: a draft, reverted, cancelled or stale
+  range keeps sending its raw source messages.  This mirrors the server's
+  outbound projection; compose cannot require the server namespace, so the
+  ordering rule is restated here and the stale judgement is read from the
+  plain `:stale?` field the server already put on each compression."
   [session]
   (let [context (:context session)
         compressions (:compressions context)
@@ -1459,11 +1471,13 @@
         ordered-id-set (set (map :compression-id ordered))
         remaining (->> (vals compressions)
                        (remove #(contains? ordered-id-set (:compression-id %)))
-                       (filter #(= :applied (:state %)))
+                       (filter #(and (= :applied (:state %))
+                                     (not (true? (:stale? %)))))
                        (sort-by :applied-at)
                        vec)]
     (->> (concat ordered remaining)
-         (filter #(= :applied (:state %)))
+         (filter #(and (= :applied (:state %))
+                       (not (true? (:stale? %)))))
          vec)))
 
 (defn- compression-substitute
@@ -1472,6 +1486,8 @@
   A compression substitutes only when every `:message-id` it covers is
   present in MESSAGES; a partially projected range keeps its raw messages
   so the model never receives a summary for history it cannot see.  The
+  server marks a stale compression `:stale? true`; it never covers its
+  sources here, so those source messages remain visible to the model.  The
   summary takes the position of the range's first surviving message and is
   emitted once.  Nudge calls and user turns share this projection, so both
   stop resending replaced history next to the summary."
@@ -1483,6 +1499,8 @@
                               (and (vector? message-ids)
                                    (seq message-ids)
                                    (every? #(contains? present %) message-ids)
+                                   (= :applied (:state compression))
+                                   (not (true? (:stale? compression)))
                                    (string? (:summary compression))))
                             compressions)
           cover (into {}

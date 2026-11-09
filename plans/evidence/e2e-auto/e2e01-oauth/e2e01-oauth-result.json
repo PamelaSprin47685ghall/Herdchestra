@@ -1,0 +1,241 @@
+{
+  "test": "E2E 01 OAuth",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-09T10:57:54.928Z",
+  "marker": "E2E01-OAUTH-1794221852560",
+  "appUrl": "http://127.0.0.1:46063",
+  "mockUrl": "http://127.0.0.1:33661",
+  "oauthUrl": "http://127.0.0.1:38213",
+  "checks": {
+    "fixtureKeysAligned": true,
+    "accountLoginDraftOpened": true,
+    "deviceFlowSelected": true,
+    "oauthAccountConnected": true,
+    "oauthDeviceAuthorizationRequested": true,
+    "draftHasAuthReference": true,
+    "oauthConnectionSaved": true,
+    "oauthModelsListed": true,
+    "oauthToolsDeclaredOnServer": true,
+    "oauthSessionModel": true,
+    "oauthReplyReceived": true,
+    "oauthNoToolRefusalNotice": true,
+    "oauthMockChat": true,
+    "oauthRequestModel": true,
+    "oauthRequestHasTools": true
+  },
+  "screenshots": [],
+  "fixtureKeys": {
+    "ok": true,
+    "modelAuthFixtureKeys": [
+      "allow-insecure-http?",
+      "pkce?",
+      "supports-refresh?"
+    ],
+    "serverProviderKeys": [
+      "account-claims",
+      "allow-insecure-http?",
+      "authorization-endpoint",
+      "authorization-params",
+      "base-url",
+      "client-id",
+      "client-id-env",
+      "client-secret",
+      "client-secret-env",
+      "default-scopes",
+      "description",
+      "device-authorization-endpoint",
+      "device-client-secret?",
+      "enabled?",
+      "flows",
+      "id",
+      "issuer",
+      "issuer-prefixes",
+      "model-access-note",
+      "name",
+      "official-hosts",
+      "pkce?",
+      "revocation-endpoint",
+      "supports-refresh?",
+      "token-endpoint",
+      "userinfo-endpoint"
+    ],
+    "missingFromServerSource": [],
+    "missingFromFixture": [],
+    "pathStyleDeclared": true,
+    "pathStyleEmitted": true
+  },
+  "diagnostics": {
+    "deviceFlowSelectValue": "device-code",
+    "deviceFlowSelectOptions": [
+      {
+        "value": "authorization-code",
+        "text": "浏览器回调"
+      },
+      {
+        "value": "device-code",
+        "text": "设备码"
+      }
+    ]
+  },
+  "userCode": "MOCK-3B87",
+  "oauthState": {
+    "mock": true,
+    "requests": [
+      {
+        "at": "2026-11-09T10:57:56.226Z",
+        "method": "POST",
+        "path": "/device_authorization"
+      },
+      {
+        "at": "2026-11-09T10:57:56.392Z",
+        "method": "POST",
+        "path": "/device/confirm"
+      },
+      {
+        "at": "2026-11-09T10:57:57.254Z",
+        "method": "POST",
+        "path": "/token"
+      },
+      {
+        "at": "2026-11-09T10:57:58.257Z",
+        "method": "POST",
+        "path": "/token"
+      },
+      {
+        "at": "2026-11-09T10:57:59.262Z",
+        "method": "POST",
+        "path": "/token"
+      },
+      {
+        "at": "2026-11-09T10:58:05.265Z",
+        "method": "POST",
+        "path": "/token"
+      },
+      {
+        "at": "2026-11-09T10:58:05.266Z",
+        "method": "GET",
+        "path": "/userinfo"
+      },
+      {
+        "at": "2026-11-09T10:58:12.746Z",
+        "method": "GET",
+        "path": "/__mock/state"
+      }
+    ],
+    "codes": 0,
+    "deviceCodes": 1,
+    "tokens": 2,
+    "revoked": 0,
+    "devicePollsBeforeSuccess": 2
+  },
+  "authDraftText": "第三方账号登录\n\n使用服务自己的授权页面或设备码。Herdchastra 不会要求你粘贴第三方密码。\n\n账号服务\nGoogle（未配置客户端身份）\nMock OAuth\nMicrosoft Entra ID（未配置客户端身份）\nOIDC / OAuth provider（未配置客户端身份）\n只连接该服务的模型和额度，不同步本产品聊天记录。\n登录方式\n浏览器回调\n设备码\n账号已连接\n账号标识\nm***@example.test\n服务\nMock OAuth\n授权范围\nemail openid profile\n最近同步\n尚未同步\n刷新账号状态\n显示完整账号\n退出此账号\n\n草稿认证引用：draft-61125b6c-7eaa-41d8-aabb-817e4e628323；令牌只保存在服务器。",
+  "oauthSavePath": "receipt",
+  "saveReceipts": [
+    "连接已保存；草稿已清理。关闭"
+  ],
+  "bind": {
+    "switchStatus": "clicked",
+    "toolsDeclared": true,
+    "rowText": "mock-fast\n\nmock-fast · 来源：Mock OAuth · 127.0.0.1:33661\n\n已选为当前角色\n用于下一轮\n当前没有生成中的回复；新模型用于下一轮。\n编辑能力\n此次列表未返回\n自定义主机\n用户设置\n视觉：尚未确认\n音频：尚未确认\n视频：尚未确认\n文档：尚未确认\n工具：已声明支持\n推理：尚未确认\n价格\n未知\n上下文容量\n未知\n推理档位\n使用默认\n连接\nMock OAuth · 127.0.0.1:33661\n\n能力含用户设置；图标只表示已声明或已知，不代表当前会话已有执行许可。",
+    "saveReceiptLog": [
+      "已接回服务器配置中的模型；服务器未提供实时列举，可手动补充模型标识。关闭",
+      "已提交保存；等待服务器回执。草稿在确认前保留。关闭",
+      "连接已保存；草稿已清理。关闭",
+      "已选择模型；保存角色绑定后才对后续会话生效。关闭",
+      "已提交角色绑定；等待服务器回执。关闭",
+      "角色绑定已保存。关闭",
+      "已提交模型切换；生成中只用于下一轮。若刚保存角色/连接，服务器可能需要重启后解析新绑定。关闭",
+      "模型切换已接受；生成中的当前轮仍归属原模型。关闭"
+    ],
+    "saveReceipt": "连接已保存；草稿已清理。关闭",
+    "savePath": "receipt"
+  },
+  "serverCommitted": {
+    "rowText": "mock-fast\n\nmock-fast · 来源：Mock OAuth · 127.0.0.1:33661\n\n已选为当前角色\n用于下一轮\n当前没有生成中的回复；新模型用于下一轮。\n编辑能力\n此次列表未返回\n自定义主机\n用户设置\n视觉：尚未确认\n音频：尚未确认\n视频：尚未确认\n文档：尚未确认\n工具：已声明支持\n推理：尚未确认\n价格\n未知\n上下文容量\n未知\n推理档位\n使用默认\n连接\nMock OAuth · 127.0.0.1:33661\n\n能力含用户设置；图标只表示已声明或已知，不代表当前会话已有执行许可。",
+    "toolsAria": "工具：已声明支持（用户设置）",
+    "userSource": true,
+    "saved": true
+  },
+  "modelLabel": "模型：mock-fast",
+  "reply": "Mock OAuth 回复 E2E01-OAUTH-1794221852560：账号连接可用。",
+  "mockState": {
+    "mock": true,
+    "requests": 1,
+    "chatCompletions": 1,
+    "toolCallsIssued": 0,
+    "active": 0,
+    "aborted": 0,
+    "completed": 1,
+    "config": {
+      "reply": "Mock OAuth 回复 E2E01-OAUTH-1794221852560：账号连接可用。",
+      "chunkSize": 24,
+      "chunkDelayMs": 90,
+      "errorStatus": null,
+      "failAfterChunks": null,
+      "forceToolCall": false
+    },
+    "last": {
+      "at": "2026-11-09T10:58:16.681Z",
+      "path": "/v1/chat/completions",
+      "model": "mock-fast",
+      "stream": true,
+      "messageCount": 4,
+      "hasTools": true,
+      "toolNames": [
+        "devops",
+        "clj-plan"
+      ],
+      "toolCallMessages": [
+        [
+          null
+        ]
+      ],
+      "user": "OAuth 连接测试 E2E01-OAUTH-1794221852560"
+    },
+    "log": [
+      {
+        "at": "2026-11-09T10:58:16.681Z",
+        "path": "/v1/chat/completions",
+        "model": "mock-fast",
+        "stream": true,
+        "messageCount": 4,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ]
+        ],
+        "user": "OAuth 连接测试 E2E01-OAUTH-1794221852560"
+      }
+    ],
+    "bodies": []
+  },
+  "oauthSendEntries": [
+    {
+      "at": "2026-11-09T10:58:16.681Z",
+      "path": "/v1/chat/completions",
+      "model": "mock-fast",
+      "stream": true,
+      "messageCount": 4,
+      "hasTools": true,
+      "toolNames": [
+        "devops",
+        "clj-plan"
+      ],
+      "toolCallMessages": [
+        [
+          null
+        ]
+      ],
+      "user": "OAuth 连接测试 E2E01-OAUTH-1794221852560"
+    }
+  ],
+  "failedChecks": [],
+  "ok": true,
+  "finishedAt": "2026-11-09T10:58:19.400Z"
+}

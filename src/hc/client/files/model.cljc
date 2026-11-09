@@ -132,6 +132,48 @@
 ;; ---------------------------------------------------------------------------
 ;; State
 
+(def search-modes
+  "Workspace search modes in display order."
+  [:name :content])
+
+(defn normalize-search-mode
+  "Coerce MODE to `:name` or `:content`.  An unknown mode falls back to
+  `:name`, which is the server default."
+  [mode]
+  (if (= "content" (some-> mode name))
+    :content
+    :name))
+
+(defn set-search-mode
+  "Select the search mode.  It does not issue a search by itself."
+  [state mode]
+  (assoc state :search-mode (normalize-search-mode mode)))
+
+(defn toggle-search-mode
+  [state]
+  (set-search-mode state
+                   (if (= :content (:search-mode state))
+                     :name
+                     :content)))
+
+(defn search-mode-label
+  [mode]
+  (if (= :content (normalize-search-mode mode))
+    "按内容"
+    "按名称"))
+
+(defn search-view-state
+  "Classify the search state for rendering.  The classification is total:
+  an absent or unknown status never falls through a `case` without a branch."
+  [search]
+  (let [status (:status search)]
+    (cond
+      (or (nil? status) (= :idle status)) :idle
+      (= :loading status) :loading
+      (= :error status) :error
+      (= :loaded status) (if (seq (:results search)) :results :empty)
+      :else :unknown)))
+
 (defn initial
   []
   {:status :idle
@@ -151,6 +193,7 @@
    :baseline nil
    :diff nil
    :search-query ""
+   :search-mode :name
    :search {:status :idle
             :query ""
             :mode :name
@@ -181,6 +224,10 @@
        :size (field entry :size)
        :mtime-sec (field entry :mtime-sec)
        :mtime-nsec (field entry :mtime-nsec)
+       :line (field entry :line)
+       :column (field entry :column)
+       :snippet (field entry :snippet)
+       :match-count (field entry :match-count)
        :stamp (when (map? stamp) stamp)})))
 
 (defn- sort-entries

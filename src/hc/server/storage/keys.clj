@@ -19,6 +19,7 @@
   The encoding is reversible and stable; `/` never appears inside a segment.
   Root AGENTS.md §7.1 keeps keys small and current-state only; this namespace
   never builds a key that embeds content or history."
+  (:refer-clojure :exclude [key])
   (:require [clojure.string :as str]))
 
 (def ^:private safe-byte?
@@ -154,6 +155,19 @@
 
 (defn session-doc-prefix [partition session-id]
   (key "d" (encode-segment partition) (session-segment session-id) ""))
+
+(defn kind-doc-prefix
+  "Prefix that contains every document of one KIND in one session scope.
+
+  This is the narrow scan for compact, index-like kinds: it never returns a
+  document of another kind, so a caller cannot accidentally deserialize every
+  session body in the partition."
+  [partition session-id kind]
+  (key "d"
+       (encode-segment partition)
+       (session-segment session-id)
+       (encode-segment (kind-name kind))
+       ""))
 
 (defn partition-obligation-prefix [partition]
   (key "o" (encode-segment partition) ""))

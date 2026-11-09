@@ -187,6 +187,37 @@
       (finally
         (unmount! container root)))))
 
+(deftest default-title-is-display-only-and-rename-keeps-the-original
+  (let [calls (atom [])
+        notices (atom [])
+        result (atom {:ok? true})
+        default-session (assoc active :title "New session")
+        [container root]
+        (mount! (consumer default-session synced nil calls notices result))]
+    (try
+      (testing "the rename field shows the Chinese default title"
+        (click! (button-by-text container "重命名"))
+        (is (= "新会话"
+               (.-value (input-by-aria container "新会话标题")))))
+      (testing "an untouched display-only title submits the server original"
+        (simulate-submit! (.querySelector container "form.hc-session-rename"))
+        (is (= {:session-id "s1"
+                :kind :session/rename
+                :action :rename
+                :payload {:title "New session"}}
+               (last @calls))))
+      (testing "an edited title submits exactly what the operator typed"
+        (click! (button-by-text container "重命名"))
+        (simulate-change! (input-by-aria container "新会话标题") "  新名字  ")
+        (simulate-submit! (.querySelector container "form.hc-session-rename"))
+        (is (= {:session-id "s1"
+                :kind :session/rename
+                :action :rename
+                :payload {:title "新名字"}}
+               (last @calls))))
+      (finally
+        (unmount! container root)))))
+
 (deftest delete-requires-an-explicit-second-click
   (let [calls (atom [])
         notices (atom [])

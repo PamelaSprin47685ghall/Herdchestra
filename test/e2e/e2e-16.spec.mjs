@@ -25,7 +25,7 @@ import {
   assert as assertCheck, goto, shot, waitForSync, writeJson,
   clientBundleInfo,
 } from './support/ui.mjs';
-import { sourceTreeSha256 } from './support/evidence.mjs';
+import { checksOk, sourceTreeSha256 } from './support/evidence.mjs';
 
 const EVIDENCE_DIR = path.join(REPO_ROOT, 'plans/evidence/e2e-16');
 const BACKUP_PASSWORD = 'e2e16 backup passphrase';
@@ -206,13 +206,19 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
   test.setTimeout(900000);
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
   const startedAt = new Date().toISOString();
+  const checks = {};
+  const diagnostics = {};
+  const diagnosticOnly = [
+    'manualRun', 'timezone', 'ios', 'recover', 'resume',
+    'backup', 'restore', 'importedSchedule',
+  ];
   const evidence = {
     test: 'E2E 16', mode: 'automated', mock: true, startedAt,
     clientBundle: clientBundleInfo(),
     sourceTreeSha256: sourceTreeSha256(),
     freeze: { bundleSha256: '45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30',
               treeSha256Prefix: '76cf2fd0' },
-    checks: {}, notes: [],
+    checks, diagnostics, diagnosticOnly, notes: [],
   };
   const writeEvidence = () =>
     writeJson(EVIDENCE_DIR, 'e2e-16', evidence);
@@ -230,6 +236,7 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
                task: { connection: 'mock', model: 'mock-fast' } },
     },
   };
+  try {
 
   // ---- App A: UI create/preview/timezone/manual-run ---------------------
   const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-e2e16-a-'));
@@ -252,21 +259,32 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     console.log('E2E16 checkpoint: appA schedule tab open');
 
     // Seeded paused schedules visible.
+    let seededPausedVisible = true;
     for (const name of ['E2E16 跟随设备 08:30', 'E2E16 固定上海 08:30', 'E2E16 手动运行']) {
       const card = await scheduleCard(pageA, name);
       const text = await cardText(card);
+      seededPausedVisible = seededPausedVisible
+        && text.includes('已暂停')
+        && (text.includes('跟随设备时区') || text.includes('固定时区'));
       assertCheck(text.includes('已暂停'), `${name} not paused: ${text}`);
       assertCheck(text.includes('跟随设备时区') || text.includes('固定时区'),
                   `${name} missing timezone label: ${text}`);
     }
-    evidence.checks.seededPausedVisible = true;
+    checks.seededPausedVisible = seededPausedVisible;
+    assertCheck(checks.seededPausedVisible, 'seeded paused schedules not visible');
     await shot(pageA, EVIDENCE_DIR, '01-seeded-paused');
 
     // Timezone distinction: create a follow-device schedule and a fixed one
     // through the real form; the preview must show the zone.
     await createPausedSchedule(pageA, { name: 'E2E16 跟随设备 NY 前' });
     await createPausedSchedule(pageA, { name: 'E2E16 固定上海 表单', fixedZone: 'Asia/Shanghai' });
-    evidence.checks.createdViaForm = true;
+    const createdFollowText = await cardText(await scheduleCard(pageA, 'E2E16 跟随设备 NY 前'));
+    const createdFixedText = await cardText(await scheduleCard(pageA, 'E2E16 固定上海 表单'));
+    checks.createdViaForm = /已暂停/.test(createdFollowText)
+      && /已暂停/.test(createdFixedText)
+      && /(跟随设备时区|固定时区)/.test(createdFollowText)
+      && /(跟随设备时区|固定时区)/.test(createdFixedText);
+    assertCheck(checks.createdViaForm, 'schedules created through the form are not paused/zoned');
     await shot(pageA, EVIDENCE_DIR, '02-created-paused');
 
     // Manual run on the seeded paused schedule: confirm dialog promises no
@@ -274,13 +292,15 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     // NOTE: the run is produced against the local mock model stub
     // (mock-fast via startMockModel), not a real model provider.
     console.log('E2E16 checkpoint: before manualRun');
+    const beforeManual = await runVerify(path.join(dataA, 'db'));
+    const manualNextBefore = beforeManual.schedules['sched-manual']?.nextRun;
     await manualRun(pageA, 'E2E16 手动运行');
     console.log('E2E16 checkpoint: manualRun done');
     await pageA.locator('.hc-schedule-notice', { hasText: '已开始手动运行' })
       .first().waitFor({ state: 'visible', timeout: 60000 });
     const manualAfter = await runVerify(path.join(dataA, 'db'));
     const manualSched = manualAfter.schedules['sched-manual'];
-    evidence.checks.manualRun = {
+    diagnostics.manualRun = {
       stub: 'mock-model',
       note: 'manual run exercised against local mock model stub, not a real provider',
       state: manualSched?.state,
@@ -292,7 +312,12 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
                 `manual run changed schedule state: ${JSON.stringify(manualSched)}`);
     assertCheck(manualAfter.runs.some((r) => r.trigger === 'manual'),
                 'no manual run recorded');
-    evidence.checks.manualRunOk = true;
+    checks.manualRunOk = manualSched?.state === 'paused'
+      && manualAfter.runs.some((r) => r.trigger === 'manual');
+    checks.manualRunKeptPlan = manualSched?.nextRun === manualNextBefore;
+    assertCheck(checks.manualRunOk, 'manual run was not recorded or changed the state');
+    assertCheck(checks.manualRunKeptPlan,
+      `manual run changed the next-run: ${manualNextBefore} -> ${manualSched?.nextRun}`);
     await shot(pageA, EVIDENCE_DIR, '03-manual-run');
 
     // Device timezone change: new context emulating America/New_York.
@@ -310,7 +335,7 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     const verifyTz = await runVerify(path.join(dataA, 'db'));
     const follow = verifyTz.schedules['sched-follow'];
     const fixed = verifyTz.schedules['sched-fixed'];
-    evidence.checks.timezone = {
+    diagnostics.timezone = {
       deviceZone: verifyTz.deviceZone,
       followZone: follow?.timezone?.zone,
       followMode: follow?.timezone?.mode,
@@ -328,7 +353,12 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
                 `fixed zone moved: ${JSON.stringify(fixed?.timezone)}`);
     assertCheck(follow?.nextRun !== fixed?.nextRun,
                 'follow/fixed next-run indistinguishable');
-    evidence.checks.timezoneDistinguishable = true;
+    checks.timezoneDistinguishable = verifyTz.deviceZone === 'America/New_York'
+      && follow?.timezone?.mode === 'follow-device'
+      && follow?.timezone?.zone === 'America/New_York'
+      && fixed?.timezone?.zone === 'Asia/Shanghai'
+      && follow?.nextRun !== fixed?.nextRun;
+    assertCheck(checks.timezoneDistinguishable, 'follow/fixed timezone results not distinguishable');
     await shot(pageB, EVIDENCE_DIR, '04-timezone-new-york');
     await ctxB.close().catch(() => {});
 
@@ -341,14 +371,16 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     await goto(pageIos, appA.url, '/settings');
     await waitForSync(pageIos);
     await openScheduleTab(pageIos);
+    // A fresh context loads the schedule list asynchronously after the outer
+    // .hc-schedule section mounts; wait for a card before reading its actions.
+    await pageIos.locator('.hc-schedule-card').first()
+      .waitFor({ state: 'visible', timeout: 30000 });
     console.log('E2E16 checkpoint: ios schedule tab open');
     const iosText = await pageIos.locator('.hc-schedule').first().innerText();
-    evidence.checks.ios = {
-      manualOnlyNotice: iosText.includes('仅支持前台手动运行'),
-      banner: /仅支持前台手动运行/.test(iosText),
-    };
-    assertCheck(evidence.checks.ios.manualOnlyNotice,
-                'iOS manual-only notice missing');
+    checks.iosManualOnly = iosText.includes('仅支持前台手动运行');
+    checks.iosOffersManualRun = (await pageIos.getByRole('button', { name: '立即运行' }).count()) > 0;
+    assertCheck(checks.iosManualOnly, 'iOS manual-only notice missing');
+    assertCheck(checks.iosOffersManualRun, 'iOS restricted platform does not offer foreground manual run');
     await pageIos.getByRole('button', { name: '新建任务' }).first()
       .click({ timeout: 15000 });
     const iosForm = pageIos.locator('.hc-schedule-form').first();
@@ -362,12 +394,18 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
       .fill('iOS 平台受限验证', { timeout: 15000 });
     const enableRadio = iosForm.locator('input[type="radio"][value="enable"]').first();
     const pausedRadio = iosForm.locator('input[type="radio"][value="paused"]').first();
-    evidence.checks.ios.enableDisabled = await enableRadio.isDisabled();
-    evidence.checks.ios.pausedChecked = await pausedRadio.isChecked();
-    assertCheck(evidence.checks.ios.enableDisabled,
-                'iOS enable radio not disabled');
-    assertCheck(evidence.checks.ios.pausedChecked,
+    checks.iosNoBackgroundEnable = await enableRadio.isDisabled();
+    checks.iosPausedChecked = await pausedRadio.isChecked();
+    assertCheck(checks.iosNoBackgroundEnable,
+                'iOS enable radio is available; a background schedule could be created');
+    assertCheck(checks.iosPausedChecked,
                 'iOS default save-mode is not paused');
+    diagnostics.ios = {
+      manualOnlyNotice: checks.iosManualOnly,
+      offersManualRun: checks.iosOffersManualRun,
+      enableDisabled: checks.iosNoBackgroundEnable,
+      pausedChecked: checks.iosPausedChecked,
+    };
     console.log('E2E16 checkpoint: ios assertions done');
     await shot(pageIos, EVIDENCE_DIR, '05-ios-restricted');
     await ctxIos.close().catch(() => {});
@@ -398,7 +436,7 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     console.log('E2E16 checkpoint: appB schedule tab open');
 
     const verifyB = await runVerify(path.join(dataB, 'db'));
-    evidence.checks.recover = verifyB;
+    diagnostics.recover = verifyB;
     const missedRun = verifyB.runs.find((r) => r.scheduleId === 'sched-missed');
     const skippedRun = verifyB.runs.find((r) => r.scheduleId === 'sched-overlap'
                                               && r.status === 'skipped');
@@ -410,17 +448,32 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     assertCheck(missedRun?.status === 'missed'
                 && missedRun?.reason === 'process-restart',
                 `missed run wrong: ${JSON.stringify(missedRun)}`);
+    const missedRuns = verifyB.runs.filter((r) => r.scheduleId === 'sched-missed');
     assertCheck(missedSched?.state === 'enabled'
                 && missedSched?.nextRun > Date.now(),
                 `missed schedule not advanced: ${JSON.stringify(missedSched)}`);
-    evidence.checks.missedNotCaughtUp = true;
+    checks.missedNotCaughtUp = missedRun?.status === 'missed'
+      && missedRun?.reason === 'process-restart'
+      && missedSched?.state === 'enabled'
+      && missedSched?.nextRun > Date.now();
+    checks.missedNoCatchUpRun = !missedRuns.some((r) =>
+      r.status === 'running' || r.status === 'completed');
+    assertCheck(checks.missedNotCaughtUp, 'missed occurrence was not recorded as missed');
+    assertCheck(checks.missedNoCatchUpRun,
+      `missed occurrence was caught up: ${JSON.stringify(missedRuns)}`);
 
     assertCheck(skippedRun?.reason === 'previous-still-running',
                 `overlap not skipped: ${JSON.stringify(verifyB.runs)}`);
     assertCheck(interruptedRun?.status === 'interrupted'
                 && interruptedRun?.reason === 'process-restart',
                 `live run not interrupted: ${JSON.stringify(interruptedRun)}`);
-    evidence.checks.overlapSkipped = true;
+    checks.overlapSkipped = skippedRun?.reason === 'previous-still-running'
+      && interruptedRun?.status === 'interrupted'
+      && interruptedRun?.reason === 'process-restart';
+    checks.overlapNoRunningRun = !verifyB.runs.some((r) =>
+      r.scheduleId === 'sched-overlap' && r.status === 'running');
+    assertCheck(checks.overlapSkipped, 'overlap was not skipped');
+    assertCheck(checks.overlapNoRunningRun, 'overlap left a running occurrence');
 
     // UI shows 未运行 / 已跳过 labels.
     const missedCard = await scheduleCard(pageC, 'E2E16 错过测试');
@@ -446,7 +499,7 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
       .first().waitFor({ state: 'visible', timeout: 30000 });
     const verifyB2 = await runVerify(path.join(dataB, 'db'));
     const resumeRuns = verifyB2.runs.filter((r) => r.scheduleId === 'sched-resume');
-    evidence.checks.resume = {
+    diagnostics.resume = {
       state: verifyB2.schedules['sched-resume']?.state,
       nextRun: verifyB2.schedules['sched-resume']?.nextRun,
       runs: resumeRuns.map((r) => ({ status: r.status, reason: r.reason, trigger: r.trigger })),
@@ -462,7 +515,15 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
                 `resume produced a run instead of missed facts: ${JSON.stringify(resumeRuns)}`);
     assertCheck(verifyB2.schedules['sched-resume']?.nextRun > Date.now(),
                 `resume next-run not in the future: ${JSON.stringify(verifyB2.schedules['sched-resume'])}`);
-    evidence.checks.resumeMissedNotRerun = true;
+    checks.resumeMissedNotRerun = verifyB2.schedules['sched-resume']?.state === 'enabled'
+      && pausedMissed.length >= 1
+      && resumeRuns.every((r) => r.status === 'missed' || r.status === 'skipped')
+      && verifyB2.schedules['sched-resume']?.nextRun > Date.now();
+    checks.resumeNoCatchUpRun = !resumeRuns.some((r) =>
+      r.status === 'running' || r.status === 'completed');
+    assertCheck(checks.resumeMissedNotRerun, 'resume did not record missed facts');
+    assertCheck(checks.resumeNoCatchUpRun,
+      `resume caught up a run: ${JSON.stringify(resumeRuns)}`);
     await shot(pageC, EVIDENCE_DIR, '07-resume');
   } finally {
     if (pageC) await pageC.close().catch(() => {});
@@ -497,11 +558,13 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
       '--password-env', 'HC_BACKUP_PASSWORD',
     ], { HC_BACKUP_PASSWORD: BACKUP_PASSWORD });
     const backupResult = parseEdn(backupOut.trim().split('\n').pop());
-    evidence.checks.backup = { ok: backupResult.ok,
-                               status: backupResult.receipt?.status,
-                               backupId: backupResult.receipt?.id };
+    diagnostics.backup = { ok: backupResult.ok,
+                           status: backupResult.receipt?.status,
+                           backupId: backupResult.receipt?.id };
+    checks.backupSucceeded = backupResult.ok === true;
+    assertCheck(checks.backupSucceeded, `backup failed: ${backupOut}`);
     assertCheck(backupResult.ok, `backup failed: ${backupOut}`);
-    const backupId = evidence.checks.backup.backupId;
+    const backupId = diagnostics.backup.backupId;
     assertCheck(backupId, `no backup id in receipt: ${backupOut}`);
 
     // Destination store: seed empty scheduler partition first.
@@ -523,18 +586,26 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
       '--no-prior-app-commands', 'true',
     ], { HC_BACKUP_PASSWORD: BACKUP_PASSWORD });
     const restoreResult = parseEdn(restoreOut.trim().split('\n').pop());
-    evidence.checks.restore = { ok: restoreResult.ok,
-                                status: restoreResult.receipt?.status };
+    diagnostics.restore = { ok: restoreResult.ok,
+                            status: restoreResult.receipt?.status };
+    checks.restoreSucceeded = restoreResult.ok === true;
+    assertCheck(checks.restoreSucceeded, `restore failed: ${restoreOut}`);
     assertCheck(restoreResult.ok, `restore failed: ${restoreOut}`);
 
     const verifyD = runVerify(path.join(dataD, 'db'));
     const imported = verifyD.schedules['sched-backup'];
-    evidence.checks.importedSchedule = imported;
+    diagnostics.importedSchedule = imported;
     assertCheck(imported?.state === 'paused',
                 `imported schedule not paused: ${JSON.stringify(imported)}`);
     assertCheck(imported?.nextRun === null || imported?.nextRun === undefined,
                 `imported schedule kept next-run: ${JSON.stringify(imported)}`);
-    evidence.checks.importDefaultPaused = true;
+    const importedRuns = verifyD.runs.filter((r) => r.scheduleId === 'sched-backup');
+    checks.importDefaultPaused = imported?.state === 'paused'
+      && (imported?.nextRun === null || imported?.nextRun === undefined);
+    checks.importDidNotRun = importedRuns.length === 0;
+    assertCheck(checks.importDefaultPaused, 'imported schedule is not paused');
+    assertCheck(checks.importDidNotRun,
+      `imported schedule produced a run: ${JSON.stringify(importedRuns)}`);
 
     // Start destination app; UI shows paused schedule, no auto runs.
     console.log('E2E16 checkpoint: before appD start');
@@ -549,6 +620,9 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
       const card = await scheduleCard(pageD, 'E2E16 备份源');
       const text = await cardText(card);
       assertCheck(text.includes('已暂停'), `imported card not paused: ${text}`);
+      checks.importedCardNotEnabled = !/已启用/.test(text);
+      assertCheck(checks.importedCardNotEnabled,
+        `imported card shows an enabled state: ${text}`);
       await shot(pageD, EVIDENCE_DIR, '08-import-paused');
       await ctxD.close().catch(() => {});
     } finally {
@@ -558,7 +632,22 @@ test('@e2e E2E 16 schedules timezone missed overlap manual import platform', asy
     if (appC) await appC.close().catch(() => {});
   }
 
-  evidence.checks.finishedAt = new Date().toISOString();
-  evidence.ok = true;
+  evidence.finishedAt = new Date().toISOString();
+  const ok = checksOk(checks);
+  assertCheck(ok, `E2E16 failed checks: ${JSON.stringify(checks)}`);
+  evidence.ok = ok;
   writeEvidence();
+  } catch (error) {
+    evidence.finishedAt = new Date().toISOString();
+    evidence.ok = false;
+    evidence.error = String(error?.message || error);
+    try {
+      writeEvidence();
+    } catch {
+      // Preserve the original failure; evidence writing is best effort.
+    }
+    throw error;
+  } finally {
+    await model.close().catch(() => {});
+  }
 });

@@ -24,6 +24,7 @@
             [hc.compose.mission.proof :as proof]
             [hc.compose.mission.worker :as worker]
             [hc.core.relay :as relay]
+            [hc.core.relay.core :as relay-core]
             [hc.core.relay.tenure :as relay-tenure]
             [hc.core.swarm-stm.board :as board]
             [hc.core.swarm-stm.commands :as commands]))
@@ -2258,6 +2259,201 @@
         (apply-board-command* state tenure-id command env)))))
 
 ;; ---------------------------------------------------------------------------
+;; Abandoning one swarm tenure
+
+(defn- swarm-tenure-id
+  "Resolve the execution tenure one swarm owns.
+
+  The fleet adapter names its synthetic tenure `fleet-<swarm-id>`.  A
+  session mission instead links the swarm's slice to a root task's
+  `:ledger-key`; SLICE-ID is then required and must match exactly one
+  tenure.  Never guess between several matches."
+  [state swarm-id slice-id]
+  (let [executions (relay/execution-tenures (:relay state))
+        remembered (get-in state [:swarm-abandonments swarm-id])
+        fleet-id (when (and (string? swarm-id) (not (str/blank? swarm-id)))
+                   (str "fleet-" swarm-id))
+        slice-id (when (and (string? slice-id) (not (str/blank? slice-id)))
+                   slice-id)
+        matches (when slice-id
+                  (->> executions
+                       (keep (fn [[tenure-id _]]
+                               (when (some #(= slice-id (:ledger-key %))
+                                           (vals (get-in state
+                                                         [:boards tenure-id
+                                                          :tasks])))
+                                 tenure-id)))
+                       vec))]
+    (cond
+      (and remembered (contains? executions remembered))
+      {:ok? true :tenure-id remembered}
+
+      (and fleet-id (contains? executions fleet-id))
+      {:ok? true :tenure-id fleet-id}
+
+      (> (count matches) 1)
+      {:ok? false
+       :error {:code :AMBIGUOUS_SWARM
+               :message "several execution tenures hold a root task for this slice"
+               :details {:swarm-id swarm-id
+                         :slice-id slice-id
+                         :tenure-ids matches}}}
+
+      (= 1 (count matches))
+      {:ok? true :tenure-id (first matches)}
+
+      (empty? executions)
+      {:ok? false
+       :error {:code :NO_ACTIVE_TENURE
+               :message "the mission has no execution tenure to abandon"
+               :details {:swarm-id swarm-id :slice-id slice-id}}}
+
+      :else
+      {:ok? false
+       :error {:code :SWARM_NOT_FOUND
+               :message "no execution tenure owns this swarm"
+               :details {:swarm-id swarm-id :slice-id slice-id}}})))
+
+(defn- abandoned-board
+  "Return BOARD* as the terminal board of an abandoned swarm.
+
+  Every task, claim, action, and waiter is removed; the token slot is freed;
+  the holder role is demoted; non-control actors are marked dead.  The
+  control actor stays alive because the mission invariant requires it.  The
+  derived index is recomputed, never left stale."
+  [board* {:keys [tenure-id swarm-id reason at]} control-agent-id]
+  (let [actors (into {}
+                     (map (fn [[agent-id actor]]
+                            [agent-id
+                             (cond-> (assoc actor :active-action-id nil)
+                               (= :holder (:role actor))
+                               (assoc :role :normal)
+
+                               (not= agent-id control-agent-id)
+                               (assoc :life-state :dead))]))
+                     (:actors board*))
+        token-slot (-> (:token-slot board*)
+                       (assoc :holder-id nil :state :free)
+                       (update :term-id (fnil inc 0)))
+        board' (-> board*
+                   (assoc :tasks {}
+                          :claims {}
+                          :actions {}
+                          :ledger {}
+                          :waiters {}
+                          :actors actors
+                          :token-slot token-slot
+                          :derived nil)
+                   (update :board-version (fnil inc 0))
+                   (update :events (fnil conj [])
+                           {:type :swarm-abandoned
+                            :tenure-id tenure-id
+                            :swarm-id swarm-id
+                            :reason reason
+                            :at at}))]
+    (board/derive board')))
+
+(defn abandon-swarm-state
+  "Abandon the execution tenure that owns SWARM-ID.
+
+  REQUEST keys: `:swarm-id` (required), `:slice-id`, `:reason`, `:at`, and
+  `:request-id`.  The swarm's tenure is marked `:abandoned` through the
+  relay, its root tasks and board records are removed, and one
+  `:swarm-abandoned` board event records the reason.  The Plan tenure is
+  never touched.  Returns `{:ok? true :state .. :tenure-id .. :receipt ..}`
+  or a structured `:NO_ACTIVE_TENURE` / `:SWARM_NOT_FOUND` /
+  `:TENURE_NOT_ACTIVE` error."
+  [state {:keys [swarm-id slice-id reason at] :as request}]
+  (if-not (and (string? swarm-id) (not (str/blank? swarm-id)))
+    (fail state :INVALID_SWARM_ID
+          "abandon needs a non-blank :swarm-id"
+          {:swarm-id swarm-id})
+    (let [resolved (swarm-tenure-id state swarm-id slice-id)]
+      (if-not (:ok? resolved)
+        (fail state (get-in resolved [:error :code])
+              (get-in resolved [:error :message])
+              (get-in resolved [:error :details]))
+      (let [tenure-id (:tenure-id resolved)
+            tenure (relay/tenure-by-id (:relay state) tenure-id)
+            board* (get-in state [:boards tenure-id])
+            control-id (get-in state [:bindings :execution tenure-id
+                                      :control-agent-id])
+            already? (relay-tenure/abandoned? tenure)]
+        (cond
+          already?
+          {:ok? true
+           :state state
+           :tenure-id tenure-id
+           :already? true
+           :receipt {:status :accepted
+                     :outcome :already-abandoned
+                     :tenure-id tenure-id
+                     :swarm-id swarm-id
+                     :reason (:abandoned-reason tenure)
+                     :at (:retired-at tenure)}
+           :effects []}
+
+          (not (relay-tenure/active? tenure))
+          (fail state :TENURE_NOT_ACTIVE
+                "the swarm tenure is not active"
+                {:tenure-id tenure-id :status (:status tenure)})
+
+          (nil? board*)
+          (fail state :MISSION_BOARD_MISSING
+                "execution tenure has no committed board"
+                {:tenure-id tenure-id})
+
+          :else
+          (let [relay-result (relay-core/abandon-execution-tenure
+                              (:relay state) tenure-id reason at)]
+            (if-not (:ok? relay-result)
+              (relay-failure state relay-result)
+              (let [board' (abandoned-board board* request control-id)
+                    violations (board/check-invariants board')]
+                (if (seq violations)
+                  (fail state :BOARD_INVARIANT_FAILED
+                        "the abandoned swarm board would violate its invariants"
+                        {:tenure-id tenure-id
+                         :violations violations})
+                  (let [state' (-> state
+                                   (assoc :relay (:state relay-result))
+                                   (assoc-in [:swarm-abandonments swarm-id]
+                                             tenure-id)
+                                   (assoc-in [:boards tenure-id] board')
+                                   (assoc-in [:bindings :execution tenure-id
+                                              :root-tasks] {})
+                                   (update-in [:bindings :execution tenure-id
+                                               :swarm]
+                                              (fn [bindings]
+                                                (into {}
+                                                      (map (fn [[agent-id binding]]
+                                                             [agent-id
+                                                              (assoc binding
+                                                                     :role
+                                                                     :worker)]))
+                                                      bindings)))
+                                   sync-central-bindings)
+                        removed (count (:tasks board*))
+                        receipt {:status :accepted
+                                 :outcome :swarm-abandoned
+                                 :tenure-id tenure-id
+                                 :swarm-id swarm-id
+                                 :slice-id slice-id
+                                 :reason reason
+                                 :at at
+                                 :removed-task-count removed}]
+                    {:ok? true
+                     :state state'
+                     :tenure-id tenure-id
+                     :receipt receipt
+                     :effects []})))))))))))
+
+(defn abandon-swarm!
+  "Atom-host wrapper for `abandon-swarm-state`."
+  [host request]
+  (commit! host #(abandon-swarm-state % request)))
+
+;; ---------------------------------------------------------------------------
 ;; Plan dedicated worker
 
 (defn devops-request-state
@@ -2888,7 +3084,7 @@
   `:check-draft`, `:claim-draft`, `:release-draft`,
   `:maybe-relay`, `:register-swarm-actor`, `:claim-task`, `:take-or-die`,
   `:finish-root-task`, `:cancel-root-task`, `:replace-root-task`,
-  `:reopen-root-task`,
+  `:reopen-root-task`, `:abandon-swarm`,
   `:reopen`, `:extensions-put`, `:board-command`, `:devops-request`, and
   `:devops-complete`."
   [state {:keys [op] :as command}]
@@ -2908,6 +3104,7 @@
     :cancel-root-task (cancel-root-task-state state command)
     :replace-root-task (replace-root-task-state state command)
     :reopen-root-task (reopen-root-task-state state command)
+    :abandon-swarm (abandon-swarm-state state command)
     :reopen (reopen-state state command)
     :extensions-put (extensions-put-state state command)
     :board-command (board-command-state state command)

@@ -275,7 +275,9 @@ async function main() {
   try {
     await waitState(/:backup\/status-loaded/, 20000, "initial status");
   } catch (_) {
-    await dispatch("backup/refresh");
+    // Automatic mount/refresh is silent now; only an explicit operator
+    // refresh writes the status-loaded notice this marker waits for.
+    await dispatch("backup/refresh", [["origin", kw("manual")]]);
     await waitState(/:backup\/status-loaded/, 20000, "status after refresh");
   }
   const initial = await state();

@@ -6,7 +6,8 @@
   assert the resulting state: a dispatched Nudge model call, a legal exit,
   or an explicit blocked diagnostic.  Gateways hold requests when a test
   needs to stop a chain."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [hc.compose.cancel :as cancel]
             [hc.compose.mission :as mission]
             [hc.compose.mission.actors :as actors]
@@ -30,6 +31,10 @@
         (< (System/currentTimeMillis) deadline)
         (do (Thread/sleep 20) (recur))
         :else false))))
+
+(defn- utf8-size
+  ^long [^String s]
+  (alength (.getBytes s "UTF-8")))
 
 (defn- hold-gateway
   "Record the model request and leave the attempt running."
@@ -182,6 +187,43 @@
         (is (= :main (get-in request [:snapshot :role])))
         (is (= :plan (get-in request [:snapshot :mission-role])))
         (is (= :plan (get-in request [:snapshot :lane]))))
+      (finally
+        ((:stop! handle))))))
+
+(deftest plan-long-ledger-nudge-stays-under-the-message-cap
+  (let [requests (atom [])
+        handle (start-owner requests {})
+        long-value (apply str (repeat 10240 "z"))]
+    (try
+      (command! handle "long-ledger"
+                {:kind :review/submit
+                 :lane :plan
+                 :tenure-id "tenure-1"
+                 :findings [{:key "long-item" :value long-value}]})
+      (is (wait-for #(= long-value
+                        (get-in (state handle)
+                                [:mission :relay :lanes :plan
+                                 :ledger "long-item"]))
+                    3000))
+      (turn-ended! handle :plan "tenure-1" :plan)
+      (is (wait-for #(= 1 (count (nudge-calls (state handle)))) 3000))
+      (is (wait-for #(= 1 (count @requests)) 3000))
+      (let [messages (get-in (first @requests) [:snapshot :messages])
+            message (some (fn [m]
+                            (let [text (str (:text m))]
+                              (when (str/includes? text "review 账本")
+                                text)))
+                          messages)]
+        (is (some? message))
+        (when message
+          (is (<= (utf8-size message) 16384))
+          (is (str/includes? message "long-item"))
+          (is (str/includes? message "…[+"))
+          (is (str/includes? message "(truncated)"))
+          (is (str/includes?
+               message
+               "系统是无人值守的常授权模式，禁止等待用户决策或授权，禁止半途而废。"))
+          (is (str/includes? message "立刻去做"))))
       (finally
         ((:stop! handle))))))
 

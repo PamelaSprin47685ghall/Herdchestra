@@ -55,6 +55,55 @@
   (let [db (:db (events/apply-event db event))]
     (conv-state/apply-event-db db event)))
 
+(defn- send-state
+  "Reducer state for a direct composer/send action."
+  [version text]
+  (-> conversation/initial-state
+      (assoc :session-id "s1"
+             :session {:model {:id "m1"} :run-status :finished}
+             :connection {:phase :synced :command-allowed? true}
+             :model {:id "m1"}
+             :drafts {"s1" (assoc draft/empty-draft
+                                   :text text
+                                   :cursor (count text)
+                                   :selection {:start (count text)
+                                               :end (count text)}
+                                   :version version
+                                   :saved-version version
+                                   :save-state :saved)})))
+
+(deftest stale-snapshot-version-with-same-content-clears-the-live-draft
+  (let [state (send-state 4 "same text")
+        snapshot {:text "same text" :version 3
+                  :attachments [] :quotes []}
+        next (conversation/apply-action
+              state
+              {:type :composer/send :session-id "s1"
+               :snapshot snapshot :at "t1"})
+        command (last (:outbox next))]
+    (is (= 4 (:submitted-version command))
+        "the live version wins when the content is identical")
+    (is (= 4 (get-in command [:payload :version])))
+    (is (= "" (get-in next [:drafts "s1" :text]))
+        "the composer is cleared even though the snapshot version lagged")
+    (is (= 5 (get-in next [:drafts "s1" :version])))))
+
+(deftest captured-send-keeps-newer-draft-when-content-differs
+  (let [state (send-state 5 "new text")
+        snapshot {:text "old text" :version 3
+                  :attachments [] :quotes []}
+        next (conversation/apply-action
+              state
+              {:type :composer/send :session-id "s1"
+               :snapshot snapshot :at "t1"})
+        command (last (:outbox next))]
+    (is (= 3 (:submitted-version command))
+        "a genuine newer edit keeps the captured version guard")
+    (is (= "new text" (get-in next [:drafts "s1" :text])))
+    (is (= 5 (get-in next [:drafts "s1" :version])))
+    (is (= 3 (get-in next [:drafts "s1" :submitted-version])))
+    (is (= "old text" (get-in command [:payload :text])))))
+
 (deftest send-receipt-keeps-the-cleared-draft
   (let [db (apply! (base-db)
                    [{:type :draft/edit :session-id "s1"
@@ -72,6 +121,27 @@
                                    (:command-id command) :status])))
       (is (empty? (get-in db [:ui/draft "s1" :text]))
           "an accepted receipt never resurrects the sent text"))))
+
+(deftest bare-command-failure-restores-the-cleared-draft
+  (let [db (apply! (base-db)
+                   [{:type :draft/edit :session-id "s1"
+                     :text "hello" :cursor 5 :at "t1"}
+                    {:type :composer/send :session-id "s1" :at "t2"}])
+        command (last-command db :send)]
+    (is (empty? (get-in db [:ui/draft "s1" :text])))
+    (let [db (handle-event
+              db
+              {:type "CUSTOM"
+               :name "hc/command-receipt"
+               :value {:ok? false
+                       :command-id (:command-id command)
+                       :error {:code :COMMAND_STORE_FAILED
+                               :message "command state could not be committed"}}})]
+      (is (= :rejected (get-in db [:ui/command (:command-id command) :status]))
+          "a bare gateway failure is a rejected command")
+      (is (= "hello" (get-in db [:ui/draft "s1" :text]))
+          "the optimistically cleared draft is restored from the command snapshot")
+      (is (= :unsaved (get-in db [:ui/draft "s1" :save-state]))))))
 
 (deftest stop-and-send-sends-the-captured-snapshot
   (let [db (-> (base-db)

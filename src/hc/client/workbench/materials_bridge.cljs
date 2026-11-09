@@ -501,13 +501,18 @@
          (let [db (when-let [app @app-ref] (application/current-state app))]
            (if (bridge/command-allowed?)
              (let [current (current-with-local db)
+                   latest-epoch (or (wb-model/session-command-epoch db session-id)
+                                    (bridge/command-epoch-for-session session-id))
+                   current (-> current
+                               (assoc-in [:sync :phase] (:phase (bridge/connection)))
+                               (assoc-in [:sync :command-epoch] latest-epoch))
                    {:keys [state]} (materials/reduce-action
                                     current {:type :materials/refresh})]
                (transact-state! (materials/flush-outbox! state submit!)))
              ;; A connection that dropped before this timer fires retries on
              ;; the next successful sync instead of reporting a false error.
              (reset! fetched-session nil))))
-       750))))
+       (if session-changed? 50 750)))))
 
 (defn install!
   [app]

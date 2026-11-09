@@ -151,6 +151,7 @@ Plan 绑定额外保存 `:reviewed-in-tenure?`。它只在 Plan tenure 换任时
 - `cancel-root-task!` 只允许叶子根任务；它同时移除 board task、board ledger 项、relay 根任务镜像与 relay 台账键。最后一个根任务被取消时同样尝试接力屏障；board 未 quiescent 时留下 `:relay-pending` 供 `maybe-relay!`。
 - `replace-root-task!` 只允许叶子根任务；board 保留同一 `:ledger-key` 并创建替代任务，relay 根任务镜像更新 goal/remaining-work/done-when，台账义务保持开放，因此不触发屏障。
 - `reopen-root-task!`（或 `:board-command` 的根 `:reopen`）只恢复一个已 `:done` 的根任务：board task 回 `:ready`、board ledger 重新登记 `:ledger-key`、relay 根任务镜像回 `:ready`、relay 台账恢复镜像中的原始义务文本、host 根绑定回 `:ready`，并清除 `:relay-pending?`。这四者在同一候选状态中提交；任务之后必须再次走正常根 `finish` 才能解除义务并触发屏障。非根任务仍走纯 board `:reopen`。
+- `abandon-swarm!` 按 `:swarm-id`（可选 `:slice-id` 定位根任务）找到执行 tenure：`fleet-<swarm-id>` 直接命中，否则按唯一 `:ledger-key` 匹配。它在同一转换中把该 tenure 标 `:abandoned`（记录 reason/at）、清空 relay 台账与根任务镜像、移除该 tenure 看板的全部 task/claim/action/waiter、释放令牌、把 holder 降为普通角色并记录 `:swarm-abandoned` 看板事件；其它执行 tenure 不受影响。Plan tenure 永不参与；重复调用幂等。看板不变量在提交前复核，非法候选整体拒绝。
 - relay 根任务镜像保存 `:original-obligation`（首次由 Reviewer 台账写入，
   `replace-root-task` 不覆盖它）；`reopen` 优先恢复该文本，因此替代后的
   重开不会把替代目标误当原义务。
@@ -264,6 +265,8 @@ Plan 绑定额外保存 `:reviewed-in-tenure?`。它只在 Plan tenure 换任时
   `:tool-call-id` 重复投影不追加第二次。
 - `plan-worker-request` 复用/steer 同一 Plan dedicated worker；provider 角色为 `:role :task`，`:mission-role :plan-worker`，另带 `:model-role :task`、`:program-role :dedicated-worker`、Plan workspace，context 仅属于该 worker。
 - `public-board-snapshot` 是实际公开看板视图（tasks/actors/token/inputs/derived），不含台账与私有对话。
+- `board-work-prompt` 的 EDN+UFSS 块对 `:goal`、`:remaining-work`、`:done-when`、`:handoff-note` 各按 UTF-8 截断到 4096 字节（按码点推进，不拆代理对）；被截断的任务 map 带 `:truncated? true` 与 `:full-bytes`（该任务被截断字段的最大原始字节数），未截断时二者不出现。整块上限 32768 字节；任何超限裁剪都带 `:board-truncated? true` 与 `:omitted-task-count`/最多 20 个 `:omitted-task-ids`（任务未省略时计数为 0），裁剪顺序为“尾部优先、根任务与可推进任务最后”；极端情况下责任列表按尾部省略并带 `:responsibility-truncated? true`/`:omitted-responsibility-count`，仍超限抛 `:PROMPT_TOO_LARGE`。未超限时输出保持既有逐字形状。
+- `public-board-snapshot` 对同一组字段执行同样的逐字段上限；仅超限时附加 `:truncated?`/`:full-bytes`。
 
 Owner 集成：
 
@@ -288,9 +291,10 @@ Owner 集成：
 
 Plan dedicated worker 的外部 runner 在 `hc.compose.mission.devops`；Owner/app 通过 `mission/devops!` 的 `:run` 或 app adapter 调用。`devops-complete-state` 回执保留：
 `:worker-result-status`（`:ok`/`:failed`/`:interrupted`）、`:worker-status`（同一结果状态）、`:worker-lifecycle-status`（`:idle`）与逐字 `:report`。
-worker 的 `call` 是 best-effort 只读；工具结果文本附加
-`[workspace may have changed; re-read the facts you rely on]`，提示 Plan
-在依赖调查结论前重新核对现场。
+worker 的 `call` 是 best-effort 只读；工具结果 map 以
+`:workspace-may-have-changed true` 与 `:note`（`"workspace may have changed;
+re-read the facts you rely on"`）合入，整体由 `hc.core.ufss/write-str`
+渲染，提示 Plan 在依赖调查结论前重新核对现场。
 
 提示词边界：actor 请求只包含 board-derived work prompt；COMMON/角色系统提示词、Pair Hint 与 Scope 投影由 app/model gateway 在出站副本上注入一次，不得在每个 actor prompt 重复 Scope 规则。当前 `actors` 尚未直接调用 `hc.core.pair-hint`/`hc.core.scope`；这是 app gateway 的接线责任。
 
@@ -335,7 +339,7 @@ CAS 中提交 mission state 与 call/conversation/report/cancel 状态。纯入�
 ```text
 :review :resume :set-draft :maybe-relay
 :register-swarm-actor :claim-task :take-or-die :finish-root-task
-:cancel-root-task :replace-root-task :reopen-root-task
+:cancel-root-task :replace-root-task :reopen-root-task :abandon-swarm
 :reopen
 :extensions-put
 :board-command :devops-request :devops-complete

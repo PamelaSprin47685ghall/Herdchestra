@@ -1,6 +1,6 @@
 (ns hc.core.steward-sphinx.frontier-test
   (:require [clojure.test :refer [deftest is]]
-            [clojure.test.check :as tc]
+            [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hc.core.steward-sphinx.frontier :as frontier]))
@@ -246,19 +246,16 @@
     (is (= :INVALID_CAPACITY (get-in result [:error :code])))
     (is (= state (:state result)))))
 
-(deftest pull-only-property
-  (is (:result
-       (tc/quick-check
-        50
-        (prop/for-all [cba-version (gen/choose 0 1000)
-                       absorbable (gen/choose 1 8)]
-          (let [state (primed-state)
-                result (evaluate state
-                                 (intent 0 "hold")
-                                 (capacity 8 0 [{:mission-id "m1"
-                                                 :status :active
-                                                 :absorbable absorbable}])
-                                 (cognition cba-version))]
-            (and (:ok? result)
-                 (nil? (:frontier result))
-                 (= [] (:reasons result)))))))))
+(defspec pull-only-property 50
+  (prop/for-all [cba-version (gen/choose 0 1000)
+                 absorbable (gen/choose 1 8)]
+    (let [state (primed-state)
+          result (evaluate state
+                           (intent 0 "hold")
+                           (capacity 8 0 [{:mission-id "m1"
+                                           :status :active
+                                           :absorbable absorbable}])
+                           (cognition cba-version))]
+      (and (:ok? result)
+           (nil? (:frontier result))
+           (= [] (:reasons result))))))

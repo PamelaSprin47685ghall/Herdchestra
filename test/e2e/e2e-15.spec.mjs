@@ -28,6 +28,8 @@ import { test } from '@playwright/test';
 import { startApp, REPO_ROOT } from './support/app.mjs';
 import { startMockModel } from './support/mock-model.mjs';
 import { startMockSpeech } from './support/mock-services.mjs';
+import { summarizeChecks } from './support/fixtures.mjs';
+import { sourceTreeSha256 } from './support/evidence.mjs';
 import {
   assert, clientBundleInfo, composer, ensureIdle, goto,
   newSession, shot, userTexts, waitForAssistant, waitForSync,
@@ -62,22 +64,28 @@ function bundleSha256() {
 
 function speechConfigEdn(speechUrl) {
   // Persisted speech config, normalized shape from
-  // hc.server.speech.config/defaults.  Two STT services: the seeded default
-  // `cloud-stt` always fails in the mock, `device-stt` succeeds; retrying
-  // with the second service proves the recording is preserved and reused.
+  // hc.server.speech.config/defaults.  The default `mock-stt` is a
+  // loopback/device service so the browser's WebM recording can reach the
+  // mock and fail with 503; `cloud-stt` is kept only to prove the cloud
+  // duration boundary, and `device-stt` succeeds on retry.
   return `{:revision 0
  :stt {:services [
+        {:id "mock-stt" :label "Mock STT" :kind :openai-compatible
+         :base-url "${speechUrl}" :model "mock-stt"
+         :processing :device :enabled? true :order 0
+         :transcriptions-path "/v1/audio/transcriptions"
+         :response-format "json" :languages ["zh-CN" "en"]}
         {:id "cloud-stt" :label "Cloud STT" :kind :openai-compatible
          :base-url "${speechUrl}" :model "mock-stt"
-         :processing :cloud :enabled? true :order 0
+         :processing :cloud :enabled? true :order 1
          :transcriptions-path "/v1/audio/transcriptions"
          :response-format "json" :languages ["zh-CN" "en"]}
         {:id "device-stt" :label "Device STT" :kind :openai-compatible
          :base-url "${speechUrl}" :model "mock-stt"
-         :processing :device :enabled? true :order 1
+         :processing :device :enabled? true :order 2
          :transcriptions-path "/v1/audio/transcriptions"
          :response-format "json" :languages ["zh-CN" "en"]}]
-       :default-service-id "cloud-stt"
+       :default-service-id "mock-stt"
        :max-duration-ms 300000
        :max-audio-bytes 26214400
        :language "auto"
@@ -177,6 +185,7 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
   test.setTimeout(600000);
   fs.mkdirSync(EVIDENCE, { recursive: true });
   const checks = {};
+  const diagnostics = {};
   const evidence = {
     test: 'E2E 15',
     mode: 'automated',
@@ -189,7 +198,9 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
       treeHashSrcTestActual: treeHashSrcTest(),
     },
     clientBundle: clientBundleInfo(),
+    sourceTreeSha256: sourceTreeSha256(),
     checks,
+    diagnostics,
     screenshots: [],
     manual: {},
   };
@@ -375,7 +386,8 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     await newSession(page);
     await page.locator('.hc-speech-input').first()
       .waitFor({ state: 'visible', timeout: 30000 });
-    checks.speechPanelMounted = true;
+    checks.speechPanelMounted =
+      (await page.locator('.hc-speech-input').count()) >= 1;
 
     await composer(page).fill('E2E15 第一轮：请回复一句话。');
     await page.locator('button[aria-label="发送消息"]').first().click();
@@ -385,11 +397,11 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     assert(checks.replyOk, `assistant reply missing marker: ${reply.text.slice(0, 120)}`);
     await ensureIdle(page, 30000);
     const usersBefore = await userTexts(page);
-    checks.userMessageCount = usersBefore.length;
+    diagnostics.userMessageCount = usersBefore.length;
 
     const row = assistantRow(page, 'E2E15');
     await row.waitFor({ state: 'visible', timeout: 15000 });
-    checks.assistantRowFound = true;
+    checks.assistantRowFound = (await row.count()) >= 1;
 
     // --- read-aloud: play, pause/resume, stop -----------------------------
     await row.getByRole('button', { name: '朗读此回复' }).first().click();
@@ -401,35 +413,42 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     }, null, { timeout: 30000 });
     let playerNow = await playerText(page);
     checks.ttsPlaying = /正在朗读|朗读已暂停/.test(playerNow || '');
-    checks.ttsError = /朗读失败/.test(playerNow || '');
+    checks.ttsNoError = !/朗读失败/.test(playerNow || '');
     assert(checks.ttsPlaying, `player did not reach playing: ${playerNow}`);
+    assert(checks.ttsNoError, `player reported an error: ${playerNow}`);
     const ttsState1 = await mockState(speech);
-    checks.ttsRequestCount = ttsState1.tts.length;
+    diagnostics.ttsRequestCount = ttsState1.tts.length;
+    checks.ttsRequestSeen = ttsState1.tts.length >= 1;
     checks.ttsInputIsReply = ttsState1.tts.some((r) =>
       typeof r.input === 'string' && r.input.includes('E2E15'));
-    checks.ttsFormat = ttsState1.tts[0]?.format;
-    assert(checks.ttsRequestCount >= 1, 'mock saw no TTS request');
+    diagnostics.ttsFormat = ttsState1.tts[0]?.format;
+    assert(checks.ttsRequestSeen, 'mock saw no TTS request');
     assert(checks.ttsInputIsReply, 'TTS input is not the visible reply text');
     evidence.screenshots.push(await shot(page, EVIDENCE, 'e2e15-01-read-aloud-playing'));
 
     // Pause then resume through the mini player controls.
     const pauseBtn = player.locator('button', { hasText: '暂停' }).first();
-    if (await pauseBtn.count()) {
+    const pauseOffered = (await pauseBtn.count()) > 0;
+    let pauseResumeWorked = pauseOffered;
+    if (pauseOffered) {
       await pauseBtn.click();
       await page.waitForFunction(() => {
         const el = document.querySelector('.hc-speech-player');
         return el && /朗读已暂停/.test(el.textContent || '');
       }, null, { timeout: 15000 });
-      checks.ttsPaused = true;
+      const pausedText = (await playerText(page)) || '';
       await player.locator('button', { hasText: '继续' }).first().click();
       await page.waitForFunction(() => {
         const el = document.querySelector('.hc-speech-player');
         return el && /正在朗读/.test(el.textContent || '');
       }, null, { timeout: 15000 });
-      checks.ttsResumed = true;
-    } else {
-      checks.ttsPaused = 'not-offered';
+      const resumedText = (await playerText(page)) || '';
+      pauseResumeWorked = /朗读已暂停/.test(pausedText)
+        && /正在朗读/.test(resumedText);
     }
+    checks.ttsPauseResumeHandled = !pauseOffered || pauseResumeWorked;
+    assert(checks.ttsPauseResumeHandled,
+      'pause/resume did not reach the expected player states');
 
     // --- version switch stops the old read-aloud --------------------------
     // Keep the player alive, then produce a second message version through
@@ -452,14 +471,16 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
         '.hc-message-versions .hc-version-button');
       return versions.length >= 2;
     }, null, { timeout: 60000 });
-    checks.versionSelectorShown = true;
+    checks.versionSelectorShown =
+      (await page.locator('.hc-version-button').count()) >= 2;
     // The version change must have stopped the old audio: the player
     // element unmounts when playback state returns to :idle.
     await page.waitForFunction(() => {
       const el = document.querySelector('.hc-speech-player');
       return !el;
     }, null, { timeout: 30000 });
-    checks.playerGoneAfterVersionSwitch = true;
+    checks.playerGoneAfterVersionSwitch =
+      (await page.locator('.hc-speech-player').count()) === 0;
     const editedRow = assistantRow(page, 'E2E15');
     const editedText = await editedRow.innerText();
     checks.editedVersionShown = editedText.includes('编辑后的第二版');
@@ -477,11 +498,18 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
         .find((n) => (n.textContent || '').includes('E2E15'));
       return el && (el.textContent || '').includes('第一轮');
     }, null, { timeout: 30000 });
-    checks.versionSwitchBackOk = true;
-    checks.versionButtons = await page.locator('.hc-version-button').count();
+    checks.versionSwitchBackOk =
+      (await assistantRow(page, 'E2E15').innerText()).includes('第一轮');
+    diagnostics.versionButtons = await page.locator('.hc-version-button').count();
     // Return to the latest version before continuing.
     await page.locator('.hc-version-button').last().click();
-    await page.waitForTimeout(400);
+    // Wait for the latest version's text instead of a fixed settle time.
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('.hc-message-in')]
+        .filter((node) => (node.textContent || '').includes('E2E15'));
+      return rows.some((row) =>
+        (row.textContent || '').includes('编辑后的第二版'));
+    }, null, { timeout: 15000 });
 
     // --- translation: derived result, original preserved ------------------
     const usersBeforeTranslate = await userTexts(page);
@@ -491,7 +519,7 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     // Inside the panel the run button shares a row with the 目标语言 select.
     const runRow = translationRunRow(page);
     await runRow.waitFor({ state: 'visible', timeout: 15000 });
-    checks.translationPanelOpened = true;
+    checks.translationPanelOpened = (await runRow.count()) >= 1;
     const langSelect = runRow.locator('select').first();
     await langSelect.selectOption('en');
     await runRow.getByRole('button', { name: '翻译', exact: true }).first().click();
@@ -501,12 +529,13 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
       return Boolean(el);
     }, null, { timeout: 30000 });
     const translateState = await mockState(speech);
-    checks.translateRequestCount = translateState.translate.length;
+    diagnostics.translateRequestCount = translateState.translate.length;
+    checks.translateRequestSeen = translateState.translate.length >= 1;
     checks.translateSawSource = translateState.translate.some((r) =>
       typeof r.user === 'string' && r.user.includes('E2E15'));
     checks.translateSawSystem = translateState.translate.some((r) =>
       typeof r.system === 'string' && /Translate/.test(r.system));
-    assert(checks.translateRequestCount >= 1, 'mock saw no translation request');
+    assert(checks.translateRequestSeen, 'mock saw no translation request');
     assert(checks.translateSawSource, 'translation request did not carry the source text');
     // Original text still rendered; translated text shown as derived result.
     const rowTextAfter = await assistantRow(page, 'E2E15').innerText();
@@ -523,8 +552,9 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     await resultBlock.waitFor({ state: 'visible', timeout: 15000 });
     const insertBtn = resultBlock.getByRole('button', { name: '插入草稿', exact: true }).first();
     const insertCount = await resultBlock.getByRole('button', { name: '插入草稿', exact: true }).count();
-    checks.insertDraftButtons = insertCount;
-    assert(insertCount >= 1, 'no 插入草稿 button in translation panel');
+    diagnostics.insertDraftButtons = insertCount;
+    checks.insertButtonPresent = insertCount >= 1;
+    assert(checks.insertButtonPresent, 'no 插入草稿 button in translation panel');
     await insertBtn.click();
     await page.waitForFunction((needle) => {
       const el = document.querySelector('textarea[aria-label="消息输入"]');
@@ -541,10 +571,11 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
       && JSON.stringify(usersAfter) === JSON.stringify(usersBeforeTranslate);
     assert(checks.noAutoSend, 'translation insert sent a message');
 
-    // --- voice input: record -> failed cloud STT -> retry other service ---
-    // The seeded default is cloud-stt (mock returns 503 for every STT call
-    // until flipped).  Record with the fake device, stop, see the failure
-    // panel that keeps the recording, switch to device-stt, confirm, retry.
+    // --- voice input: record -> failed local STT -> retry other service ---
+    // The seeded default is mock-stt (loopback/device; the mock returns 503
+    // until flipped).  Record with the synthetic device, stop, see the
+    // failure panel that keeps the recording, then prove the cloud boundary
+    // before switching to device-stt and retrying successfully.
     const micButton = page.locator('.hc-speech-input button').first();
     await micButton.waitFor({ state: 'visible', timeout: 15000 });
     await micButton.click();
@@ -567,7 +598,17 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
       await page.waitForFunction(() => window.__hcRecorder
         && window.__hcRecorder.state === 'recording',
         null, { timeout: 30000 });
-      checks.micRecordingStarted = true;
+      checks.micRecordingStarted = await page.evaluate(() =>
+        Boolean(window.__hcRecorder
+          && window.__hcRecorder.state === 'recording'));
+      // Force at least one real media chunk before stop.  A zero-byte final
+      // chunk makes the client fall back to its silent WAV, which is
+      // verifiable by the cloud duration gate and would make the cloud
+      // boundary check depend on headless timing.
+      await page.evaluate(() => {
+        try { window.__hcRecorder.requestData(); } catch { /* no chunk yet */ }
+      });
+      await page.waitForTimeout(450);
       // Recording is live; stop it through the real button so the app's
       // stop-recording! -> recorder.stop() -> onstop -> upload! path runs
       // end to end.  The button label flips to 停止录音 once phase is
@@ -576,7 +617,12 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
         .filter({ hasText: '停止录音' }).first();
       await stopButton.waitFor({ state: 'visible', timeout: 15000 });
       await stopButton.click();
-      checks.micStoppedViaButton = true;
+      await page.waitForFunction(() => window.__hcRecorder
+        && window.__hcRecorder.state !== 'recording',
+        null, { timeout: 15000 });
+      checks.micStoppedViaButton = await page.evaluate(() =>
+        Boolean(window.__hcRecorder
+          && window.__hcRecorder.state !== 'recording'));
     } catch (err) {
       checks.micRecordingStarted = false;
       const dump = await page.evaluate(() => {
@@ -598,20 +644,92 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
       throw err;
     }
 
-    // Upload fails (mock STT 503): failure panel keeps the recording.
-    await page.waitForFunction(() => {
-      const el = document.querySelector('.hc-speech-input');
-      return el && /转写失败|失败|重试/.test(el.textContent || '');
-    }, null, { timeout: 60000 });
-    const inputText1 = await page.locator('.hc-speech-input').first().innerText();
-    checks.sttFailureShown = /转写失败|失败/.test(inputText1);
-    checks.sttAudioPreservedHint = /已保存|保留|录音/.test(inputText1);
-    const sttStateFail = await mockState(speech);
-    checks.sttAttemptsAfterFail = sttStateFail.stt.length;
-    assert(checks.sttAttemptsAfterFail >= 1, 'mock saw no STT attempt');
+    // Upload fails (mock STT 503).  The banner shows the provider's raw
+    // message ("mock stt failure 503"), not a Chinese keyword, so the
+    // assertion targets the structural failure state: an alert banner, the
+    // retained preview audio element, and a usable 重试 button.
+    const inputPanel = page.locator('.hc-speech-input').first();
+    const failureAlert = inputPanel.locator('[role="alert"]').first();
+    await failureAlert.waitFor({ state: 'visible', timeout: 60000 });
+    const inputText1 = await inputPanel.innerText();
+    checks.sttFailureShown = await inputPanel.locator('[role="alert"]').count() >= 1;
+    diagnostics.sttAlertText = (await failureAlert.innerText()).slice(0, 400);
+    checks.sttRetryVisible = await inputPanel
+      .getByRole('button', { name: '重试', exact: true }).first()
+      .isVisible().catch(() => false);
     // The recording preview audio element proves the blob survived.
-    checks.sttAudioElement = await page.locator('.hc-speech-input audio').count() >= 1;
+    checks.sttAudioElement = await inputPanel.locator('audio').count() >= 1;
+    checks.sttAudioPreservedHint = /已保存|保留|录音|时长/.test(inputText1)
+      && checks.sttAudioElement;
+    const sttStateFail = await mockState(speech);
+    diagnostics.sttAttemptsAfterFail = sttStateFail.stt.length;
+    const recordingPostSeen = evidence.httpLog.some((line) =>
+      line.includes('REQ POST /speech/recordings'));
+    checks.sttAttemptSeen = recordingPostSeen
+      && sttStateFail.stt.length >= 1;
+    assert(checks.sttAttemptSeen,
+      `local STT attempt missing: upload=${recordingPostSeen} ` +
+      `mock=${sttStateFail.stt.length}`);
+    assert(checks.sttFailureShown && checks.sttRetryVisible && checks.sttAudioElement,
+      `failed transcription did not keep an actionable recording: ${inputText1.slice(0, 400)}`);
+    assert(checks.sttAudioPreservedHint,
+      'failure panel lost the recording preservation facts');
     evidence.screenshots.push(await shot(page, EVIDENCE, 'e2e15-04-stt-failed-kept'));
+
+    // Cloud duration boundary: the retained browser WebM recording cannot be
+    // verified as WAV, so a :processing :cloud service must refuse it before
+    // any provider attempt.  This is a product safety contract, not an
+    // alternative success path.
+    const cloudSelect = page.locator('.hc-speech-input select').first();
+    await cloudSelect.waitFor({ state: 'visible', timeout: 15000 });
+    await cloudSelect.selectOption('cloud-stt');
+    const cloudConfirm = page
+      .getByRole('button', { name: '确认使用此服务', exact: true }).first();
+    await cloudConfirm.waitFor({ state: 'visible', timeout: 15000 });
+    await cloudConfirm.click();
+    await page.locator('.hc-speech-input')
+      .getByRole('button', { name: '重试', exact: true }).first().click();
+    const cloudUiRefusal = await page.waitForFunction(() => {
+      const el = document.querySelector('.hc-speech-input');
+      return el && (el.innerText || '').includes(
+        'the recording duration cannot be verified');
+    }, null, { timeout: 30000 }).then(() => true).catch(() => false);
+    diagnostics.cloudUiRefusal = cloudUiRefusal;
+    if (cloudUiRefusal) {
+      diagnostics.cloudDirectStatus = null;
+      checks.cloudRefusesUnverifiableDuration = true;
+      evidence.screenshots.push(
+        await shot(page, EVIDENCE, 'e2e15-04a-cloud-duration-refused'));
+    } else {
+      // Headless audio may still fall back to the verifiable silent WAV.
+      // Prove the same server contract directly with a real WebM EBML magic
+      // header, independent of MediaRecorder timing.
+      const directRefusal = await page.evaluate(async () => {
+        const webm = new Uint8Array([
+          0x1a, 0x45, 0xdf, 0xa3, 0x93, 0x42, 0x82, 0x88,
+          0x77, 0x65, 0x62, 0x6d, 0x00,
+        ]);
+        const blob = new Blob([webm], { type: 'audio/webm' });
+        const res = await fetch('/speech/recordings', {
+          method: 'POST',
+          headers: {
+            'content-type': 'audio/webm',
+            accept: 'application/edn',
+            'x-hc-service-id': 'cloud-stt',
+            'x-hc-duration-ms': '1000',
+          },
+          body: blob,
+        });
+        return { status: res.status, body: await res.text() };
+      });
+      diagnostics.cloudDirectStatus = directRefusal.status;
+      checks.cloudRefusesUnverifiableDuration =
+        directRefusal.status === 400
+        && /the recording duration cannot be verified|SPEECH_DURATION_UNVERIFIABLE/
+          .test(directRefusal.body);
+    }
+    assert(checks.cloudRefusesUnverifiableDuration,
+      'cloud duration boundary was not proven by UI or direct WebM upload');
 
     // Flip the mock to success, switch service to device-stt, confirm, retry.
     await fetch(`${speech.url}/__mock/config`, {
@@ -623,9 +741,11 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     await serviceSelect.waitFor({ state: 'visible', timeout: 15000 });
     const options = await serviceSelect.locator('option').evaluateAll(
       (nodes) => nodes.map((n) => ({ value: n.value, label: n.textContent })));
-    checks.sttServiceOptions = options;
+    diagnostics.sttServiceOptions = options;
     const deviceOption = options.find((o) => o.value === 'device-stt');
-    assert(deviceOption, `device-stt option missing: ${JSON.stringify(options)}`);
+    checks.sttDeviceOptionPresent = Boolean(deviceOption);
+    assert(checks.sttDeviceOptionPresent,
+      `device-stt option missing: ${JSON.stringify(options)}`);
     await serviceSelect.selectOption('device-stt');
     // The change guard requires an explicit confirmation before the recording
     // is sent to the other service.
@@ -641,9 +761,9 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     const transcriptArea = page.locator(
       'textarea[aria-label="转写文字，可编辑后插入草稿"]').first();
     await transcriptArea.waitFor({ state: 'visible', timeout: 60000 });
-    checks.reviewShown = true;
+    checks.reviewShown = (await transcriptArea.count()) >= 1;
     const transcriptValue = await transcriptArea.inputValue();
-    checks.transcriptText = transcriptValue;
+    diagnostics.transcriptText = transcriptValue;
     checks.transcriptMatches = transcriptValue.includes('明天下午四点');
     assert(checks.transcriptMatches,
       `transcript mismatch: ${transcriptValue.slice(0, 120)}`);
@@ -658,7 +778,7 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     // The retried call reused the stored recording: same byte size as the
     // failed upload (mock records only sizes, not ids — the server-side
     // recording-id reuse is asserted via the single POST /recordings).
-    checks.sttRecordingPosts = sttStateOk.requests.filter(
+    diagnostics.sttRecordingPosts = sttStateOk.requests.filter(
       (r) => r.path === '/v1/audio/transcriptions').length;
 
     // Transcript goes to the draft only — never auto-sent.
@@ -673,7 +793,7 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     const draftAfterInsert = await composerText(page);
     checks.draftHasTranscript = draftAfterInsert.includes('明天下午四点');
     checks.draftKeptPrefix = draftBeforeInsert.length === 0
-      ? true : draftAfterInsert.startsWith(draftBeforeInsert.trim());
+      || draftAfterInsert.startsWith(draftBeforeInsert.trim());
     const usersAfterInsert = await userTexts(page);
     checks.transcriptNotSent = usersAfterInsert.length === usersBeforeInsert.length
       && JSON.stringify(usersAfterInsert) === JSON.stringify(usersBeforeInsert);
@@ -682,28 +802,89 @@ test('@core E2E 15 speech transcription, read-aloud and translation', async ({ b
     evidence.screenshots.push(await shot(page, EVIDENCE, 'e2e15-06-draft-inserted'));
 
     // Settings page sanity: the seeded services are visible under 语音与朗读.
+    // The panel renders 正在读取语音设置… until the server snapshot arrives;
+    // sampling during that placeholder produced three false "service not
+    // listed" diagnostics.  Wait for the list, then switch the speech areas.
     await goto(page, app.url, '/settings');
+    await waitForSync(page);
     // The tab bar renders role="tab", not role="button".
     await page.locator('.wb-tabs button.wb-tab', { hasText: '语音与朗读' })
       .first().click();
-    await page.locator('.hc-speech-input, .wb-tabs').first()
-      .waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-    const settingsText = await page.locator('body').innerText();
+    const speechTablist = page.locator(
+      '[role="tablist"][aria-label="语音与朗读"]').first();
+    await speechTablist.waitFor({ state: 'visible', timeout: 30000 });
+    await page.getByRole('button', { name: '添加服务', exact: true }).first()
+      .waitFor({ state: 'visible', timeout: 30000 });
+    await page.waitForFunction(() =>
+      !document.body.innerText.includes('正在读取语音设置…'),
+    null, { timeout: 30000 });
+    let settingsText = await page.locator('body').innerText();
     checks.settingsListsStt = /cloud-stt|Cloud STT/.test(settingsText);
+    await speechTablist.getByRole('tab', { name: '朗读', exact: true }).click();
+    await page.locator('strong', { hasText: 'Mock TTS' }).first()
+      .waitFor({ state: 'visible', timeout: 30000 });
+    settingsText = await page.locator('body').innerText();
     checks.settingsListsTts = /mock-tts|Mock TTS/.test(settingsText);
+    await speechTablist.getByRole('tab', { name: '翻译', exact: true }).click();
+    await page.locator('strong', { hasText: 'Mock Translate' }).first()
+      .waitFor({ state: 'visible', timeout: 30000 });
+    settingsText = await page.locator('body').innerText();
     checks.settingsListsTranslate = /mock-translate|Mock Translate/.test(settingsText);
+    evidence.settingsSpeechText = settingsText.slice(0, 2500);
+    // Negative expectation: with two seeded STT, one TTS and one translation
+    // service, the settings page must not claim it has none.
+    checks.settingsDoesNotClaimNoServices =
+      !settingsText.includes('尚未配置服务');
+    assert(checks.settingsDoesNotClaimNoServices,
+      'speech settings claims no services while the seeded services are listed');
+    assert(checks.settingsListsStt && checks.settingsListsTts
+      && checks.settingsListsTranslate,
+    `speech settings do not list the seeded services: ${JSON.stringify({
+      stt: checks.settingsListsStt,
+      tts: checks.settingsListsTts,
+      translate: checks.settingsListsTranslate,
+    })}`);
     evidence.screenshots.push(await shot(page, EVIDENCE, 'e2e15-07-speech-settings'));
 
-    evidence.checks = checks;
-    evidence.ok = true;
+    // Observations (counts, labels, text snapshots) never enter `checks`.
+    // They are registered here and emitted under `diagnostics`; the strict
+    // verdict consumes every boolean via checksOk, so an undefined value is
+    // a failure rather than a silent pass.
+    const diagnosticOnly = [
+      'userMessageCount',
+      'ttsRequestCount',
+      'ttsFormat',
+      'versionButtons',
+      'translateRequestCount',
+      'insertDraftButtons',
+      'sttAlertText',
+      'sttAttemptsAfterFail',
+      'cloudUiRefusal',
+      'cloudDirectStatus',
+      'sttServiceOptions',
+      'transcriptText',
+      'sttRecordingPosts',
+    ];
+    const summary = summarizeChecks(checks, diagnostics, diagnosticOnly);
+    evidence.checks = summary.checks;
+    evidence.diagnostics = summary.diagnostics;
+    evidence.diagnosticOnly = summary.diagnosticOnly;
+    evidence.failedChecks = summary.failedChecks;
+    evidence.ok = summary.ok;
     evidence.finishedAt = new Date().toISOString();
     writeEvidence();
-    assert(checks.replyOk && checks.ttsPlaying && checks.playerGoneAfterVersionSwitch
-      && checks.translationShown && checks.reviewShown
-      && checks.draftHasTranscript && checks.transcriptNotSent,
-      `core E2E 15 checks failed: ${JSON.stringify(checks)}`);
+    assert(evidence.ok,
+      `E2E 15 checks failed: ${summary.failedChecks.join(', ')}`);
   } catch (error) {
     evidence.ok = false;
+    evidence.failedChecks = ['run-aborted'];
+    evidence.diagnostics = diagnostics;
+    evidence.diagnosticOnly = [
+      'userMessageCount', 'ttsRequestCount', 'ttsFormat', 'versionButtons',
+      'translateRequestCount', 'insertDraftButtons', 'sttAlertText',
+      'sttAttemptsAfterFail', 'cloudUiRefusal', 'cloudDirectStatus',
+      'sttServiceOptions', 'transcriptText', 'sttRecordingPosts',
+    ];
     evidence.error = String(error && error.message || error).slice(0, 2000);
     evidence.finishedAt = new Date().toISOString();
     writeEvidence();

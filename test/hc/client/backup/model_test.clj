@@ -1,5 +1,6 @@
 (ns hc.client.backup.model-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [hc.client.backup.commands :as commands]
             [hc.client.backup.model :as model]
             [hc.client.backup.view :as view]))
@@ -312,6 +313,24 @@
         (is (= :dav (:target-id (:payload command))))
         (is (some #(= :BACKUP_TARGET_UNAVAILABLE (:code %))
                   (model/create-validation state)))))))
+
+(deftest status-section-merges-target-and-storage-test
+  (let [state (-> (connected)
+                  (act {:type :backup/refresh :origin :manual})
+                  (apply-result (assoc (status-result)
+                                       :storage {:path "/data"
+                                                 :used-bytes 2048
+                                                 :free-bytes 4096}))
+                  (assoc-in [:ui :section] :status))
+        text (pr-str (view/backup-tree state))]
+    (testing "one heading owns the target facts, target list, and storage"
+      (is (re-find #"当前目标与状态" text))
+      (is (not (re-find #"已配置目标" text)))
+      (is (not (re-find #"存储状态" text)))
+      (is (re-find #"目标列表" text))
+      (is (re-find #"2 KiB" text))
+      (is (re-find #"4 KiB" text))
+      (is (re-find #"/data" text)))))
 
 (deftest status-listing-errors-are-not-empty-lists-test
   (let [state (-> (connected)
@@ -1101,25 +1120,57 @@
     (is (= [{:type :backup/copy-text
              :text "correct horse battery staple"}]
            (:effects copied)))
+    (is (= :copying
+           (get-in (:state copied) [:ui :copy-feedback :status])))
     (is (= :BACKUP_PASSWORD_COPYING
-           (get-in (:state copied) [:ui :message :code])))
+           (get-in (:state copied) [:ui :copy-feedback :code])))
+    (is (re-find #"正在复制密码"
+                 (get-in (:state copied) [:ui :copy-feedback :message])))
+    (is (nil? (get-in (:state copied) [:ui :message])))
     (is (= "correct horse battery staple"
            (get-in (:state copied) [:ui :password])))
     (let [done (:state (model/reduce-action (:state copied)
                                             {:type :backup/copy-result
                                              :ok? true}))]
-      (is (= :BACKUP_PASSWORD_COPIED (get-in done [:ui :message :code])))
+      (is (= :copied (get-in done [:ui :copy-feedback :status])))
+      (is (= :BACKUP_PASSWORD_COPIED
+             (get-in done [:ui :copy-feedback :code])))
+      (is (re-find #"已复制" (get-in done [:ui :copy-feedback :message])))
       (is (not (re-find #"correct horse"
-                        (get-in done [:ui :message :text])))))
+                        (pr-str (get-in done [:ui :copy-feedback])))))
+      (is (nil? (get-in done [:ui :message]))))
     (let [failed (:state (model/reduce-action state
                                               {:type :backup/copy-result
                                                :ok? false}))]
+      (is (= :failed (get-in failed [:ui :copy-feedback :status])))
       (is (= :BACKUP_PASSWORD_COPY_FAILED
-             (get-in failed [:ui :message :code])))))
+             (get-in failed [:ui :copy-feedback :code])))
+      (is (re-find #"剪贴板"
+                   (get-in failed [:ui :copy-feedback :message])))
+      (is (nil? (get-in failed [:ui :message])))))
   (let [result (model/reduce-action (connected) {:type :backup/copy-password})]
     (is (empty? (:effects result)))
+    (is (= :failed (get-in (:state result) [:ui :copy-feedback :status])))
     (is (= :BACKUP_PASSWORD_EMPTY
-           (get-in (:state result) [:ui :message :code])))))
+           (get-in (:state result) [:ui :copy-feedback :code])))
+    (is (re-find #"没有可复制的密码"
+                 (get-in (:state result) [:ui :copy-feedback :message])))
+    (is (nil? (get-in (:state result) [:ui :message])))))
+
+(deftest automatic-status-refresh-is-silent-test
+  (testing "mount and post-mutation refreshes leave the page banner alone"
+    (let [queued (act (connected) {:type :backup/refresh})
+          done (apply-result queued (status-result))]
+      (is (nil? (get-in queued [:ui :message])))
+      (is (nil? (:origin (:payload (last-command queued)))))
+      (is (nil? (get-in done [:ui :message])))))
+  (testing "an explicit operator refresh still reports completion"
+    (let [queued (act (connected) {:type :backup/refresh :origin :manual})
+          done (apply-result queued (status-result))]
+      (is (= :manual (:origin (:payload (last-command queued)))))
+      (is (= :backup/status-pending (get-in queued [:ui :message :code])))
+      (is (= :backup/status-loaded (get-in done [:ui :message :code])))
+      (is (= :info (get-in done [:ui :message :kind]))))))
 
 (deftest target-editor-new-edit-and-fields-test
   (let [state (connected)]
@@ -1437,3 +1488,17 @@
         (is (= :checkbox (get-in by-key [:set-default? :input])))
         (is (= #{:webdav :s3 :file}
                (get-in by-key [:set-default? :kinds])))))))
+
+(deftest target-test-message-is-total
+  (doseq [[label test expected]
+          [["pending" {:status :pending} "正在测试连接"]
+           ["ok-detail" {:status :ok :detail "reachable"} "reachable"]
+           ["ok-default" {:status :ok} "连接测试通过"]
+           ["failed-detail" {:status :failed :detail "401"} "401"]
+           ["failed-default" {:status :failed} "连接测试失败"]
+           ["future-kind" {:status :future-kind :detail "ignored"} "未知"]
+           ["nil-status" {} "未知"]]]
+    (let [message (#'view/target-test-message test)]
+      (is (string? message) label)
+      (is (not (str/blank? message)) label)
+      (is (str/includes? message expected) label))))

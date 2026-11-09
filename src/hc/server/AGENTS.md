@@ -19,9 +19,9 @@
    重连客户端。停止未确认时绝不恢复；恢复计划 fingerprint 变化时在写入前
    拒绝；进程在恢复中重启时不自动重跑。详见 `src/hc/server/app/AGENTS.md`。
 7. **受管浏览器**：`hc.server.browser.*` 通过 `BrowserPort` 执行导航、观察、动作与截图；服务持有页面、权限范围、页面卡与对象级接管状态；`cdp` 适配器只连接或启动 CDP，不关闭操作员共享的浏览器。敏感字段、过期目标和未知结果按 §7.4 旅程 6.4（开浏览器） 与 §6.4 处理。
-9. **只读工作区文件 API**：`hc.server.files.*` 通过 `hc.core.workspace-gate` 提供列表、`stat`、文本读取与名称搜索；浏览器路径限制在工作区根内，stamp 变化返回 `:FILE_CONFLICT`，不写文件。接口与错误码见 `src/hc/server/files/AGENTS.md`。
-8. **联网搜索与全文读取**：`hc.server.search.*` 只连接本轮显式选中的独立搜索服务，把真实返回结果交给 `hc.server.materials.search` 做 URL 合并、发布日期与抓取时间分离、引用编号；全文读取只针对已在引用集合中的 URL，且不向目标网页发送搜索凭据。接口与边界见 `src/hc/server/search/AGENTS.md`。
-9. **文档提取与 OCR**：`hc.server.documents.*` 只按显式 `:native` / `:text` / `:ocr` 路线工作；文本严格解码，PDF 保留原页码与加密/权限边界，图像应用 EXIF 方向与长边限制，OCR 使用本地 CPU Tesseract 与内置语言数据。空页、空 OCR、缺语言与不可用引擎都是带证据的拒绝，不自动换路线，不伪造文本。接口、错误码与限制见 `src/hc/server/documents/AGENTS.md`。
+8. **只读工作区文件 API**：`hc.server.files.*` 通过 `hc.core.workspace-gate` 提供列表、`stat`、文本读取与名称搜索；浏览器路径限制在工作区根内，stamp 变化返回 `:FILE_CONFLICT`，不写文件。接口与错误码见 `src/hc/server/files/AGENTS.md`。
+9. **联网搜索与全文读取**：`hc.server.search.*` 只连接本轮显式选中的独立搜索服务，把真实返回结果交给 `hc.server.materials.search` 做 URL 合并、发布日期与抓取时间分离、引用编号；全文读取只针对已在引用集合中的 URL，且不向目标网页发送搜索凭据。接口与边界见 `src/hc/server/search/AGENTS.md`。
+10. **文档提取与 OCR**：`hc.server.documents.*` 只按显式 `:native` / `:text` / `:ocr` 路线工作；文本严格解码，PDF 保留原页码与加密/权限边界，图像应用 EXIF 方向与长边限制，OCR 使用本地 CPU Tesseract 与内置语言数据。空页、空 OCR、缺语言与不可用引擎都是带证据的拒绝，不自动换路线，不伪造文本。接口、错误码与限制见 `src/hc/server/documents/AGENTS.md`。
 
 ## 2 不得
 
@@ -133,8 +133,6 @@ clojure -X:test:server :nses '[hc.server.app.system-test
 回调、令牌刷新与加密凭据存储。浏览器命令只看到流程状态和账号标识；访问
 令牌、刷新令牌、设备码与客户端密钥不进入回执、快照、日志或错误。文档见
 `src/hc/server/model_auth/AGENTS.md`。
-
-计划补充：`hc.server.config`、`hc.server.adapters`。
 
 存储引擎已选定为 Datalevin 1.2.10 KV，放在 `deps.edn` 的 `:server` 别名（恰好一个候选）。
 适配器接口、键布局、原子提交与读屏障、非破坏性打开规则见

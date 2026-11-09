@@ -1,0 +1,1392 @@
+{
+  "test": "E2E 19",
+  "mode": "automated",
+  "mock": true,
+  "startedAt": "2026-11-09T10:56:33.630Z",
+  "finishedAt": "2026-11-09T10:57:36.448Z",
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
+  },
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
+  "checks": {
+    "enterSends": true,
+    "shiftEnterNewlineOnly": true,
+    "keyRepeatSendsOnce": true,
+    "doubleClickSendsOnce": true,
+    "messageActionsHaveNames": true,
+    "focusRingAtLeast2px": true,
+    "tabOrderHasStops": true,
+    "tabOrderMatchesVisual": true,
+    "contrastLight": true,
+    "contrastDark": true,
+    "fontScaleApplies": true,
+    "fontScaleAria": true,
+    "fontScaleSurvivesRoute": true,
+    "longReplyStartedMobile": true,
+    "messageAreaAtLeast150": true,
+    "mobileKeyTargetsVisible": true,
+    "mobileTargetsNoClip": true,
+    "mobileHotZones44": true,
+    "longReplyStartedTablet": true,
+    "tabletMessageAreaAtLeast150": true,
+    "tabletKeyTargetsVisible": true,
+    "tabletTargetsNoClip": true,
+    "tabletHotZones44": true,
+    "longReplyStartedDesktop": true,
+    "desktopMessageAreaAtLeast150": true,
+    "desktopKeyTargetsVisible": true,
+    "desktopTargetsInViewport": true,
+    "desktopCompactAtLeast32": true,
+    "desktopMenuHiddenByDesign": true,
+    "imeEnterDoesNotSend": true,
+    "imeTextKept": true,
+    "imeDefaultNotPrevented": true,
+    "imeNoComposedRequest": true,
+    "normalEnterStillSends": true,
+    "drawerFocusEntersNav": true,
+    "drawerFocusReturnsToMenu": true,
+    "auxFocusEntersClose": true,
+    "auxFocusReturnsToOpener": true,
+    "layeredReplyStarted": true,
+    "firstEscapeClosesOnlyOverlay": true,
+    "secondEscapeHadLiveStream": true,
+    "secondEscapeStopsGeneration": true,
+    "axExactlyOneNavigation": true,
+    "axExactlyOneMain": true,
+    "axKeyButtonsNamed": true,
+    "ariaSnapshotAvailable": true
+  },
+  "screenshots": [
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-01-keyboard.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-02-dark-contrast.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-03-font-200-settings.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-04-mobile-200.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-05a-tablet-200.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-05-desktop-200.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-06-ime.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-07-escape-levels.png",
+    "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e19/e2e19-08-ax-tree.png"
+  ],
+  "marker": "E2E19-1794221793272",
+  "appUrl": "http://127.0.0.1:34723",
+  "mockUrl": "http://127.0.0.1:41767",
+  "chromeVersion": "157.0.8103.38",
+  "fontScale": {
+    "variable": "2",
+    "htmlFontSize": "32px",
+    "ariaValueNow": "200"
+  },
+  "mobileMessagesHeight": 150,
+  "tabletMessagesHeight": 150,
+  "desktopMessagesHeight": 160.3,
+  "mobileTargets": [
+    {
+      "name": "send",
+      "selector": "button[aria-label=\"发送消息\"]",
+      "found": true,
+      "visible": true,
+      "width": 90,
+      "height": 64.5,
+      "rect": {
+        "x": 260,
+        "y": 640.2,
+        "width": 90,
+        "height": 64.5,
+        "right": 350,
+        "bottom": 704.7
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      }
+    },
+    {
+      "name": "stop",
+      "selector": "button[aria-label=\"停止当前生成\"], button[aria-label=\"停止无人值守运行\"]",
+      "found": true,
+      "visible": true,
+      "width": 150,
+      "height": 64.5,
+      "rect": {
+        "x": 102,
+        "y": 640.2,
+        "width": 150,
+        "height": 64.5,
+        "right": 252,
+        "bottom": 704.7
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      }
+    },
+    {
+      "name": "menu",
+      "selector": "#wb-menu",
+      "found": true,
+      "visible": true,
+      "width": 44,
+      "height": 48.5,
+      "rect": {
+        "x": 8,
+        "y": 10,
+        "width": 44,
+        "height": 48.5,
+        "right": 52,
+        "bottom": 58.5
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      }
+    },
+    {
+      "name": "auxClose",
+      "selector": "#wb-aux-close",
+      "found": true,
+      "visible": true,
+      "width": 47.2,
+      "height": 49.1,
+      "rect": {
+        "x": 298.8,
+        "y": 66,
+        "width": 47.2,
+        "height": 49.1,
+        "right": 346,
+        "bottom": 115.1
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      }
+    }
+  ],
+  "tabletTargets": [
+    {
+      "name": "send",
+      "selector": "button[aria-label=\"发送消息\"]",
+      "found": true,
+      "visible": true,
+      "width": 90,
+      "height": 64.5,
+      "rect": {
+        "x": 714,
+        "y": 778.8,
+        "width": 90,
+        "height": 64.5,
+        "right": 804,
+        "bottom": 843.3
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 820,
+        "height": 900
+      }
+    },
+    {
+      "name": "stop",
+      "selector": "button[aria-label=\"停止当前生成\"], button[aria-label=\"停止无人值守运行\"]",
+      "found": true,
+      "visible": true,
+      "width": 150,
+      "height": 64.5,
+      "rect": {
+        "x": 556,
+        "y": 778.8,
+        "width": 150,
+        "height": 64.5,
+        "right": 706,
+        "bottom": 843.3
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 820,
+        "height": 900
+      }
+    },
+    {
+      "name": "menu",
+      "selector": "#wb-menu",
+      "found": true,
+      "visible": true,
+      "width": 48.9,
+      "height": 48.5,
+      "rect": {
+        "x": 12,
+        "y": 12,
+        "width": 48.9,
+        "height": 48.5,
+        "right": 60.9,
+        "bottom": 60.5
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 820,
+        "height": 900
+      }
+    },
+    {
+      "name": "auxClose",
+      "selector": "#wb-aux-close",
+      "found": true,
+      "visible": true,
+      "width": 47.2,
+      "height": 49.1,
+      "rect": {
+        "x": 758.8,
+        "y": 66,
+        "width": 47.2,
+        "height": 49.1,
+        "right": 806,
+        "bottom": 115.1
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 820,
+        "height": 900
+      }
+    }
+  ],
+  "desktopTargets": [
+    {
+      "name": "send",
+      "selector": "button[aria-label=\"发送消息\"]",
+      "found": true,
+      "visible": true,
+      "width": 90,
+      "height": 64.5,
+      "rect": {
+        "x": 1014,
+        "y": 878.8,
+        "width": 90,
+        "height": 64.5,
+        "right": 1104,
+        "bottom": 943.3
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "name": "stop",
+      "selector": "button[aria-label=\"停止当前生成\"], button[aria-label=\"停止无人值守运行\"]",
+      "found": true,
+      "visible": true,
+      "width": 150,
+      "height": 64.5,
+      "rect": {
+        "x": 856,
+        "y": 878.8,
+        "width": 150,
+        "height": 64.5,
+        "right": 1006,
+        "bottom": 943.3
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "name": "auxClose",
+      "selector": "#wb-aux-close",
+      "found": true,
+      "visible": true,
+      "width": 47.2,
+      "height": 49.1,
+      "rect": {
+        "x": 1378.8,
+        "y": 83.5,
+        "width": 47.2,
+        "height": 49.1,
+        "right": 1426,
+        "bottom": 132.6
+      },
+      "clippedX": false,
+      "clippedY": false,
+      "inViewport": true,
+      "ok": true,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "name": "menu",
+      "selector": "#wb-menu",
+      "found": true,
+      "visible": false,
+      "ok": true,
+      "skipped": "not-visible",
+      "display": "none",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    }
+  ],
+  "compactTargets": [
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "复制",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "朗读",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "翻译",
+      "width": 90,
+      "height": 64.5
+    },
+    {
+      "text": "重新生成",
+      "width": 150,
+      "height": 64.5
+    },
+    {
+      "text": "从此处分支",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "从此处开始",
+      "width": 180,
+      "height": 64.5
+    },
+    {
+      "text": "编辑",
+      "width": 90,
+      "height": 64.5
+    }
+  ],
+  "contrast": {
+    "light": [
+      {
+        "name": "userBody",
+        "selector": ".hc-message-out .hc-message-body",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(255, 255, 255, 1)",
+        "bg": "rgba(11, 95, 138, 1)",
+        "ratio": 6.96,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "assistantBody",
+        "selector": ".hc-message-in:not(.hc-message-process) .hc-message-body",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(24, 32, 42, 1)",
+        "bg": "rgba(238, 241, 245, 1)",
+        "ratio": 14.49,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "composerHint",
+        "selector": ".hc-composer-hint",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(77, 91, 106, 1)",
+        "bg": "rgba(244, 246, 248, 1)",
+        "ratio": 6.42,
+        "fontSize": 12.48,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "messageMeta",
+        "selector": ".hc-message-meta",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(77, 91, 106, 1)",
+        "bg": "rgba(244, 246, 248, 1)",
+        "ratio": 6.42,
+        "fontSize": 12.48,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "sendLabel",
+        "selector": "button[aria-label=\"发送消息\"]",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(255, 255, 255, 1)",
+        "bg": "rgba(11, 95, 138, 1)",
+        "ratio": 6.96,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "primaryButtonGraphic",
+        "selector": "button[aria-label=\"发送消息\"]",
+        "kind": "graphic",
+        "found": true,
+        "fg": "rgba(11, 95, 138, 1)",
+        "bg": "rgba(244, 246, 248, 1)",
+        "ratio": 6.42,
+        "required": 3,
+        "ok": true
+      }
+    ],
+    "dark": [
+      {
+        "name": "userBody",
+        "selector": ".hc-message-out .hc-message-body",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(8, 19, 27, 1)",
+        "bg": "rgba(108, 196, 238, 1)",
+        "ratio": 9.62,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "assistantBody",
+        "selector": ".hc-message-in:not(.hc-message-process) .hc-message-body",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(238, 244, 249, 1)",
+        "bg": "rgba(32, 43, 54, 1)",
+        "ratio": 12.97,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "composerHint",
+        "selector": ".hc-composer-hint",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(183, 196, 209, 1)",
+        "bg": "rgba(17, 22, 28, 1)",
+        "ratio": 10.24,
+        "fontSize": 12.48,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "messageMeta",
+        "selector": ".hc-message-meta",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(183, 196, 209, 1)",
+        "bg": "rgba(17, 22, 28, 1)",
+        "ratio": 10.24,
+        "fontSize": 12.48,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "sendLabel",
+        "selector": "button[aria-label=\"发送消息\"]",
+        "kind": "text",
+        "found": true,
+        "fg": "rgba(8, 19, 27, 1)",
+        "bg": "rgba(108, 196, 238, 1)",
+        "ratio": 9.62,
+        "fontSize": 15,
+        "fontWeight": 400,
+        "required": 4.5,
+        "ok": true
+      },
+      {
+        "name": "primaryButtonGraphic",
+        "selector": "button[aria-label=\"发送消息\"]",
+        "kind": "graphic",
+        "found": true,
+        "fg": "rgba(108, 196, 238, 1)",
+        "bg": "rgba(17, 22, 28, 1)",
+        "ratio": 9.32,
+        "required": 3,
+        "ok": true
+      }
+    ],
+    "lightSkipped": [],
+    "darkSkipped": []
+  },
+  "ime": {
+    "beforeRequests": 6,
+    "afterRequests": 6,
+    "value": "组合",
+    "userMessagesBefore": 6,
+    "userMessagesAfter": 6,
+    "defaultPrevented": false
+  },
+  "diagnostics": {},
+  "focusSequence": [
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "●\n已同步",
+      "label": "连接状态：已同步；打开设置",
+      "role": "",
+      "region": "wb-topbar",
+      "rect": {
+        "x": 1287,
+        "y": 17.4,
+        "width": 87,
+        "height": 33.3
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": "wb-aux-toggle",
+      "text": "≡",
+      "label": "关闭详情",
+      "role": "",
+      "region": "wb-topbar",
+      "rect": {
+        "x": 1384,
+        "y": 12,
+        "width": 44,
+        "height": 44
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "◎\n会话与分支\n对话、草稿、停止",
+      "label": "",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 115.1,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "▦\nSwarm 看板\nfleet、任务树、槽位",
+      "label": "",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 172.9,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "◇\n助手与角色\n模型绑定与能力",
+      "label": "",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 230.6,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "▤\n材料与扩展\n文件、记忆、技能、MCP",
+      "label": "",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 288.4,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "⚙\n设置与数据\n连接、外观、诊断",
+      "label": "",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 346.1,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": "hc-history-search",
+      "text": "⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F",
+      "label": "全局历史搜索",
+      "role": "",
+      "region": "wb-nav-drawer",
+      "rect": {
+        "x": 8,
+        "y": 403.9,
+        "width": 207,
+        "height": 55.8
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "新建",
+      "label": "新建会话",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 360.8,
+        "y": 83,
+        "width": 47.2,
+        "height": 32
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "临时",
+      "label": "新建临时会话",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 430.6,
+        "y": 83,
+        "width": 47.2,
+        "height": 32
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "INPUT",
+      "id": "wb-session-search",
+      "text": "",
+      "label": "过滤会话",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 234,
+        "y": 125,
+        "width": 247.8,
+        "height": 36
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "New session\n2026/11/09 18:57 · Mock Fast",
+      "label": "",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 234,
+        "y": 161,
+        "width": 247.8,
+        "height": 68.6
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "重命名",
+      "label": "重命名：修改会话标题；服务器接受后当前快照才会更新。",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 234,
+        "y": 235.6,
+        "width": 59.8,
+        "height": 32
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    },
+    {
+      "tag": "BUTTON",
+      "id": null,
+      "text": "置顶",
+      "label": "置顶：置顶会话；列表顺序由服务器快照决定。",
+      "role": "",
+      "region": "wb-session-list",
+      "rect": {
+        "x": 297.8,
+        "y": 235.6,
+        "width": 47.2,
+        "height": 32
+      },
+      "outlineWidth": 2,
+      "outlineStyle": "solid",
+      "focusVisible": true
+    }
+  ],
+  "focusOrderViolations": [],
+  "focusStopCount": 14,
+  "focusRing": {
+    "id": null,
+    "label": "停止当前生成",
+    "tag": "BUTTON",
+    "outlineWidth": 2,
+    "outlineStyle": "solid",
+    "focusVisible": true
+  },
+  "messageActionNames": [
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    },
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "朗读",
+      "label": "朗读此回复"
+    },
+    {
+      "text": "翻译",
+      "label": "翻译"
+    },
+    {
+      "text": "重新生成",
+      "label": "重新生成"
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    },
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    },
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "朗读",
+      "label": "朗读此回复"
+    },
+    {
+      "text": "翻译",
+      "label": "翻译"
+    },
+    {
+      "text": "重新生成",
+      "label": "重新生成"
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    },
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    },
+    {
+      "text": "复制",
+      "label": ""
+    },
+    {
+      "text": "朗读",
+      "label": "朗读此回复"
+    },
+    {
+      "text": "翻译",
+      "label": "翻译"
+    },
+    {
+      "text": "重新生成",
+      "label": "重新生成"
+    },
+    {
+      "text": "从此处分支",
+      "label": ""
+    },
+    {
+      "text": "从此处开始",
+      "label": ""
+    },
+    {
+      "text": "编辑",
+      "label": ""
+    }
+  ],
+  "ax": {
+    "navigation": 1,
+    "main": 1,
+    "landmarks": {
+      "navigation": [
+        {
+          "name": "顶层工作区",
+          "nodeId": "211"
+        }
+      ],
+      "main": [
+        {
+          "name": "",
+          "nodeId": "213"
+        }
+      ]
+    },
+    "buttonNames": [
+      "连接状态：已同步；打开设置",
+      "打开详情",
+      "会话与分支 对话、草稿、停止",
+      "Swarm 看板 fleet、任务树、槽位",
+      "助手与角色 模型绑定与能力",
+      "材料与扩展 文件、记忆、技能、MCP",
+      "设置与数据 连接、外观、诊断",
+      "全局历史搜索",
+      "新建会话",
+      "新建临时会话",
+      "打开设置选择模型",
+      "打开会话设置",
+      "打开文件、来源或话题面板",
+      "返回最新内容",
+      "展开",
+      "添加附件",
+      "关联工作区文件",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "朗读此回复",
+      "翻译",
+      "重新生成",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "复制",
+      "从此处分支",
+      "从此处开始",
+      "编辑",
+      "语音输入",
+      "停止当前生成",
+      "发送消息",
+      "New session 2026/11/09 18:57 · Mock Fast",
+      "重命名：修改会话标题；服务器接受后当前快照才会更新。",
+      "置顶：置顶会话；列表顺序由服务器快照决定。",
+      "归档：归档会话；归档后可恢复。",
+      "删除：删除会话；普通删除可在 30 天内恢复，临时会话不进入已删除区。"
+    ]
+  },
+  "ariaSnapshotChars": 6559,
+  "manualResidual": {
+    "screenReaderReadingOrder": "not automated",
+    "realTouchHardware": "not automated",
+    "realImeHardware": "not automated"
+  },
+  "ok": true,
+  "evidence": null
+}

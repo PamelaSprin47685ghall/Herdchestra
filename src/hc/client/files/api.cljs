@@ -66,7 +66,18 @@
   [path on-result]
   (get! "/api/workspace/read" {:path (str (or path ""))} on-result))
 
+(defn- search-mode-param
+  [mode]
+  (if (= "content" (some-> mode name))
+    "content"
+    "name"))
+
 (defn search!
-  [query on-result]
-  (get! "/api/workspace/search" {:q (str (or query ""))
-                                 :mode "name"} on-result))
+  "Search the workspace.  MODE is `:name` or `:content`; the two-arity form
+  keeps the name search as the default."
+  ([query on-result]
+   (search! query :name on-result))
+  ([query mode on-result]
+   (get! "/api/workspace/search" {:q (str (or query ""))
+                                  :mode (search-mode-param mode)}
+         on-result)))

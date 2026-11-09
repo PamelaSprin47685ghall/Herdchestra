@@ -22,8 +22,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startApp } from './support/app.mjs';
-import { goto, waitForSync, shot, assert as uiAssert, clientBundleInfo } from './support/ui.mjs';
-import { recordEvidence, sourceTreeSha256 } from './support/evidence.mjs';
+import { goto, waitForSync, assert as uiAssert, clientBundleInfo } from './support/ui.mjs';
+import { checksOk, recordEvidence, sourceTreeSha256 } from './support/evidence.mjs';
 import { startMockModel } from './support/mock-model.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -185,7 +185,15 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
   fs.mkdirSync(EVIDENCE, { recursive: true });
   const startedAt = new Date().toISOString();
   const checks = {};
+  const diagnostics = {};
+  const diagnosticOnly = [
+    'skillCardText', 'assistantControlKind', 'assistantOptions',
+    'boundAssistant', 'kvRows', 'kvAppCount', 'iframeStorageProbe',
+    'generateFailureStatus', 'generateFailureBody',
+  ];
   const screenshots = [];
+  let screenshotPaths = [];
+  let plainPage = null;
 
   const mock = await startMockModel({
     replyScript: [
@@ -215,12 +223,22 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
   // Screenshots are evidence garnish, not assertions: a teardown race
   // (context close while a full-page shot is in flight) must not fail the
   // run, so the promise resolves to a placeholder on error.
-  const record = (name) => screenshots.push(
-    shot(page, EVIDENCE, name).catch(() => ({})));
+  const record = (name) => {
+    const p = page.screenshot({
+      path: path.join(EVIDENCE, `${name}.png`),
+      fullPage: true,
+      timeout: 15000,
+    })
+      .then(() => path.join(EVIDENCE, `${name}.png`))
+      .catch(() => null);
+    screenshots.push(p);
+    return p;
+  };
 
   try {
     await goto(page, app.url, '/materials');
     await waitForSync(page);
+    const installStateBefore = await (await fetch(`${mock.url}/__mock/state`)).json();
 
     // --- skill: UI install, default disabled + unbound ------------------
     await openMaterialsTab(page, '扩展');
@@ -249,7 +267,7 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     const skillCard = page.locator('.hc-ext-card', { hasText: 'e2e13' }).first();
     await skillCard.waitFor({ state: 'visible', timeout: 60000 });
     const cardText = await skillCard.innerText();
-    checks.skillCardText = cardText.slice(0, 500);
+    diagnostics.skillCardText = cardText.slice(0, 500);
     checks.skillInstalledDisabled = /未启用/.test(cardText);
     checks.skillInstalledUnbound = /未绑定/.test(cardText);
     checks.skillCardListsFiles = /SKILL\.md/.test(cardText);
@@ -262,6 +280,17 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     uiAssert(checks.skillCardNameOk, `installed card missing frontmatter name: ${cardText}`);
     uiAssert(checks.skillCardDescriptionOk,
       `installed card missing frontmatter description: ${cardText}`);
+    const installStateAfter = await (await fetch(`${mock.url}/__mock/state`)).json();
+    checks.skillInstallNoModelRequest =
+      installStateAfter.chatCompletions === installStateBefore.chatCompletions
+      && installStateAfter.toolCallsIssued === installStateBefore.toolCallsIssued;
+    uiAssert(checks.skillInstallNoModelRequest,
+      `skill install issued a model/tool request: ${JSON.stringify({
+        before: installStateBefore.chatCompletions,
+        after: installStateAfter.chatCompletions,
+        toolsBefore: installStateBefore.toolCallsIssued,
+        toolsAfter: installStateAfter.toolCallsIssued,
+      })}`);
     await record('02-skill-installed');
 
     // --- skill: enable + bind to the default assistant ------------------
@@ -279,23 +308,25 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
       const select = field && field.querySelector('select');
       return select && [...select.options].some((o) => o.value);
     }, null, { timeout: 60000 }).then(() => true).catch(() => false);
-    checks.assistantControlKind = hasSelect ? 'select' : 'input';
+    diagnostics.assistantControlKind = hasSelect ? 'select' : 'input';
     if (hasSelect) {
       const optionValues = await assistantField.locator('select option').evaluateAll(
         (opts) => opts.map((o) => ({ value: o.value, text: o.textContent })));
-      checks.assistantOptions = optionValues.map((o) => o.text);
+      diagnostics.assistantOptions = optionValues.map((o) => o.text);
       const target = optionValues.find((o) => o.value);
       uiAssert(target, `no assistant option available for binding: ${JSON.stringify(optionValues)}`);
-      checks.boundAssistant = target.text;
+      diagnostics.boundAssistant = target.text;
       await assistantField.locator('select').selectOption(target.value);
     } else {
       // Free-text fallback: the server accepts any non-blank assistant id
       // for binding (`skill/bind!` only requires a string), so a stable
       // id is enough to prove the bind round-trip.
-      checks.assistantOptions = [];
-      checks.boundAssistant = 'e2e13-assistant (free-text fallback)';
+      diagnostics.assistantOptions = [];
+      diagnostics.boundAssistant = 'e2e13-assistant (free-text fallback)';
       await assistantInput.fill('e2e13-assistant');
     }
+    const expectedBoundLabel =
+      hasSelect ? diagnostics.boundAssistant : 'e2e13-assistant';
     // Confirm the draft consumed the selection before enabling/binding.
     await page.waitForFunction(() => {
       const card = [...document.querySelectorAll('.hc-ext-card')]
@@ -315,15 +346,19 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
         .find((c) => /e2e13/.test(c.textContent || ''));
       return card && /已启用/.test(card.textContent || '');
     }, null, { timeout: 60000 });
-    checks.skillEnabled = true;
+    checks.skillEnabled = /已启用/.test(await skillCard.innerText());
+    uiAssert(checks.skillEnabled, 'skill card did not show 已启用');
 
     await skillCard.getByRole('button', { name: '绑定助手' }).click();
-    await page.waitForFunction(() => {
+    await page.waitForFunction((assistant) => {
       const card = [...document.querySelectorAll('.hc-ext-card')]
         .find((c) => /e2e13/.test(c.textContent || ''));
-      return card && /绑定 1/.test(card.textContent || '');
-    }, null, { timeout: 60000 });
-    checks.skillBound = true;
+      return card && (card.textContent || '').includes(`绑定：${assistant}`);
+    }, expectedBoundLabel, { timeout: 60000 });
+    checks.skillBound =
+      (await skillCard.innerText()).includes(`绑定：${expectedBoundLabel}`);
+    uiAssert(checks.skillBound,
+             `skill card did not show 绑定：${expectedBoundLabel}`);
     await record('03-skill-enabled-bound');
 
     // --- mini-apps: generate two apps ------------------------------------
@@ -338,25 +373,28 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     await generateMiniApp(page, '生成一个读书条目小应用：书名输入框、保存按钮、条目列表，数据存本地', 'reading-a.html');
     const rowA = page.locator('.hc-miniapp-row', { hasText: 'reading-a.html' }).first();
     await rowA.waitFor({ state: 'visible', timeout: 300000 });
-    checks.appARegistered = true;
+    checks.appARegistered = (await rowA.count()) > 0;
+    uiAssert(checks.appARegistered, 'reading-a.html row is missing');
     await record('04-miniapp-a-generated');
 
     await generateMiniApp(page, '生成一个观影条目小应用：片名输入框、保存按钮、条目列表，数据存本地', 'watch-b.html');
     const rowB = page.locator('.hc-miniapp-row', { hasText: 'watch-b.html' }).first();
     await rowB.waitFor({ state: 'visible', timeout: 300000 });
-    checks.appBRegistered = true;
+    checks.appBRegistered = (await rowB.count()) > 0;
+    uiAssert(checks.appBRegistered, 'watch-b.html row is missing');
     await record('05-miniapp-b-generated');
 
     // Open app A, write a record, reload, confirm persistence.
     await openAppByName(page, 'reading-a.html');
     await waitForIframe(page, `() => /E2E13 读书条目/.test(document.body.innerText)`);
-    await iframeEval(page, () => {
+    const aWrittenText = await iframeEval(page, () => {
       const input = document.getElementById('note');
       input.value = 'A-record-读书《活着》';
       document.getElementById('save').click();
       return document.getElementById('list').innerText;
     });
-    checks.appARecordWritten = true;
+    checks.appARecordWritten = /A-record/.test(aWrittenText);
+    uiAssert(checks.appARecordWritten, `app A record not rendered: ${aWrittenText}`);
 
     // Reload the app source to prove IndexedDB persistence.
     await page.reload({ waitUntil: 'load' });
@@ -365,7 +403,9 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     await openMaterialsTab(page, '小应用');
     await openAppByName(page, 'reading-a.html');
     await waitForIframe(page, `() => /A-record/.test(document.body.innerText)`);
-    checks.appARecordPersisted = true;
+    checks.appARecordPersisted = await iframeEval(page, () =>
+      /A-record/.test(document.body.innerText));
+    uiAssert(checks.appARecordPersisted, 'app A record did not survive reload');
     await record('06-miniapp-a-reload');
 
     // App B sees none of A's data.
@@ -374,12 +414,14 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     const bSeesA = await iframeEval(page, () =>
       /A-record/.test(document.body.innerText));
     checks.appBDoesNotSeeA = bSeesA === false;
-    await iframeEval(page, () => {
+    const bWrittenText = await iframeEval(page, () => {
       const input = document.getElementById('note');
       input.value = 'B-record-观影《肖申克的救赎》';
       document.getElementById('save').click();
+      return document.getElementById('list').innerText;
     });
-    checks.appBRecordWritten = true;
+    checks.appBRecordWritten = /B-record/.test(bWrittenText);
+    uiAssert(checks.appBRecordWritten, `app B record not rendered: ${bWrittenText}`);
 
     // Back to A: A must not see B's record.
     await openAppByName(page, 'reading-a.html');
@@ -395,10 +437,16 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
 
     // IndexedDB kv rows: two app_ids, disjoint keys.
     const kvRows = await miniappKvRows(page);
-    checks.kvRows = kvRows;
+    diagnostics.kvRows = kvRows;
     const appIds = [...new Set(kvRows.map((r) => r.app_id))];
-    checks.kvAppCount = appIds.length;
+    diagnostics.kvAppCount = appIds.length;
+    checks.kvHasTwoApps = appIds.length >= 2;
     uiAssert(appIds.length >= 2, `expected >=2 app kv rows, got ${JSON.stringify(kvRows)}`);
+    const aStored = kvRows.find((row) => String(row.value || '').includes('A-record'));
+    const bStored = kvRows.find((row) => String(row.value || '').includes('B-record'));
+    checks.appRecordsPersisted = Boolean(aStored && bStored);
+    uiAssert(checks.appRecordsPersisted,
+      `mini-app records missing from IndexedDB: ${JSON.stringify(kvRows)}`);
 
     // Plain browser page storage is separate: write a sentinel to the
     // page origin's localStorage and IndexedDB, then confirm the app
@@ -425,11 +473,37 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
       sessionStorageKeys: Object.keys(window.sessionStorage || {}),
       herdchestraKeys: window.__hcMiniappStorage ? window.__hcMiniappStorage.prefixedKeys() : [],
     }));
-    checks.iframeStorageProbe = iframeSeesPage;
+    diagnostics.iframeStorageProbe = iframeSeesPage;
     checks.pageStorageIsolated = iframeSeesPage.localStorageSentinel === null
       && !iframeSeesPage.herdchestraKeys.some((k) => k.includes('e2e13-page'));
     uiAssert(checks.pageStorageIsolated,
       `page storage leaked into mini-app: ${JSON.stringify(iframeSeesPage)}`);
+    const pageLeak = await page.evaluate(() => ({
+      local: JSON.stringify(localStorage),
+      session: JSON.stringify(sessionStorage),
+      text: document.body.innerText,
+    }));
+    checks.pageDoesNotSeeAppRecords = !/A-record|B-record/
+      .test(`${pageLeak.local}\n${pageLeak.session}\n${pageLeak.text}`);
+    uiAssert(checks.pageDoesNotSeeAppRecords,
+      `mini-app records leaked into the host page: ${JSON.stringify(pageLeak).slice(0, 500)}`);
+
+    // A fresh, plain page on the same origin must not expose the app
+    // records in its ordinary storage or DOM either.
+    plainPage = await page.context().newPage();
+    await plainPage.goto(app.url, { waitUntil: 'load' });
+    await plainPage.locator('.wb-shell').first().waitFor({ state: 'visible', timeout: 30000 });
+    const plainLeak = await plainPage.evaluate(() => ({
+      local: JSON.stringify(localStorage),
+      session: JSON.stringify(sessionStorage),
+      text: document.body.innerText,
+    }));
+    checks.plainPageSeesNoAppRecord = !/A-record|B-record/
+      .test(`${plainLeak.local}\n${plainLeak.session}\n${plainLeak.text}`);
+    uiAssert(checks.plainPageSeesNoAppRecord,
+      `plain page sees mini-app records: ${JSON.stringify(plainLeak).slice(0, 500)}`);
+    await plainPage.close();
+    plainPage = null;
     await record('08-miniapp-page-isolation');
 
     // --- generation failure: existing files stay viewable ---------------
@@ -449,12 +523,13 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
       });
       return { status: res.status, body: await res.text() };
     });
-    checks.generateFailureStatus = failResp.status;
-    checks.generateFailureBody = failResp.body.slice(0, 300);
+    diagnostics.generateFailureStatus = failResp.status;
+    diagnostics.generateFailureBody = failResp.body.slice(0, 300);
     uiAssert(failResp.status >= 400, `expected generation failure, got ${failResp.status}`);
     // The workspace must not contain the broken file.
     const brokenExists = fs.existsSync(path.join(app.workspaceRoot, 'miniapps', 'broken.html'));
     checks.brokenFileAbsent = !brokenExists;
+    uiAssert(checks.brokenFileAbsent, 'failed generation left broken.html on disk');
     // Existing apps still listed and openable.
     await page.reload({ waitUntil: 'load' });
     await goto(page, app.url, '/materials');
@@ -462,14 +537,66 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
     await openMaterialsTab(page, '小应用');
     await openAppByName(page, 'reading-a.html');
     await waitForIframe(page, `() => /A-record/.test(document.body.innerText)`);
-    checks.existingAppViewableAfterFailure = true;
+    checks.existingAppViewableAfterFailure = await iframeEval(page, () =>
+      /A-record/.test(document.body.innerText));
+    uiAssert(checks.existingAppViewableAfterFailure,
+      'existing mini-app became unreadable after a failed generation');
     await record('09-generate-failure-existing-ok');
+
+    // Isolation must survive deletion: remove only app A's IndexedDB rows,
+    // then prove B keeps its record and A no longer has it.
+    uiAssert(aStored && typeof aStored.app_id === 'string' && aStored.app_id.length > 0,
+      `app A kv row has no app_id: ${JSON.stringify(aStored)}`);
+    await page.evaluate((appId) => new Promise((resolve, reject) => {
+      const req = indexedDB.open('herdchestra-miniapps');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('kv', 'readwrite');
+        const store = tx.objectStore('kv');
+        const cursor = store.openCursor();
+        cursor.onerror = () => reject(cursor.error);
+        cursor.onsuccess = () => {
+          const row = cursor.result;
+          if (!row) return;
+          if (row.value && row.value.app_id === appId) row.delete();
+          row.continue();
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+    }), aStored.app_id);
+    await page.reload({ waitUntil: 'load' });
+    await goto(page, app.url, '/materials');
+    await waitForSync(page);
+    await openMaterialsTab(page, '小应用');
+    await openAppByName(page, 'watch-b.html');
+    await waitForIframe(page, `() => /E2E13 观影条目/.test(document.body.innerText)`);
+    checks.clearOneKeepsOther = await iframeEval(page, () =>
+      /B-record/.test(document.body.innerText));
+    uiAssert(checks.clearOneKeepsOther, 'clearing app A also cleared app B');
+    await page.reload({ waitUntil: 'load' });
+    await goto(page, app.url, '/materials');
+    await waitForSync(page);
+    await openMaterialsTab(page, '小应用');
+    await openAppByName(page, 'reading-a.html');
+    await waitForIframe(page, `() => /E2E13 读书条目/.test(document.body.innerText)`);
+    checks.clearOneRemovesOnlyThatApp = !(await iframeEval(page, () =>
+      /A-record/.test(document.body.innerText)));
+    uiAssert(checks.clearOneRemovesOnlyThatApp,
+      'clearing app A did not remove its own record');
+    await record('10-clear-one-keeps-other');
     // Let every screenshot promise settle before teardown: an in-flight
     // `page.screenshot` racing `context.close` fails the whole run even
     // though all checks already passed.
-    await Promise.allSettled(screenshots);
+    const settledShots = await Promise.allSettled(screenshots);
+    screenshotPaths = settledShots
+      .map((entry) => (entry.status === 'fulfilled' ? entry.value : null))
+      .filter((value) => typeof value === 'string' && value.length > 0);
 
     const finishedAt = new Date().toISOString();
+    const ok = checksOk(checks);
+    uiAssert(ok, `failed checks: ${JSON.stringify(checks)}`);
     const result = recordEvidence({
       dir: EVIDENCE,
       name: 'e2e-13',
@@ -487,13 +614,44 @@ test('@e2e E2E 13 skills install/bind + mini-apps generation and storage isolati
         freezeBundle: '1e0bd458',
         freezeTree: '5af6757f',
         bundleNote: 'final26 冻结 bundle 1e0bd458（3,086,250 B，15:46:09）+ 树 5af6757f；本次为纯 UI 路径（移除手写 Sente transit 解码），技能预览由安装卡片 frontmatter/文件列表断言替代',
-        screenshots,
+        diagnostics,
+        diagnosticOnly,
+        screenshots: screenshotPaths,
       },
       checks,
-      ok: true,
+      ok,
     });
     console.log('E2E13 evidence:', result.evidence);
+  } catch (error) {
+    try {
+      recordEvidence({
+        dir: EVIDENCE,
+        name: 'e2e-13',
+        test: 'E2E 13 skill install/bind + mini-app generation and storage isolation',
+        mode: 'automated',
+        mock: true,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        extra: {
+          appUrl: app.url,
+          mockUrl: mock.url,
+          chromeVersion: browser.version(),
+          bundleSha256: clientBundleInfo().sha256,
+          sourceTreeSha256: sourceTreeSha256(),
+          diagnostics,
+          diagnosticOnly,
+          screenshots: screenshotPaths,
+          error: error.message,
+        },
+        checks,
+        ok: false,
+      });
+    } catch {
+      // Preserve the original failure; evidence writing is best effort.
+    }
+    throw error;
   } finally {
+    await plainPage?.close().catch(() => {});
     // Close the page first: it owns the Sente WebSocket, and a live page
     // retrying a dead server can stall `browserContext.close` in fixture
     // teardown until the whole test timeout fires.  Then the app, then the

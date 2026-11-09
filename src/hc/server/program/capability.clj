@@ -5,12 +5,14 @@
   capability keywords.  The runtime additionally checks dynamic conditions
   that a static set cannot express: `ask` only in Plan S1, `call` only for the
   Swarm holder or the Plan dedicated worker, `abandon` only for the holder,
-  and Plan's draft/read path restrictions.
+  and Plan's draft/read path restrictions.  The Steward and Meditator roles
+  reflect root §2.1–§2.2: the Steward may read, fork/join disjoint worktree
+  swarms, and observe the fleet aggregate; the Meditator is read-only.
 
   This namespace is pure data and predicates.  It performs no I/O.")
 
 (def roles
-  "The four program roles and their static capability sets."
+  "The program roles and their static capability sets."
   {:clj-plan
    {:label "Plan"
     :capabilities #{:cat :write :where :whereAll :park :unpark :ask
@@ -34,6 +36,20 @@
                     :take-or-die :park-slot :abandon
                     :resolve-action :acknowledge-recovery
                     :askPreviousScope :assume :negotiate}}
+
+   :clj-steward
+   {:label "Steward"
+    ;; The Steward owns the Docket and the fork/join queue.  It reads the
+    ;; repository and the bounded fleet aggregate; it never writes product
+    ;; code and never runs a shell.
+    :capabilities #{:cat :stat :ls :where :whereAll :park :unpark
+                    :fork :join :fleet-state :assume}}
+
+   :clj-meditator
+   {:label "Meditator"
+    ;; The Standing Sphinx is strictly read-only: it publishes its Current
+    ;; Best Answer without touching the workspace.
+    :capabilities #{:cat :stat :ls :where :whereAll}}
 
    :dedicated-worker
    {:label "Plan dedicated worker"
@@ -61,6 +77,9 @@
     call :call
     devops :devops
     review :review
+    fork :fork
+    join :join
+    fleet-state :fleet-state
     split :split
     claim :claim
     finish :finish
@@ -88,7 +107,8 @@
 
 (def control-primitives
   "Top-level primitives delegated through the runtime's `:control` port."
-  #{:devops :review :split :claim :finish :cancel :replace :release :reopen
+  #{:devops :review :fork :join :fleet-state
+    :split :claim :finish :cancel :replace :release :reopen
     :comment :update :take-or-die :park-slot
     :resolve-action :acknowledge-recovery :abandon
     :askPreviousScope :assume :negotiate})

@@ -154,7 +154,7 @@
 
 1. 每个查询开始前检查取消；已取消则后续查询标 `:not-started`，不再启动。
 2. 请求进行中取消会丢弃该响应，并返回 `:status :cancelled`；已经进入引用集合的结果保留。
-3. 取消不是错误：`:ok? true`、`:must-search-failed? false`，但 `:cancelled? true` 必须显示为“已停止”。
+3. 取消不是错误：`:ok? true`、`:must-search-failed? false`，但 `:cancelled? true` 必须以操作回执显示“已停止本次搜索”。该回执不是用户侧交付状态；会话交付仍只用进行中、已交付、未交付。
 
 ## 6 Provider 映射
 

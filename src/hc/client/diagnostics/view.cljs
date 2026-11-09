@@ -385,6 +385,13 @@
                      attrs)
               label))
 
+(defn- action-options
+  "Disabled state and its visible reason must both come from real policy
+  fields, so a mouse hover explains why an action cannot run."
+  [disabled reason]
+  (cond-> {:disabled (boolean disabled)}
+    reason (assoc :title reason)))
+
 (defn- field
   [label control & [hint]]
   (dom/label {:className "hc-diag-field"}
@@ -688,22 +695,24 @@
                    (dom/p {:className "hc-diag-warning"}
                           "没有可估算的金额。未知单价或未知用量不会显示为 0。"))
                  (when coverage
-                   (when (pos? (or (:unknown-currency-requests coverage) 0))
-                     (dom/p {:className "hc-diag-warning"}
-                            (str "有 " (:unknown-currency-requests coverage)
-                                 " 个请求没有币种，未并入任何币种汇总。")))
-                   (when (pos? (or (:invalid-price-requests coverage) 0))
-                     (dom/p {:className "hc-diag-warning"}
-                            (str "有 " (:invalid-price-requests coverage)
-                                 " 个请求的价格记录无效，未估算。")))
-                   (when (pos? (or (:invalid-billing-requests coverage) 0))
-                     (dom/p {:className "hc-diag-warning"}
-                            (str "有 " (:invalid-billing-requests coverage)
-                                 " 个服务实收记录无效，未计入。")))
-                   (when (pos? (or (:currency-mismatch-requests coverage) 0))
-                     (dom/p {:className "hc-diag-warning"}
-                            (str "有 " (:currency-mismatch-requests coverage)
-                                 " 个请求的估算币种与实收币种不同，分别列出，未相加。"))))
+                   (react/createElement
+                    react/Fragment nil
+                    (when (pos? (or (:unknown-currency-requests coverage) 0))
+                      (dom/p {:className "hc-diag-warning"}
+                             (str "有 " (:unknown-currency-requests coverage)
+                                  " 个请求没有币种，未并入任何币种汇总。")))
+                    (when (pos? (or (:invalid-price-requests coverage) 0))
+                      (dom/p {:className "hc-diag-warning"}
+                             (str "有 " (:invalid-price-requests coverage)
+                                  " 个请求的价格记录无效，未估算。")))
+                    (when (pos? (or (:invalid-billing-requests coverage) 0))
+                      (dom/p {:className "hc-diag-warning"}
+                             (str "有 " (:invalid-billing-requests coverage)
+                                  " 个服务实收记录无效，未计入。")))
+                    (when (pos? (or (:currency-mismatch-requests coverage) 0))
+                      (dom/p {:className "hc-diag-warning"}
+                             (str "有 " (:currency-mismatch-requests coverage)
+                                  " 个请求的估算币种与实收币种不同，分别列出，未相加。")))))
                  (when service
                    (dom/div {}
                             (dom/h3 {} "非 token 服务用量")
@@ -1291,7 +1300,12 @@
   [state dispatch]
   (let [log (:log state)
         days (get state :log-days 1)
-        synced? (true? (:can-submit? state))]
+        synced? (true? (:can-submit? state))
+        log-enabled? (boolean (:enabled? log))
+        log-capturing? (boolean (:capturing? log))
+        log-paused? (boolean (:paused? log))
+        offline-title (when-not synced?
+                        "实时通道未就绪；命令不会发送。")]
     (dom/div {}
              (dom/section {:className "hc-diag-panel" :aria-labelledby "hc-diag-log-title"}
                           (dom/h2 {:id "hc-diag-log-title"} "详细请求日志")
@@ -1324,7 +1338,15 @@
                                            {:type :diagnostics/log-enable
                                             :mode :next-request}
                                            dispatch
-                                           {:disabled (not synced?)})
+                                           (action-options
+                                            (or (not synced?)
+                                                log-capturing?
+                                                log-paused?)
+                                            (or offline-title
+                                                (when log-capturing?
+                                                  "正在采集，无法切换记录策略")
+                                                (when log-paused?
+                                                  "日志已暂停；先恢复"))))
                                    (select-field "定时天数"
                                                  days
                                                  (map (fn [day]
@@ -1338,19 +1360,44 @@
                                             :mode :timed
                                             :days (long days)}
                                            dispatch
-                                           {:disabled (not synced?)})
+                                           (action-options
+                                            (or (not synced?)
+                                                log-capturing?
+                                                log-paused?)
+                                            (or offline-title
+                                                (when log-capturing?
+                                                  "正在采集，无法切换记录策略")
+                                                (when log-paused?
+                                                  "日志已暂停；先恢复"))))
                                    (button "暂停"
                                            {:type :diagnostics/log-pause}
                                            dispatch
-                                           {:disabled (not synced?)})
+                                           (action-options
+                                            (or (not synced?)
+                                                log-paused?
+                                                (not log-enabled?))
+                                            (or offline-title
+                                                (when log-paused? "已暂停")
+                                                (when-not log-enabled?
+                                                  "诊断采集未启用"))))
                                    (button "恢复"
                                            {:type :diagnostics/log-resume}
                                            dispatch
-                                           {:disabled (not synced?)})
+                                           (action-options
+                                            (or (not synced?)
+                                                (not log-paused?))
+                                            (or offline-title
+                                                (when-not log-paused?
+                                                  "日志未暂停"))))
                                    (button "关闭"
                                            {:type :diagnostics/log-disable}
                                            dispatch
-                                           {:disabled (not synced?)}))
+                                           (action-options
+                                            (or (not synced?)
+                                                (not log-enabled?))
+                                            (or offline-title
+                                                (when-not log-enabled?
+                                                  "诊断采集未启用")))))
                           (dom/div {:className "hc-diag-actions"}
                                    (if (:clear-log-confirm? state)
                                      (dom/div {}
@@ -1359,14 +1406,24 @@
                                               (button "确认清空"
                                                       {:type :diagnostics/log-clear}
                                                       dispatch
-                                                      {:disabled (not synced?)})
+                                                      (action-options
+                                                       (or (not synced?)
+                                                           log-capturing?)
+                                                       (or offline-title
+                                                           (when log-capturing?
+                                                             "正在采集，无法清空"))))
                                               (button "取消"
                                                       {:type :diagnostics/log-clear-cancel}
                                                       dispatch))
                                      (button "清空详细日志"
                                              {:type :diagnostics/log-clear-request}
                                              dispatch
-                                             {:disabled (not synced?)}))))
+                                             (action-options
+                                              (or (not synced?)
+                                                  log-capturing?)
+                                              (or offline-title
+                                                  (when log-capturing?
+                                                    "正在采集，无法清空")))))))
              (dom/section {:className "hc-diag-panel"}
                           (dom/h2 {} "请求详情口径")
                           (dom/p {:className "hc-diag-muted"}
@@ -1609,7 +1666,15 @@
                                              {:type :diagnostics/bundle-export}
                                              dispatch
                                              {:disabled (or (not (:can-submit? state))
-                                                            exporting?)})
+                                                            exporting?)
+                                              :title (cond
+                                                       exporting?
+                                                       "正在导出诊断文件"
+
+                                                       (not (:can-submit? state))
+                                                       "实时通道未就绪；导出命令不会发送。"
+
+                                                       :else nil)})
                                      (when-not (:can-submit? state)
                                        (dom/span {:className "hc-diag-warning"}
                                                  "实时通道未就绪；导出命令不会发送。"))

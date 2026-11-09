@@ -535,12 +535,12 @@
                                                    {:id id :status :deleted}
                                                    (catch Exception e
                                                      {:id id :status :failed
-                                                      :error (err/describe e)})))
+                                                      :error (err/summary e)})))
                                                (:delete-ids retention))
                                 :keep-ids (:keep-ids retention)})
                              (catch Exception e
                                {:deleted []
-                                :error (err/describe e)}))]
+                                :error (err/summary e)}))]
                 (emit opts :done {:backup-id (:backup-id (:header opened))})
                 (assoc base
                        :status :complete
@@ -588,7 +588,7 @@
                           (port/delete-recovery-point! recovery-store id)
                           {:id id :status :deleted}
                           (catch Exception e
-                            {:id id :status :failed :error (err/describe e)})))
+                            {:id id :status :failed :error (err/summary e)})))
                       (:delete-ids retention))]
     {:keep-ids (:keep-ids retention)
      :deleted results

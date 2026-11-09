@@ -198,7 +198,12 @@
       (not allowed?)
       (reset! fetched? false)
 
-      (and (not @fetched?) (or new-subscription? selection-changed?))
+      ;; `new-subscription?`, `selection-changed?` and the not-allowed branch
+      ;; above each reset `fetched?` to false.  Once the connection is
+      ;; allowed, any false flag means the one authoritative read has not
+      ;; been issued yet; do not require another subscription/session change
+      ;; or the initial nil-epoch baseline deadlocks forever.
+      (not @fetched?)
       (do
         (reset! fetched? true)
       (js/setTimeout

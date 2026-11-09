@@ -147,7 +147,33 @@
                                           :mode :timed
                                           :retention-days 7
                                           :entry-count 3})))]
-      (is (str/includes? markup "已暂停")))))
+      (is (str/includes? markup "已暂停"))
+      (testing "the pause button is disabled with a visible reason"
+        (is (str/includes? markup "title=\"已暂停\"")))
+      (testing "starting a new capture waits for resume"
+        (is (str/includes? markup "title=\"日志已暂停；先恢复\"")))))
+  (testing "capturing blocks destructive and policy-switching actions"
+    (let [markup (render (-> (fixture/state)
+                             (assoc :tab :logs
+                                    :log {:enabled? true
+                                          :paused? false
+                                          :capturing? true
+                                          :mode :timed
+                                          :retention-days 7
+                                          :entry-count 3})))]
+      (is (str/includes? markup "正在采集，无法清空"))
+      (is (str/includes? markup "正在采集，无法切换记录策略"))))
+  (testing "a disabled policy explains why log actions cannot run"
+    (let [markup (render (-> (fixture/state)
+                             (assoc :tab :logs
+                                    :log {:enabled? false
+                                          :paused? false
+                                          :capturing? false
+                                          :mode :next-request
+                                          :retention-days 7
+                                          :entry-count 0})))]
+      (is (str/includes? markup "诊断采集未启用"))
+      (is (str/includes? markup "日志未暂停")))))
 
 (deftest faq-render-test
   (let [markup (render (assoc (fixture/state) :tab :faq))]

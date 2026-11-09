@@ -8,7 +8,8 @@
   Sente's `:auto` type keeps WebSocket with Ajax long-polling fallback.  The
   workbench treats channel reconnection, command receipt, and server-side
   model/tool retry as three separate concerns; no shared retry counter exists."
-  (:require [taoensso.sente :as sente]
+  (:require [clojure.string :as str]
+            [taoensso.sente :as sente]
             [taoensso.sente.packers.transit :as sente-transit]
             [taoensso.timbre :as log]))
 
@@ -21,6 +22,75 @@
          :client-id nil
          :last-error nil
          :started-at nil}))
+
+(def client-id-storage-key
+  "Local-storage key that keeps the Sente handshake identity stable across a
+  page reload.  The Owner fences commands by this identity, so a fresh random
+  ID after reload would turn the reloaded tab into an observer."
+  "hc.client-id")
+
+(defonce cached-client-id
+  ;; One identity per page lifetime.  The shell may render before `start!`
+  ;; reads the handshake id, and a browser that denies both stores must still
+  ;; use the same UUID for the UI, the attach command, and the Sente
+  ;; handshake.
+  (atom nil))
+
+(defn- browser-storage
+  "Return the named Web Storage object when it exposes both accessors.
+
+  Access itself may throw (for example when a browser blocks site storage);
+  a missing or half-implemented store is simply absent, never an error."
+  [name]
+  (try
+    (let [global (when (exists? js/globalThis) js/globalThis)
+          store (when global (aget global name))]
+      (when (and store
+                 (fn? (.-getItem store))
+                 (fn? (.-setItem store)))
+        store))
+    (catch :default _
+      nil)))
+
+(defn- stored-client-id
+  "Read a non-blank stored id.  A blank, absent, or unreadable value is nil."
+  [store]
+  (try
+    (let [value (.getItem store client-id-storage-key)]
+      (when (and (string? value) (not (str/blank? value)))
+        value))
+    (catch :default _
+      nil)))
+
+(defn- store-client-id!
+  "Return the id persisted in STORE, writing a fresh one when none exists.
+
+  Write failures stay silent: the caller falls through to the next storage
+  tier.  The read-back proves the value survived, so a store that silently
+  discards writes cannot masquerade as stable."
+  [store]
+  (or (stored-client-id store)
+      (let [id (str (random-uuid))]
+        (try
+          (.setItem store client-id-storage-key id)
+          (stored-client-id store)
+          (catch :default _
+            nil)))))
+
+(defn stable-client-id
+  "Stable Sente handshake identity for this browser tab.
+
+  `sessionStorage` survives a reload in the same tab, so an Owner that still
+  lists this tab as controller keeps controlling it.  `localStorage` is the
+  fallback when session storage is unavailable, and a fresh UUID is the last
+  resort when neither store accepts writes."
+  []
+  (or @cached-client-id
+      (let [id (or (some-> (browser-storage "sessionStorage") store-client-id!)
+                   (some-> (browser-storage "localStorage") store-client-id!)
+                   (str (random-uuid)))]
+        (reset! cached-client-id id)
+        id)))
 
 (defn status
   []
@@ -83,7 +153,12 @@
       :chsk/state
       (let [[old-state new-state open-change?] ?data
             state (if (map? new-state) new-state {})
-            open? (boolean (or (:open? state) open-change?))]
+            ;; Sente always publishes the complete new state.  A close carries
+            ;; `:open? false` together with `open-change? true`; OR-ing the
+            ;; transition flag would misread that close as open.
+            open? (boolean (if (contains? state :open?)
+                             (:open? state)
+                             open-change?))]
         ;; Diagnostic: Sente swaps its state atom for every open/close
         ;; transition.  Record the raw transition so a phase change without
         ;; a physical WebSocket close can be told apart from one caused by a
@@ -102,6 +177,29 @@
                :subscription-id (if open? (:subscription-id @channel) nil))
         (when on-state
           (on-state (assoc state :open? open? :reason (:reason state)))))
+
+      :chsk/handshake
+      (let [[uid _ handshake-data first-handshake?] ?data
+            state (or (some-> (:state-atom @channel) deref) {})
+            state (assoc state
+                         :open? true
+                         :uid uid
+                         :handshake-data handshake-data
+                         :first-handshake? (boolean first-handshake?))]
+        ;; A handshake is the authoritative "channel is usable" signal.  It is
+        ;; especially important after an auto-reconnect: the state atom can
+        ;; already be open while the sync adapter still holds an interrupted
+        ;; phase.  Do not drop it as an unknown event.
+        (swap! channel assoc
+               :open? true
+               :status :open
+               :last-state state)
+        (when on-state
+          (on-state (assoc state
+                           :open? true
+                           :handshake? true
+                           :first-handshake? (boolean first-handshake?)
+                           :reason :handshake))))
 
       :chsk/closed
       (do
@@ -134,7 +232,7 @@
   (if (contains? #{:connecting :open} (:status @channel))
     {:ok? true :reason :already-started}
     (try
-      (let [client-id (str (random-uuid))
+      (let [client-id (stable-client-id)
             result (sente/make-channel-socket-client!
                     uri
                     nil

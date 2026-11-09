@@ -180,6 +180,9 @@
     :STORAGE_OPEN_FAILED
     (str "The store at " p " could not be opened. "
          "Keep it for inspection and restore from a backup; it was not replaced.")
+    :STORAGE_NOT_WRITABLE
+    (str "The store path at " p " is not writable (permissions or a read-only mount). "
+         "Change permissions or choose a writable directory; nothing was changed.")
     :STORAGE_LOCKED
     (str "Another process holds the store lock at " p ". "
          "Stop the other process; this process did not open the store.")

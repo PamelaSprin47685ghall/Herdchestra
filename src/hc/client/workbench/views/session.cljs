@@ -14,6 +14,8 @@
             [hc.client.conversation.attachments.surface :as attachments-surface]
             [hc.client.conversation.draft :as draft]
             [hc.client.conversation.stream :as stream]
+            [hc.client.conversation.surface :as conversation-surface]
+            [hc.client.conversation.view :as conversation-view]
             [hc.client.materials :as materials]
             [hc.client.search.model :as search-model]
             [hc.client.search.view :as search-view]
@@ -23,6 +25,7 @@
             [hc.client.workbench.conversation-bridge :as conversation-bridge]
             [hc.client.workbench.model :as model]
             [hc.client.workbench.mutations :as mutations]
+            [hc.client.workbench.presence-bridge :as presence-bridge]
             [hc.client.workbench.routing :as routing]
             [hc.client.workbench.settings-bridge :as settings-bridge]
             [hc.client.workbench.views.common :as common]))
@@ -367,6 +370,10 @@
                              (when (string? run-error) run-error)
                              "本轮未完成；请查看错误详情"))
         layout (a11y/layout-for-width (:ui/viewport-width props))
+        presence (conversation-surface/presence-view
+                  {:controller-id (model/field db :session/controller-id)
+                   :observer-ids (model/field db :session/observer-ids)
+                   :local-client-id (presence-bridge/local-client-id)})
         callbacks {:send! (fn [{:keys [session-id snapshot]}]
                             (let [guard (model/send-guard materials-state)]
                               (cond
@@ -492,6 +499,13 @@
     (dom/div {:className "wb-session-layout"}
              (session-list this props sessions selected-id)
              (dom/section {:className "wb-conversation" :aria-label "会话内容"}
+                          (when selected-id
+                            (conversation-view/presence-control
+                             {:presence presence
+                              :disabled? (not (:synced? connection))
+                              :on-takeover!
+                              (fn []
+                                (commands/takeover-session! this selected-id))}))
                           (branch-origin-banner this db selected-id)
                           (if selected-id
                             (dom/div {:className "wb-conversation-mount"}
@@ -509,10 +523,9 @@
                                                     (commands/fetch-history-window!
                                                      this selected-id
                                                      {:before
-                                                      (some->> messages
-                                                               first
-                                                               (or (:id %)
-                                                                   (:message-id %)))
+                                                      (let [oldest (first messages)]
+                                                        (or (:id oldest)
+                                                            (:message-id oldest)))
                                                       :limit 200}))}
                                                   "加载更早的消息")))
                                      (when (:active? (:ui/nudge props))

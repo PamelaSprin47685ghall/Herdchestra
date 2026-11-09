@@ -313,6 +313,42 @@
       (finally
         (unmount! container root)))))
 
+(deftest copy-password-feedback-stays-beside-the-button
+  (let [state-atom (atom (connected))
+        dispatch! (make-dispatch! state-atom)
+        [container root] (mount! state-atom dispatch!)]
+    (try
+      (let [password (input-by-aria container "备份密码")]
+        (type-text! password "abcdef123456")
+        (render! root @state-atom dispatch!)
+        (let [copy-button (button-by-text container "复制密码")]
+          (is (some? copy-button))
+          (act! (fn [] (.click copy-button)))
+          (render! root @state-atom dispatch!)
+          (let [feedback (.querySelector container ".hc-backup-copy-feedback")]
+            (testing "progress appears inside the password action row"
+              (is (some? feedback))
+              (is (= "status" (.getAttribute feedback "role")))
+              (is (str/includes? (.-textContent feedback) "正在复制密码"))
+              (is (= :copying
+                     (get-in @state-atom [:ui :copy-feedback :status]))))
+            (testing "the page banner is not used"
+              (is (nil? (.querySelector container ".hc-backup-message")))))
+          (swap! state-atom
+                 #(:state (model/reduce-action
+                           % {:type :backup/copy-result :ok? true})))
+          (render! root @state-atom dispatch!)
+          (let [feedback (.querySelector container ".hc-backup-copy-feedback")]
+            (is (str/includes? (.-textContent feedback) "已复制")))
+          (swap! state-atom
+                 #(:state (model/reduce-action
+                           % {:type :backup/copy-result :ok? false})))
+          (render! root @state-atom dispatch!)
+          (let [feedback (.querySelector container ".hc-backup-copy-feedback")]
+            (is (str/includes? (.-textContent feedback) "复制失败")))))
+      (finally
+        (unmount! container root)))))
+
 (defmethod cljs.test/report [:cljs.test/default :end-run-tests]
   [m]
   (when (pos? (+ (:fail m) (:error m)))

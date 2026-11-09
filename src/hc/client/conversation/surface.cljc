@@ -66,6 +66,39 @@
         (or (:label connection) "连接状态未知")))
     :else nil))
 
+(defn presence-view
+  "Project the Owner's one-controller/many-observers presence into display
+  state.
+
+  `:controller-id` is the one client allowed to submit session work;
+  `:observer-ids` names the other attached clients, and `:local-client-id`
+  is this tab's stable handshake identity.  A client that cannot prove it is
+  the controller is shown as an observer: the label names the other client
+  instead of pretending the local draft will be delivered, and `:takeover?`
+  tells the view to offer the explicit takeover control."
+  [{:keys [controller-id local-client-id]}]
+  (let [controller-id (when (and (string? controller-id)
+                                 (not (str/blank? controller-id)))
+                        controller-id)
+        local-client-id (when (and (string? local-client-id)
+                                   (not (str/blank? local-client-id)))
+                          local-client-id)]
+    (cond
+      (and controller-id local-client-id (= controller-id local-client-id))
+      {:role :controller
+       :takeover? false
+       :label "你正在控制本会话"}
+
+      controller-id
+      {:role :observer
+       :takeover? true
+       :label "另一客户端正在控制本会话"}
+
+      :else
+      {:role :free
+       :takeover? false
+       :label "本会话暂无控制客户端"})))
+
 (defn- in-flight-command?
   [command]
   (contains? #{:pending :submitting} (keywordize (:status command))))
@@ -489,7 +522,11 @@
      (cond
        ;; The server explicitly publishes :finished when no live call or Nudge
        ;; remains; a retained run id must not override that.
-       (contains? #{:finished :idle :completed} status) false
+       ;; A stopped/cancelled run is not active; keeping it in the fallback
+       ;; run-id branch would freeze the header and block the next send.
+       (contains? #{:finished :idle :completed :cancelled :canceled
+                    :stopped}
+                  status) false
        (contains? #{:running :streaming :starting :dispatching
                     :applying :stopping}
                   status) true

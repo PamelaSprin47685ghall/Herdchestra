@@ -1035,7 +1035,8 @@ button.wb-badge:focus-visible,
     z-index: 50;
   }
 
-  .wb-nav {
+  .wb-nav,
+  .wb-aux {
     padding-top: calc(66px + env(safe-area-inset-top, 0px));
   }
 
@@ -1140,7 +1141,8 @@ button.wb-badge:focus-visible,
   padding: 4px 0 24px;
 }
 
-.hc-settings__header h1 {
+.hc-settings__header h1,
+.hc-settings__header h2 {
   margin: 0 0 4px;
   font-size: 1.35em;
 }
@@ -2100,10 +2102,16 @@ button.wb-badge:focus-visible,
 }
 
 .hc-browser-tab .wb-button {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 200% text zoom: a tab title must wrap or grow instead of being clipped
+     to a 200px ellipsis with no way to read the rest. */
+  max-width: none;
+  height: auto;
+  min-height: 44px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .hc-browser-takeover {
@@ -3277,7 +3285,13 @@ html[data-theme="dark"] .hc-schedule-button--primary {
 /* H-16: at 200% text scale the message column collapsed to ~81px because
    the find bar, context panel, and composer stack above it.  A floor keeps
    at least a few lines of transcript visible. */
-.hc-conversation-messages {
+.wb-conversation-mount .hc-conversation-messages {
+  /* The conversation surface injects `.hc-conversation-messages
+     { flex: 1; min-height: 0 }` (specificity 0-1-0) after this stylesheet.
+     The 0-2-0 workbench selector wins on specificity, so the floor and the
+     growable basis hold without !important.  Standalone conversation mounts
+     keep the component default. */
+  flex: 1 1 auto;
   min-height: 150px;
 }
 
@@ -3288,4 +3302,250 @@ html[data-theme="dark"] .hc-schedule-button--primary {
   background: var(--wb-accent);
   border-color: var(--wb-accent);
   color: var(--wb-accent-ink);
+}
+
+/* --------------------------------------------------------------------------
+   0.0.2 S2 visual closure (eng-w2-visual)
+   -------------------------------------------------------------------------- */
+
+/* M-06: the board and files panes decided their two-column layout from the
+   viewport (820/900px) while 1024–1199 still keeps 200+260px rails.  That
+   left the main column at 260–374px.  Keep one column until the full
+   three-column layout has room (1280px).  The board's own <style> is later
+   in the DOM, hence !important for this band only. */
+@media (min-width: 820px) and (max-width: 1279px) {
+  .hc-board-columns,
+  .hc-files-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* L-11: an empty conversation used to shrink to its content width while a
+   conversation with messages filled the mount.  Both states now use the
+   same full-width box; readable line length is capped by the message body,
+   not by the scroll container. */
+.wb-conversation-mount .hc-conversation,
+.wb-conversation-mount .hc-conversation-with-attachments,
+.wb-conversation-mount .hc-conversation-messages,
+.wb-conversation-mount .hc-message-stream {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* H-01: first-run guide.  Three real entry points and three draft-only
+   examples; the card disappears after “稍后设置”. */
+.hc-first-run {
+  margin: 16px 0;
+  padding: 18px 16px;
+  border: 1px solid var(--wb-line);
+  border-radius: 14px;
+  background: var(--wb-surface);
+}
+
+.hc-first-run h3 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+.hc-first-run > p {
+  margin: 0;
+}
+
+.hc-first-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.hc-first-run-examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 8px;
+}
+
+.hc-first-run-example-label {
+  margin: 0;
+  color: var(--wb-ink-muted);
+  font-size: 0.85em;
+}
+
+.hc-first-run-example {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hc-first-run-example strong {
+  font-size: 0.92em;
+}
+
+.hc-first-run-example span {
+  color: var(--wb-ink-muted);
+  font-size: 0.82em;
+  line-height: 1.4;
+}
+
+.hc-first-run-example:hover:not([disabled]),
+.hc-first-run-example:focus-visible:not([disabled]) {
+  border-color: var(--wb-accent);
+}
+
+.hc-first-run-example[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* H-06: “阅读 N 条” counts hidden system/tool/process records.  The note
+   states the visible count so the two numbers cannot look contradictory. */
+.hc-context-reading-note {
+  margin-top: 4px;
+  max-width: 46em;
+  color: var(--wb-ink-muted);
+  font-size: 0.82em;
+  line-height: 1.45;
+}
+
+/* H-26: destructive controls live on their own row, separated from save. */
+.hc-mat-save-row {
+  margin-bottom: 0;
+}
+
+.hc-mat-danger-row {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--wb-line);
+}
+
+/* M-11: the omitted-entry sub-block is a divider, not a second bordered
+   card inside `.hc-mat-runtime`. */
+.hc-mat-runtime-sub {
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--wb-line);
+}
+
+.hc-mat-runtime-sub h4 {
+  margin: 0 0 4px;
+  font-size: 0.92em;
+}
+
+.hc-mat-mode-hint {
+  margin-top: 0;
+}
+
+/* M-17: the data center is long; a sticky anchor row keeps both halves one
+   click away. */
+.hc-data-subnav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 0 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-bg);
+}
+
+.hc-data-subnav a {
+  color: var(--wb-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hc-data-subnav a:hover,
+.hc-data-subnav a:focus-visible {
+  text-decoration: underline;
+}
+
+#hc-data-diagnostics,
+#hc-data-backup {
+  scroll-margin-top: 64px;
+}
+
+/* L-04: on narrow screens the two tab rows consume the first screen.  The
+   outer row becomes a disclosure; wide layout hides its summary. */
+.hc-tabs-collapsible > summary.hc-tabs-summary {
+  cursor: pointer;
+  padding: 6px 2px;
+  color: var(--wb-ink-muted);
+  font-weight: 600;
+}
+
+@media (min-width: 1024px) {
+  .hc-tabs-collapsible > summary.hc-tabs-summary {
+    display: none;
+  }
+}
+
+/* H-24: the screenshot container always holds a readable fallback behind
+   the image.  The view reveals it when the blob request fails. */
+.hc-browser-shot-fallback {
+  display: block;
+  padding: 12px;
+  border: 1px dashed var(--wb-line);
+  border-radius: 8px;
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-muted);
+  font-size: 0.86em;
+}
+
+/* M-22: the per-skill upstream comparison is a disclosure, not a permanent
+   full form in every card. */
+.hc-ext-update > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.hc-ext-update-summary {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+/* H-25: the two-step delete controls stay in one wrapping row. */
+.hc-ext-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* M-18: clipboard feedback sits beside the password button. */
+.hc-backup-copy-feedback {
+  align-self: center;
+  color: var(--wb-ink-muted);
+  font-size: 0.82em;
+}
+
+.hc-backup-copy-feedback--copied {
+  color: var(--wb-ok);
+}
+
+.hc-backup-copy-feedback--failed {
+  color: var(--wb-danger);
+}
+
+.hc-backup-storage {
+  margin-top: 10px;
+}
+
+/* L-07: the collapsed “更多” disclosure remains a 44px target on touch
+   layouts; L-04's section summary gets the same rule. */
+@media (max-width: 1023px) {
+  .hc-speech-service-more > summary,
+  .hc-tabs-collapsible > summary.hc-tabs-summary,
+  .hc-first-run-example {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
 }

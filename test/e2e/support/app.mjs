@@ -1,7 +1,7 @@
 // Start and stop a real Herdchestra server for one E2E test.  Every run gets
 // its own temporary data directory, workspace, blob store and port; the
 // user's default data directory is never opened.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -207,10 +207,17 @@ function writeWorkspace(root, files = {}) {
 function waitForListening(child, timeoutMs = 120000) {
   const MAX_CAPTURE = 256 * 1024;
   const append = (current, text) => (current + text).slice(-MAX_CAPTURE);
+  const failureDetail = (text) => {
+    const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+    const syntaxAt = lines.findIndex((line) => /Syntax error reading source/.test(line));
+    if (syntaxAt >= 0) return lines.slice(syntaxAt, syntaxAt + 2).join(' | ');
+    return lines[0] || 'no stderr';
+  };
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    const startedAt = Date.now();
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -229,10 +236,21 @@ function waitForListening(child, timeoutMs = 120000) {
       if (match) finish(null, match[1]);
     });
     child.stderr.on('data', (chunk) => {
-      stderr = append(stderr, chunk.toString());
+      const text = chunk.toString();
+      stderr = append(stderr, text);
+      // A Clojure reader error means the JVM will exit without ever
+      // listening.  Fail immediately with the reader location instead of
+      // waiting for the full listening timeout.
+      if (!settled && /Syntax error reading source/.test(text)) {
+        finish(new Error(`server syntax error before listening: ${failureDetail(stderr)}\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      }
     });
     child.once('exit', (code, signal) => {
-      finish(new Error(`server exited before listening (code=${code}, signal=${signal})\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      const elapsed = Date.now() - startedAt;
+      const early = elapsed < 5000 ? ` within ${elapsed} ms` : '';
+      finish(new Error(
+        `server exited before listening${early} (code=${code}, signal=${signal}): ${failureDetail(stderr)}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      ));
     });
     child.once('error', (error) => finish(error));
   });
@@ -276,6 +294,9 @@ export async function startApp(options = {}) {
   writeWorkspace(workspaceRoot, options.workspaceFiles);
 
   const configPath = path.join(tempRoot, 'config.edn');
+  // A caller that restarts the same data directory with the same fixed
+  // `port` keeps the browser origin (and therefore localStorage) stable;
+  // the default 0 asks the OS for a fresh ephemeral port on every start.
   const config = `{:host "127.0.0.1"
  :port ${options.port ?? 0}
  :data-dir ${ednString(dataDir)}
@@ -307,11 +328,15 @@ ${options.nudgeRoundBudget ? ` :nudge-round-budget ${Number(options.nudgeRoundBu
   const launchArgv = [
     ...JVM_OPTS, ...EXTRA_JVM_OPTS,
     `-J-Djava.io.tmpdir=${runtimeTmp}`, '-M:server', '-m', 'hc.server.app', '--config', configPath];
+  // `options.env` lets a spec pin the server's C locale (for example
+  // LC_ALL=C so LMDB reports "No space left on device" rather than a
+  // localized strerror string that the client's ENOSPC matcher cannot see).
+  const childEnv = options.env ? { ...process.env, ...options.env } : process.env;
   const child = sigtrace
     ? spawn(sigtrace, [clojureCommand(), ...launchArgv],
-            { cwd: REPO_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] })
+            { cwd: REPO_ROOT, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
     : spawn(clojureCommand(), launchArgv,
-            { cwd: REPO_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+            { cwd: REPO_ROOT, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '';
   const appendLog = (chunk) => {
     const text = chunk.toString();
@@ -367,4 +392,45 @@ ${options.nudgeRoundBudget ? ` :nudge-round-budget ${Number(options.nudgeRoundBu
     if (!options.keepTemp && !process.env.HC_E2E_KEEP_TEMP) fs.rmSync(tempRoot, { recursive: true, force: true });
     throw error;
   }
+}
+
+// Run `--check` against an existing app root and return the process result.
+//
+// `--check` isolates itself into a temporary data directory unless the
+// operator supplies one explicitly on the command line.  Passing
+// `--data-dir`/`--workspace-root` here is deliberate: a recovery check must
+// inspect the directory the previous run used, not a fresh one.  `--port 0`
+// keeps the short-lived health listener away from the test's fixed port.
+export function runAppCheck({ root, port = 0, timeoutMs = 300000 } = {}) {
+  if (!root) throw new Error('runAppCheck: root is required');
+  const configPath = path.join(root, 'config.edn');
+  const dataDir = path.join(root, 'data');
+  const workspaceRoot = path.join(root, 'workspace');
+  const runtimeTmp = path.join(root, 'tmp');
+  fs.mkdirSync(runtimeTmp, { recursive: true });
+  const args = [
+    ...JVM_OPTS, ...EXTRA_JVM_OPTS,
+    `-J-Djava.io.tmpdir=${runtimeTmp}`,
+    '-M:server', '-m', 'hc.server.app',
+    '--config', configPath,
+    '--check',
+    '--port', String(port),
+    '--data-dir', dataDir,
+    '--workspace-root', workspaceRoot,
+  ];
+  const result = spawnSync(clojureCommand(), args, {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return {
+    exitCode: result.status,
+    signal: result.signal ?? null,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    error: result.error ? String(result.error.message) : null,
+    command: [clojureCommand(), ...args],
+    configPath,
+  };
 }

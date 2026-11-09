@@ -84,6 +84,27 @@
         (when was
           (.interrupt (Thread/currentThread)))))))
 
+(defn- open-failure
+  "Classify one environment-open failure.  A permission problem and lock
+  contention keep their own codes instead of collapsing into CORRUPT/OPEN."
+  [path ^Throwable e code message]
+  (cond
+    (err/unwritable? e)
+    (err/wrap :STORAGE_NOT_WRITABLE
+              (str "the store path is not writable "
+                   "(permissions or a read-only mount): " path)
+              e
+              {:path (str path)})
+
+    (err/locked? e)
+    (err/wrap :STORAGE_LOCKED
+              "another process holds the store environment"
+              e
+              {:path (str path)})
+
+    :else
+    (err/wrap code message e {:path (str path)})))
+
 (defn open!
   "Open the Datalevin environment at `path` and the `state` DBI.
 
@@ -106,16 +127,16 @@
         kv   (try
                (d/open-kv (str path) opts)
                (catch Throwable e
-                 (throw (err/wrap :STORAGE_OPEN_FAILED
-                                  "cannot open the Datalevin environment"
-                                  e
-                                  {:path (str path)}))))]
+                 (throw (open-failure path e
+                                      :STORAGE_OPEN_FAILED
+                                      "cannot open the Datalevin environment"))))]
     (try
       (d/open-dbi kv dbi-name)
       ;; Touch the DBI: a corrupt or unreadable environment fails here, before
-      ;; any caller can dispatch side effects.
+      ;; any caller can dispatch side effects.  `stat` reads B-tree metadata
+      ;; (`:entries` is a page count), so opening a store with many large
+      ;; documents never deserializes a value.
       (d/stat kv dbi-name)
-      (d/entries kv dbi-name)
       (let [registered? (register-jvm-shutdown-close! kv closed ordered?)]
         {:kv kv
          :dbi dbi-name
@@ -129,16 +150,16 @@
         (try (d/close-kv kv) (catch Throwable _ nil))
         (if (err/expected? e)
           (throw e)
-          (throw (err/wrap :STORAGE_CORRUPT
-                           "the store environment opened but its state table is unreadable"
-                           e
-                           {:path (str path)}))))
+          (throw (open-failure
+                  path e
+                  :STORAGE_CORRUPT
+                  "the store environment opened but its state table is unreadable"))))
       (catch Throwable e
         (try (d/close-kv kv) (catch Throwable _ nil))
-        (throw (err/wrap :STORAGE_CORRUPT
-                         "the store environment opened but its state table is unreadable"
-                         e
-                         {:path (str path)}))))))
+        (throw (open-failure
+                path e
+                :STORAGE_CORRUPT
+                "the store environment opened but its state table is unreadable"))))))
 
 (defn close! [engine]
   (when-let [closed? (:closed? engine)]

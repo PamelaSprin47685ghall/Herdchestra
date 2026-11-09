@@ -283,6 +283,85 @@
    :exception (err/throwable->data t)
    :message (.getMessage ^Throwable t)})
 
+(def ^:private known-stages
+  #{:accepted :waiting-gate :final-check :preparing :applying
+    :publish-pending :uncertain :finished})
+
+(def ^:private expected-action-limit
+  300)
+
+(defn- normalize-stage
+  [stage fallback]
+  (case stage
+    :board :publish-pending
+    :commit fallback
+    (if (contains? known-stages stage) stage fallback)))
+
+(defn- expected-action-text
+  "A bounded action summary: operation kinds and target paths, no bytes."
+  [request prepared]
+  (let [ops (or (:ops prepared)
+                (get-in request [:batch :ops])
+                [])
+        parts (map (fn [{:keys [op path source target]}]
+                     (str (name (or op :unknown)) " "
+                          (if (= :mv op)
+                            (str source " -> " target)
+                            (str path))))
+                   ops)
+        text (if (seq parts) (str/join "; " parts) "none")]
+    (subs text 0 (min expected-action-limit (count text)))))
+
+(defn- failure-location
+  [result stage]
+  (if (contains? result :failed-index)
+    {:op-index (:failed-index result)}
+    {:stage stage}))
+
+(defn- normalize-remaining-ops
+  "The applier reports the failed operation at the head of :remaining-ops.
+  A successor must not retry an operation that already failed, so the
+  remaining list starts strictly after the failed one.  The expected count
+  keeps this idempotent when the result is enriched more than once."
+  [result request prepared]
+  (let [failed-index (:failed-index result)
+        remaining (:remaining-ops result)
+        total (or (get-in prepared [:summary :op-count])
+                  (some-> prepared :ops count)
+                  (count (get-in request [:batch :ops])))]
+    (if (and (integer? failed-index)
+             (seq remaining)
+             (integer? total)
+             (> (count remaining) (- total failed-index 1)))
+      (update result :remaining-ops #(vec (rest %)))
+      result)))
+
+(defn- enrich-hard-failure
+  "Add the successor-facing failure facts without changing classification.
+
+  `:phase` stays the coarse context already present (or becomes the stage for
+  an apply failure, which previously carried no phase at all).
+  `:last-known-stage` uses only the phase vocabulary in this namespace."
+  [result request prepared fallback-stage]
+  (if (and (map? result) (= :HARD_FAILURE (:status result)))
+    (let [result (normalize-remaining-ops result request prepared)
+          stage (normalize-stage (or (:last-known-stage result)
+                                     (:phase result))
+                                 fallback-stage)]
+      (assoc result
+             :phase (or (:phase result) stage)
+             :last-known-stage stage
+             :expected-action (expected-action-text request prepared)
+             :failed-at (failure-location result stage)))
+    result))
+
+(defn- final-check-failure
+  [failure request]
+  (if (and (map? failure) (= :HARD_FAILURE (:status failure)))
+    (enrich-hard-failure (assoc failure :phase :final-check)
+                         request nil :final-check)
+    (assoc failure :phase :final-check)))
+
 (defn- board-result-failure
   "Classify a board adapter return value.
 
@@ -468,7 +547,11 @@
                   (hard-failure-result
                    (ex-info "apply-fn returned no classified result" {})
                    :applying))
-        applied (err/sanitize applied)]
+        applied (err/sanitize applied)
+        applied (if (= :HARD_FAILURE (:status applied))
+                  (enrich-hard-failure (assoc applied :phase :applying)
+                                       request prepared :applying)
+                  applied)]
     (if (err/rejection? applied)
       applied
       (let [result (if (= :APPLIED (:status applied))
@@ -496,11 +579,11 @@
         batch (:batch request)]
     (if-let [f (and board
                     (:failure (call-board #(board/check-eligibility! board request))))]
-      (assoc f :phase :final-check)
+      (final-check-failure f request)
       (let [pre (when-let [f (:pre-apply! request)]
                   (run-pre-apply! f request))]
         (if-let [failure (:failure pre)]
-          failure
+          (final-check-failure failure request)
           (let [prepared (prepare/prepare-plan batch {:gate-token gate-permit})]
             (if-not (prepare/prepared? prepared)
               (assoc prepared :phase :preparing)
@@ -513,7 +596,7 @@
                                 :cancelled? true :queued? false})
 
                   (:failure begun)
-                  (assoc (:failure begun) :phase :final-check)
+                  (final-check-failure (:failure begun) request)
 
                   :else
                   (let [request-id (:request-id request)
@@ -523,7 +606,9 @@
                     (try
                       (apply-and-publish! wg request prepared begun)
                       (catch Throwable t
-                        (let [failure (hard-failure-result t :applying)
+                        (let [failure (enrich-hard-failure
+                                       (hard-failure-result t :applying)
+                                       request prepared :applying)
                               result (publish-hard-failure wg board-permit failure)]
                           (when (false? (:published? result))
                             (swap! (:registry wg) update request-id
@@ -634,7 +719,11 @@
           (let [result (try
                          (execute-commit! wg request)
                          (catch Throwable t
-                           (hard-failure-result t :commit)))]
+                           (enrich-hard-failure
+                            (hard-failure-result t :commit)
+                            request nil
+                            (or (get-in @(:registry wg) [request-id :phase])
+                                :final-check))))]
             (let [result (assoc result :request-id request-id)
                   result (if (and (contains? @(:stops wg) request-id)
                                   (cancel-after-apply-result? result))

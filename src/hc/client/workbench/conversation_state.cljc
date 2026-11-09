@@ -178,9 +178,23 @@
 (defn- receipt-status
   [receipt]
   (let [inner (receipt-inner receipt)
-        value (or (:status inner) (:status receipt) (:result inner))]
-    (when (or (keyword? value) (string? value))
-      (-> value name str/lower-case keyword))))
+        value (or (:status inner) (:status receipt) (:result inner))
+        ok? (or (:ok? receipt) (:ok? inner))]
+    (cond
+      (or (keyword? value) (string? value))
+      (let [status (-> value name str/lower-case keyword)]
+        (if (= :refused status) :rejected status))
+
+      ;; A gateway/Owner failure without an inner receipt (for example
+      ;; COMMAND_STORE_FAILED) is still a rejected command.  Without this
+      ;; branch the reducer never receives the acknowledgement, so an
+      ;; optimistically cleared draft is never restored.
+      (false? ok?) :rejected
+
+      (and (true? ok?) (nil? (:receipt receipt)))
+      :not-found
+
+      :else nil)))
 
 (defn- receipt-command-id
   [receipt]

@@ -467,7 +467,17 @@
         (cancel-resync-retry!)
         (reset! fetching-token nil)
         (reset! object-failures 0)
-        (let [current (if (contains? #{:disconnected :interrupted} phase)
+        (let [handshake? (boolean (:handshake? state))
+              first-handshake? (boolean (:first-handshake? state))
+              ;; A non-first handshake is a real reconnect on an already open
+              ;; state atom.  Start a new subscription generation even when
+              ;; the adapter still says :synced; that is how an interrupted
+              ;; phase recovers without waiting for another state transition.
+              new-connection? (or (contains? #{:disconnected :interrupted} phase)
+                                  (and handshake?
+                                       (not first-handshake?)
+                                       (not= :connecting phase)))
+              current (if new-connection?
                         (sync/connect current)
                         current)
               current (if (= :connecting (:phase current))
@@ -477,7 +487,13 @@
           (install!)
           (when (contains? #{:connected-awaiting-sync :synced}
                            (:phase current))
-            (subscribe! current))))
+            ;; The :chsk/state open event already subscribes on the initial
+            ;; handshake.  The following first handshake must not send a
+            ;; duplicate subscribe; a reconnect handshake must.
+            (when (or (not handshake?)
+                      new-connection?
+                      (not @subscribed?))
+              (subscribe! current)))))
       (do
         (cancel-resync-retry!)
         (reset! subscribed? false)

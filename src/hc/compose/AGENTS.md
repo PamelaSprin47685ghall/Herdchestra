@@ -13,7 +13,7 @@
 4. **Missionary 监督树**：承载模型请求、工具执行与独立并行分支。业务是否已启动以领域状态中的 `attempt-id` 为准，不以 Task 对象存在为准。
 5. **取消域**：按 `attempt-id` 中断模型流、计算任务或受管子进程；取消信号不得穿透数据库提交或 `FileChannel` 写入线程。
 6. **报告交付**：跨 Owner 的子终态先持久写 `:report-pending`，父方按 `parent-call-id` 幂等确认后清除。进程重启后继续重投。
-7. **Nudge 拦截**：中心化代理结束回合但未处于 `S1` 的 `ask` 挂起、也未达终局时，注入列出全部未结台账项与常授权硬口令的督促消息，并开启下一轮模型请求。
+7. **Nudge 拦截**：代理结束回合但未处于任一合法出口时，注入列出全部未结台账项与常授权硬口令的督促消息，并开启下一轮模型请求。合法出口只有三个：`Plan` 在 `S1` 的 `ask` 挂起、执行层初任空账的 `ask` 挂起、验收合格后的终局结案。
 
 ## 2 不得
 
@@ -60,15 +60,15 @@
 
 ## 4 命名空间
 
-当前：`hc.compose.guards.*`、`hc.compose.cancel.*`、`hc.compose.nudge.*`、`hc.compose.reports.*`、`hc.compose.retry.*`、`hc.compose.fleet.*`、`hc.compose.mission.*`、`hc.compose.owner.*`。
+当前：`hc.compose.guards.*`、`hc.compose.cancel.*`、`hc.compose.nudge.*`、`hc.compose.reports.*`、`hc.compose.retry.*`、`hc.compose.fleet.*`、`hc.compose.mission.*`、`hc.compose.owner.*`、`hc.compose.scheduler.*`、`hc.compose.steward`、`hc.compose.supervisor`、`hc.compose.workspace.*`。
 
 `hc.compose.owner.*` 包含 `mailbox`（单写者队列）、`store`（整态 CAS）、`commands`（`command-id`/`command-epoch` 门）、`state`（初始态与调用/取消节点）、`handlers`（纯消息迁移）、`guards`（P0–P3 目录）、`dispatch`（Missionary 监督、计时器与报告投递）、`tasks`（三类业务组合器）、`board`（Owner 支撑的 workspace/Shell 看板适配器）与 `runtime`（提交、守卫轮、outbox、通知、生命周期）。细节见 `owner/AGENTS.md`。
 
-计划补充：`hc.compose.supervisor`（若 `owner.runtime` 之外仍需独立监督层）。命名可以随实现细化，但“单 Owner、纯守卫、显式装配”的边界不变。
+`hc.compose.supervisor` 是进程级循环监督器，不是第二个 Owner；它只负责后台循环的启停、退避与状态。`hc.compose.steward` 是仓库守望的纯状态组合层，无 I/O、无时钟、无 Git 调用。命名可以随实现细化，但“单 Owner、纯守卫、显式装配”的边界不变。
 
 ## 5 测试
 
-1. Nudge 不变量：除 `S1` 的 `.ask` 挂起与终局 `:completed` 外，任何回合结束必然触发 Nudge 或守卫推进。
+1. Nudge 不变量：除三个合法出口（`S1` 的 `.ask` 挂起、执行层初任空账的 `.ask` 挂起、终局 `:completed`）外，任何回合结束必然触发 Nudge 或守卫推进。
 2. 守卫纯度：随机状态序列下，`:enabled?` 与 `:prepare` 不产生外部副作用，且同一状态重复求值结果一致。
 3. 领取四步：任何派发都有已提交的 `attempt-id`；重复唤醒不重复启动同一工作。
 4. 报告幂等：重复投递不重复追加结果；父方取消时子方仍能结清。

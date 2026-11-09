@@ -14,6 +14,15 @@
 4. **诚实不可用**：`model/availability` 给出每个按钮的 `:enabled?` 与 `:reason`。视图必须显示原因，不保留无效果按钮。
 5. **本地状态**：`storage` 持久化每会话草稿与外观；失败时显示“草稿暂未保存”，绝不假报已保存。
 6. **不暴露调试句柄**：`app.cljs` 不把 Fulcro app 或 state atom 挂到 `window`。`window.hc_app`/`window.hc_app_state` 会暴露完整数据库、未保存草稿与密钥输入，而浏览器控制台调试不是用户功能。需要临时调试时用本地补丁，不提交。
+7. **客户端在场附着**：`transport/stable-client-id` 生成稳定握手身份，存储键为
+   `hc.client-id`，按 `sessionStorage → localStorage → 随机 UUID` 三级回退；
+   同一标签页 reload 后仍沿用原身份。`presence-bridge` 只在已确认基线没有
+   控制器时，按 `(session-id, subscription-id)` 发送一次
+   `:session/attach-client`；发送前先记忆该键，回执、重绘或重复基线都不会
+   变成循环。服务器已报告控制器时绝不抢占。观察者发送业务命令被
+   `:NOT_CONTROLLER` 拒绝时，命令回执带 `:action :takeover`，界面只提供
+   显式“接管控制”按钮；接管仍是操作员的显式动作，绝不由打字或吞掉拒绝
+   自动触发。
 
 ### 1.1 草稿持久化的浏览器边界
 
@@ -36,6 +45,7 @@
 | `conversation_bridge.cljs` | 操作员手势 → reducer → outbox 排水 → Sente；回执监听 |
 | `commands.cljs` | 发送/停止/回答委托给 conversation-bridge；应用级命令与重同步仍在此 |
 | `sync_bridge.cljs` | 纯适配器 ↔ Fulcro ↔ Sente；事件监听器注册 |
+| `presence_bridge.cljs` | 一次性 `:session/attach-client`；稳定握手身份；不抢占已有控制器 |
 | `settings_bridge.cljs` | settings-ui 状态、服务器快照、回执、命令 outbox |
 | `materials_bridge.cljs` | `:ui/materials`、材料快照/回执、启动权威读取与陈旧事务守卫 |
 | `extensions_bridge.cljs` | `:ui/extensions`、MCP/技能视图、回执与 `extensions/*` 命令 outbox |
@@ -98,9 +108,10 @@
   四个页签分别挂载会话事实、工作区文件、受管浏览器与服务器发布的引用/来源。
   来源缺失时显示“服务器未报告该会话的来源”，不得编造。
 - 全局快捷键只在 `main` 实现：`Ctrl/Cmd+,` 打开设置、`Ctrl/Cmd+N` 新建会话、
-  `Ctrl/Cmd+F` 聚焦会话过滤、`Ctrl/Cmd+Shift+F` 聚焦过滤并说明全局搜索尚未
-  接入服务器索引。设置页的“快捷键”分区只展示真实存在的映射；未实现的绑定
-  不得写入该表。
+  `Ctrl/Cmd+F` 聚焦会话过滤、`Ctrl/Cmd+Shift+F` 打开全局历史搜索覆盖层
+  （`hc.client.search.history-view`，客户端入口已接）。服务端 app router
+  尚未注入 `:history-search`，命令会显示索引不可用；这是 D-32 的装配缺口，
+  不是客户端入口缺失。设置页的“快捷键”分区只展示真实存在的映射。
 
 ### 会话
 
@@ -253,6 +264,59 @@ Swarm 普通个体/持令者）；未选择模型时显示“未设置”，不�
   流空闲而拒绝停止。
 - 五阶段只由 `hc.client.sync` 决定；`:command-allowed?` 仅在 `:synced` 且 epoch/seq 非空时为真。
 - 断线只显示“最后确认副本”，不取消服务器任务。
+
+### 客户端在场（presence-bridge）
+
+**(a) API**
+
+```clojure
+(transport/stable-client-id) ; => string；sessionStorage → localStorage → UUID
+(presence-bridge/local-client-id) ; => 当前 channel 的 client-id 或稳定身份
+(presence-bridge/attach-decision
+ {:session-id .. :synced? .. :controller-id .. :local-client-id ..
+  :subscription-id .. :attempted #{..}})
+;; => {:attach? bool :reason keyword ... :session-id .. :key [sid sub-id]}
+(presence-bridge/attempt!)  ; 至多发送一次 attach，失败只记录
+(presence-bridge/install! app)
+```
+
+attach 命令是 `:session/attach-client`；接管命令是 `:session/takeover`。
+
+**(b) 失败/拒绝码**
+
+| code/reason | 触发 |
+|---|---|
+| `:no-session` | 基线没有选中会话 |
+| `:not-synced` | 尚未进入 `:synced` |
+| `:no-subscription` | 没有 subscription-id |
+| `:no-client-id` | 两个 storage 都拒绝且无法生成身份 |
+| `:controlled` | 服务端已报告 controller，绝不抢占 |
+| `:already-attempted` | 该 `(session-id, subscription-id)` 已尝试 |
+| `:free` | 无 controller，允许一次 attach |
+| `:NOT_CONTROLLER`（回执） | 观察者业务命令被拒；命令状态带 `:action :takeover` |
+
+**(c) 不变量**
+
+保证：每个 `(session-id, subscription-id)` 至多 attach 一次；发送前先记忆
+键，回执/重绘/重复基线不形成循环；已有 controller 绝不自动抢占；关闭标签
+不取消 run；`NOT_CONTROLLER` 只提供显式接管入口。
+
+不保证：不保证 attach 回执一定到达或 controller 永久保持；不保证其他
+客户端不接管；不发送业务命令；不重试已尝试的键（新 subscription 才会重新
+尝试）；不改变草稿、消息或 run 状态。
+
+**(d) 验证**
+
+CLJS 测试不在 JVM 分片：
+
+```bash
+clojure -M:cljs:client -re node
+# REPL:
+# (require 'hc.client.workbench.presence-test)
+# (cljs.test/run-tests 'hc.client.workbench.presence-test)
+```
+
+代码事实，未复测：6 tests / 19 个 `is`。
 
 ## 5 构建与冒烟
 

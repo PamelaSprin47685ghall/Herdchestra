@@ -53,10 +53,13 @@
 (deftest delete-then-read-is-rejected-and-recreate-works
   (ts/with-root [root]
     (ts/write! root "f" "x")
+    (is (= "x" (ts/read! root "f")))
     (let [s (wg/session root)]
       (wg/rm s "f")
       (is (= :PREPARE_REJECTED (:status (ts/thrown-data #(wg/cat s "f")))))
       (is (= :PREPARE_REJECTED (:status (ts/thrown-data #(wg/stat s "f")))))
+      (is (= "x" (ts/read! root "f"))
+          "the staged delete did not touch the real file")
       (wg/write s "f" "y")
       (let [r (commit-batch root (wg/snapshot s))]
         (is (wg/applied? r))
@@ -79,11 +82,13 @@
                                                     (make-array String 0))
                            (make-array FileAttribute 0))
     (ts/write! root "d/f" "x")
+    (is (= "x" (ts/read! root "d/f")))
     (let [s (wg/session root)
           data (ts/thrown-data #(wg/rm s "d"))]
       (is (= :UNSUPPORTED_OPERATION (:status data)))
       (is (= :non-empty-directory (:code data)))
-      (is (ts/exists? root "d/f")))))
+      (is (ts/exists? root "d/f"))
+      (is (= "x" (ts/read! root "d/f"))))))
 
 (deftest limits-are-rejected-before-any-write
   (ts/with-root [root]
@@ -191,11 +196,15 @@
                                                     (make-array String 0))
                            (make-array FileAttribute 0))
     (ts/write! root "d/f" "x")
+    (is (= "x" (ts/read! root "d/f")))
     (let [s (wg/session root)]
       (wg/rm s "d/f")
       (let [data (ts/thrown-data #(wg/rm s "d"))]
         (is (= :UNSUPPORTED_OPERATION (:status data)))
-        (is (= :non-empty-directory (:code data)))))))
+        (is (= :non-empty-directory (:code data)))
+        (is (ts/exists? root "d/f"))
+        (is (= "x" (ts/read! root "d/f"))
+            "the staged child delete did not touch the real file")))))
 
 (deftest stat-missing-is-a-structure-basis
   (ts/with-root [root]
@@ -244,7 +253,9 @@
         (let [r (commit-batch root batch)]
           (is (= :STRUCTURE_CONFLICT (:status r)))
           (is (= :directory-not-empty (:code r)))
-          (is (ts/exists? root "d/f")))))))
+          (is (ts/exists? root "d/f"))
+          (is (= "external" (ts/read! root "d/f"))
+              "the rejected directory delete did not remove the new child"))))))
 
 (deftest missing-target-rechecks-before-apply
   (ts/with-root [root]
@@ -300,6 +311,7 @@
                                                     (make-array String 0))
                            (make-array FileAttribute 0))
     (ts/write! root "d/f" "x")
+    (is (= "x" (ts/read! root "d/f")))
     (let [s (wg/session root)]
       (wg/mv s "d/f" "g")
       (is (= [] (wg/ls s "d")) "the moved-away real child disappears")
@@ -309,6 +321,7 @@
           "the moved real directory changes name in the parent view")
       (is (= [] (wg/ls s "e"))))
     (is (ts/exists? root "d/f") "the real disk is untouched before commit")
+    (is (= "x" (ts/read! root "d/f")))
     (is (false? (ts/exists? root "g")))))
 
 (deftest hand-built-dry-run-rejects-move-cycle-and-non-empty-rm
@@ -316,6 +329,9 @@
     (Files/createDirectory (java.nio.file.Paths/get (ts/file root "d")
                                                     (make-array String 0))
                            (make-array FileAttribute 0))
+    (is (Files/isDirectory (java.nio.file.Paths/get (ts/file root "d")
+                                                    (make-array String 0))
+                           (make-array java.nio.file.LinkOption 0)))
     (let [root-path (str (:root (wg/new-batch root)))
           d (ts/file root "d")
           batch (assoc (wg/new-batch root)
@@ -334,8 +350,10 @@
                        :ops [{:op :mv :source d :target d}])]
       (let [r (commit-batch root batch)]
         (is (= :PREPARE_REJECTED (:status r)))
-        (is (= :same-path (:code r)))))
+        (is (= :same-path (:code r)))
+        (is (ts/exists? root "d"))))
     (ts/write! root "d/f" "x")
+    (is (= "x" (ts/read! root "d/f")))
     (let [root-path (str (:root (wg/new-batch root)))
           d (ts/file root "d")
           f (ts/file root "d/f")
@@ -348,10 +366,15 @@
       (let [r (commit-batch root batch)]
         (is (= :PREPARE_REJECTED (:status r)))
         (is (= :non-empty-directory (:code r)))
-        (is (ts/exists? root "d/f"))))
+        (is (ts/exists? root "d/f"))
+        (is (= "x" (ts/read! root "d/f"))
+            "the rejected directory delete left the real child intact")))
     (Files/createDirectory (java.nio.file.Paths/get (ts/file root "e")
                                                     (make-array String 0))
                            (make-array FileAttribute 0))
+    (is (Files/isDirectory (java.nio.file.Paths/get (ts/file root "e")
+                                                    (make-array String 0))
+                           (make-array java.nio.file.LinkOption 0)))
     (let [root-path (str (:root (wg/new-batch root)))
           e (ts/file root "e")
           batch (assoc (wg/new-batch root)

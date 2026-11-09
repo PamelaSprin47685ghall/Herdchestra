@@ -4,6 +4,15 @@
     "bundleSha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
     "treeSha256": "76cf2fd01952d06d46932eea1406f849452ed6e0285b2458f7794d1214a42f7b"
   },
+  "clientBundle": {
+    "path": "resources/public/js/main.js",
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
+  },
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
+  "diagnostics": {
+    "lastBrowserText": "受管浏览器\n\n地址栏显示服务器报告的真实地址；观察、动作、接管与页面卡都来自服务器当前态。\n\n实例内浏览器\n刷新状态\n其他操作：被拒绝服务器拒绝了浏览器命令\n其他操作：发送中\n其他操作：已接受\n其他操作：已接受\n浏览器权限\n已启用\n范围：指定站点\n站点：127.0.0.1\n私密页读取：已确认\n接收模型服务：未标注\n停用浏览器\n站点：127.0.0.1\n前往\n新标签打开\n后退\n前进\n刷新\n观察\n关闭"
+  },
   "checks": {
     "paneMounted": true,
     "permissionEnabled": true,
@@ -16,9 +25,10 @@
     "typeButtonWhilePaused": "absent",
     "agentDisabledWhilePaused": true,
     "resumeRereadDom": true,
-    "pageCards": 6,
+    "pageCards": 7,
     "cardSeqsAscending": true,
     "step3Reached": true,
+    "sensitiveLabel": true,
     "sensitiveBadge": true,
     "typeDisabledForSensitive": true,
     "sensitiveRefused": true,
@@ -44,12 +54,12 @@
     "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/08b-operator-filled.png",
     "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-14/09-after-close.png"
   ],
-  "startedAt": "2026-11-08T04:36:08.877Z",
-  "appUrl": "http://127.0.0.1:45731",
+  "startedAt": "2026-11-09T11:00:24.864Z",
+  "appUrl": "http://127.0.0.1:35997",
   "managedChrome": {
-    "port": 42451,
-    "endpoint": "http://127.0.0.1:42451"
+    "port": 45243,
+    "endpoint": "http://127.0.0.1:45243"
   },
   "ok": true,
-  "finishedAt": "2026-11-08T04:36:48.149Z"
+  "finishedAt": "2026-11-09T11:01:31.734Z"
 }

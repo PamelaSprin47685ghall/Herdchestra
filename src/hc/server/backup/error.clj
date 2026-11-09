@@ -138,3 +138,22 @@
                                 (:id (ex-data t))
                                 (.getMessage ^Throwable t)]))
     (str t)))
+
+(defn summary
+  "Structured lower-level failure for a partial side-effect report.
+
+  A caller that catches a failure to delete or prune one item must keep the
+  original code and its data; `describe` is for logs only, because a string
+  cannot tell an operator whether the failure is retryable.  Non-expected
+  throwables become `:BACKUP_FAILED` with their message."
+  [t]
+  (let [data (when (instance? clojure.lang.ExceptionInfo t) (ex-data t))
+        code (or (:error data) (:code data) :BACKUP_FAILED)
+        details (assoc (or (when (map? data)
+                             (not-empty (dissoc data :error :code
+                                                :storage/expected?)))
+                           {})
+                       :cause code)]
+    {:code code
+     :message (or (ex-message t) (str t))
+     :details details}))

@@ -599,6 +599,7 @@ test('@core E2E 12 worldbook + instruction cards', async ({ page, browser }) => 
     await goto(page, app.url, '/sessions');
     await waitForSync(page);
     await openSession(page, sessionA);
+    await focusSession(endpoint, sessionA);
     result.screenshots.push(await shot(page, EVIDENCE, 'e2e12-01-session-a'));
 
     // ---- turn 1: every keyword hits, counters commit --------------------
@@ -828,6 +829,7 @@ test('@core E2E 12 worldbook + instruction cards', async ({ page, browser }) => 
 
     // ---- session B: isolation -------------------------------------------
     await openSession(page, sessionB);
+    await focusSession(endpoint, sessionB);
     const tB1 = `${marker}-b1`;
     await sendUserTurn(endpoint, sessionB, `星轨蓝 冷月华 霜降 ${tB1} 只回复 OK`);
     const sysB1 = await waitTurnSystem(mock, tB1);
@@ -863,6 +865,7 @@ test('@core E2E 12 worldbook + instruction cards', async ({ page, browser }) => 
     await mustCommand(endpoint, sessionA, ':materials/instruction/session/clear',
       {}, 'clear session cards');
     await openSession(page, sessionA);
+    await focusSession(endpoint, sessionA);
     const t8Marker = `${marker}-t8`;
     await sendUserTurn(endpoint, sessionA, `${t8Marker} 只回复 OK`);
     const sys8 = await waitTurnSystem(mock, t8Marker);

@@ -213,7 +213,7 @@
   []
   #?(:cljs
      (try
-       (when (exists? js/localStorage) js/localStorage)
+       (.-localStorage js/window)
        (catch :default _ nil))
      :clj nil))
 

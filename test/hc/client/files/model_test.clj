@@ -24,7 +24,55 @@
     (is (= :idle (:status state)))
     (is (= [] (:entries state)))
     (is (nil? (:preview state)))
+    (is (= :name (:search-mode state)))
     (is (= :idle (get-in state [:search :status])))))
+
+(deftest search-mode-defaults-and-switching
+  (let [state (model/initial)]
+    (is (= :name (:search-mode state)))
+    (is (= :content (:search-mode (model/set-search-mode state :content))))
+    (is (= :name (:search-mode (model/set-search-mode state :fuzzy))))
+    (is (= :content (:search-mode (model/toggle-search-mode state))))
+    (is (= :name (:search-mode (model/toggle-search-mode
+                                (model/toggle-search-mode state)))))
+    (is (= "按名称" (model/search-mode-label :name)))
+    (is (= "按内容" (model/search-mode-label :content)))))
+
+(deftest content-search-results-keep-the-hit-location
+  (let [state (model/apply-search
+               (model/initial)
+               {:ok? true :query "mee" :mode :content :truncated? false
+                :results [{:name "notes.txt" :path "notes.txt" :kind :file
+                           :exists? true :size 41
+                           :stamp {:mtime-sec 1 :mtime-nsec 0 :size 41}
+                           :line 2 :column 6 :snippet "find MEE here"
+                           :match-count 2}]})
+        entry (first (get-in state [:search :results]))]
+    (is (= :content (get-in state [:search :mode])))
+    (is (= 2 (:line entry)))
+    (is (= 6 (:column entry)))
+    (is (= "find MEE here" (:snippet entry)))
+    (is (= 2 (:match-count entry)))))
+
+(deftest search-view-state-is-total-and-distinguishes-empty-from-idle
+  (is (= :idle (model/search-view-state {:status :idle})))
+  (is (= :idle (model/search-view-state {})))
+  (is (= :loading (model/search-view-state {:status :loading})))
+  (is (= :error (model/search-view-state {:status :error})))
+  (is (= :results (model/search-view-state
+                   {:status :loaded
+                    :results [{:path "a.txt"}]})))
+  (is (= :empty (model/search-view-state
+                 {:status :loaded
+                  :results []})))
+  (is (= :unknown (model/search-view-state {:status :future}))
+      "an unknown search status falls through to a visible fallback"))
+
+(deftest idle-mode-switch-keeps-the-search-idle
+  (let [state (model/set-search-mode (model/initial) :content)]
+    (is (= :content (:search-mode state)))
+    (is (= :idle (get-in state [:search :status])))
+    (is (= :idle (model/search-view-state (:search state))))))
 
 (deftest breadcrumbs-and-parent
   (is (= [{:label "工作区" :path ""}]

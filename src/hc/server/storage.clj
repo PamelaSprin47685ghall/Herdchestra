@@ -274,10 +274,17 @@
             (catch clojure.lang.ExceptionInfo e
               (throw e))
             (catch Throwable e
-              (throw (err/wrap :STORAGE_OPEN_FAILED
-                               "cannot create the store directory"
-                               e
-                               {:path (str p)}))))
+              (throw
+               (if (err/unwritable? e)
+                 (err/wrap :STORAGE_NOT_WRITABLE
+                           (str "the store path is not writable "
+                                "(permissions or a read-only mount): " p)
+                           e
+                           {:path (str p)})
+                 (err/wrap :STORAGE_OPEN_FAILED
+                           "cannot create the store directory"
+                           e
+                           {:path (str p)})))))
           (err/raise :STORAGE_NOT_FOUND "no store exists at this path"
                      {:path (str p) :hint (layout/recovery-hint :STORAGE_NOT_FOUND p)}))
 
@@ -377,6 +384,8 @@
   (cond
     (string? opts)
     {:partition (:default-partition (:opts store)) :session-id opts
+     :include-partition-scope? true
+     :include-unknown-kinds? false
      :open-only? nil}
 
     (map? opts)
@@ -385,13 +394,18 @@
                   (or (:partition opts) (:default-partition (:opts store))))
      :session-id (:session-id opts)
      :all-partitions? (:all-partitions? opts)
-     :include-partition-scope? (:include-partition-scope? opts)
+     :include-partition-scope? (if (false? (:include-partition-scope? opts))
+                                 false
+                                 true)
+     :include-unknown-kinds? (boolean (:include-unknown-kinds? opts))
      :now-ms (:now-ms opts)
      :due-only? (:due-only? opts)
      :open-only? (:open-only? opts)}
 
     (nil? opts)
     {:partition (:default-partition (:opts store)) :session-id nil
+     :include-partition-scope? true
+     :include-unknown-kinds? false
      :open-only? nil}
 
     :else
@@ -402,13 +416,22 @@
   "Read a consistent session view after the read barrier.
 
   Accepts a session ID string (partition defaults to `:default-partition`) or
-  `{:partition .. :session-id ..}`."
+  `{:partition .. :session-id ..}`.  The scan options are passed through:
+
+    :include-partition-scope?  default true; false skips the partition scope
+    :include-unknown-kinds?    default false; true scans every kind, not only
+                               `view/known-document-kinds`"
   [store opts]
   (with-read-lock store
     (ensure-open! store)
-    (let [{:keys [partition session-id]} (read-opts store opts)]
+    (let [{:keys [partition session-id include-partition-scope?
+                  include-unknown-kinds?]}
+          (read-opts store opts)]
       (view/session-view (:engine store)
-                         {:partition partition :session-id session-id}))))
+                         {:partition partition
+                          :session-id session-id
+                          :include-partition-scope? include-partition-scope?
+                          :include-unknown-kinds? include-unknown-kinds?}))))
 
 (defn read-document
   "Read one stored document by exact key after the read barrier.
@@ -428,6 +451,52 @@
     (view/read-doc (:engine store)
                    {:partition partition :session-id session-id
                     :kind kind :id id})))
+
+(defn read-documents
+  "Read every document of one KIND in one session scope after the read
+  barrier.
+
+  `opts`: `{:partition .. :session-id .. :kind ..}`.  The kind is part of the
+  key prefix, so this is the narrow scan for compact, index-like documents;
+  session records and message bodies must still use `read-session-view`."
+  [store {:keys [partition session-id kind] :as opts}]
+  (with-read-lock store
+    (ensure-open! store)
+    (when-not (and (string? partition) (seq partition)
+                   (keyword? kind))
+      (invalid-options "read-documents needs :partition and :kind"
+                       {:opts opts}))
+    (view/read-documents (:engine store)
+                         {:partition partition :session-id session-id
+                          :kind kind})))
+
+(defn- strip-storage-identity
+  "Return DOC without the reserved `:storage/*` envelope keys.
+
+  A point read returns the caller document with its identity attached.  A
+  read-modify-write that stores the document again must not freeze this
+  read's identity into the next envelope."
+  [doc]
+  (into {}
+        (remove (fn [[k _]]
+                  (and (keyword? k) (= "storage" (namespace k)))))
+        doc))
+
+(defn read-partition-documents
+  "Read every document of one KIND in PARTITION, across all scopes.
+
+  `opts`: `{:partition .. :kind ..}`.  This is a full partition scan and
+  exists only for one-time derived-index rebuilds; steady-state callers use
+  `read-document`, `read-documents` or `read-session-view`."
+  [store {:keys [partition kind] :as opts}]
+  (with-read-lock store
+    (ensure-open! store)
+    (when-not (and (string? partition) (seq partition)
+                   (keyword? kind))
+      (invalid-options "read-partition-documents needs :partition and :kind"
+                       {:opts opts}))
+    (view/read-partition-documents (:engine store)
+                                   {:partition partition :kind kind})))
 
 (defn read-partition-version
   "Return the committed version of PARTITION, or 0 when it has none."
@@ -500,13 +569,34 @@
   The same `:migration-id` with the same payload replays the original receipt
   and returns the current view.  A different payload is
   `:STORAGE_MIGRATION_CONFLICT`.  `:expected-version` compares the partition
-  version and fails with `:STORAGE_VERSION_CONFLICT`."
+  version and fails with `:STORAGE_VERSION_CONFLICT`.
+
+  Three control keys are not part of the migration payload or its digest:
+  `:lightweight-return? true` and `:include-partition-scope? false` both skip
+  the post-commit partition view; the result then has no `:view`, because a
+  caller that needs no partition view must not pay a partition scan.
+  `:include-unknown-kinds?` is passed to the view that is built, so a caller
+  can see a kind outside `view/known-document-kinds`.  The default keeps the
+  old result shape (partition scope scanned, unknown kinds hidden)."
   [store m]
   (ensure-open! store)
   (when-not (:accepting? @(:state store))
     (err/raise :STORAGE_CLOSING "the store is closing; new work is refused"
                {:path (str (:path store))}))
-  (let [m (migration/normalize
+  (let [m? (map? m)
+        lightweight? (and m?
+                          (or (true? (:lightweight-return? m))
+                              (false? (:include-partition-scope? m))))
+        include-partition-scope? (if (and m?
+                                          (false? (:include-partition-scope? m)))
+                                   false
+                                   true)
+        include-unknown-kinds? (boolean (when m? (:include-unknown-kinds? m)))
+        m (if m?
+            (dissoc m :lightweight-return? :include-partition-scope?
+                    :include-unknown-kinds?)
+            m)
+        m (migration/normalize
            (cond-> m
              (and (map? m) (nil? (:partition m)))
              (assoc :partition (:default-partition (:opts store)))
@@ -523,14 +613,26 @@
             existing    (read-receipt eng (:migration-id m))]
         (if existing
           (if (= (:digest existing) (:digest m))
-            (let [v (view/session-view eng {:partition partition
-                                            :session-id session-id})]
+            (if lightweight?
               {:ok? true
                :replayed? true
-               :version (:version v)
-               :store-version (:store-version v)
-               :commit existing
-               :view v})
+               :version (partition-version eng partition)
+               :store-version (or (engine/get-value eng
+                                                    (keys/meta-key "store-version"))
+                                  0)
+               :commit existing}
+              (let [v (view/session-view eng {:partition partition
+                                              :session-id session-id
+                                              :include-partition-scope?
+                                              include-partition-scope?
+                                              :include-unknown-kinds?
+                                              include-unknown-kinds?})]
+                {:ok? true
+                 :replayed? true
+                 :version (:version v)
+                 :store-version (:store-version v)
+                 :commit existing
+                 :view v}))
             (err/raise :STORAGE_MIGRATION_CONFLICT
                        "the migration ID was used with a different payload"
                        {:migration-id (:migration-id m)
@@ -547,7 +649,8 @@
             (let [gv     (or (engine/get-value eng (keys/meta-key "store-version")) 0)
                   tx     (inc (long gv))
                   meta   (engine/get-value eng (keys/partition-meta-key partition "meta"))
-                  {:keys [ops receipt]}
+                  {:keys [ops receipt]
+                   plan-version :partition-version}
                   (migration/plan m {:tx-version tx
                                      :partition-version pv
                                      :partition-meta meta
@@ -556,13 +659,22 @@
               (engine/transact! eng ops)
               (when (= :sync (:durability (:opts store)))
                 (engine/sync! eng))
-              (let [v (view/session-view eng {:partition partition
-                                              :session-id session-id})]
+              (if lightweight?
                 {:ok? true
-                 :version (:version v)
+                 :version plan-version
                  :store-version tx
-                 :commit receipt
-                 :view v}))))))))
+                 :commit receipt}
+                (let [v (view/session-view eng {:partition partition
+                                                :session-id session-id
+                                                :include-partition-scope?
+                                                include-partition-scope?
+                                                :include-unknown-kinds?
+                                                include-unknown-kinds?})]
+                  {:ok? true
+                   :version (:version v)
+                   :store-version tx
+                   :commit receipt
+                   :view v})))))))))
 
 (defn manage-blob-refs!
   "Add, release or list blob references.
@@ -711,14 +823,51 @@
   `opts`: `{:partition ..}` to export one partition (marked incomplete), or
   nil/`{}` to export every partition (restorable).  `:sections` optionally
   selects `:docs`, `:obligations` and/or `:blob-refs`; a reference-only caller
-  should pass `#{:blob-refs}` to avoid copying every document."
+  should pass `#{:blob-refs}` to avoid copying every document.
+
+  A whole-store export excludes rebuildable derived partitions by default
+  (`export/derived-partitions`, currently `\"search\"`).  Pass
+  `:include-derived? true` to copy them for diagnostics or an integrity check.
+  An explicit `:partition` always exports that partition, including a derived
+  one, so a derived-index reader keeps working; the default exclusion applies
+  to the whole-store package that backup and migration consume."
   [store opts]
   (with-read-lock store
     (ensure-open! store)
-    (view/export-state (:engine store)
-                       {:partition (:partition opts)
-                        :sections (:sections opts)
-                        :at (or (:at opts) (now-string store))})))
+    (let [partition (:partition opts)
+          exclude-partition? (when (and (nil? partition)
+                                        (not (:include-derived? opts)))
+                               export/derived-partition?)]
+      (view/export-state
+       (:engine store)
+       {:partition partition
+        :sections (:sections opts)
+        :at (or (:at opts) (now-string store))
+        :exclude-partition? exclude-partition?}))))
+
+(def ^:private rebuilt-session-document-kinds
+  "Documents derived from one session record.
+
+  A backup can replace a session record while keeping a same-named derived
+  document from the target store; the derived copy would then describe the
+  previous session.  They are recomputed from the restored record, so a
+  restore never carries them."
+  #{:session-summary :session-ref-index})
+
+(defn- drop-rebuilt-session-documents
+  [export]
+  (update export :partitions
+          (fn [partitions]
+            (into (empty partitions)
+                  (map (fn [[p data]]
+                         [p (update data :docs
+                                    (fn [docs]
+                                      (into []
+                                            (remove #(contains?
+                                                      rebuilt-session-document-kinds
+                                                      (:kind %)))
+                                            docs)))]))
+                  partitions))))
 
 (defn restore-state!
   "Replace the entire current state with a validated export package.
@@ -726,7 +875,19 @@
   Requires `:quiescent? true` from the caller, which must have stopped the
   Owner and every writer.  The adapter validates the whole package first, then
   replaces all documents, obligations, blob references, partition metadata and
-  receipts in one atomic transaction.  A validation failure changes nothing."
+  receipts in one atomic transaction.  A validation failure changes nothing.
+
+  Session-derived documents (`:session-summary`, `:session-ref-index`) are
+  never carried across the restore: a backup can replace a session record
+  while keeping a same-named derived document, and the stale copy would
+  disagree with the restored record.  The session adapter rebuilds them from
+  the restored records.
+
+  A package that still carries a rebuildable derived partition (an older
+  whole-store export, `\"search\"` today) restores every current-state
+  partition and drops the derived one.  The result's `:warnings` names each
+  dropped partition: the startup/index owner rebuilds it from the restored
+  current state."
   [store export {:keys [migration-id at quiescent?]}]
   (ensure-open! store)
   (when-not (:accepting? @(:state store))
@@ -736,7 +897,13 @@
     (err/raise :STORAGE_RESTORE_REQUIRES_QUIESCENCE
                "restore requires :quiescent? true from the caller"
                {:path (str (:path store))}))
-  (let [validated (export/validate export)]
+  (let [dropped-derived (when (map? (:partitions export))
+                          (->> (keys (:partitions export))
+                               (filter export/derived-partition?)
+                               sort
+                               vec))
+        validated (-> (export/validate export)
+                      drop-rebuilt-session-documents)]
     (with-commit-lock store
       (when-not (:accepting? @(:state store))
         (err/raise :STORAGE_CLOSING "the store is closing; restore is refused"
@@ -764,7 +931,15 @@
         {:ok? true
          :version tx
          :commit receipt
-         :restored counts}))))
+         :restored counts
+         :warnings
+         (mapv (fn [partition]
+                 {:code :STORAGE_DERIVED_PARTITION_DROPPED
+                  :partition partition
+                  :message
+                  (str "dropped rebuildable derived partition " partition
+                       "; it is rebuilt from the restored current state")})
+               dropped-derived)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Temporary-session erasure
@@ -813,6 +988,7 @@
                               :partition partition
                               :session-id scope
                               :reason :session-discard
+                              :lightweight-return? true
                               :delete (mapv #(select-keys % [:kind :id]) ds)}
                        (seq obs)
                        (assoc :obligations {:remove (mapv :id obs)})
@@ -837,9 +1013,17 @@
 
 (defn- remove-session-index-entry!
   [store session-id]
-  (let [data (partition-export store "sessions")
-        index (first (filter #(= :session-index (:kind %)) (:docs data)))
-        ids (vec (or (:ids (:doc index)) []))
+  ;; Point-read the index.  Exporting the whole `sessions` partition here
+  ;; would deserialize every session record and its messages just to remove
+  ;; one id.
+  (let [index (or (read-document store {:partition "sessions"
+                                        :session-id nil
+                                        :kind :session-index
+                                        :id "sessions"})
+                  (first (read-documents store {:partition "sessions"
+                                                :session-id nil
+                                                :kind :session-index})))
+        ids (vec (or (:ids index) []))
         next-ids (vec (remove #{session-id} ids))]
     (when (and index (not= ids next-ids))
       (commit-migration!
@@ -847,9 +1031,10 @@
        {:migration-id (str "session-index-erase-" (UUID/randomUUID))
         :partition "sessions"
         :reason :session-discard
+        :lightweight-return? true
         :put [{:kind :session-index
-               :id (:id index)
-               :doc (assoc (:doc index) :ids next-ids)}]}))
+               :id (or (:id index) "sessions")
+               :doc (assoc (strip-storage-identity index) :ids next-ids)}]}))
     {:updated? (and (some? index) (not= ids next-ids))
      :removed (count (remove #{session-id} ids))}))
 

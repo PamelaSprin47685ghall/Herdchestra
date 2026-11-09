@@ -15,6 +15,11 @@
 
 (defn- style [value] (clj->js value))
 
+(defn- fragment
+  "Render sibling React children without adding a DOM wrapper."
+  [& children]
+  (apply react/createElement react/Fragment nil children))
+
 (defn- status-line [text tone]
   (dom/div {:role "status"
             :style (style {:fontSize ".85rem"
@@ -531,10 +536,11 @@
 
 (defn input-element
   [props]
-  (let [session-id (or (.-sessionId props) (.-session-id props))
-        draft (js->clj (or (.-draft props) #js {}) :keywordize-keys true)
-        on-insert (or (.-onInsert props) (.-on-insert props))
-        on-open-settings (or (.-onOpenSettings props) (.-on-open-settings props))
+  (let [^js p props
+        session-id (or (.-sessionId p) (.-session-id p))
+        draft (js->clj (or (.-draft p) #js {}) :keywordize-keys true)
+        on-insert (or (.-onInsert p) (.-on-insert p))
+        on-open-settings (or (.-onOpenSettings p) (.-on-open-settings p))
         [state set-state!] (react/useState @input-state)]
     (react/useEffect
      (fn []
@@ -764,9 +770,10 @@
 
 (defn read-aloud-button
   [props]
-  (let [message-id (or (.-messageId props) (.-message-id props))
-        version-id (or (.-versionId props) (.-version-id props))
-        text (or (.-text props) "")]
+  (let [^js p props
+        message-id (or (.-messageId p) (.-message-id p))
+        version-id (or (.-versionId p) (.-version-id p))
+        text (or (.-text p) "")]
     (react/useEffect
      (fn []
        (playback/stop-if-version-changed! message-id version-id)
@@ -1053,7 +1060,7 @@
                           (:text notice)))
                (if loading?
                  (dom/p {} "正在读取语音设置…")
-                 (do
+                 (fragment
                    (dom/div {:style (style {:display "flex" :gap "8px" :flexWrap "wrap"})}
                             (button "添加服务" start-add!))
                    (when (empty? services)
@@ -1082,15 +1089,34 @@
                               (dom/div {:style (style {:display "flex" :gap "6px" :flexWrap "wrap"})}
                                        (button "测试" #(test-service! service)
                                                {:disabled? (= pending [:test (:id service)])})
-                                       (when-not (= (:id service)
-                                                    (get-in snapshot [area :default-service-id]))
-                                         (button "设为默认" #(make-default! service)))
-                                       (button (if (:enabled? service) "禁用" "启用")
-                                               #(toggle-service! service))
                                        (button "编辑" #(start-edit! service))
-                                       (button "上移" #(reorder-service! service -1))
-                                       (button "下移" #(reorder-service! service 1))
-                                       (button "删除" #(delete-service! service)))))))
+                                       (dom/details
+                                        {:className "hc-speech-service-more"}
+                                        (dom/summary
+                                         {:aria-label (str "更多操作："
+                                                           (input-model/service-summary service))
+                                          :style (style {:minHeight "36px"
+                                                         :minWidth "36px"
+                                                         :display "inline-flex"
+                                                         :alignItems "center"
+                                                         :padding "4px 10px"
+                                                         :cursor "pointer"
+                                                         :border "1px solid var(--wb-line)"
+                                                         :borderRadius "8px"})}
+                                         "更多")
+                                        (dom/div
+                                         {:style (style {:display "flex"
+                                                         :gap "6px"
+                                                         :flexWrap "wrap"
+                                                         :marginTop "4px"})}
+                                         (when-not (= (:id service)
+                                                      (get-in snapshot [area :default-service-id]))
+                                           (button "设为默认" #(make-default! service)))
+                                         (button (if (:enabled? service) "禁用" "启用")
+                                                 #(toggle-service! service))
+                                         (button "上移" #(reorder-service! service -1))
+                                         (button "下移" #(reorder-service! service 1))
+                                         (button "删除" #(delete-service! service)))))))))
                (when form
                  (dom/div {:style (style {:borderTop "1px solid var(--wb-line)" :paddingTop "10px"
                                           :display "flex" :flexDirection "column" :gap "6px"})}
@@ -1110,13 +1136,13 @@
                                                  (dom/option {:value "device"} "设备内（仅回环端点）")
                                                  (dom/option {:value "cloud"} "云端")))
                           (when (= area :stt)
-                            (do
+                            (fragment
                               (service-field "转写路径" (:transcriptions-path form)
                                              #(update-form! :transcriptions-path %))
                               (service-field "测试音频路径" (:test-audio-path form)
                                              #(update-form! :test-audio-path %))))
                           (when (= area :tts)
-                            (do
+                            (fragment
                               (service-field "朗读路径" (:speech-path form)
                                              #(update-form! :speech-path %))
                               (service-field "音色" (:voice form)

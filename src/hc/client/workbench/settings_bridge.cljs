@@ -91,15 +91,34 @@
   (when-let [app @app-ref]
     (comp/transact! app [(apply-settings-projection {:snapshot snapshot})])))
 
+(defn merge-notice
+  "Return NOTICES with NOTICE appended.
+
+  A queued notice with the same text is replaced, so repeated text keeps one
+  slot and the newest copy supplies its tone and timestamp.  Different text,
+  including errors, stays queued."
+  [notices notice]
+  (conj (vec (remove #(= (:text notice) (:text %))
+                     (or notices [])))
+        notice))
+
 (defn- notify!
   [tone text]
   (when-let [app @app-ref]
-    (comp/transact! app
-                    [(mutations/notify
-                      {:notice {:id (str "settings-" (random-uuid))
-                                :tone tone
-                                :text text
-                                :at (str (js/Date.))}})])))
+    (let [notices (or (:ui/notices (application/current-state app)) [])
+          notice {:id (str "settings-" (random-uuid))
+                  :tone tone
+                  :text text
+                  :at (str (js/Date.))}
+          kept-ids (set (map :id (merge-notice notices notice)))
+          repeated-ids (into []
+                             (comp (map :id) (remove kept-ids))
+                             notices)]
+      (comp/transact! app
+                      (into (mapv (fn [id]
+                                    (mutations/dismiss-notice {:id id}))
+                                  repeated-ids)
+                            [(mutations/notify {:notice notice})])))))
 
 (defn- persist-drafts!
   [drafts]
@@ -149,6 +168,19 @@
     (js/clearTimeout timer)
     (swap! auth-timers dissoc flow-id)))
 
+(defn cancel-all-auth-polls!
+  "Cancel every settings/model-auth poll and tick timer.
+
+  Called on bridge install so a hot reload or a fresh app instance cannot
+  inherit a timer from the previous module lifetime."
+  []
+  (doseq [[_ timer] @auth-timers]
+    (js/clearTimeout timer))
+  (doseq [[_ timer] @auth-tick-timers]
+    (js/clearInterval timer))
+  (reset! auth-timers {})
+  (reset! auth-tick-timers {}))
+
 (defn- schedule-auth-poll!
   [flow-id after-ms]
   (when flow-id
@@ -156,7 +188,26 @@
     (let [timer (js/setTimeout
                  (fn []
                    (swap! auth-timers dissoc flow-id)
-                   (dispatch! {:type :model-auth/poll}))
+                   (dispatch! {:type :model-auth/poll})
+                   ;; A failed queue (transport/epoch) has no server receipt
+                   ;; to carry the next interval.  Keep a pending flow alive at
+                   ;; the server interval; a normal pending receipt will
+                   ;; cancel/replace this timer, and a terminal receipt stops
+                   ;; it.  The check is flow-scoped, so another flow's state
+                   ;; cannot revive a stale poll.
+                   (when-let [app @app-ref]
+                     (let [auth (get-in (application/current-state app)
+                                        [:ui/settings :ui :model-auth])
+                           pending? (and (= :pending (:status auth))
+                                         (= flow-id (get-in auth
+                                                            [:flow :flow-id])))]
+                       (when (and pending?
+                                  (not (contains? @auth-timers flow-id)))
+                         (schedule-auth-poll!
+                          flow-id
+                          (* 1000 (max 1 (long (or (get-in auth
+                                                           [:flow :interval-seconds])
+                                                   2)))))))))
                  (max 1000 (long (or after-ms 2000))))]
       (swap! auth-timers assoc flow-id timer))))
 
@@ -307,6 +358,21 @@
         (contains? #{:hc/receipt :hc/command-receipt :settings/receipt}
                    name))))
 
+(defn apply-receipt-state!
+  "Apply a settings receipt, execute its effects, and return the next state.
+
+  Effects run before the state transaction because the scheduler/cancel and
+  clipboard actions are side effects of the pure transition.  The only
+  stateful effect, `:persist-drafts`, reads the state carried by the effect
+  itself.  Doing this before `transact-state!` also means a scheduled timer
+  (always at least one second) always observes the committed next state."
+  [state receipt]
+  (let [{:keys [state effects]} (settings-api/apply-receipt-result
+                                 state receipt)]
+    (doseq [effect effects]
+      (handle-effect! effect))
+    state))
+
 (defn handle-event!
   "Feed a server receipt to the settings state.  Non-receipt events are
   ignored here; the conversation surface owns run events."
@@ -319,7 +385,7 @@
       ;; Receipts for backup/materials/diagnostics commands share this Sente
       ;; channel.  Only apply a receipt that belongs to a settings command.
       (when (contains? (:commands current) command-id)
-        (let [state (settings-api/apply-receipt current receipt)]
+        (let [state (apply-receipt-state! current receipt)]
           (when (or (:restart-required receipt)
                     (:restart-required? receipt))
             (notify! :warn "配置已保存；需要重启应用后新连接与模型才会生效。"))
@@ -327,6 +393,7 @@
 
 (defn install!
   [app]
+  (cancel-all-auth-polls!)
   (set-app! app)
   (bridge/ensure-event-listener! ::receipt handle-event!))
 

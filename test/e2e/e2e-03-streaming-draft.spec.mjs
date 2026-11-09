@@ -11,6 +11,7 @@ import {
   goto, lastAssistantText, newSession, sessionModelLabel, shot, stopButton,
   turnLive, userTexts, waitForShell, waitForSync, writeJson,
 } from './support/ui.mjs';
+import { sourceTreeSha256 } from './support/evidence.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -42,6 +43,7 @@ test('@core E2E 03 streaming reading and next draft', async ({ page, browser }) 
     mockUrl: mock.url,
     chromeVersion: browser.version(),
     clientBundle: clientBundleInfo(),
+    sourceTreeSha256: sourceTreeSha256(),
     checks: {},
     screenshots: [],
   };

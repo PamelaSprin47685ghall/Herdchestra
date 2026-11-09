@@ -886,8 +886,12 @@
   (cond
     (and (map? props) (contains? props :card)) props
     (and (map? props) (contains? props :props)) (:props props)
-    (and (object? props) (some? (.-props props))) (.-props props)
-    (and (object? props) (some? (.-card props))) (js->clj props :keywordize-keys true)
+    (object? props)
+    (let [^js object props]
+      (cond
+        (some? (.-props object)) (.-props object)
+        (some? (.-card object)) (js->clj object :keywordize-keys true)
+        :else {:card props}))
     :else {:card props}))
 
 (defn generated-card

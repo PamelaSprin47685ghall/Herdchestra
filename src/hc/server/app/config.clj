@@ -10,12 +10,12 @@
 
   The file is a plain EDN map.  Unknown top-level keys are preserved so a
   later component can read its own section without this namespace becoming a
-  second schema authority.  Known scalar keys, the `:fleet` retention
-  section, and the `:gateway` transport/authorization section are validated
-  here because a wrong port, a blank workspace root, a nonsensical retention
-  interval, an origin policy that Sente cannot accept, or a remote mode
-  without authentication must fail before any component opens storage or
-  binds a socket."
+  second schema authority.  Known scalar keys, the `:fleet` section, the
+  `:retention` session/blob cleanup section, and the `:gateway`
+  transport/authorization section are validated here because a wrong port, a
+  blank workspace root, a nonsensical retention interval, an origin policy
+  that Sente cannot accept, or a remote mode without authentication must fail
+  before any component opens storage or binds a socket."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -99,6 +99,19 @@
            :preflight? true
            ;; `nil` derives `<data-dir>/fleet/state.edn` during normalize.
            :state-file nil}
+   ;; Soft-deleted sessions are reclaimable after 30 days.  Blob objects
+   ;; without a current reference are reclaimed only after a seven-day safety
+   ;; window.  One daily sweep keeps both rules; `:run-immediately? false`
+   ;; keeps startup from competing with crash recovery.
+   :retention {:session-days 30
+               :blob-days 7
+               :interval-ms (* 24 60 60 1000)
+               :run-immediately? false}
+   ;; The repository Steward advances on a fixed delay.  One minute keeps
+   ;; operator intent and Git evidence responsive without busy polling.
+   ;; A plan handoff that never arrives is diagnosed after ten minutes.
+   :steward {:interval-ms 60000
+             :plan-stall-ms 600000}
    :limits {:inline-bytes (* 1024 1024)
             :artifact-bytes (* 64 1024 1024)}})
 
@@ -427,6 +440,85 @@
                    :field field
                    :value value})))
 
+(def ^:private retention-keys
+  #{:session-days :blob-days :interval-ms :run-immediately?})
+
+(defn- validate-retention
+  "Validate and complete the `:retention` section.
+
+  The section is a closed schema so a misspelled option cannot be silently
+  ignored.  A partial map keeps the other defaults.  `:session-days` and
+  `:blob-days` measure retention, so zero is nonsensical; `:interval-ms`
+  keeps a one-second floor because a tighter timer would add load without
+  freeing anything sooner."
+  [retention]
+  (when-not (map? retention)
+    (invalid-config! ":retention must be a map" :retention retention))
+  (when-let [unknown (first (remove retention-keys (keys retention)))]
+    (invalid-config!
+     (str "unknown retention configuration key " (pr-str unknown)
+          "; accepted keys are "
+          (str/join ", " (sort (map name retention-keys))))
+     [:retention unknown] (get retention unknown)))
+  (let [retention (merge (:retention defaults) retention)]
+    (doseq [field [:session-days :blob-days]]
+      (when-not (and (integer? (get retention field))
+                     (pos? (get retention field)))
+        (invalid-config!
+         (str "retention " (name field) " must be a positive integer")
+         [:retention field] (get retention field))))
+    (when-not (and (integer? (:interval-ms retention))
+                   (<= 1000 (:interval-ms retention)))
+      (invalid-config!
+       "retention interval-ms must be an integer of at least 1000 milliseconds"
+       [:retention :interval-ms] (:interval-ms retention)))
+    (when-not (boolean? (:run-immediately? retention))
+      (invalid-config!
+       "retention run-immediately? must be a boolean"
+       [:retention :run-immediately?] (:run-immediately? retention)))
+    retention))
+
+(def ^:private steward-keys
+  #{:interval-ms :plan-stall-ms})
+
+(defn- invalid-steward!
+  [message field value code]
+  (throw (ex-info message
+                  (cond-> {:error/kind :config-invalid
+                           :field field
+                           :key field
+                           :value value}
+                    code (assoc :code code)))))
+
+(defn- validate-steward
+  "Validate and complete the `:steward` section.
+
+  The section is a closed schema so a misspelled option cannot be silently
+  ignored.  Both timers keep a one-second floor: a tighter delay would only
+  add load without observing anything new, and a non-positive stall threshold
+  would diagnose every plan immediately."
+  [steward]
+  (when-not (map? steward)
+    (invalid-steward! ":steward must be a map" :steward steward nil))
+  (when-let [unknown (first (remove steward-keys (keys steward)))]
+    (invalid-steward!
+     (str "unknown steward configuration key " (pr-str unknown)
+          "; accepted keys are "
+          (str/join ", " (sort (map name steward-keys))))
+     [:steward unknown] (get steward unknown) :unknown-key))
+  (let [steward (merge (:steward defaults) steward)]
+    (when-not (and (integer? (:interval-ms steward))
+                   (<= 1000 (:interval-ms steward)))
+      (invalid-steward!
+       "steward interval-ms must be an integer of at least 1000 milliseconds"
+       [:steward :interval-ms] (:interval-ms steward) nil))
+    (when-not (and (integer? (:plan-stall-ms steward))
+                   (<= 1000 (:plan-stall-ms steward)))
+      (invalid-steward!
+       "steward plan-stall-ms must be an integer of at least 1000 milliseconds"
+       [:steward :plan-stall-ms] (:plan-stall-ms steward) nil))
+    steward))
+
 (defn- normalize-allowed-origins
   "Return `:all` or a set of canonical origins.
 
@@ -580,11 +672,15 @@
 
   Paths become absolute; derived paths are filled when absent.  The
   `:gateway` section is canonicalized to sets/booleans and validated as a
-  closed schema.  This function performs no I/O beyond reading system
-  properties, so it is safe to call in tests and in a preflight check."
+  closed schema; `:retention` and `:steward` are validated and completed
+  from their defaults.
+  This function performs no I/O beyond reading system properties, so it is
+  safe to call in tests and in a preflight check."
   [config]
   (let [config (merge defaults config)
         gateway (validate-gateway (:gateway config))
+        retention (validate-retention (:retention config))
+        steward (validate-steward (:steward config))
         fleet-config (:fleet config)
         _ (when-not (or (nil? fleet-config) (map? fleet-config))
             (throw (ex-info ":fleet must be a map"
@@ -644,6 +740,8 @@
              :port port
              :log-level log-level
              :gateway gateway
+             :retention retention
+             :steward steward
              :fleet fleet
              :data-dir data-dir
              :workspace-root workspace-root

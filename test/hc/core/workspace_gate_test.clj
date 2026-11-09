@@ -1,11 +1,13 @@
 (ns hc.core.workspace-gate-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.edn :as edn]
+            [clojure.test :refer [deftest is testing]]
             [hc.core.workspace-gate :as wg]
             [hc.core.workspace-gate.board :as gate-board]
             [hc.core.workspace-gate.commit :as commit]
             [hc.core.workspace-gate.error :as gate-error]
             [hc.core.workspace-gate.prepare :as prep]
             [hc.core.workspace-gate.stamp :as stamp]
+            [hc.core.text-location :as text-location]
             [hc.core.workspace-gate.test-support :as ts])
   (:import (java.nio.file Files LinkOption Path Paths)
            (java.nio.file.attribute BasicFileAttributes FileAttribute FileTime)
@@ -152,7 +154,12 @@
     (let [r (wg/read-file root "f")
           s (:stamp r)
           ^Path p (Paths/get (ts/file root "f") (make-array String 0))]
+      (is (Files/exists p (make-array LinkOption 0)))
+      (is (= "AAAA" (ts/read! root "f")))
       (ts/write! root "f" "BBBB")
+      (is (Files/exists p (make-array LinkOption 0)))
+      (is (= "BBBB" (ts/read! root "f"))
+          "the file was really rewritten before the stamp is restored")
       (Files/setLastModifiedTime p (FileTime/from (Instant/ofEpochSecond
                                                    (:mtime-sec s) (:mtime-nsec s))))
       (is (= s (wg/current-stamp root "f"))
@@ -162,6 +169,10 @@
                          :checks {(:path r) {:path (:path r) :expect :file :stamps #{s}}})
             result (commit-batch root batch)]
         (is (wg/applied? result))
+        (is (= :not-claimed (:content-equality result))
+            "the protocol never claims content equality from mtime+size")
+        (is (= :mtime+size (:observation-basis result)))
+        (is (Files/exists p (make-array LinkOption 0)))
         (is (= "BBBB" (ts/read! root "f"))
             "the contract does not claim content equality")))))
 
@@ -176,6 +187,8 @@
                                         (make-array LinkOption 0))
                     (catch Exception _ nil)))
           before (atime)]
+      (is (Files/exists p (make-array LinkOption 0)))
+      (is (= "x" (ts/read! root "f")))
       (try
         (Files/setAttribute p "lastAccessTime"
                             (FileTime/from (Instant/now))
@@ -186,11 +199,15 @@
         (when (and before after (not= before after))
           (is (not (contains? (:stamp (wg/read-file root "f")) :atime))
               "an actual atime change does not enter the stamp")))
+      (is (Files/exists p (make-array LinkOption 0)))
+      (is (= "x" (ts/read! root "f"))
+          "changing atime did not change the file content")
       (let [s (wg/session root)]
         (wg/cat s "f")
         (wg/write s "f" "y")
         (let [result (commit-batch root (wg/snapshot s))]
           (is (wg/applied? result))
+          (is (Files/exists p (make-array LinkOption 0)))
           (is (= "y" (ts/read! root "f"))))))))
 
 (deftest changed-during-read-is-not-a-valid-basis
@@ -356,6 +373,15 @@
         (is (= :unknown (:content-equality r)))
         (is (= 1 (count (:applied-ops r))))
         (is (= 1 (:failed-index r)))
+        (is (= 1 (count (:remaining-ops r))))
+        (is (= :applying (:last-known-stage r)))
+        (is (= {:op-index 1} (:failed-at r)))
+        (is (string? (:expected-action r)))
+        (is (<= (count (:expected-action r)) 300))
+        (is (= (select-keys r [:last-known-stage :expected-action :failed-at])
+               (edn/read-string
+                (pr-str (select-keys r [:last-known-stage
+                                        :expected-action :failed-at])))))
         (is (map? (:exception r)))
         (is (= "clojure.lang.ExceptionInfo" (:class (:exception r))))
         (is (not-any? #(contains? % :bytes) (:applied-ops r)))
@@ -363,6 +389,16 @@
         (is (= "A" (ts/read! root "a")))
         (is (false? (ts/exists? root "b")))
         (is (false? (ts/exists? root "c")))))))
+
+(deftest applied-result-keeps-its-existing-shape
+  (ts/with-root [root]
+    (let [s (wg/session root)]
+      (wg/write s "f" "x")
+      (let [r (commit-batch root (wg/snapshot s))]
+        (is (= :APPLIED (:status r)))
+        (is (not (contains? r :last-known-stage)))
+        (is (not (contains? r :expected-action)))
+        (is (not (contains? r :failed-at)))))))
 
 (deftest request-replay-is-idempotent-and-payload-checked
   (ts/with-root [root]
@@ -824,7 +860,14 @@
                              :batch (wg/snapshot s)})]
         (is (= :HARD_FAILURE (:status r)))
         (is (true? (:published? r)))
-        (is (= :uncertain (:phase (wg/board-action board "apply-boom"))))
+        (let [action (wg/board-action board "apply-boom")]
+          (is (= :uncertain (:phase action)))
+          (is (= :applying (:last-known-stage action)))
+          (is (= {:stage :applying} (:failed-at action)))
+          (is (string? (:expected-action action)))
+          (is (<= (count (:expected-action action)) 300))
+          (is (= (:result action)
+                 (edn/read-string (pr-str (:result action))))))
         (is (false? (ts/exists? root "f")))))))
 
 (deftest hard-failure-publication-retries
@@ -957,9 +1000,73 @@
         (is (= :PREPARE_REJECTED (:status r)))
         (is (= :inconsistent-plan (:code r)))
         (is (= :preparing (:phase r)))
+        (is (= :write (get-in r [:op :op])))
+        (is (= (ts/file root "missing/c") (get-in r [:op :path]))
+            "the third operation's concrete path is reported")
         (is (false? (ts/exists? root "a")))
         (is (false? (ts/exists? root "b")))
         (is (false? (ts/exists? root "missing/c")))))))
+
+(deftest f03-text-location-parks-before-the-third-op-is-added
+  (ts/with-root [root]
+    (ts/write! root "a" "A")
+    (ts/write! root "b" "B")
+    (ts/write! root "c" "C")
+    (let [commits (atom 0)
+          board (wg/memory-board)
+          _ (wg/set-actor! board "a" true)
+          _ (wg/set-claim! board "c" true)
+          w (wg/workspace-gate
+             {:root root
+              :board board
+              :apply-fn (fn [_ _]
+                          (swap! commits inc)
+                          {:status :APPLIED
+                           :outcome :applied
+                           :file-changed? false
+                           :observation-basis :mtime+size
+                           :content-equality :not-claimed
+                           :applied-ops []
+                           :op-count 0})})
+          ;; Prove the gate is live with a read-set-only commit.  This does
+          ;; not touch a/b/c and makes the later "no commit" assertion
+          ;; meaningful on the same gate, not on a fresh one.
+          probe (wg/session root)
+          _ (wg/cat probe "a")
+          probe-result (wg/commit! w {:request-id "f03-probe"
+                                      :actor-id "a"
+                                      :claim-id "c"
+                                      :batch (wg/snapshot probe)})
+          s (wg/session root)
+          _ (wg/write s "a" "A2")
+          _ (wg/write s "b" "B2")
+          batch (wg/snapshot s)
+          preview (wg/preview batch)
+          needle "missing text-location trigger"
+          located (text-location/where {:content (ts/read! root "c")
+                                        :needle needle})]
+      (is (= :APPLIED (:status probe-result)))
+      (is (= 1 @commits))
+      (is (= :finished (:phase (wg/board-action board "f03-probe"))))
+      (is (wg/preview? preview))
+      (is (= 2 (count (:ops preview)))
+          "only the two earlier writes are ops; the third never becomes one")
+      (is (= [(ts/file root "a") (ts/file root "b")]
+             (mapv :path (:ops preview))))
+      (is (text-location/park-signal? located))
+      (is (= :parked (:state located)))
+      (is (= :where-ambiguous (:reason located)))
+      (is (= needle (get-in located [:payload :needle])))
+      (is (= 1 @commits)
+          "the text-location park did not issue a commit")
+      (is (nil? (wg/action w "f03-text-location")))
+      (is (nil? (wg/board-action board "f03-text-location")))
+      (is (= "A" (ts/read! root "a")))
+      (is (= "B" (ts/read! root "b")))
+      (is (= "C" (ts/read! root "c")))
+      (is (= #{"a" "b" "c"}
+             (set (map #(.getName ^java.io.File %)
+                       (.listFiles (java.io.File. ^String root)))))))))
 
 (deftest f05-stop-after-first-op-completes-batch
   (ts/with-root [root]

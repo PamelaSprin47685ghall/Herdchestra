@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { clojureCommand, REPO_ROOT, startApp } from './support/app.mjs';
 import { assert, clientBundleInfo, evidenceDir, writeJson } from './support/ui.mjs';
+import { sourceTreeSha256 } from './support/evidence.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -65,6 +66,7 @@ test('@core E2E 09 protected commit keeps the external edit, then applies after 
     appUrl: app.url,
     workspaceRoot: app.workspaceRoot,
     clientBundle: clientBundleInfo(),
+    sourceTreeSha256: sourceTreeSha256(),
     checks: {},
   };
   try {

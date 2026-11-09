@@ -2,18 +2,52 @@
   "test": "E2E 22",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-08T06:15:16.131Z",
+  "startedAt": "2026-11-09T11:01:03.695Z",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-08T06:01:51.766Z",
-    "sha256": "8ebaabd2a14fc1930ac6e756e08d8edc59269702a19b4417b4b4e0231eaba095"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
-  "sourceTreeSha256": "c9a368daf3969d4b010de510d52f2066c1cc164bfcfcde9f6b847af7b5ae77be",
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "freeze": {
     "bundleSha256": "45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30",
     "treeSha256Prefix": "76cf2fd0"
   },
   "checks": {
+    "seedSourceOk": true,
+    "targetSaved": true,
+    "backupIdFound": true,
+    "backupObjectFound": true,
+    "mirrorObjectMounted": true,
+    "seedDestinationOk": true,
+    "restoreOk": true,
+    "verifySessionCount": true,
+    "verifySessionsPresent": true,
+    "verifyMigratedActivePinned": true,
+    "verifyDeletedSoft": true,
+    "verifyDraftPreserved": true,
+    "verifyModelBinding": true,
+    "verifyArchivedMemory": true,
+    "verifyLocalMemory": true,
+    "verifyMcpDisabled": true,
+    "verifyMcpToolDisabled": true,
+    "noRestoredBackupTargets": true,
+    "verifyOk": true,
+    "destinationSessionsLoaded": true,
+    "deletedSessionHidden": true,
+    "deletedSessionInDeletedArea": true,
+    "archivedMemoryVisible": true,
+    "localMemoryVisible": true,
+    "mcpSurface": true,
+    "mcpCardNamed": true,
+    "mcpDisabled": true,
+    "mcpNotConnected": true,
+    "boardEmpty": true,
+    "topbarSynced": true,
+    "noRemoteBackupTarget": true,
+    "noMockAddressLeak": true
+  },
+  "diagnostics": {
     "seedSource": {
       "ok": true,
       "variant": "source",
@@ -23,51 +57,50 @@
       ],
       "catalog": true
     },
-    "targetSaved": true,
     "backupCreate": {
-      "backupId": "23c1cb0a-a811-439d-8754-eba183e2e627",
-      "resultHead": "最近一次备份\n\n备份已写入并通过校验\n\n备份 ID\n23c1cb0a-a811-439d-8754-eba183e2e627\n取样时间\n2026-11-08T06:15:45.607930900Z\n创建时间\n2026-11-08T06:15:45.602525697Z\n设备\nJYSZ\n加密\n是\n大小\n14 KiB\n位置\n未提供\n目标\n{:crypto-version 1, :plaintext-size 13253, :size 14079, :encrypted? true, :deduplicated? false, :encryption :aes-gcm, :id \"23c1cb0a-a811-439d-8754-eba183e2e627\", :app-version \"0.0.1\", :backup-id \"23c1cb0a-a811-439d-8754-eba183e2e627\", :url \"http://127.0.0.1:41299/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb\", :sampled-at \"2026-11-08T06:15:45.607930900Z\", :sha256 \"8fe97852896ad5a6b218b5dda78afde495198c7698c346963a16b7e96c060306\", :format-version 1, :device \"JYSZ\", :integrity :verified, :created-at \"2026-11-08T06:15:45.602525697Z\", :payload-size 13269}\n类别\t记录数\n对话与附件\t2\n助手配置\t2\n模型服务配置\t2\n工具与 MCP 配置\t1\n技能\t0\n工作区\t1\n世界书\t0\n记忆与画像\t1\n外观"
+      "backupId": "15462f82-109e-4fee-b251-c0ec6273cc84",
+      "resultHead": "最近一次备份\n\n备份已写入并通过校验\n\n备份 ID\n15462f82-109e-4fee-b251-c0ec6273cc84\n取样时间\n2026-11-09T11:01:45.674800180Z\n创建时间\n2026-11-09T11:01:45.670676491Z\n设备\nJYSZ\n加密\n是\n大小\n14 KiB\n位置\n未提供\n目标\n{:crypto-version 1, :plaintext-size 13512, :size 14338, :encrypted? true, :deduplicated? false, :encryption :aes-gcm, :id \"15462f82-109e-4fee-b251-c0ec6273cc84\", :app-version \"0.0.3\", :backup-id \"15462f82-109e-4fee-b251-c0ec6273cc84\", :url \"http://127.0.0.1:43715/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb\", :sampled-at \"2026-11-09T11:01:45.674800180Z\", :sha256 \"0e1233b2d082ba0e6e6bafb1297ebf23ce121583663633dacd5be907b4d0f597\", :format-version 1, :device \"JYSZ\", :integrity :verified, :created-at \"2026-11-09T11:01:45.670676491Z\", :payload-size 13528}\n类别\t记录数\n对话与附件\t2\n助手配置\t2\n模型服务配置\t2\n工具与 MCP 配置\t1\n技能\t0\n工作区\t1\n世界书\t0\n记忆与画像\t1\n外观"
     },
     "webdavRequests": [
       {
-        "at": "2026-11-08T06:15:45.195Z",
+        "at": "2026-11-09T11:01:45.362Z",
         "method": "PROPFIND",
         "path": "/backups/"
       },
       {
-        "at": "2026-11-08T06:15:45.854Z",
+        "at": "2026-11-09T11:01:45.819Z",
         "method": "GET",
-        "path": "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb"
+        "path": "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb"
       },
       {
-        "at": "2026-11-08T06:15:45.856Z",
+        "at": "2026-11-09T11:01:45.821Z",
         "method": "PUT",
-        "path": "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb"
+        "path": "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb"
       },
       {
-        "at": "2026-11-08T06:15:45.862Z",
+        "at": "2026-11-09T11:01:45.824Z",
         "method": "GET",
-        "path": "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb"
+        "path": "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb"
       },
       {
-        "at": "2026-11-08T06:15:45.917Z",
+        "at": "2026-11-09T11:01:45.889Z",
         "method": "PROPFIND",
         "path": "/backups/"
       },
       {
-        "at": "2026-11-08T06:15:45.920Z",
+        "at": "2026-11-09T11:01:45.892Z",
         "method": "GET",
-        "path": "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb"
+        "path": "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb"
       }
     ],
     "webdavFiles": [
       "/dav/readme.txt",
-      "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb"
+      "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb"
     ],
     "webdavMirror": {
-      "key": "/backups/23c1cb0a-a811-439d-8754-eba183e2e627.hcb",
-      "bytes": 14079,
-      "mirrorRoot": "/tmp/hc-e2e22-mirror-opCWds",
+      "key": "/backups/15462f82-109e-4fee-b251-c0ec6273cc84.hcb",
+      "bytes": 14338,
+      "mirrorRoot": "/var/tmp/hc-e2e/hc-e2e22-mirror-2LRbpQ",
       "requests": 6
     },
     "seedDestination": {
@@ -182,28 +215,55 @@
       ]
     },
     "backupSection": null,
-    "verifyOk": true,
-    "sessionListText": "会话\n2 / 2 条\n新建\n临时\nE2E22 迁移会话\n2026/11/08 14:16 · 旧设备固定模型\n重命名\n取消置顶\n归档\n删除\nE2E22 本地会话\n2026/01/01 08:00\n重命名\n置顶\n归档\n删除\n已删除会话",
+    "sessionListText": "会话\n2 / 2 条\n新建\n临时\nE2E22 迁移会话\n2026/11/09 19:02 · 旧设备固定模型\n重命名\n取消置顶\n归档\n删除\nE2E22 本地会话\n2026/01/01 08:00\n重命名\n置顶\n归档\n删除\n已删除会话",
+    "destinationActiveRows": [
+      "E2E22 迁移会话\n2026/11/09 19:02 · 旧设备固定模型",
+      "E2E22 本地会话\n2026/01/01 08:00"
+    ],
     "deletedArea": "已删除会话（1）\n刷新已删除会话\n\n服务器已接受\n\nE2E22 已删除会话\n已删除 · 2026/01/01 08:00\n恢复\n永久删除",
-    "memoryBodyHead": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 2\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：s-migrated；助手范围 本地助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 2\n读取最新材料\n整理记忆\n0\n待审\n1\n生效\n1\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n已归档\n用户偏好简洁回答\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n2\n世界书\n0\n指令卡\n0\nMCP 服务器\n1\n技能\n0\n同步序号\n2\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n2\n世界书\n0\n指令卡\n0\n材料 revision\n2\n同步序号\n2\n已取得服务器基线，命令可以携带 command-id 提交。",
-    "memoryAllBodyHead": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 2\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：s-migrated；助手范围 本地助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 2\n读取最新材料\n整理记忆\n0\n待审\n1\n生效\n1\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n生效\n本地记忆：保留两份\n范围 全局 · 偏好 · 更新序号 1\n工作方式\n已归档\n用户偏好简洁回答\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n2\n世界书\n0\n指令卡\n0\nMCP 服务器\n1\n技能\n0\n同步序号\n2\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n2\n世界书\n0\n指令卡\n0\n材料 revision\n2\n同步序号\n2\n已取得服务器基线，命令可以携带 command-id 提交。",
-    "mcpSurface": false,
-    "boardText": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n服务器\n阶段\n已同步\nepoch\n1\nseq\n2\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\nSwarm 看板\n\nFleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。\n\n已同步\n请求重同步\nSwarm 总览\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n看板同步\nswarm 数\n0\n任务数\n0\nepoch\n1\nseq\n2\n最近确认\n1794118599072\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "memoryBodyHead": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n3\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 2\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：s-migrated；助手范围 本地助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 2\n读取最新材料\n整理记忆\n0\n待审\n1\n生效\n1\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n生效\n本地记忆：保留两份\n范围 全局 · 偏好 · 更新序号 1\n工作方式\n已归档\n用户偏好简洁回答\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n2\n世界书\n0\n指令卡\n0\nMCP 服务器\n1\n技能\n0\n同步序号\n3\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n2\n世界书\n0\n指令卡\n0\n材料 revision\n2\n同步序号\n3\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "memoryAllBodyHead": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n3\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\n材料与扩展\n\n工作区文件、长期记忆、世界书、指令卡与产物。材料动作只在服务器回执后更新；文件只显示服务器报告的路径与 stamp。\n\n已同步\n材料 revision 2\n请求重同步\n工作区文件\n产物\n长期记忆\n世界书\n指令卡\n浏览器\n扩展\n小应用\n长期记忆\n\n四类长期记忆、候选审阅、范围与归档。默认关闭；自动整理只生成待审候选。\n\n当前会话：s-migrated；助手范围 本地助手；项目范围 未声明.\n\n读取已保存记忆\n自动建议新记忆\n两个开关独立；默认关闭。自动建议只进入待审区。\n材料库已就绪\nrevision 2\n读取最新材料\n整理记忆\n0\n待审\n1\n生效\n1\n已归档\n0\n已拒绝\n全部\n待审\n生效\n已归档\n已拒绝\n工作方式\n生效\n本地记忆：保留两份\n范围 全局 · 偏好 · 更新序号 1\n工作方式\n已归档\n用户偏好简洁回答\n范围 全局 · 偏好 · 更新序号 1\n新建记忆\n新建\n正文（最多 2000 字）\n0 / 2000 字\n类别\n身份与背景\n工作方式\n表达偏好\n长期要求\n范围\n全局\n助手\n项目\n认识标签\n事实\n偏好\n要求\n假设（未确认）\n假设不会自动升级为事实。\n总是提供（仍受注入预算限制）\n保存记忆\n\n修改生效记忆会保留旧版本；归档立即退出未来注入。临时会话不写入。\n\n当前目录条目\n0\n产物条目\n0\n记忆条目\n2\n世界书\n0\n指令卡\n0\nMCP 服务器\n1\n技能\n0\n同步序号\n3\n上下文\n×\n详情\n文件\n浏览器\n来源\n材料概览\n工作区文件\n0\n产物\n0\n长期记忆\n2\n世界书\n0\n指令卡\n0\n材料 revision\n2\n同步序号\n3\n已取得服务器基线，命令可以携带 command-id 提交。",
+    "mcpCardText": "旧设备文件系统 MCP · 本地进程\nnpx -y @modelcontextprotocol/server-filesystem /old-device-only\n未连接\n当前会话可用性未报告\n启用\n测试/打开\n刷新工具\n断开\n删除\nread_file\n读取文件\n可写\n审阅并启用",
+    "mcpEnabledChecked": false,
+    "mcpStateLabel": "",
+    "boardText": "Herdchestra\n工作台\n●\n已同步\n≡\n工作区\n◎\n会话与分支\n对话、草稿、停止\n▦\nSwarm 看板\nfleet、任务树、槽位\n◇\n助手与角色\n模型绑定与能力\n▤\n材料与扩展\n文件、记忆、技能、MCP\n⚙\n设置与数据\n连接、外观、诊断\n⌕\n搜索历史\n跨会话 · Ctrl/Cmd+Shift+F\n服务器\n阶段\n已同步\nepoch\n1\nseq\n3\n\n已取得服务器基线，命令可以携带 command-id 提交。\n\nSwarm 看板\n\nFleet 总览、任务树、等待链与固定运行槽。状态来自服务器当前态；此视图不提供认领或写文件操作。\n\n已同步\n请求重同步\nSwarm 总览\n\n尚未准入任何 swarm。服务器发布快照后，fleet 会显示在这里。\n\n上下文\n×\n详情\n文件\n浏览器\n来源\n看板同步\nswarm 数\n0\n任务数\n0\nepoch\n1\nseq\n3\n最近确认\n1794222154650\n已取得服务器基线，命令可以携带 command-id 提交。",
     "boardSwarmRows": 0,
     "topbarBadge": "●\n已同步",
-    "destinationBackupPane": "加密备份与恢复\n\n本地文件、WebDAV 与 S3 目标由服务器配置；界面只展示服务器实际提供的能力。\n\n已同步\n命令通道可用；点击只表示提交，回执才表示完成。\n备份状态已更新。\n关闭\n创建备份\n恢复与预览\n本地恢复点\n目标与状态\n\n备份按一次取样时间生成一致快照；模型密钥默认不勾选，加密默认开启。\n\n备份目标\n本地文件 · local 可用\n目录：/tmp/hc-e2e22-dst-TfO16G/data/backups\n编辑\n删除\n已选目标\nlocal\n备份目录\n/tmp/hc-e2e22-dst-TfO16G/data/backups\n数据目录\n/tmp/hc-e2e22-dst-TfO16G/data\n恢复点目录\n/tmp/hc-e2e22-dst-TfO16G/data/recovery\n最近成功备份\n尚无成功备份\n本机恢复点\n2026-11-08T06:16:07.207205076Z · 3 KiB\n数据占用\n未提供\n可用空间\n未提供\n\n目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。\n\n刷新状态\n新建目标\n要备份的类别\n全选\n全不选\n对话与附件\n包含消息与已打包的附件；未打包附件会单独列出。\n助手配置\n同名不同内容默认保留两份，并加备份日期后缀。\n模型服务配置\n密钥默认不包含；恢复后连接需要重新验证。\n工具与 MCP 配置\n恢复后默认停用待审，不自动获得执行权限。\n技能\n恢复后默认停用待审。\n工作区\n外部目录只恢复配置；恢复后需要重新定位，不自动授权。\n世界书\n同名不同内容默认保留两份，并加备份日期后缀。\n记忆与画像\n已归档或删除的记忆保持停用待审，不因旧备份复活。\n外观偏好\n单例偏好；替换会覆盖当前外观设置。\n任务配置\n恢复后默认暂停，下一次运行时间清空。\n内容与隐私\n包含模型密钥与认证信息（默认不勾选）\n包含已删除的会话（进入已删除区）\n包含临时会话\n包含可重建缓存\n包含外部工作区文件（只恢复配置时不要勾选）\n\n登录会话与系统授权永远不会导出；它们必须在新设备重新建立。\n\n密码与加密\n默认开启密码加密\n备份密码\n当前 0 个字符；支持中文与空格，首尾空格不会被去掉。\n再次输入密码\n\n密码只保留在本次页面内存中，不写入本地存储，也不会长期记住。\n\n显示密码\n复制密码\n清除密码\n\n请输入备份密码；密码不会被长期记住。\n\n生成加密备份\n\n备份文件不会在未选择目标时产生外部活动；密码不会写入本地存储；恢复失败不会伪装成功。",
+    "destinationBackupPane": "加密备份与恢复\n\n本地文件、WebDAV 与 S3 目标由服务器配置；界面只展示服务器实际提供的能力。\n\n已同步\n命令通道可用；点击只表示提交，回执才表示完成。\n创建备份\n恢复与预览\n本地恢复点\n目标与状态\n\n备份按一次取样时间生成一致快照；模型密钥默认不勾选，加密默认开启。\n\n备份目标\n本地文件 · local 可用\n目录：/var/tmp/hc-e2e/hc-e2e22-dst-FWfdBA/data/backups\n编辑\n删除\n已选目标\nlocal\n备份目录\n/var/tmp/hc-e2e/hc-e2e22-dst-FWfdBA/data/backups\n数据目录\n/var/tmp/hc-e2e/hc-e2e22-dst-FWfdBA/data\n恢复点目录\n/var/tmp/hc-e2e/hc-e2e22-dst-FWfdBA/data/recovery\n最近成功备份\n尚无成功备份\n本机恢复点\n2026-11-09T11:02:06.186320047Z · 3 KiB\n数据占用\n未提供\n可用空间\n未提供\n\n目标由服务器配置；界面只展示服务器实际提供的本地文件、WebDAV 或 S3 目标，不会伪造远程写入。可以在此新建或编辑目标配置，远程数据不受影响。\n\n刷新状态\n新建目标\n要备份的类别\n全选\n全不选\n对话与附件\n包含消息与已打包的附件；未打包附件会单独列出。\n助手配置\n同名不同内容默认保留两份，并加备份日期后缀。\n模型服务配置\n密钥默认不包含；恢复后连接需要重新验证。\n工具与 MCP 配置\n恢复后默认停用待审，不自动获得执行权限。\n技能\n恢复后默认停用待审。\n工作区\n外部目录只恢复配置；恢复后需要重新定位，不自动授权。\n世界书\n同名不同内容默认保留两份，并加备份日期后缀。\n记忆与画像\n已归档或删除的记忆保持停用待审，不因旧备份复活。\n外观偏好\n单例偏好；替换会覆盖当前外观设置。\n任务配置\n恢复后默认暂停，下一次运行时间清空。\n内容与隐私\n包含模型密钥与认证信息（默认不勾选）\n包含已删除的会话（进入已删除区）\n包含临时会话\n包含可重建缓存\n包含外部工作区文件（只恢复配置时不要勾选）\n\n登录会话与系统授权永远不会导出；它们必须在新设备重新建立。\n\n密码与加密\n默认开启密码加密\n备份密码\n当前 0 个字符；支持中文与空格，首尾空格不会被去掉。\n再次输入密码\n\n密码只保留在本次页面内存中，不写入本地存储，也不会长期记住。\n\n显示密码\n复制密码\n清除密码\n\n请输入备份密码；密码不会被长期记住。\n\n生成加密备份\n\n备份文件不会在未选择目标时产生外部活动；密码不会写入本地存储；恢复失败不会伪装成功。",
     "destinationTargetRows": [
       "本地文件 · local"
     ],
-    "finishedAt": "2026-11-08T06:16:48.068Z"
+    "finishedAt": "2026-11-09T11:02:36.376Z"
   },
   "notes": [
-    "freeze tree 76cf2fd0 predates W245/W251 src fixes; measured sourceTreeSha256 reflects the drifted tree intentionally.",
-    "clientBundle sha256 8ebaabd2a14f measured at run time; the frozen bundle 45f11529 was rebuilt in-place by peer work during this session (resources/public/js/main.js mtime 2026-11-08T14:01+08:00, untracked build artifact). Spec pins the freeze hashes; measured values record the drift."
+    "freeze tree 76cf2fd0 predates W245/W251 src fixes; measured sourceTreeSha256 reflects the drifted tree intentionally."
   ],
-  "uiErrors": [
-    "console.error: Warning: Each child in a list should have a unique \"key\" prop.%s%s See https://reactjs.org/link/warning-keys for more information.%s \n\nCheck the render method of `hc.client.workbench.app/Root`.  \n    at dt\n    at hc.client.workbench.app/Root\n    at com$fulcrologic$fulcro$application$FulcroRootWrappe",
-    "console.error: Warning: Unsupported style property %s. Did you mean %s?%s font-size fontSize \n    at p\n    at nav\n    at div\n    at div\n    at div\n    at require (http://127.0.0.1:41863/js/cljs-runtime/module$node_modules$framework7_react$components$page.js:21:10)\n    at div\n    at require (http://127.0.0.1:41863/"
+  "uiErrors": [],
+  "diagnosticOnly": [
+    "backupCreate",
+    "backupSection",
+    "boardSwarmRows",
+    "boardText",
+    "deletedArea",
+    "destinationActiveRows",
+    "destinationBackupPane",
+    "destinationTargetRows",
+    "finishedAt",
+    "mcpCardText",
+    "mcpEnabledChecked",
+    "mcpStateLabel",
+    "memoryAllBodyHead",
+    "memoryBodyHead",
+    "restore",
+    "seedDestination",
+    "seedSource",
+    "sessionListText",
+    "topbarBadge",
+    "verify",
+    "webdavFiles",
+    "webdavMirror",
+    "webdavRequests"
   ],
+  "failedChecks": [],
   "ok": true
 }

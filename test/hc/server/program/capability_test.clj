@@ -14,8 +14,42 @@
            :resolve-action :acknowledge-recovery
            :askPreviousScope :assume :negotiate}
          (cap/capabilities :clj-worker)))
+  (is (= #{:cat :stat :ls :where :whereAll :park :unpark
+           :fork :join :fleet-state :assume}
+         (cap/capabilities :clj-steward)))
+  (is (= #{:cat :stat :ls :where :whereAll}
+         (cap/capabilities :clj-meditator)))
   (is (= #{:cat :stat :ls :where :whereAll :park :unpark :call}
          (cap/capabilities :dedicated-worker))))
+
+(deftest steward-and-meditator-keep-a-narrow-surface
+  (is (cap/role? :clj-steward))
+  (is (cap/role? :clj-meditator))
+  (is (cap/capability? :clj-steward :fork))
+  (is (cap/capability? :clj-steward :join))
+  (is (cap/capability? :clj-steward :fleet-state))
+  (is (not (cap/capability? :clj-steward :write)))
+  (is (not (cap/capability? :clj-steward :call)))
+  (is (not (cap/capability? :clj-steward :review)))
+  (is (not (cap/capability? :clj-meditator :write)))
+  (is (not (cap/capability? :clj-meditator :call)))
+  (is (not (cap/capability? :clj-meditator :fork)))
+  (is (= #{:cat :stat :ls}
+         (cap/narrowed :clj-steward #{:cat :stat :ls :write}))
+      "narrowing cannot widen the Steward"))
+
+(deftest orchestration-primitives-are-registered
+  (doseq [[function capability-keyword]
+          '[[fork :fork] [join :join] [fleet-state :fleet-state]
+            [negotiate :negotiate]]]
+    (is (= capability-keyword (get cap/program-functions function))
+        (str function " maps to " capability-keyword))
+    (is (contains? cap/control-primitives capability-keyword)))
+  (testing "every registered function belongs to at least one role"
+    (is (every? (fn [[_ capability-keyword]]
+                  (some #(cap/capability? % capability-keyword)
+                        (keys cap/roles)))
+                cap/program-functions))))
 
 (deftest narrowing-cannot-widen
   (is (= #{:cat} (cap/narrowed :clj-review #{:cat :write :eval})))

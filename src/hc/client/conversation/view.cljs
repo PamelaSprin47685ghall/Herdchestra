@@ -31,6 +31,7 @@
             [hc.client.render :as render]
             [hc.client.search.model :as search-model]
             [hc.client.search.view :as search-view]
+            [hc.client.sessions.labels :as session-labels]
             [hc.client.speech.playback :as speech-playback]
             [hc.client.speech.ui :as speech-ui]))
 
@@ -170,6 +171,37 @@
 
 (defn- class-names [& values]
   (str/join " " (remove nil? values)))
+
+(defn presence-control
+  "Presence notice for the workbench conversation header.
+
+  Only an observer sees it: a controller needs no notice, and a free session
+  is attached automatically by `presence-bridge`.  The takeover control is a
+  real button with a stable id so the workbench and browser tests can find
+  it; rendering never sends a command."
+  [{:keys [presence on-takeover! disabled?]}]
+  (when (and (map? presence) (:takeover? presence))
+    (dom/div {:id "hc-presence-notice"
+              :className "hc-presence-notice"
+              :role "status"
+              :aria-live "polite"
+              :style (style {:display "flex"
+                             :alignItems "center"
+                             :gap "8px"
+                             :margin "8px 16px"})}
+             (dom/span {:style (style {:fontWeight "600"})}
+                       (:label presence))
+             (dom/button {:id "hc-takeover-control"
+                          :type "button"
+                          :className "hc-button"
+                          :aria-label "接管会话控制"
+                          :title (when disabled?
+                                   "连接建立并同步后才能接管")
+                          :disabled (boolean disabled?)
+                          :onClick (fn [_]
+                                     (when (fn? on-takeover!)
+                                       (on-takeover!)))}
+                         "接管控制"))))
 
 (defn- command-map
   "Accept both documented command shapes: one command map, or a map keyed by
@@ -699,6 +731,54 @@
                  (dom/pre nil (dom/code nil (:content segment)))))
       (segment-block-plain segment index target kind))))
 
+(defn- tool-access-label
+  "Tool read/write access in the outbound round snapshot."
+  [value]
+  (case (some-> value keyword)
+    :read "只读"
+    :read-write "读写"
+    :write "写入"
+    :unknown "未知"
+    "未知"))
+
+(defn- attachment-kind-label
+  "Attachment kind in the outbound round snapshot.  An unknown server kind
+  falls back to a noun, never its English keyword."
+  [value]
+  (case (some-> value keyword)
+    :image "图片"
+    :pdf "PDF"
+    :text "文本"
+    :audio "音频"
+    :video "视频"
+    :archive "压缩包"
+    :file "文件"
+    :unknown "未知"
+    "文件"))
+
+(defn- session-title-label
+  "The server's default title is English; the UI is Chinese.  A manual title
+  passes through unchanged."
+  [title]
+  (session-labels/title-label title))
+
+(defn- banner-text-label
+  "Localize the browser failure the server still returns in English.
+
+  The browser panel normalizes the same strings in
+  `hc.client.browser.model/error-text`; a conversation banner can carry them
+  too, and an English duplicate is not acceptable on the empty-install
+  screen."
+  [text]
+  (case text
+    "managed browser is not connected for this session"
+    "本会话尚未连接受管浏览器。"
+    "The operator has not enabled the managed browser for this session."
+    "操作员尚未为本会话启用受管浏览器。"
+    "The operator has not enabled the managed browser."
+    "操作员尚未启用受管浏览器。"
+    text))
+
 (defn- process-block
   [process target]
   (when (seq process)
@@ -1135,7 +1215,9 @@
                                   (if (seq cards)
                                     (for [card cards]
                                       (dom/div {:className "hc-round-item" :key (str (:name card) "-" (:scope card))}
-                                               (str (:name card) " · " (name (or (:scope card) :turn))
+                                               (str (:name card) " · "
+                                                    (round-label (or (:scope card) :turn)
+                                                                 "范围未知")
                                                     " · 版本 " (if (= :unknown (:version card)) "未知" (:version card)))))
                                     (dom/div {:className "hc-round-item wb-muted"} "本轮未使用指令卡"))))
                    (when (seq tools)
@@ -1144,7 +1226,8 @@
                                   (for [tool tools]
                                     (dom/div {:className "hc-round-item" :key (:name tool)}
                                              (dom/div nil
-                                                      (str (:name tool) " · " (name (or (:read-write tool) :unknown))
+                                                      (str (:name tool) " · "
+                                                           (tool-access-label (:read-write tool))
                                                            (when-not (:enabled? tool) " · 未启用")))
                                              (when (:description tool)
                                                (dom/div {:className "wb-muted"}
@@ -1175,7 +1258,8 @@
                                   (dom/h4 nil "附件")
                                   (for [attachment attachments]
                                     (dom/div {:className "hc-round-item" :key (:attachment-id attachment)}
-                                             (str (:name attachment) " · " (name (or (:kind attachment) :unknown))
+                                             (str (:name attachment) " · "
+                                                  (attachment-kind-label (:kind attachment))
                                                   " · 页 " (if (= :unknown (:pages attachment))
                                                              "未知"
                                                              (str/join "," (:pages attachment))))))))
@@ -1205,7 +1289,13 @@
                              [:system :assistant :instructions :memory :worldbook
                               :instruction-cards :tools :history :attachments
                               :estimates])]
-    (when (or (:boundary context) (:recent-rounds context)
+    ;; Export controls live inside this panel, and the operator must be able
+    ;; to export a non-empty branch even when its context has no boundary,
+    ;; rounds, compressions, warnings or outbound snapshot yet.  Keep the
+    ;; panel for every non-empty conversation; each child below still has its
+    ;; own `when`/empty state, so widening this gate does not add blank rows.
+    (when (or (seq messages)
+              (:boundary context) (:recent-rounds context)
               (seq compressions) (seq warnings) (map? outbound))
       ;; The round context is its own top-level disclosure.  Nested inside
       ;; the collapsed "上下文与压缩" panel its summary could never be
@@ -1227,10 +1317,15 @@
                      (dom/div {:className "hc-context-rounds"}
                               "本轮尚未发送"))
                    (when reading
-                     (dom/div {:className "hc-context-rounds"}
-                              (str "阅读 " (or (:message-count reading) 0)
-                                   " 条 · 已删除 "
-                                   (or (:deleted-count reading) 0))))
+                     (dom/div {:className "hc-context-rounds hc-context-reading"}
+                              (dom/div nil
+                                       (str "阅读 " (or (:message-count reading) 0)
+                                            " 条 · 已删除 "
+                                            (or (:deleted-count reading) 0)))
+                              (dom/div {:className "hc-context-reading-note"}
+                                       (str "当前可见 " (count messages)
+                                            " 条；差额来自系统提示、工具结果与过程记录，"
+                                            "它们参与上下文但不显示为消息气泡。"))))
                    (when boundary
                      (dom/div {:className "hc-context-boundary"}
                               (dom/span nil (str "起点：" (:message-id boundary)))
@@ -1671,8 +1766,20 @@
       nil
 
       (fn? (:send! callbacks))
-      ((:send! callbacks) {:session-id session-id
-                           :snapshot (composer-snapshot props textarea-ref)})
+      (let [result ((:send! callbacks)
+                    {:session-id session-id
+                     :snapshot (composer-snapshot props textarea-ref)})]
+        (when (true? (:ok? result))
+          ;; The command is queued under the reducer's authority: clear the
+          ;; visible composer now, so an accepted send never leaves the old
+          ;; text in the box.  A blocked or transport-failed send keeps it.
+          ;; The reducer draft remains authoritative; clearing the DOM here
+          ;; and `draft/clear-submitted` in the reducer are idempotent.
+          (when-let [node (.-current textarea-ref)]
+            (set! (.-value node) "")
+            (when (fn? (.-setSelectionRange node))
+              (.setSelectionRange node 0 0))))
+        result)
 
       :else nil)))
 
@@ -1813,7 +1920,7 @@
                            (:label option))))))
 
 (defn- composer-view
-  [{:keys [props view-model textarea-ref local-decision set-local-decision!
+  [{:keys [props view-model textarea-ref composing-ref local-decision set-local-decision!
            pending-send set-pending-send! selection-locked? set-selection-locked!] :as _ctx}]
   (let [composer (:composer view-model)
         callbacks (or (:callbacks props) {})
@@ -1843,8 +1950,9 @@
                            (when event (.preventDefault event))
                            (when (fn? (:stop! callbacks))
                              (set-pending-send! {:session-id session-id
-                                                 :snapshot (composer-snapshot
-                                                            props textarea-ref)})
+                                                 :snapshot (assoc (composer-snapshot
+                                                                   props textarea-ref)
+                                                                  :deferred? true)})
                              ((:stop! callbacks) {:session-id session-id})
                              (set-local-decision! nil)))
         on-continue (fn [event]
@@ -1942,11 +2050,13 @@
                                                            :selection {:start (.-selectionStart target)
                                                                        :end (.-selectionEnd target)}})))
                                      :onCompositionStart (fn [_]
+                                                           (set! (.-current composing-ref) true)
                                                            (set-selection-locked! true)
                                                            (call! callbacks :edit-draft!
                                                                   {:session-id session-id
                                                                    :composing? true}))
                                      :onCompositionEnd (fn [_]
+                                                         (set! (.-current composing-ref) false)
                                                          (set-selection-locked! false)
                                                          (call! callbacks :edit-draft!
                                                                 (let [node (.-current textarea-ref)]
@@ -1958,6 +2068,7 @@
                                                                                  :end (.-selectionEnd node)})
                                                                    :composing? false})))
                                      :onBlur (fn [event]
+                                               (set! (.-current composing-ref) false)
                                                (let [target (.-target event)]
                                                  (call! callbacks :edit-draft!
                                                         {:session-id session-id
@@ -1970,7 +2081,15 @@
                                                   (let [decision (composer/keydown
                                                                   {:platform (or (:platform props) :desktop)
                                                                    :send-key (or (:send-key props) :enter)}
-                                                                  (event-map event))]
+                                                                  ;; The local composition flag is
+                                                                  ;; synchronous and does not depend on
+                                                                  ;; the browser exposing isComposing on
+                                                                  ;; the synthetic key event.
+                                                                  (assoc (event-map event)
+                                                                         :composing?
+                                                                         (boolean
+                                                                          (and composing-ref
+                                                                               (.-current composing-ref)))))]
                                                     (case (:action decision)
                                                       :send (do
                                                               (.preventDefault event)
@@ -2217,6 +2336,207 @@
                    {:message-id (:id message) :count count})))
              messages)))))
 
+(def ^:private first-run-examples
+  [["整理会议记录"
+    "把下面的会议记录整理成结论、待办与负责人。"]
+   ["解释这段代码"
+    "逐段解释这段代码做了什么，并指出可能的风险。"]
+   ["起草一封邮件"
+    "帮我起草一封简洁、礼貌的跟进邮件。"]])
+
+(defn- write-draft!
+  "Fill the composer with an example.  It never sends: the operator still
+  reviews and presses send."
+  [callbacks session-id text]
+  (when (fn? (:edit-draft! callbacks))
+    ((:edit-draft! callbacks)
+     {:session-id session-id
+      :text text
+      :cursor (count text)
+      :selection {:start (count text) :end (count text)}
+      :composing? false})))
+
+(defn- first-run-guide
+  "First-screen guide for an empty conversation.  The three actions are real
+  entry points and the three examples only fill the draft."
+  [session-id callbacks on-dismiss!]
+  (let [settings! (:settings! callbacks)
+        fix! (:fix! callbacks)
+        draft? (fn? (:edit-draft! callbacks))]
+    (dom/section {:className "hc-first-run" :aria-label "开始使用"}
+                 (dom/h3 nil "开始第一次对话")
+                 (dom/p {:className "wb-muted"}
+                        "还没有消息。先连接模型或恢复已有资料，也可以直接试用下面的示例。")
+                 (dom/div {:className "hc-first-run-actions"}
+                          (dom/button {:className "hc-button hc-button-primary"
+                                       :type "button"
+                                       :disabled (not (or (fn? fix!)
+                                                          (fn? settings!)))
+                                       :title (when-not (or (fn? fix!)
+                                                            (fn? settings!))
+                                                "当前无法打开模型设置")
+                                       :onClick (fn [_]
+                                                  (cond
+                                                    (fn? fix!)
+                                                    (fix! {:session-id session-id
+                                                           :intent :select-model})
+                                                    (fn? settings!)
+                                                    (settings! {:session-id session-id})
+                                                    :else nil))}
+                                      "连接模型")
+                          (dom/button {:className "hc-button"
+                                       :type "button"
+                                       :disabled (not (fn? settings!))
+                                       :title (when-not (fn? settings!)
+                                                "当前无法打开设置")
+                                       :onClick (fn [_]
+                                                  (when (fn? settings!)
+                                                    (settings! {:session-id session-id})))}
+                                      "恢复已有资料")
+                          (dom/button {:className "hc-button hc-button--quiet"
+                                       :type "button"
+                                       :onClick (fn [_] (on-dismiss!))}
+                                      "稍后设置"))
+                 (dom/div {:className "hc-first-run-examples"}
+                          (dom/p {:className "hc-first-run-example-label"}
+                                 "示例（只填入输入框，不会发送）")
+                          (for [[title example] first-run-examples]
+                            (dom/button {:className "hc-first-run-example"
+                                         :type "button"
+                                         :key title
+                                         :disabled (not draft?)
+                                         :title (when-not draft?
+                                                  "当前无法写入草稿")
+                                         :onClick (fn [_]
+                                                    (write-draft!
+                                                     callbacks session-id
+                                                     example))}
+                                        (dom/strong nil title)
+                                        (dom/span nil example)))))))
+
+(defonce ^:private scroll-anchors
+  ;; Route changes unmount this surface.  The anchor must outlive the React
+  ;; tree, so it lives beside the component keyed by session id.
+  (atom {}))
+
+(defn scroll-anchor-at
+  "Return `{:message-id id :delta px}` for the message at the viewport top.
+
+  RENDERED is `[{:message-id :top :height}]` in DOM order, with `:top`
+  measured in the scroll container's content coordinates.  The first message
+  whose bottom edge is below VIEWPORT-TOP is the visible anchor.  The delta is
+  how far the message top sits above the viewport top."
+  [viewport-top rendered]
+  (when-let [rendered (seq (filter :message-id rendered))]
+    (let [viewport-top (double (or viewport-top 0))
+          chosen (or (first (filter (fn [{:keys [top height]}]
+                                      (> (+ (double top) (double height))
+                                         viewport-top))
+                                    rendered))
+                     (last rendered))]
+      {:message-id (:message-id chosen)
+       :delta (- viewport-top (double (:top chosen)))})))
+
+(defn scroll-restore-target
+  "Return the scrollTop that puts ANCHOR back at the viewport top.
+
+  RENDERED is the same shape as `scroll-anchor-at`.  Returns nil when the
+  anchor message is not in the rendered slice."
+  [anchor rendered]
+  (when-let [message-id (:message-id anchor)]
+    (when-let [chosen (first (filter #(= message-id (:message-id %))
+                                     rendered))]
+      (+ (double (:top chosen))
+         (double (or (:delta anchor) 0))))))
+
+(defn scroll-window-size
+  "Return the trailing message count that contains ANCHOR-INDEX.
+
+  Keeps at least WINDOW-SIZE messages (and the established 200-message
+  minimum), plus a 200-message buffer below the anchor.  The result is capped
+  at TOTAL and never shrinks the caller's current window."
+  [total anchor-index window-size]
+  (let [total (long total)
+        current (long window-size)
+        anchor-index (long anchor-index)]
+    (min total
+         (max current 200 (+ (- total anchor-index) 200)))))
+
+(defn- rendered-message-geometry
+  "Measure the rendered message nodes in SCROLLER content coordinates."
+  [scroller]
+  (let [scroll-top (double (or (.-scrollTop scroller) 0))
+        scroller-top (.-top (.getBoundingClientRect scroller))]
+    (mapv (fn [node]
+            (let [rect (.getBoundingClientRect node)]
+              {:message-id (.getAttribute node "data-message-id")
+               :top (+ scroll-top (- (.-top rect) scroller-top))
+               :height (.-height rect)}))
+          (array-seq (.querySelectorAll scroller "[data-message-id]")))))
+
+(defn- dom-scroll-anchor
+  "Binary-search the rendered message nodes for the viewport-top anchor.
+
+  Scroll events run often; building a geometry map for every rendered message
+  is avoidable work.  The rendered nodes are ordered by their top edge, so a
+  binary search reads O(log n) rectangles and allocates only the result."
+  [scroller]
+  (let [nodes (to-array
+               (array-seq (.querySelectorAll scroller "[data-message-id]")))
+        node-count (alength nodes)
+        scroller-top (.-top (.getBoundingClientRect scroller))
+        scroll-top (double (or (.-scrollTop scroller) 0))
+        top-of (fn [node]
+                 (+ scroll-top
+                    (- (.-top (.getBoundingClientRect node)) scroller-top)))]
+    (when (pos? node-count)
+      (let [node
+            (loop [low 0
+                   high (dec node-count)
+                   candidate nil]
+              (if (> low high)
+                (or candidate (aget nodes (dec node-count)))
+                (let [middle (quot (+ low high) 2)
+                      current (aget nodes middle)
+                      top (top-of current)
+                      bottom (+ top (.-height (.getBoundingClientRect current)))]
+                  (if (> bottom scroll-top)
+                    (recur low (dec middle) current)
+                    (recur (inc middle) high candidate)))))]
+        {:message-id (.getAttribute node "data-message-id")
+         :delta (- scroll-top (top-of node))}))))
+
+(defn- message-anchor-index
+  [messages anchor]
+  (when-let [message-id (:message-id anchor)]
+    (first (keep-indexed (fn [index message]
+                           (when (= message-id (:id message)) index))
+                         messages))))
+
+(defn- restore-scroll!
+  "Put the reader back on ANCHOR (preferred) or SAVED pixels.
+
+  Returns true when a target was available and written.  The anchor wins
+  because a pixel offset measured against a different window slice is not a
+  stable reading position."
+  [node anchor saved session-id callbacks scroll-restored-ref]
+  (let [target (or (scroll-restore-target
+                    anchor
+                    (rendered-message-geometry node))
+                   saved)]
+    (when (some? target)
+      (set! (.-scrollTop node) target)
+      (set! (.-current scroll-restored-ref) session-id)
+      (call! callbacks :scroll!
+             (cond-> {:session-id session-id
+                      :scroll-top target
+                      :scroll-height (.-scrollHeight node)
+                      :client-height (.-clientHeight node)}
+               (:message-id anchor)
+               (assoc :anchor-message-id (:message-id anchor)
+                      :anchor-delta (:delta anchor))))
+      true)))
+
 (defn conversation-surface
   "Render the conversation surface from a CLJS props map.
 
@@ -2233,6 +2553,9 @@
         secondary-target (or (get-in view-model [:a11y :secondary-target]) 44)
         messages-ref (react/useRef nil)
         textarea-ref (react/useRef nil)
+        ;; Synchronous composition state for the keydown guard.  React state
+        ;; would re-render on every composition start/end; a ref is enough.
+        composing-ref (react/useRef false)
         restored-session-ref (react/useRef nil)
         scroll-restored-ref (react/useRef nil)
         [local-jump? set-local-jump!] (react/useState false)
@@ -2247,6 +2570,8 @@
         [find-query set-find-query!] (react/useState "")
         [find-index set-find-index!] (react/useState 0)
         [message-window set-message-window!] (react/useState 200)
+        [dismissed-guide-session set-dismissed-guide-session!]
+        (react/useState ::guide-unset)
         find-input-ref (react/useRef nil)
         pending-scroll-ref (react/useRef nil)
         expand-anchor-ref (react/useRef nil)
@@ -2424,49 +2749,63 @@
      #js [find-open? find-query find-index message-window])
     (react/useLayoutEffect
      (fn []
-       ;; Selecting a session again restores the last measured offset.  The
-       ;; reducer is told the real viewport so follow mode becomes false when
-       ;; the reader was away from the bottom; a streamed update therefore
-       ;; cannot pull the restored position back down.
+       ;; Selecting a session again restores the reader's message anchor.
+       ;; A raw scrollTop belongs to the old window slice and goes stale as
+       ;; soon as that slice changes; the message id and its relative offset
+       ;; survive the route switch.  Scroll pixels remain the fallback for a
+       ;; fresh page where no anchor was ever recorded.
        (when-let [node (.-current messages-ref)]
          (let [saved (get-in view-model [:stream :scroll-top])
-               total (count (:messages view-model))
+               messages (:messages view-model)
+               total (count messages)
+               anchor (get @scroll-anchors session-id)
+               anchor-index (message-anchor-index messages anchor)
                ;; The window keeps a trailing slice of the conversation.
-               ;; Extend it before writing scrollTop when the saved position
-               ;; lies above the slice; otherwise the browser would clamp the
-               ;; offset to the shorter content.
-               needed (when (some? saved)
+               ;; Extend it to the anchor before writing scrollTop; the old
+               ;; pixel heuristic could choose a slice that still ends above
+               ;; the reader's position and clamp to the new bottom.
+               needed (cond
+                        (some? anchor-index)
+                        (scroll-window-size total anchor-index message-window)
+
+                        (some? saved)
                         (min total
                              (max 200
-                                  (+ 200 (long (js/Math.ceil (/ saved 48)))))))]
-           (when (some? saved)
-             (if (> needed message-window)
+                                  (+ 200 (long (js/Math.ceil (/ saved 48))))))
+
+                        :else nil)]
+           (when (or (some? anchor) (some? saved))
+             (if (and (some? needed) (> needed message-window))
                (do
                  (set-message-window! needed)
-                 (set! (.-current pending-scroll-ref) [session-id saved]))
-               (do
-                 (set! (.-scrollTop node) saved)
-                 (set! (.-current scroll-restored-ref) session-id)
-                 (call! callbacks :scroll!
-                        {:session-id session-id
-                         :scroll-top saved
-                         :scroll-height (.-scrollHeight node)
-                         :client-height (.-clientHeight node)}))))))
+                 (set! (.-current pending-scroll-ref)
+                       [session-id {:saved saved :anchor anchor}]))
+               (restore-scroll! node anchor saved session-id callbacks
+                                scroll-restored-ref)))))
        js/undefined)
      #js [session-id])
     (react/useLayoutEffect
      (fn []
-       (when-let [[pending-session saved] (.-current pending-scroll-ref)]
+       (when-let [[pending-session pending] (.-current pending-scroll-ref)]
          (when (= pending-session session-id)
            (when-let [node (.-current messages-ref)]
-             (set! (.-scrollTop node) saved)
-             (set! (.-current scroll-restored-ref) session-id)
-             (call! callbacks :scroll!
-                    {:session-id session-id
-                     :scroll-top saved
-                     :scroll-height (.-scrollHeight node)
-                     :client-height (.-clientHeight node)})
-             (set! (.-current pending-scroll-ref) nil))))
+             (let [{:keys [saved anchor]}
+                   (if (map? pending)
+                     pending
+                     {:saved pending})
+                   anchor-ready?
+                   (or (nil? (:message-id anchor))
+                       (some #(= (:message-id anchor) (:message-id %))
+                             (rendered-message-geometry node)))]
+               ;; Setting the window in the mount layout effect does not
+               ;; re-render before this effect runs in the same commit.  Do
+               ;; not consume the pending anchor until the expanded DOM
+               ;; actually contains it; otherwise scrollTop clamps against
+               ;; the short window and lands at its bottom.
+               (when anchor-ready?
+                 (restore-scroll! node anchor saved session-id callbacks
+                                  scroll-restored-ref)
+                 (set! (.-current pending-scroll-ref) nil))))))
        js/undefined)
      #js [message-window session-id])
     (react/useLayoutEffect
@@ -2595,7 +2934,9 @@
                (.setSelectionRange node start end))))
          (set! (.-current restored-session-ref) session-id))
        js/undefined)
-     (clj->js [session-id composer-value composer-composing?]))
+     (clj->js [session-id composer-value composer-composing?
+               (get-in props [:draft :version])
+               (get-in view-model [:composer :draft-version])]))
     (dom/div {:className (:class view-model)
               :data-layout (name (:layout view-model))}
              (dom/style {:dangerouslySetInnerHTML #js {:__html css}})
@@ -2609,7 +2950,8 @@
                         alert))
              (dom/div {:className "hc-conversation-header"}
                       (dom/h2 {:className "hc-conversation-title"}
-                              (get-in view-model [:header :title]))
+                              (session-title-label
+                               (get-in view-model [:header :title])))
                       (when (get-in view-model [:header :temporary?])
                         (dom/span {:className "hc-banner hc-banner-info"
                                    :style (style {:margin 0 :padding "2px 8px"})}
@@ -2656,7 +2998,7 @@
                                                         :minWidth secondary-target})
                                          :onClick (fn [_] (callback {}))}
                                         (:label action))))))
-             (for [banner (:banners view-model)]
+             (for [banner (distinct (:banners view-model))]
                (dom/div {:className (class-names "hc-banner"
                                                  (case (:kind banner)
                                                    :error "hc-banner-error"
@@ -2671,7 +3013,7 @@
                                                  failures/failure-reason-categories))]
                           (dom/div {:className "hc-reason"}
                                    reason-label))
-                        (dom/span nil (:text banner))
+                        (dom/span nil (banner-text-label (:text banner)))
                         (for [action (:actions banner)]
                           (let [local-action? (contains? #{:copy-draft :export-draft
                                                           :cancel-pending-send}
@@ -2869,17 +3211,26 @@
                        :onScroll (fn [_]
                                    (let [node (.-current messages-ref)]
                                      (when node
-                                       (let [at-bottom? (<= (- (.-scrollHeight node)
-                                                              (.-scrollTop node)
-                                                              (.-clientHeight node))
+                                       (let [anchor (dom-scroll-anchor node)
+                                             at-bottom? (<= (- (.-scrollHeight node)
+                                                               (.-scrollTop node)
+                                                               (.-clientHeight node))
                                                             stream/bottom-threshold)]
+                                         (when anchor
+                                           (swap! scroll-anchors assoc session-id
+                                                  anchor))
                                          (set-local-jump! (not at-bottom?))
                                          (when at-bottom? (set-selection-locked! false))
                                          (call! callbacks :scroll!
-                                                {:session-id session-id
-                                                 :scroll-top (.-scrollTop node)
-                                                 :scroll-height (.-scrollHeight node)
-                                                 :client-height (.-clientHeight node)})))))
+                                                (cond-> {:session-id session-id
+                                                         :scroll-top (.-scrollTop node)
+                                                         :scroll-height (.-scrollHeight node)
+                                                         :client-height (.-clientHeight node)}
+                                                  (:message-id anchor)
+                                                  (assoc :anchor-message-id
+                                                         (:message-id anchor)
+                                                         :anchor-delta
+                                                         (:delta anchor))))))))
                        :onMouseDown (fn [_] (set-selection-locked! true))
                        :onMouseUp (fn [_]
                                     (let [selection (when-let [sel (js/window.getSelection)]
@@ -2935,34 +3286,39 @@
                                                              (conj selected-messages message-id)
                                                              (disj selected-messages message-id))))
                                             :secondary-target secondary-target})))
-                          [(dom/div {:className "hc-message-meta"
-                                     :style (style {:padding "24px 0"})}
-                                    "还没有消息。输入内容开始。")
+                          (if (and (empty? all-messages)
+                                   (not= session-id dismissed-guide-session))
+                            [(first-run-guide
+                              session-id callbacks
+                              #(set-dismissed-guide-session! session-id))]
+                            [(dom/div {:className "hc-message-meta"
+                                       :style (style {:padding "24px 0"})}
+                                      "还没有消息。输入内容开始。")
                              ;; R-12: an empty conversation with no bound model
-                           ;; gets the same repair entry as the composer, so
-                           ;; the first screen is not a dead end.
-                           (when (and (empty? all-messages)
-                                      (= :select-model
-                                         (get-in view-model [:composer :send :intent]))
-                                      (get-in view-model
-                                              [:composer :send :model-entry :visible?]))
-                             [(dom/div {:className "hc-message-actions"
-                                        :style (style {:justifyContent "center"})}
-                                       (dom/button
-                                        {:className "hc-button hc-button-primary"
-                                         :type "button"
-                                         :aria-label "连接模型"
-                                         :onClick (fn [_]
-                                                    (cond
-                                                      (fn? (:fix! callbacks))
-                                                      ((:fix! callbacks)
-                                                       {:session-id session-id
-                                                        :intent :select-model})
-                                                      (fn? (:settings! callbacks))
-                                                      ((:settings! callbacks)
-                                                       {:session-id session-id})
-                                                      :else nil))}
-                                  "连接模型"))])]))))
+                             ;; gets the same repair entry as the composer, so
+                             ;; the first screen is not a dead end.
+                             (when (and (empty? all-messages)
+                                        (= :select-model
+                                           (get-in view-model [:composer :send :intent]))
+                                        (get-in view-model
+                                                [:composer :send :model-entry :visible?]))
+                               [(dom/div {:className "hc-message-actions"
+                                          :style (style {:justifyContent "center"})}
+                                         (dom/button
+                                          {:className "hc-button hc-button-primary"
+                                           :type "button"
+                                           :aria-label "连接模型"
+                                           :onClick (fn [_]
+                                                      (cond
+                                                        (fn? (:fix! callbacks))
+                                                        ((:fix! callbacks)
+                                                         {:session-id session-id
+                                                          :intent :select-model})
+                                                        (fn? (:settings! callbacks))
+                                                        ((:settings! callbacks)
+                                                         {:session-id session-id})
+                                                        :else nil))}
+                                          "连接模型"))])])))))
              (when jump-visible?
                (dom/button {:className "hc-button hc-jump"
                             :type "button"
@@ -2985,6 +3341,7 @@
              (composer-view {:props props
                              :view-model view-model
                              :textarea-ref textarea-ref
+                             :composing-ref composing-ref
                              :local-decision local-decision
                              :set-local-decision! set-local-decision!
                              :pending-send pending-send

@@ -741,3 +741,217 @@
         "the previous session's active skills are not reused")
     (is (= a (model/switch-session a "a"))
         "selecting the same session keeps its state")))
+
+(defn- button-actions
+  "On-click action types present in TREE."
+  [tree]
+  (set (keep #(get-in % [:attrs :events :on-click :action :type])
+             (view-nodes tree))))
+
+(defn- delete-view-state
+  []
+  (assoc (model/initial-state)
+         :ready? true
+         :version 1
+         :mcp [{:id "m1" :name "remote" :enabled? false
+                :state :connected-not-enabled
+                :transport {:type :http :url "https://example.test/mcp"}
+                :connection {:status :connected}
+                :tools []}]
+         :skills [{:id "s1" :name "demo" :enabled? false
+                   :version "1" :bindings #{}
+                   :description "demo"
+                   :source {:kind :text}
+                   :files {}}]))
+
+(deftest mcp-delete-needs-an-explicit-confirmation
+  (let [state (assoc (model/initial-state) :ready? true)
+        requested (:state (model/reduce-action
+                           state
+                           {:type :extensions/mcp-request-delete :id "m1"}))]
+    (is (= "m1" (get-in requested [:confirm-delete :mcp])))
+    (is (empty? (:outbox requested))
+        "the request action only records the confirmation")
+    (let [unconfirmed (model/reduce-action
+                       state
+                       {:type :extensions/mcp-remove :id "m1"})]
+      (is (empty? (get-in unconfirmed [:state :outbox]))
+          "a delete without confirmation never reaches the server")
+      (is (string? (get-in unconfirmed [:error :message]))))
+    (let [cancelled (:state (model/reduce-action
+                             requested
+                             {:type :extensions/mcp-cancel-delete}))]
+      (is (nil? (get-in cancelled [:confirm-delete :mcp])))
+      (is (empty? (:outbox cancelled))))
+    (let [removed (model/reduce-action requested
+                                       {:type :extensions/mcp-remove :id "m1"})]
+      (is (= (keyword "extensions" "mcp/remove")
+             (get-in removed [:state :outbox 0 :payload :kind])))
+      (is (= "m1" (get-in removed [:state :outbox 0 :payload :id])))
+      (is (nil? (get-in removed [:state :confirm-delete :mcp]))
+          "the confirmation is cleared as soon as the command is queued")
+      (is (nil? (:error removed))))))
+
+(deftest skill-delete-needs-its-own-confirmation
+  (let [state (assoc (model/initial-state)
+                     :confirm-delete {:mcp "s1" :skill nil})
+        requested (:state (model/reduce-action
+                           state
+                           {:type :extensions/skill-request-delete :id "s1"}))]
+    (is (= "s1" (get-in requested [:confirm-delete :skill])))
+    (is (= "s1" (get-in requested [:confirm-delete :mcp]))
+        "an MCP confirmation with the same id is untouched")
+    (is (empty? (:outbox requested)))
+    (let [wrong-family (model/reduce-action
+                        state
+                        {:type :extensions/skill-delete :id "s1"})]
+      (is (empty? (get-in wrong-family [:state :outbox]))
+          "an MCP confirmation does not confirm a skill delete"))
+    (let [removed (model/reduce-action requested
+                                       {:type :extensions/skill-delete :id "s1"})]
+      (is (= (keyword "extensions" "skill/delete")
+             (get-in removed [:state :outbox 0 :payload :kind])))
+      (is (nil? (get-in removed [:state :confirm-delete :skill])))
+      (is (nil? (:error removed))))
+    (let [cancelled (:state (model/reduce-action
+                             requested
+                             {:type :extensions/skill-cancel-delete}))]
+      (is (nil? (get-in cancelled [:confirm-delete :skill])))
+      (is (empty? (:outbox cancelled))))))
+
+(deftest extension-view-asks-before-deleting
+  (let [state (delete-view-state)
+        tree (view/panel-tree state)
+        request (button-labeled tree "删除")
+        actions (button-actions (view/panel-tree state))]
+    (is (= :extensions/mcp-request-delete
+           (get-in request [:attrs :events :on-click :action :type])))
+    (is (= "m1" (get-in request [:attrs :events :on-click :action :id])))
+    (is (contains? actions :extensions/mcp-request-delete))
+    (is (contains? actions :extensions/skill-request-delete))
+    (is (not (contains? actions :extensions/mcp-remove))
+        "the real MCP delete action is absent before confirmation")
+    (is (not (contains? actions :extensions/skill-delete))
+        "the real skill delete action is absent before confirmation")
+    (is (nil? (button-labeled (view/panel-tree state) "确认删除服务器")))
+    (is (nil? (button-labeled (view/panel-tree state) "确认删除技能")))
+    (let [confirmed (assoc state :confirm-delete {:mcp "m1" :skill "s1"})
+          tree (view/panel-tree confirmed)
+          actions (button-actions tree)
+          mcp-confirm (button-labeled tree "确认删除服务器")
+          skill-confirm (button-labeled tree "确认删除技能")]
+      (is (some? mcp-confirm))
+      (is (some? skill-confirm))
+      (is (= :extensions/mcp-remove
+             (get-in mcp-confirm [:attrs :events :on-click :action :type])))
+      (is (= :extensions/skill-delete
+             (get-in skill-confirm [:attrs :events :on-click :action :type])))
+      (is (= "m1" (get-in mcp-confirm [:attrs :events :on-click :action :id])))
+      (is (= "s1" (get-in skill-confirm [:attrs :events :on-click :action :id])))
+      (is (contains? actions :extensions/mcp-cancel-delete))
+      (is (contains? actions :extensions/skill-cancel-delete))
+      (is (not (contains? actions :extensions/mcp-request-delete)))
+      (is (not (contains? actions :extensions/skill-request-delete))))))
+
+(deftest delete-request-is-disabled-while-a-command-is-pending
+  (let [state (assoc (delete-view-state)
+                     :commands {"pending" {:status :submitting}})
+        requests (filter #(contains? #{:extensions/mcp-request-delete
+                                        :extensions/skill-request-delete}
+                                      (get-in % [:attrs :events :on-click
+                                                 :action :type]))
+                         (view-nodes (view/panel-tree state)))]
+    (is (= 2 (count requests)))
+    (is (every? #(true? (get-in % [:attrs :disabled])) requests))))
+
+(deftest skill-update-section-folds-into-details
+  (let [skill {:id "s1" :name "demo" :enabled? false
+               :version "1" :bindings #{}
+               :description "demo"
+               :source {:kind :text}
+               :files {}}
+        state (assoc (model/initial-state)
+                     :ready? true :version 1 :skills [skill])
+        nodes (view-nodes (view/panel-tree state))
+        details (first (filter #(= :details (:tag %)) nodes))
+        summary (first (filter #(= :summary (:tag %)) nodes))]
+    (is (some? details)
+        "the upstream comparison is a disclosure element")
+    (is (= "hc-ext-update" (get-in details [:attrs :class])))
+    (is (not (contains? (:attrs details) :open))
+        "the comparison starts collapsed")
+    (is (= ["上游更新与三方对比"] (:children summary)))
+    (is (not-any? #(and (= :h3 (:tag %))
+                        (= ["上游更新与三方对比"] (:children %)))
+                  nodes)
+        "the summary replaces the duplicate h3 heading")
+    (is (seq (filter #(= :textarea (:tag %))
+                     (view-nodes (:children details))))
+        "the collapsed section keeps its full content tree")))
+
+(deftest session-skill-view-names-blocked-and-excluded-skills
+  (let [rendered (pr-str (view/panel-tree
+                          (assoc (model/initial-state)
+                                 :ready? true
+                                 :selected-session-id "s1"
+                                 :session-scope {:mode :custom :skills #{}}
+                                 :resolved-skills
+                                 {:active []
+                                  :blocked [{:id "b1" :name "乙技能"}
+                                            {:id "b2"}]
+                                  :excluded [{:id "e1" :name "丙技能"}]})))]
+    (is (re-find #"条件未满足（2）：乙技能、b2" rendered))
+    (is (re-find #"未生效（1）：丙技能" rendered)))
+  (let [rendered (pr-str (view/panel-tree
+                          (assoc (model/initial-state)
+                                 :ready? true
+                                 :selected-session-id "s1"
+                                 :session-scope {:mode :custom :skills #{}}
+                                 :resolved-skills
+                                 {:active [] :blocked [] :excluded []})))]
+    (is (not (re-find #"条件未满足" rendered))
+        "an empty blocked set renders no line")
+    (is (not (re-find #"未生效" rendered))
+        "an empty excluded set renders no line")))
+
+(deftest skill-card-shows-binding-assistant-names
+  (let [state (assoc (model/initial-state)
+                     :ready? true
+                     :version 1
+                     :assistants [{:id "a1" :name "助手甲"}
+                                  {:id "a2" :name "助手乙"}]
+                     :skills [{:id "s1" :name "demo" :enabled? false
+                               :version "1"
+                               :bindings ["a1" {:id "a2"}]
+                               :description "demo"
+                               :source {:kind :text}
+                               :files {}}])
+        rendered (pr-str (view/panel-tree state))]
+    (is (re-find #"绑定：助手甲、助手乙" rendered))
+    (is (not (re-find #"绑定：a1" rendered)))))
+
+(deftest skill-card-falls-back-to-binding-id-and-says-unbound
+  (let [base (assoc (model/initial-state)
+                    :ready? true
+                    :version 1
+                    :assistants [{:id "a9" :name "查表名"}])
+        bound (assoc base
+                     :skills [{:id "s1" :name "demo" :enabled? false
+                               :version "1"
+                               :bindings [{:assistant-id "a9" :name "显式名"}
+                                          "a9"
+                                          "missing"]
+                               :description "demo"
+                               :source {:kind :text}
+                               :files {}}])
+        unbound (assoc base
+                       :skills [{:id "s2" :name "plain" :enabled? false
+                                 :version "1"
+                                 :bindings []
+                                 :description "plain"
+                                 :source {:kind :text}
+                                 :files {}}])]
+    (is (re-find #"绑定：显式名、查表名、missing"
+                 (pr-str (view/panel-tree bound)))
+        "a map name wins, then the assistants lookup, then the raw id")
+    (is (re-find #"未绑定" (pr-str (view/panel-tree unbound))))))

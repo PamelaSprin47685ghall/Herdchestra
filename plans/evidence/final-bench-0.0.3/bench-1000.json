@@ -1,0 +1,72 @@
+{
+  "env": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 12,
+    "totalMemBytes": 66924290048,
+    "freeMemBytes": 35156897792,
+    "chrome": "157.0.8103.38"
+  },
+  "config": {
+    "root": "/var/tmp/hc-e2e/hc-bench1-ZHR6ta",
+    "sessions": 1000,
+    "messages": 20,
+    "msgChars": 400,
+    "jvmOpts": [
+      "-J-Xmx384m",
+      "-J-XX:MaxDirectMemorySize=192m",
+      "-J-XX:MaxMetaspaceSize=384m",
+      "-J-Xss512k",
+      "-J-XX:+ExitOnOutOfMemoryError"
+    ],
+    "staticRoot": "resources/public"
+  },
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "seed": {
+    "elapsedMs": 12246,
+    "log": "{:seeded {:sessions 1000, :elapsed-ms 4143.802724}}"
+  },
+  "app": {
+    "url": "http://127.0.0.1:35259",
+    "pid": 2752570,
+    "listenMs": 16682,
+    "healthMs": 16721,
+    "healthStatus": 200,
+    "healthOkFlag": true,
+    "peak": {
+      "hwmKb": 1087928,
+      "rssKb": 1087928
+    },
+    "logTail": "CompileCommand: exclude taoensso/nippy/io$read_typed.invokeStatic intx exclude = 1111\nCompileCommand: exclude taoensso/nippy/io$read_typed.invoke intx exclude = 1111\nCompileCommand: exclude taoensso/nippy/io$read_typed.invokePrim intx exclude = 1111\nWARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::load has been called by org.bytedeco.javacpp.Loader in an unnamed module (file:/home/kunweiz/.m2/repository/org/bytedeco/javacpp/1.5.14/javacpp-1.5.14.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nHerdchestra 0.0.3 git=721c1b2ea857 dirty=true\nHerdchestra listening on http://127.0.0.1:35259/\nworkspace: /var/tmp/hc-e2e/hc-bench1-ZHR6ta/workspace\nstore:     /var/tmp/hc-e2e/hc-bench1-ZHR6ta/data/db\n[hc-ws-close-status] {:status :going-away, :at 1794224631664}\n[hc-ws-close] {:code 1001, :reason \"\", :at 1794224631665}\n"
+  },
+  "dom": {
+    "listOpenMs": 1997,
+    "syncMs": 1452,
+    "sessionItems": 200,
+    "totalNodes": 2591,
+    "selectMs": 101,
+    "messageNodes": 20,
+    "messageDomNodes": 337,
+    "totalAfter": 2592,
+    "expectedSessions": 1000,
+    "expectedMessagesPerSession": 20,
+    "synced": true,
+    "badgeText": "●已同步"
+  },
+  "startedAt": "2026-11-09T11:43:20.348Z",
+  "bundleAfter": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "bundleStable": true,
+  "verdict": "PASS",
+  "verdictReasons": []
+}

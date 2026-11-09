@@ -276,7 +276,39 @@
 (defn- publish-failure-on!
   [snapshot execute! checkpoint! permit failure]
   (let [aid (:action-id permit)
-        action (get-in (snapshot) [:actions aid])]
+        action (get-in (snapshot) [:actions aid])
+        stage (let [raw (or (:last-known-stage failure) (:phase failure))]
+                (case raw
+                  :board :publish-pending
+                  :commit :applying
+                  (:accepted :waiting-gate :final-check :preparing :applying
+                   :publish-pending :uncertain :finished) raw
+                  :applying))
+        expected-action (let [value (:expected-action failure)
+                              text (cond
+                                     (string? value) value
+                                     (nil? value) "none"
+                                     :else (pr-str (err/sanitize value)))]
+                          (subs text 0 (min 300 (count text))))
+        failed-at (let [location (:failed-at failure)
+                        location (cond
+                                   (map? location) location
+                                   (keyword? location) {:stage location}
+                                   :else {:stage stage})]
+                    (into {}
+                          (keep (fn [[k v]]
+                                  (when (and (contains? #{:op-index :stage} k)
+                                             (some? v))
+                                    [k (err/sanitize v)])))
+                          location))
+        result-ref (into {}
+                         {:request-id (:request-id permit)
+                          :status (:status failure)
+                          :message (:message failure)
+                          :phase (:phase failure)
+                          :last-known-stage stage
+                          :expected-action expected-action
+                          :failed-at failed-at})]
     (case (:phase action)
       :uncertain (checkpoint-published! checkpoint! permit)
       :finished (checkpoint-published! checkpoint! permit)
@@ -286,10 +318,7 @@
                                :actor-id (:actor-id permit)
                                :action-id aid
                                :phase :uncertain
-                               :result-ref {:request-id (:request-id permit)
-                                            :status (:status failure)
-                                            :message (:message failure)
-                                            :phase (:phase failure)}}))]
+                               :result-ref result-ref}))]
         (if (:ok? result)
           {:published true}
           (throw (ex-info "Hard failure could not be published to the STM"

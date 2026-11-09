@@ -108,7 +108,12 @@
        (str/join "\n")))
 
 (defn base
-  "Common fields for every program result."
+  "Common fields for every program result.
+
+  `:role` is copied verbatim from the normalized request; the capability
+  table, not this receipt, decides which program roles exist.  A Steward or
+  Meditator receipt therefore keeps its role exactly like Plan, Reviewer,
+  worker, and dedicated-worker receipts do."
   [program]
   (let [source (or (:numbered-source program) (:source program))
         ;; `base` is applied twice on the park path (once in `program-view`,

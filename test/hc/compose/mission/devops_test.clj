@@ -3,7 +3,8 @@
             [clojure.test :refer [deftest is testing]]
             [hc.compose.mission :as mission]
             [hc.compose.mission.devops :as devops]
-            [hc.compose.mission.support :as support]))
+            [hc.compose.mission.support :as support]
+            [hc.core.ufss :as ufss]))
 
 (defn scripted-model
   "A model gateway that plays one event vector per start request."
@@ -58,6 +59,19 @@
               ["cat" "stat" "ls" "where" "whereAll" "park" "unpark" "call"]))
   (is (not (devops/allowed-tool? "write")))
   (is (not (devops/allowed-tool? "shell"))))
+
+(deftest scope-schema-is-a-single-pointer
+  (let [scope devops/scope-parameter-spec
+        description (:description scope)]
+    (is (= "Flat Scope annotation for this turn; see # Scope in the system prompt."
+           description))
+    (is (not (str/includes? description "reset-scope"))
+        "the four kind rules stay in the system prompt, not the tool schema")
+    (is (= #{:kind :new-scope-goal :new-scope-retention-budget :replacement}
+           (set (keys (:properties scope)))))
+    (is (= ["reset-scope" "keep-last" "remove-last" "me-too"]
+           (get-in scope [:properties :kind :enum])))
+    (is (= ["kind"] (:required scope)))))
 
 (deftest task-model-is-enforced-before-any-run
   (let [model (scripted-model [])
@@ -212,7 +226,16 @@
         worker (get-in (mission/snapshot host)
                        [:bindings :plan-worker :worker])]
     (is (= :interrupted (get-in first-result [:receipt :worker-result-status])))
-    (is (str/includes? (get-in first-result [:receipt :report]) "park-1"))
+    (let [park-report (get-in first-result [:receipt :report])]
+      (is (string? park-report))
+      (is (str/includes? (str park-report) "park-1"))
+      (when (string? park-report)
+        (is (= {:name "park-1"
+                :state :parked
+                :reason :explicit
+                :payload {:needle "missing"}}
+               (ufss/read-str park-report))
+            "the park receipt is one EDN+UFSS value")))
     (is (= :ok (get-in second-result [:receipt :worker-result-status])))
     (is (= "resumed report" (get-in second-result [:receipt :report])))
     (is (= first-worker (get-in second-result [:receipt :worker-id])))
@@ -221,7 +244,68 @@
     (is (= :ok (get-in fourth-result [:receipt :worker-result-status])))
     (is (= "unknown handled" (get-in fourth-result [:receipt :report])))
     (is (= :ok (:last-status worker)))
-    (is (= :idle (:status worker)))))
+    (is (= :idle (:status worker)))
+    (testing "the unpark receipt is one EDN+UFSS value"
+      (let [tool-texts (->> (get-in @(:requests model) [2 :snapshot :messages])
+                            (filter #(= :tool (:role %)))
+                            (map :text))
+            receipt-text (some #(when (and (str/includes? % "park-1")
+                                           (str/includes? % ":resumed"))
+                                  %)
+                               tool-texts)]
+        (is (string? receipt-text))
+        (when (string? receipt-text)
+          (is (= {:name "park-1" :state :resumed :value [1 2]}
+                 (ufss/read-str receipt-text))))))))
+
+(deftest call-tool-message-is-one-edn-ufss-value
+  (let [host (support/host)
+        plan-id (support/plan-tenure-id host)
+        structured (ufss/write-str {:stdout "a\nb"
+                                    :quoted "say \"hi\""})
+        scripts [[{:event :completed
+                   :text ""
+                   :tool-calls [{:id "c1" :name "call"
+                                 :arguments {:name "structured"}}
+                                {:id "c2" :name "call"
+                                 :arguments {:name "raw"}}]}]
+                 [{:event :completed :text "done"}]]
+        model (scripted-model scripts)
+        runner (devops/runner
+                {:model model
+                 :tools {:execute! (fn [{:keys [arguments]}]
+                                     (if (= "raw" (:name arguments))
+                                       {:status :ok
+                                        :text "raw result\nsecond line"}
+                                       {:status :ok :text structured}))}})
+        result (mission/devops! host {:tenure-id plan-id
+                                      :call-id "devops-call"
+                                      :verbose-intent "probe the workspace"
+                                      :run (:run! runner)})
+        messages (get-in @(:requests model) [1 :snapshot :messages])
+        tool-text (fn [id]
+                    (some #(when (and (= :tool (:role %))
+                                      (= id (:tool-call-id %)))
+                             (:text %))
+                          messages))]
+    (is (:ok? result))
+    (is (= "done" (get-in result [:receipt :report])))
+    (let [structured-text (tool-text "c1")
+          raw-text (tool-text "c2")]
+      (is (string? structured-text))
+      (is (string? raw-text))
+      (when (and (string? structured-text) (string? raw-text))
+        (let [structured-value (ufss/read-str structured-text)
+              raw-value (ufss/read-str raw-text)]
+          (is (= "a\nb" (:stdout structured-value)))
+          (is (= "say \"hi\"" (:quoted structured-value)))
+          (is (true? (:workspace-may-have-changed structured-value)))
+          (is (str/includes? (:note structured-value)
+                             "workspace may have changed"))
+          (is (= "raw result\nsecond line" (:result raw-value)))
+          (is (true? (:workspace-may-have-changed raw-value))))
+        (is (not (str/includes? structured-text "\\\"")))
+        (is (not (str/includes? raw-text "\\\"")))))))
 
 (deftest model-failure-is-reported-and-worker-returns-idle
   (let [host (support/host)

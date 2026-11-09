@@ -11,7 +11,8 @@
     5. wait for a server receipt before clearing a draft or closing a run.
 
   No function here marks a domain state as complete on its own."
-  (:require [com.fulcrologic.fulcro.application :as application]
+  (:require [clojure.string :as str]
+            [com.fulcrologic.fulcro.application :as application]
             [com.fulcrologic.fulcro.components :as comp]
             [hc.client.conversation.draft :as draft]
             [hc.client.workbench.conversation-bridge :as conversation-bridge]
@@ -113,6 +114,57 @@
   "Submit an S1 answer through the conversation reducer."
   [this answer]
   (conversation-bridge/answer-ask! (app-of this) answer))
+
+(defn- presence-command!
+  "Send one presence command under that session's Owner epoch.
+
+  Presence commands are the only commands an observer may submit.  The
+  gateway stamps them with the stable handshake identity, so the payload never
+  carries a client id of its own."
+  [this session-id kind]
+  (let [epoch (bridge/command-epoch-for-session session-id)]
+    (cond
+      (not (bridge/command-allowed?))
+      (blocked! this :connection-not-ready)
+
+      (nil? epoch)
+      (do
+        (bridge/resync! :session-command-epoch-missing)
+        (blocked! this :command-epoch-unknown))
+
+      :else
+      (let [command-id (new-id)
+            command {:command-id command-id
+                     :command-epoch epoch
+                     :kind kind
+                     :session-id session-id
+                     :status :submitting
+                     :created-at (now)
+                     :payload {:kind kind
+                               :session-id session-id}}]
+        (track! this command)
+        (send-command! this command)))))
+
+(defn attach-client!
+  "Register this client with the selected session's Owner.
+
+  Idempotent server-side: the first client becomes the controller, a later
+  client becomes an observer, and a repeated attach returns the current
+  presence without touching business state.  `presence-bridge` calls this
+  once per `(session, subscription)` when the confirmed baseline reports no
+  controller."
+  [this session-id]
+  (presence-command! this session-id :session/attach-client))
+
+(defn takeover-session!
+  "Transfer session control to this browser client.
+
+  This is the only command that turns an observer into the controller.  The
+  server moves the previous controller to the front of the observer queue;
+  the command is never implied by typing or by a swallowed `:NOT_CONTROLLER`
+  refusal."
+  [this session-id]
+  (presence-command! this session-id :session/takeover))
 
 (defn transfer-session!
   "Turn one temporary session into a normal session."
@@ -300,6 +352,48 @@
                      :payload (assoc payload :kind kind)}]
         (track! this command)
         (send-command! this command)))))
+
+(defn search-history!
+  "Search the rebuildable global history index.
+
+  The command is app-scoped: it has no session Owner.  The same
+  connection/epoch gate as every other command applies, and a blank query is
+  refused before a command id is wasted.
+
+  FILTERS may contain `:assistant-id`, `:status`, `:from-ms`, `:to-ms`,
+  `:include-versions?` and `:has-attachments?`.  Only present conditions are
+  sent; the server ignores any key outside its allow-list."
+  [this query filters]
+  (let [query (if (string? query) (str/trim query) "")]
+    (if (str/blank? query)
+      {:ok? false :reason :query-invalid}
+      (let [filters (if (map? filters) filters {})]
+        (app-scoped-command!
+         this :history/search
+         (cond-> {:query query}
+           (:assistant-id filters)
+           (assoc :assistant-id (:assistant-id filters))
+
+           (:status filters)
+           (assoc :status (:status filters))
+
+           (some? (:from-ms filters))
+           (assoc :from-ms (:from-ms filters))
+
+           (some? (:to-ms filters))
+           (assoc :to-ms (:to-ms filters))
+
+           (some? (:include-versions? filters))
+           (assoc :include-versions? (boolean (:include-versions? filters)))
+
+           (some? (:has-attachments? filters))
+           (assoc :has-attachments? (boolean (:has-attachments? filters)))))))))
+
+(defn search-history-status!
+  "Read the history index status.  This never rebuilds the index; the
+  browser-facing `:history/reindex` handler stays trusted-only."
+  [this]
+  (app-scoped-command! this :history/search-status {}))
 
 (defn ensure-session-owner!
   "Ask the server to start the session's Owner and publish its epoch.

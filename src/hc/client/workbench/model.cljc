@@ -78,8 +78,8 @@
   "The key bindings the workbench actually implements.
 
   The settings workspace renders this table verbatim, so it must never list a
-  binding that has no handler.  Global history search is not wired to a server
-  index yet; the row says so instead of claiming the feature."
+  binding that has no handler.  Global history search opens the real indexed
+  search panel; `Ctrl/Cmd+F` keeps the local session filter."
   [{:id :settings
     :keys-label "Ctrl/Cmd+,"
     :action "打开设置"
@@ -94,7 +94,7 @@
     :scope "会话列表"}
    {:id :global-search
     :keys-label "Ctrl/Cmd+Shift+F"
-    :action "聚焦会话过滤；全局搜索尚未接入服务器索引"
+    :action "打开全局历史搜索"
     :scope "全局"}
    {:id :escape
     :keys-label "Escape"
@@ -523,12 +523,17 @@
   The global `:sync :command-epoch` is the app command epoch; it never
   authorizes a session command.  The AG-UI feed epoch is not a command
   epoch.  Deleted sessions are absent from `:session/by-id`; their rows
-  survive only in `:ui/session-list`.  Both tables are searched by the exact
+  survive only in `:ui/session-list`.  `:session/history` survives an
+  `install-sync` that replaces `:session/by-id` with a baseline carrying only
+  the active session's epoch.  All three tables are searched by the exact
   session id, and a session without its own published epoch must block
   instead of borrowing the app epoch or another session's epoch."
   [db session-id]
   (when (and (string? session-id) (not (str/blank? session-id)))
     (let [by-id (field db :session/by-id)
+          history (let [rows (field db :session/history)]
+                    (or (get rows session-id)
+                        (get rows (str session-id))))
           session (or (get by-id session-id)
                       (get by-id (str session-id)))
           listed (some (fn [row]
@@ -538,7 +543,8 @@
                            row))
                        (or (field db :ui/session-list) []))
           epoch (or (positive-epoch (field session :command-epoch))
-                    (positive-epoch (field listed :command-epoch)))]
+                    (positive-epoch (field listed :command-epoch))
+                    (positive-epoch (field history :command-epoch)))]
       epoch)))
 
 (defn resolve-session-command-epoch

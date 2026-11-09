@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startApp, REPO_ROOT, clojureCommand } from './support/app.mjs';
 import { startMockWebDAV } from './support/mock-services.mjs';
+import { summarizeChecks } from './support/fixtures.mjs';
 import {
   assert as assertCheck, goto, shot, waitForSync, writeJson,
   clientBundleInfo,
@@ -197,8 +198,10 @@ async function createWebDavTarget(page, baseUrl) {
     await expect(defaultCheck).toBeChecked({ timeout: 10000 });
   }
   await editor.getByRole('button', { name: '保存目标' }).first().click();
-  await page.locator('.hc-backup-message', { hasText: '备份目标已保存' })
-    .first().waitFor({ state: 'visible', timeout: 60000 });
+  const savedMessage = page.locator('.hc-backup-message',
+    { hasText: '备份目标已保存' }).first();
+  await savedMessage.waitFor({ state: 'visible', timeout: 60000 });
+  const savedText = await savedMessage.innerText();
   // Explicitly select the new WebDAV target: :ui :target-id may already hold
   // the implicit :local default, and `backup/create` uses that selection, not
   // the server-side default.
@@ -209,6 +212,7 @@ async function createWebDavTarget(page, baseUrl) {
     await webdavRadio.click();
   }
   await expect(webdavRadio).toBeChecked({ timeout: 10000 });
+  return savedText;
 }
 
 async function createBackup(page) {
@@ -247,13 +251,15 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
   test.setTimeout(1200000);
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
   const startedAt = new Date().toISOString();
+  const checks = {};
+  const diagnostics = {};
   const evidence = {
     test: 'E2E 22', mode: 'automated', mock: true, startedAt,
     clientBundle: clientBundleInfo(),
     sourceTreeSha256: sourceTreeSha256(),
     freeze: { bundleSha256: '45f11529a22da07d23e665c412ad6b1611758d63e28bd464727efa32e174fd30',
               treeSha256Prefix: '76cf2fd0' },
-    checks: {}, notes: [],
+    checks, diagnostics, notes: [],
   };
   // final25 freeze pins bundle 45f11529 + tree 76cf2fd0.  W245/W251 landed
   // src fixes after the freeze, so the measured sourceTreeSha256 below is
@@ -264,6 +270,43 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     + 'measured sourceTreeSha256 reflects the drifted tree intentionally.');
   const writeEvidence = () =>
     writeJson(EVIDENCE_DIR, 'e2e-22', evidence);
+  // Observations live in `diagnostics`, never in `checks`.  Each one is
+  // registered here; the strict verdict consumes every check via checksOk.
+  // `mcpEnabledChecked` is a raw observation whose expected value is false;
+  // the consumed verdict is `mcpDisabled`.
+  const diagnosticOnly = [
+    'seedSource', 'backupCreate', 'webdavRequests', 'webdavFiles',
+    'webdavMirror', 'seedDestination', 'restore', 'verify', 'backupSection',
+    'sessionListText', 'destinationActiveRows', 'deletedArea',
+    'memoryBodyHead', 'memoryAllBodyHead', 'mcpCardText',
+    'mcpEnabledChecked', 'mcpStateLabel', 'boardText', 'boardSwarmRows',
+    'topbarBadge', 'destinationBackupPane', 'destinationTargetRows',
+    'finishedAt',
+  ];
+  let finalized = false;
+  const finalizeEvidence = () => {
+    diagnostics.finishedAt = new Date().toISOString();
+    const summary = summarizeChecks(checks, diagnostics, diagnosticOnly);
+    evidence.checks = summary.checks;
+    evidence.diagnostics = summary.diagnostics;
+    evidence.diagnosticOnly = summary.diagnosticOnly;
+    evidence.failedChecks = summary.failedChecks;
+    evidence.ok = summary.ok;
+    finalized = true;
+    writeEvidence();
+    return evidence.ok;
+  };
+  const abortEvidence = (error) => {
+    if (finalized) return;
+    evidence.error = String(error && error.message || error).slice(0, 2000);
+    evidence.failedChecks = ['run-aborted'];
+    evidence.diagnosticOnly = diagnosticOnly;
+    evidence.diagnostics = diagnostics;
+    diagnostics.finishedAt = new Date().toISOString();
+    evidence.ok = false;
+    finalized = true;
+    writeEvidence();
+  };
 
   const webdav = await startMockWebDAV();
   const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-e2e22-src-'));
@@ -273,13 +316,16 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
   fs.mkdirSync(dataA, { recursive: true });
   fs.mkdirSync(wsA, { recursive: true });
   fs.mkdirSync(blobA, { recursive: true });
-  const seedA = runSeed(dataA, blobA, path.join(dataA, 'extensions'), 'source');
-  evidence.checks.seedSource = seedA;
 
   let appA;
   let ctxA;
   let pageA;
   try {
+    const seedA = runSeed(dataA, blobA, path.join(dataA, 'extensions'), 'source');
+    diagnostics.seedSource = seedA;
+    checks.seedSourceOk = seedA.ok === true;
+    assertCheck(checks.seedSourceOk,
+      `source seed failed: ${JSON.stringify(seedA)}`);
     mark('source: startApp');
     appA = await startApp({ root: rootA, port: 0, evidenceDir: EVIDENCE_DIR });
     ctxA = await browser.newContext();
@@ -291,17 +337,21 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     mark('source: openDataCenter');
     await openDataCenter(pageA);
     mark('source: createWebDavTarget');
-    await createWebDavTarget(pageA, `${webdav.url}/backups`);
-    evidence.checks.targetSaved = true;
+    const targetSaveMessage = await createWebDavTarget(pageA, `${webdav.url}/backups`);
+    checks.targetSaved = /备份目标已保存/.test(targetSaveMessage);
+    assertCheck(checks.targetSaved,
+      `target save was not confirmed: ${targetSaveMessage.slice(0, 300)}`);
     await shot(pageA, EVIDENCE_DIR, '01-target-saved');
 
     mark('source: createBackup');
     const created = await createBackup(pageA);
-    evidence.checks.backupCreate = {
+    diagnostics.backupCreate = {
       backupId: created.backupId,
       resultHead: created.resultText.slice(0, 800),
     };
-    assertCheck(created.backupId, `no backup id in result: ${created.resultText}`);
+    checks.backupIdFound = Boolean(created.backupId);
+    assertCheck(checks.backupIdFound,
+      `no backup id in result: ${created.resultText}`);
     await shot(pageA, EVIDENCE_DIR, '02-backup-created');
 
     // Mirror the mock WebDAV objects into a file target layout.
@@ -318,21 +368,28 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
       .filter(([key]) => key.endsWith(`/${backupId}.hcb`) || key.endsWith(`${backupId}.hcb`));
     const hcbEntry = objectEntries.find(([key]) => key.endsWith(`/${backupId}.hcb`))
       || objectEntries[0];
-    evidence.checks.webdavRequests = webdav.state.requests
+    diagnostics.webdavRequests = webdav.state.requests
       .filter((r) => r.method === 'PUT' || r.method === 'PROPFIND' || r.method === 'GET')
       .slice(-40);
-    evidence.checks.webdavFiles = [...webdav.state.files.keys()];
-    assertCheck(hcbEntry,
-      `mock WebDAV has no object for backup ${backupId}; files: ${[...webdav.state.files.keys()].join(', ')}; requests: ${JSON.stringify(evidence.checks.webdavRequests)}`);
+    diagnostics.webdavFiles = [...webdav.state.files.keys()];
+    checks.backupObjectFound = Boolean(hcbEntry);
+    assertCheck(checks.backupObjectFound,
+      `mock WebDAV has no object for backup ${backupId}; files: ${[...webdav.state.files.keys()].join(', ')}; requests: ${JSON.stringify(diagnostics.webdavRequests)}`);
     const [hcbKey, objectBytes] = hcbEntry;
     fs.writeFileSync(path.join(objectsDir, `${backupId}.hcb`), objectBytes);
-    evidence.checks.webdavMirror = {
+    diagnostics.webdavMirror = {
       key: hcbKey,
       bytes: objectBytes.length,
       mirrorRoot,
       requests: webdav.state.requests.length,
     };
+    checks.mirrorObjectMounted = Number(diagnostics.webdavMirror.bytes) > 0;
+    assertCheck(checks.mirrorObjectMounted,
+      `mirrored WebDAV object is empty: ${JSON.stringify(diagnostics.webdavMirror)}`);
     await shot(pageA, EVIDENCE_DIR, '03-before-close');
+  } catch (error) {
+    abortEvidence(error);
+    throw error;
   } finally {
     if (pageA) await pageA.close().catch(() => {});
     if (ctxA) await ctxA.close().catch(() => {});
@@ -347,77 +404,123 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
   fs.mkdirSync(dataD, { recursive: true });
   fs.mkdirSync(wsD, { recursive: true });
   fs.mkdirSync(blobD, { recursive: true });
-  const seedD = runSeed(dataD, blobD, null, 'destination');
-  evidence.checks.seedDestination = seedD;
+  try {
+    const seedD = runSeed(dataD, blobD, null, 'destination');
+    diagnostics.seedDestination = seedD;
+    checks.seedDestinationOk = seedD.ok === true;
+    assertCheck(checks.seedDestinationOk,
+      `destination seed failed: ${JSON.stringify(seedD)}`);
+    const mirrorRoot = diagnostics.webdavMirror?.mirrorRoot;
+    const backupId = diagnostics.backupCreate.backupId;
+    mark('offline: backup cli restore');
+    // The offline CLI restores blob objects under --blob-root; stage them
+    // outside the destination root, then copy into the blob root the app
+    // actually reads (<root>/blobs, not <data-dir>/blobs).
+    const stageBlobs = path.join(rootD, 'restored-blobs');
+    const restoreOut = runBackupCli([
+      'restore',
+      '--db-path', path.join(dataD, 'db'),
+      '--data-dir', dataD,
+      '--target-root', mirrorRoot,
+      '--blob-root', stageBlobs,
+      '--backup-id', backupId,
+      '--mode', 'merge',
+      '--include-deleted', 'true',
+      '--password-env', 'HC_BACKUP_PASSWORD',
+      '--no-prior-app-commands', 'true',
+    ], { HC_BACKUP_PASSWORD: BACKUP_PASSWORD });
+    const restoreResult = normalizeKeys(parseEdn(restoreOut.trim().split('\n').pop()));
+    diagnostics.restore = {
+      ok: restoreResult.ok,
+      status: restoreResult.receipt?.status,
+      error: restoreResult.error || null,
+    };
+    checks.restoreOk = restoreResult.ok === true;
+    assertCheck(checks.restoreOk,
+      `restore failed: ${restoreOut.slice(-2000)}`);
 
-  const mirrorRoot = evidence.checks.webdavMirror?.mirrorRoot;
-  const backupId = evidence.checks.backupCreate.backupId;
-  mark('offline: backup cli restore');
-  // The offline CLI restores blob objects under --blob-root; stage them
-  // outside the destination root, then copy into the blob root the app
-  // actually reads (<root>/blobs, not <data-dir>/blobs).
-  const stageBlobs = path.join(rootD, 'restored-blobs');
-  const restoreOut = runBackupCli([
-    'restore',
-    '--db-path', path.join(dataD, 'db'),
-    '--data-dir', dataD,
-    '--target-root', mirrorRoot,
-    '--blob-root', stageBlobs,
-    '--backup-id', backupId,
-    '--mode', 'merge',
-    '--include-deleted', 'true',
-    '--password-env', 'HC_BACKUP_PASSWORD',
-    '--no-prior-app-commands', 'true',
-  ], { HC_BACKUP_PASSWORD: BACKUP_PASSWORD });
-  const restoreResult = normalizeKeys(parseEdn(restoreOut.trim().split('\n').pop()));
-  evidence.checks.restore = {
-    ok: restoreResult.ok,
-    status: restoreResult.receipt?.status,
-    error: restoreResult.error || null,
-  };
-  assertCheck(restoreResult.ok, `restore failed: ${restoreOut.slice(-2000)}`);
+    if (fs.existsSync(stageBlobs)) {
+      fs.cpSync(stageBlobs, blobD, { recursive: true });
+    }
 
-  if (fs.existsSync(stageBlobs)) {
-    fs.cpSync(stageBlobs, blobD, { recursive: true });
+    const verifyD = runVerify(path.join(dataD, 'db'), path.join(dataD, 'extensions'));
+    diagnostics.verify = verifyD;
+
+    const byId = Object.fromEntries(verifyD.sessions.map((s) => [s.sessionId, s]));
+    const migrated = byId['s-migrated'];
+    const deleted = byId['s-deleted'];
+    const local = byId['s-local'];
+    assertCheck(verifyD.sessions.length === 3,
+      `expected 3 sessions after merge, got ${verifyD.sessions.length}: ${JSON.stringify(verifyD.sessions.map((s) => s.sessionId))}`);
+    assertCheck(migrated && local && deleted, 'missing migrated/deleted/local session');
+    assertCheck(migrated.status === 'active' && migrated.pinned === true,
+      `s-migrated wrong: ${JSON.stringify(migrated)}`);
+    assertCheck(deleted.status === 'deleted' && deleted.deletedAt,
+      `s-deleted missing deleted-at: ${JSON.stringify(deleted)}`);
+    assertCheck(migrated.draftIds.includes('d1')
+      && (migrated.draftContents.d1 || '').includes('迁移草稿'),
+    `drafts not preserved: ${JSON.stringify(migrated.draftIds)}`);
+    assertCheck(migrated.modelBinding && migrated.modelBinding.connectionId === 'conn-old'
+      && migrated.modelBinding.modelEntryId === 'model-old-1',
+    `model-binding not preserved: ${JSON.stringify(migrated.modelBinding)}`);
+    const memById = Object.fromEntries(verifyD.memories.map((m) => [m.id, m]));
+    assertCheck(memById['mem-archived']?.status === 'archived',
+      `archived memory wrong: ${JSON.stringify(memById['mem-archived'])}`);
+    assertCheck(memById['mem-local']?.status === 'active',
+      `local memory wrong: ${JSON.stringify(memById['mem-local'])}`);
+    const mcpFs = verifyD.mcp?.mcpFilesystem;
+    assertCheck(mcpFs && mcpFs.enabled === false,
+      `MCP server not disabled: ${JSON.stringify(verifyD.mcp)}`);
+    assertCheck(mcpFs.tools?.readFile?.enabled === false
+      && mcpFs.tools?.readFile?.reviewRequired === true,
+    `MCP tool state wrong: ${JSON.stringify(mcpFs?.tools)}`);
+    const backupSection = verifyD.backup?.backup;
+    const backupTargets = backupSection?.targets;
+    diagnostics.backupSection = backupSection || null;
+    assertCheck(!backupTargets || Object.keys(backupTargets).length === 0,
+      `backup targets restored to destination: ${JSON.stringify(backupSection)}`);
+    // Acceptance conditions hidden inside the verify JSON: each one is a
+    // consumed boolean, not a diagnostic.
+    checks.verifySessionCount = verifyD.sessions.length === 3;
+    checks.verifySessionsPresent = Boolean(migrated && local && deleted);
+    checks.verifyMigratedActivePinned =
+      migrated?.status === 'active' && migrated?.pinned === true;
+    checks.verifyDeletedSoft =
+      deleted?.status === 'deleted' && Boolean(deleted?.deletedAt);
+    checks.verifyDraftPreserved =
+      Boolean(migrated?.draftIds?.includes('d1'))
+      && Boolean((migrated?.draftContents?.d1 || '').includes('迁移草稿'));
+    checks.verifyModelBinding =
+      migrated?.modelBinding?.connectionId === 'conn-old'
+      && migrated?.modelBinding?.modelEntryId === 'model-old-1';
+    checks.verifyArchivedMemory =
+      memById['mem-archived']?.status === 'archived';
+    checks.verifyLocalMemory = memById['mem-local']?.status === 'active';
+    checks.verifyMcpDisabled = Boolean(mcpFs) && mcpFs.enabled === false;
+    checks.verifyMcpToolDisabled =
+      mcpFs?.tools?.readFile?.enabled === false
+      && mcpFs?.tools?.readFile?.reviewRequired === true;
+    checks.noRestoredBackupTargets =
+      !backupTargets || Object.keys(backupTargets).length === 0;
+    checks.verifyOk = verifyD.ok === true;
+    assertCheck(checks.verifySessionCount && checks.verifySessionsPresent,
+      `verify sessions wrong: ${JSON.stringify(verifyD.sessions)}`);
+    assertCheck(checks.verifyMigratedActivePinned && checks.verifyDeletedSoft,
+      `verify session states wrong: ${JSON.stringify(byId)}`);
+    assertCheck(checks.verifyDraftPreserved && checks.verifyModelBinding,
+      `verify drafts/binding wrong: ${JSON.stringify(migrated)}`);
+    assertCheck(checks.verifyArchivedMemory && checks.verifyLocalMemory,
+      `verify memories wrong: ${JSON.stringify(verifyD.memories)}`);
+    assertCheck(checks.verifyMcpDisabled && checks.verifyMcpToolDisabled,
+      `verify MCP state wrong: ${JSON.stringify(verifyD.mcp)}`);
+    assertCheck(checks.noRestoredBackupTargets,
+      `backup targets restored to destination: ${JSON.stringify(backupSection)}`);
+    assertCheck(checks.verifyOk,
+      `verify script did not report ok: ${JSON.stringify(verifyD).slice(0, 500)}`);
+  } catch (error) {
+    abortEvidence(error);
+    throw error;
   }
-
-  const verifyD = runVerify(path.join(dataD, 'db'), path.join(dataD, 'extensions'));
-  evidence.checks.verify = verifyD;
-
-  const byId = Object.fromEntries(verifyD.sessions.map((s) => [s.sessionId, s]));
-  const migrated = byId['s-migrated'];
-  const deleted = byId['s-deleted'];
-  const local = byId['s-local'];
-  assertCheck(verifyD.sessions.length === 3,
-              `expected 3 sessions after merge, got ${verifyD.sessions.length}: ${JSON.stringify(verifyD.sessions.map((s) => s.sessionId))}`);
-  assertCheck(migrated && local && deleted, 'missing migrated/deleted/local session');
-  assertCheck(migrated.status === 'active' && migrated.pinned === true,
-              `s-migrated wrong: ${JSON.stringify(migrated)}`);
-  assertCheck(deleted.status === 'deleted' && deleted.deletedAt,
-              `s-deleted missing deleted-at: ${JSON.stringify(deleted)}`);
-  assertCheck(migrated.draftIds.includes('d1')
-              && (migrated.draftContents.d1 || '').includes('迁移草稿'),
-              `drafts not preserved: ${JSON.stringify(migrated.draftIds)}`);
-  assertCheck(migrated.modelBinding && migrated.modelBinding.connectionId === 'conn-old'
-              && migrated.modelBinding.modelEntryId === 'model-old-1',
-              `model-binding not preserved: ${JSON.stringify(migrated.modelBinding)}`);
-  const memById = Object.fromEntries(verifyD.memories.map((m) => [m.id, m]));
-  assertCheck(memById['mem-archived']?.status === 'archived',
-              `archived memory wrong: ${JSON.stringify(memById['mem-archived'])}`);
-  assertCheck(memById['mem-local']?.status === 'active',
-              `local memory wrong: ${JSON.stringify(memById['mem-local'])}`);
-  const mcpFs = verifyD.mcp?.mcpFilesystem;
-  assertCheck(mcpFs && mcpFs.enabled === false,
-              `MCP server not disabled: ${JSON.stringify(verifyD.mcp)}`);
-  assertCheck(mcpFs.tools?.readFile?.enabled === false
-              && mcpFs.tools?.readFile?.reviewRequired === true,
-              `MCP tool state wrong: ${JSON.stringify(mcpFs?.tools)}`);
-  const backupSection = verifyD.backup?.backup;
-  const backupTargets = backupSection?.targets;
-  evidence.checks.backupSection = backupSection || null;
-  assertCheck(!backupTargets || Object.keys(backupTargets).length === 0,
-              `backup targets restored to destination: ${JSON.stringify(backupSection)}`);
-  evidence.checks.verifyOk = true;
 
   // ---- Destination app: UI verification ---------------------------------
   let appD;
@@ -445,11 +548,18 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     // Sessions: migrated + local visible; deleted session in the deleted area.
     mark('destination: session list check');
     const listText = await pageD.locator('.wb-session-list').innerText();
-    evidence.checks.sessionListText = listText.slice(0, 1500);
-    assertCheck(listText.includes('E2E22 迁移会话'), 'migrated session missing from list');
-    assertCheck(listText.includes('E2E22 本地会话'), 'local session missing from list');
-    assertCheck(!listText.includes('E2E22 已删除会话'),
-                'deleted session leaked into the active list');
+    diagnostics.sessionListText = listText.slice(0, 1500);
+    const activeRows = await pageD.locator('.wb-session-list .wb-list-button')
+      .allInnerTexts();
+    diagnostics.destinationActiveRows = activeRows;
+    checks.destinationSessionsLoaded =
+      listText.includes('E2E22 迁移会话') && listText.includes('E2E22 本地会话');
+    checks.deletedSessionHidden =
+      !activeRows.some((row) => row.includes('E2E22 已删除会话'));
+    assertCheck(checks.destinationSessionsLoaded,
+      `migrated/local session missing from list: ${listText.slice(0, 400)}`);
+    assertCheck(checks.deletedSessionHidden,
+      `deleted session leaked into the active list: ${JSON.stringify(activeRows)}`);
     const deletedDetails = pageD.locator('details.wb-deleted-sessions').first();
     await deletedDetails.locator('summary').first().click();
     await deletedDetails.getByRole('button', { name: /加载已删除会话|刷新已删除会话/ })
@@ -460,9 +570,12 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
       return el && /E2E22 已删除会话/.test(el.textContent || '');
     }, null, { timeout: 60000 });
     const deletedText = await deletedDetails.innerText();
-    evidence.checks.deletedArea = deletedText.slice(0, 1200);
-    assertCheck(/已删除会话（1）/.test(deletedText) || deletedText.includes('E2E22 已删除会话'),
-                `deleted area wrong: ${deletedText.slice(0, 400)}`);
+    diagnostics.deletedArea = deletedText.slice(0, 1200);
+    checks.deletedSessionInDeletedArea =
+      /已删除会话（1）/.test(deletedText)
+      || deletedText.includes('E2E22 已删除会话');
+    assertCheck(checks.deletedSessionInDeletedArea,
+      `deleted area wrong: ${deletedText.slice(0, 400)}`);
     await shot(pageD, EVIDENCE_DIR, '04-destination-sessions');
 
     // Memory page: archived memory stays archived, local memory survives.
@@ -472,51 +585,125 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     // The materials page opens on the files tab; switch to 长期记忆 and the
     // archived filter so both memories are listed.
     await pageD.getByRole('tab', { name: '长期记忆', exact: true }).first().click();
-    await pageD.waitForTimeout(1500);
-    const archivedFilter = pageD.locator('.hc-mat-filters button', { hasText: '已归档' }).first();
-    if (await archivedFilter.count()) await archivedFilter.click();
-    await pageD.waitForTimeout(1500);
     await pageD.locator('.hc-mat-filters').first()
       .waitFor({ state: 'visible', timeout: 30000 });
+    const archivedFilter = pageD.locator('.hc-mat-filters button', { hasText: '已归档' }).first();
+    if (await archivedFilter.count()) await archivedFilter.click();
+    // Wait for the archived memory body instead of a fixed settle time.
+    await pageD.waitForFunction(() =>
+      document.body.innerText.includes('用户偏好简洁回答'),
+    null, { timeout: 30000 });
     const memBody = await pageD.locator('body').innerText();
-    evidence.checks.memoryBodyHead = memBody.slice(0, 4000);
-    assertCheck(memBody.includes('用户偏好简洁回答'), 'archived memory body missing');
+    diagnostics.memoryBodyHead = memBody.slice(0, 4000);
+    checks.archivedMemoryVisible = memBody.includes('用户偏好简洁回答');
+    assertCheck(checks.archivedMemoryVisible,
+      'archived memory body missing');
     const allFilter = pageD.locator('.hc-mat-filters button', { hasText: '全部' }).first();
+    let memoryAllBody = memBody;
     if (await allFilter.count()) {
       await allFilter.click();
-      await pageD.waitForTimeout(1500);
-      const allBody = await pageD.locator('body').innerText();
-      evidence.checks.memoryAllBodyHead = allBody.slice(0, 4000);
-      assertCheck(allBody.includes('本地记忆'), 'local memory body missing');
-    } else {
-      assertCheck(memBody.includes('本地记忆'), 'local memory body missing');
+      await pageD.waitForFunction(() =>
+        document.body.innerText.includes('本地记忆'),
+      null, { timeout: 30000 });
+      memoryAllBody = await pageD.locator('body').innerText();
     }
+    diagnostics.memoryAllBodyHead = memoryAllBody.slice(0, 4000);
+    checks.localMemoryVisible = memoryAllBody.includes('本地记忆');
+    assertCheck(checks.localMemoryVisible,
+      'local memory body missing');
     await shot(pageD, EVIDENCE_DIR, '05-destination-memory');
     mark('destination: memory shot done');
 
     // MCP catalog: the disabled server must not appear enabled anywhere.
-    const extBody = await pageD.locator('body').innerText();
-    evidence.checks.mcpSurface = extBody.includes('mcp-filesystem')
-      || extBody.includes('旧设备文件系统 MCP');
+    // The MCP panel mounts only under the 扩展 tab; sampling the memory tab
+    // never contained it, so the old check was a false negative.
+    const mcpCardName = '旧设备文件系统 MCP';
+    checks.mcpSurface = false;
+    checks.mcpCardNamed = false;
+    checks.mcpDisabled = false;
+    checks.mcpNotConnected = false;
+    diagnostics.mcpCardText = '';
+    diagnostics.mcpEnabledChecked = null;
+    diagnostics.mcpStateLabel = '';
+    await pageD.getByRole('tab', { name: '扩展', exact: true }).first()
+      .click({ timeout: 10000 });
+    const extPanel = pageD.locator('.hc-ext-panel').first();
+    await extPanel.waitFor({ state: 'visible', timeout: 30000 });
+    // Bounded wait for the restored card; the toolbar label is
+    // `读取最新状态` (hc.client.extensions.view/toolbar).  If the card is not
+    // there yet, click that refresh once with an explicit timeout.
+    const waitForCard = () => pageD.waitForFunction((name) => {
+      return [...document.querySelectorAll('.hc-ext-card')]
+        .some((el) => (el.textContent || '').includes(name));
+    }, mcpCardName, { timeout: 15000 }).then(() => true).catch(() => false);
+    let cardReady = await waitForCard();
+    if (!cardReady) {
+      await pageD.getByRole('button', { name: '读取最新状态', exact: true })
+        .first().click({ timeout: 10000 }).catch(() => {});
+      cardReady = await waitForCard();
+    }
+    // One atomic DOM read: card existence, text, checkbox state and badge
+    // label.  No Playwright locator may wait for visibility after this point.
+    const cardData = await pageD.evaluate((name) => {
+      const card = [...document.querySelectorAll('.hc-ext-card')]
+        .find((el) => (el.textContent || '').includes(name));
+      if (!card) return null;
+      const checkbox = card.querySelector(
+        '.hc-ext-card-actions input[type="checkbox"]');
+      const badge = card.querySelector('.hc-ext-card-actions .hc-badge');
+      return {
+        text: (card.innerText || '').trim(),
+        enabledChecked: checkbox ? checkbox.checked : null,
+        stateLabel: (badge?.textContent || '').trim(),
+      };
+    }, mcpCardName);
+    checks.mcpSurface = Boolean(cardData);
+    if (cardData) {
+      diagnostics.mcpCardText = cardData.text.slice(0, 1200);
+      diagnostics.mcpEnabledChecked = cardData.enabledChecked;
+      diagnostics.mcpStateLabel = cardData.stateLabel;
+      checks.mcpCardNamed = cardData.text.includes(mcpCardName);
+      checks.mcpDisabled = cardData.enabledChecked === false;
+      checks.mcpNotConnected = cardData.stateLabel !== '已连接'
+        && cardData.stateLabel !== '可用';
+    }
+    if (!checks.mcpSurface) {
+      diagnostics.mcpCardMissing = true;
+      throw new Error(
+        `MCP card "${mcpCardName}" did not appear within 15s after refresh`);
+    }
+    assertCheck(checks.mcpSurface,
+      `MCP panel card missing: ${diagnostics.mcpCardText.slice(0, 300)}`);
+    assertCheck(checks.mcpCardNamed,
+      `MCP card does not name the restored server: ${diagnostics.mcpCardText.slice(0, 500)}`);
+    assertCheck(checks.mcpDisabled,
+      `MCP server rendered enabled: ${diagnostics.mcpCardText.slice(0, 500)}`);
+    assertCheck(checks.mcpNotConnected,
+      `MCP server rendered connected: ${diagnostics.mcpStateLabel}`);
     await shot(pageD, EVIDENCE_DIR, '06-destination-materials-ext');
 
     // Board: no fleet/sync badge content (empty board).
     mark('destination: goto /board');
     await gotoHash(pageD, appD.url, 'board', '.wb-content');
     mark('destination: board checks');
-    await pageD.waitForTimeout(1500);
+    await pageD.waitForFunction(() =>
+      /Swarm 总览|尚未准入任何 swarm/.test(document.body.innerText || ''),
+    null, { timeout: 30000 });
     const boardText = await pageD.locator('body').innerText();
-    evidence.checks.boardText = boardText.slice(0, 1200);
+    diagnostics.boardText = boardText.slice(0, 1200);
     // The board chrome and its empty state mention "swarm"/"fleet" by name;
     // what must not appear is real fleet data.  The dashboard renders one
     // `.hc-swarm-row` per admitted swarm, so an empty board has none.
     const swarmRows = await pageD.locator('.hc-swarm-row').count();
-    evidence.checks.boardSwarmRows = swarmRows;
-    assertCheck(swarmRows === 0,
-                `unexpected fleet rows on board: ${swarmRows}`);
+    diagnostics.boardSwarmRows = swarmRows;
+    checks.boardEmpty = swarmRows === 0;
+    assertCheck(checks.boardEmpty,
+      `unexpected fleet rows on board: ${swarmRows}`);
     const badgeText = await pageD.locator('.wb-badge').first().innerText().catch(() => '');
-    evidence.checks.topbarBadge = badgeText;
-    assertCheck(badgeText.includes('已同步'), `topbar badge not synced: ${badgeText}`);
+    diagnostics.topbarBadge = badgeText;
+    checks.topbarSynced = badgeText.includes('已同步');
+    assertCheck(checks.topbarSynced,
+      `topbar badge not synced: ${badgeText}`);
     await shot(pageD, EVIDENCE_DIR, '07-destination-board');
 
     // Settings data center: no restored WebDAV backup target.
@@ -528,21 +715,32 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     mark('destination: openDataCenter done');
     await pageD.locator('.hc-backup-target, .hc-backup').first()
       .waitFor({ state: 'visible', timeout: 30000 });
-    await pageD.waitForTimeout(1500);
+    await pageD.waitForFunction(() => {
+      const el = document.querySelector('.hc-backup');
+      return Boolean(el && /备份目标|备份目录|最近成功备份|尚无成功备份/
+        .test(el.innerText || ''));
+    }, null, { timeout: 30000 });
     const backupPane = await pageD.locator('.hc-backup').first().innerText();
-    evidence.checks.destinationBackupPane = backupPane.slice(0, 3000);
+    diagnostics.destinationBackupPane = backupPane.slice(0, 3000);
     // The pane's help text names WebDAV/S3 as supported kinds; what must not
     // leak is an actual remote target row.  Each configured target renders
     // as one `.hc-backup-target-choice` whose strong starts with the kind
     // label, so inspect those rows instead of the whole pane text.
     const targetRows = await pageD.locator('.hc-backup-target-choice strong')
       .allInnerTexts();
-    evidence.checks.destinationTargetRows = targetRows;
-    assertCheck(!targetRows.some((row) => /WebDAV|S3/.test(row)),
-                `remote backup target leaked to destination: ${JSON.stringify(targetRows)}`);
-    assertCheck(!targetRows.some((row) => row.includes('127.0.0.1')),
-                `mock WebDAV address leaked to destination: ${JSON.stringify(targetRows)}`);
+    diagnostics.destinationTargetRows = targetRows;
+    checks.noRemoteBackupTarget =
+      !targetRows.some((row) => /WebDAV|S3/.test(row));
+    checks.noMockAddressLeak =
+      !targetRows.some((row) => row.includes('127.0.0.1'));
+    assertCheck(checks.noRemoteBackupTarget,
+      `remote backup target leaked to destination: ${JSON.stringify(targetRows)}`);
+    assertCheck(checks.noMockAddressLeak,
+      `mock WebDAV address leaked to destination: ${JSON.stringify(targetRows)}`);
     await shot(pageD, EVIDENCE_DIR, '08-destination-no-target');
+  } catch (error) {
+    abortEvidence(error);
+    throw error;
   } finally {
     if (pageD) await pageD.close().catch(() => {});
     if (ctxD) await ctxD.close().catch(() => {});
@@ -550,7 +748,7 @@ test('@e2e E2E 22 cross-device migration via WebDAV backup', async ({ browser })
     await webdav.close().catch(() => {});
   }
 
-  evidence.checks.finishedAt = new Date().toISOString();
-  evidence.ok = true;
-  writeEvidence();
+  const finalOk = finalizeEvidence();
+  assertCheck(finalOk,
+    `one or more E2E 22 checks failed: ${(evidence.failedChecks || []).join(', ')}`);
 });

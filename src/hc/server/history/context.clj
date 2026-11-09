@@ -95,15 +95,16 @@
   A nil boundary is effective from the beginning.  A boundary naming a
   message that is no longer in the order is not silently expanded: it selects
   an empty range and reports `:effective? false`."
-  [session]
-  (let [boundary (boundary session)
-        message-id (:message-id boundary)
-        index (get (order-index session) message-id)]
-    (cond
-      (nil? boundary) {:index 0 :effective? true :message-id nil}
-      (nil? message-id) {:index 0 :effective? true :message-id nil}
-      (some? index) {:index index :effective? true :message-id message-id}
-      :else {:index nil :effective? false :message-id message-id})))
+  ([session] (boundary-index session (order-index session)))
+  ([session index]
+   (let [boundary (boundary session)
+         message-id (:message-id boundary)
+         position (get index message-id)]
+     (cond
+       (nil? boundary) {:index 0 :effective? true :message-id nil}
+       (nil? message-id) {:index 0 :effective? true :message-id nil}
+       (some? position) {:index position :effective? true :message-id message-id}
+       :else {:index nil :effective? false :message-id message-id}))))
 
 (defn set-boundary
   "Set the manual `from here` boundary.  The message is the first candidate
@@ -256,13 +257,74 @@
         [(subvec (vec records) start)
          (subvec (vec records) 0 start)]))))
 
-(defn- compression-ranges
+(defn compression-stale?
+  "True when a source message of COMPRESSION is missing, hidden, or on a
+  version different from the one the summary was reviewed against.
+
+  A stale summary is never sent in place of its sources.  The reading and
+  baseline projections keep the compression record and mark it `:stale?`."
+  [session compression]
+  (let [expected (:source-version-ids compression)]
+    (boolean
+     (some (fn [[message-id version-id]]
+             (let [message (get-in session [:messages message-id])
+                   current (when message
+                             (:version-id
+                              (message/current-version
+                               ;; Legacy messages carry their text at the
+                               ;; top level and have no `:versions` vector;
+                               ;; normalize only those, so a current 2000
+                               ;; message range stays allocation-free.
+                               (if (and (vector? (:versions message))
+                                        (seq (:versions message)))
+                                 message
+                                 (message/normalize-message message)))))]
+               (or (nil? message)
+                   (:deleted? message)
+                   (:folded? message)
+                   (not= version-id current))))
+           expected))))
+
+(defn annotate-compressions
+  "Return SESSION with the server-owned `:stale?` marker on every compression.
+
+  The compose Owner projection cannot require this namespace, so the
+  application writes the marker onto the session copy it hands to the Owner
+  (for example around the history command port).  The function is pure and
+  returns a shallow session copy: the stored record is never mutated.  A
+  caller that persists the returned session must re-run it after every
+  message or compression change, because the marker describes the current
+  versions."
   [session]
-  (applied-compressions session))
+  (let [compressions (compressions session)]
+    (if (empty? compressions)
+      session
+      (update session :context
+              (fn [context]
+                (assoc (if (map? context) context {})
+                       :compressions
+                       (into {}
+                             (map (fn [[compression-id compression]]
+                                    [compression-id
+                                     (assoc compression
+                                            :stale?
+                                            (compression-stale? session
+                                                               compression))]))
+                             compressions)))))))
+
+(defn- compression-ranges
+  "Applied compressions whose reviewed sources are still current.
+
+  A stale compression no longer describes the messages in its range.  It must
+  not replace those messages in the outbound projection; the originals are
+  sent again instead and the summary stays only as a visible, marked record."
+  [session]
+  (filterv #(not (compression-stale? session %))
+           (applied-compressions session)))
 
 (defn- range-cover
   "Return `{message-id compression}` for ranges fully inside SELECTED-IDS."
-  [session selected-ids]
+  [ranges selected-ids]
   (let [selected (set selected-ids)]
     (reduce
      (fn [{:keys [cover warnings] :as state} compression]
@@ -276,20 +338,7 @@
                     :compression-id (:compression-id compression)
                     :message-ids ids}))))
      {:cover {} :warnings []}
-     (compression-ranges session))))
-
-(defn- compression-stale?
-  [session compression]
-  (let [expected (:source-version-ids compression)]
-    (boolean
-     (some (fn [[message-id version-id]]
-             (let [message (get-in session [:messages message-id])
-                   current (some-> message message/current-version :version-id)]
-               (or (nil? message)
-                   (:deleted? message)
-                   (:folded? message)
-                   (not= version-id current))))
-           expected))))
+     ranges)))
 
 (defn- summary-entry
   [session compression]
@@ -775,12 +824,17 @@
   `:message-ids` (real messages still sent), `:summary-ids`, `:version-ids`,
   `:excluded` with reasons, `:pinned-attachments`, `:warnings`, and the
   outbound snapshot sections from `context-snapshot`.  It is a projection
-  only; nothing here starts a model request."
+  only; nothing here starts a model request.
+
+  An applied compression whose reviewed source versions are no longer current
+  is not applied to this projection: its source messages are selected again
+  and the compression record stays visible for the panels with `:stale?`."
   ([session] (outbound-context session {}))
   ([session opts]
    (let [{:keys [clips attachment-limit]} opts
+         index (order-index session)
          all-visible (visible-records session)
-         boundary (boundary-index session)
+         boundary (boundary-index session index)
          warnings (cond-> []
                     (not (:effective? boundary))
                     (conj {:code :CONTEXT_BOUNDARY_MISSING
@@ -790,8 +844,7 @@
                           []
                           (->> all-visible
                                (filter (fn [message]
-                                         (>= (get (order-index session)
-                                                 (:message-id message))
+                                         (>= (get index (:message-id message))
                                              boundary-index)))
                                vec))
          excluded-boundary (if (nil? boundary-index)
@@ -810,7 +863,8 @@
          [selected excluded-rounds] (trim-recent-rounds after-boundary rounds)
          selected (vec selected)
          selected-ids (mapv :message-id selected)
-         range-result (range-cover session selected-ids)
+         ranges (compression-ranges session)
+         range-result (range-cover ranges selected-ids)
          cover (:cover range-result)
          warnings (into warnings (:warnings range-result))
          emitted (volatile! #{})
@@ -833,7 +887,7 @@
           selected)
          summary-ids (mapv :compression-id
                            (filter #(contains? @emitted (:compression-id %))
-                                   (compression-ranges session)))
+                                   ranges))
          real (filterv #(not= :context-summary (:kind %)) entries)
          excluded-compression
          (mapcat (fn [compression]
@@ -843,7 +897,7 @@
                               :reason :replaced-by-context-summary
                               :compression-id (:compression-id compression)})
                            (:message-ids compression))))
-                 (compression-ranges session))
+                 ranges)
          pins (pinned-attachments session)
          warnings (cond-> warnings
                     (seq (:missing pins))
@@ -1001,15 +1055,19 @@
   "Convert one outbound projection to model-visible messages.
 
   A compression summary is a system message; replaced source messages are
-  already absent from `:messages`.  Empty bodies are dropped so a tool-only
-  message cannot become an empty text turn."
+  already absent from `:messages`.  A stale summary entry is dropped: the
+  outbound projection normally excludes stale compressions already, and this
+  guard keeps a caller-built projection from sending a summary that no longer
+  matches its sources.  Empty bodies are dropped so a tool-only message
+  cannot become an empty text turn."
   [outbound]
   (->> (:messages outbound)
        (keep (fn [entry]
-               (let [role (:role entry)
-                     text (or (:content entry) (:text entry))]
-                 (when (and role (string? text) (not (str/blank? text)))
-                   (cond-> {:role role :text text}
-                     (:message-id entry)
-                     (assoc :message-id (:message-id entry)))))))
+               (when-not (:stale? entry)
+                 (let [role (:role entry)
+                       text (or (:content entry) (:text entry))]
+                   (when (and role (string? text) (not (str/blank? text)))
+                     (cond-> {:role role :text text}
+                       (:message-id entry)
+                       (assoc :message-id (:message-id entry))))))))
        vec))

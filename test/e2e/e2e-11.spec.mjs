@@ -300,15 +300,34 @@ async function sendAndSettle(page, mock, text, expectedMainCalls) {
 // Materials page helpers ----------------------------------------------------
 
 async function openMaterialsMemory(page, appUrl) {
-  await goto(page, appUrl, '/materials');
-  await page.locator('.wb-shell').first().waitFor({ state: 'visible', timeout: 30000 });
-  await page.getByRole('tab', { name: '长期记忆', exact: true }).first()
-    .click({ timeout: 15000 });
-  await page.locator('.hc-mat-section').first()
-    .waitFor({ state: 'visible', timeout: 30000 });
-  // The materials snapshot arrives asynchronously; wait for the ready badge.
-  await page.locator('.hc-mat-badge', { hasText: '材料库已就绪' }).first()
-    .waitFor({ state: 'visible', timeout: 30000 });
+  const deadline = Date.now() + 120000;
+  let lastNote = '';
+  while (Date.now() < deadline) {
+    await goto(page, appUrl, '/materials');
+    // A full page load reconnects the transport; wait for the sync badge
+    // before asking for materials, otherwise the snapshot command is refused.
+    await waitForSync(page, 30000).catch(() => {});
+    await page.getByRole('tab', { name: '长期记忆', exact: true }).first()
+      .click({ timeout: 15000 }).catch(() => {});
+    await page.locator('.hc-mat-section').first()
+      .waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+    const ready = await page.locator('.hc-mat-badge')
+      .filter({ hasText: '材料库已就绪' }).first()
+      .waitFor({ state: 'visible', timeout: 20000 })
+      .then(() => true).catch(() => false);
+    if (ready) return;
+    lastNote = await page.evaluate(() => {
+      const badge = document.querySelector('.hc-mat-badge');
+      const facts = document.querySelector('.wb-facts');
+      const sync = document.querySelector('.wb-badge[aria-label^="连接状态"]');
+      return `badge=${badge ? badge.textContent.trim() : '<none>'}; `
+        + `facts=${facts ? facts.textContent.trim().slice(0, 120) : '<none>'}; `
+        + `sync=${sync ? sync.textContent.trim() : '<none>'}`;
+    }).catch(() => '<unreadable>');
+    await page.waitForTimeout(3000);
+  }
+  throw new Error(
+    `materials never became ready after reconnect retries: ${lastNote}`);
 }
 
 function memoryCheckbox(page, label) {
@@ -737,10 +756,34 @@ test('@e2e E2E 11 memory candidates, archive and temporary sessions', async ({ p
     check('normal-session-reselected', picked, 'selected a non-temporary session');
     await page.waitForTimeout(1500);
     await openMaterialsMemory(page, app.url);
-    const normalRows = await memoryRows(page).count();
-    check('normal-session-memory-visible', normalRows >= 1,
-          `normal session shows ${normalRows} memory rows`);
-    result.screenshots.push(await shot(page, EVIDENCE, '10-normal-session'));
+    // openMaterialsMemory already retried through reconnects and asserted the
+    // ready badge; read the same visible locator immediately below so hidden
+    // stale rows cannot satisfy the count.
+    const readyBadge = page.locator('.hc-mat-badge')
+      .filter({ hasText: '材料库已就绪' }).first();
+    const badgeText = await readyBadge.innerText();
+    result.screenshots.push(
+      await shot(page, EVIDENCE, '10a-normal-session-ready'));
+    const shellFacts = await page.evaluate(() => {
+      const facts = {};
+      document.querySelectorAll('.wb-facts').forEach((group) => {
+        [...group.querySelectorAll('dt')].forEach((dt) => {
+          const dd = dt.nextElementSibling;
+          if (dd) facts[dt.textContent.trim()] = dd.textContent.trim();
+        });
+      });
+      return facts;
+    });
+    const visibleRows = await page.locator('.hc-memory-row:visible').count();
+    const materialRevision = shellFacts['材料 revision'] ?? '—';
+    const syncSeq = shellFacts['同步序号'] ?? '—';
+    const detail = `badge=${badgeText}; revision=${materialRevision}; `
+      + `seq=${syncSeq}; visibleRows=${visibleRows}`;
+    check('normal-session-memory-visible',
+          visibleRows >= 1 && badgeText.includes('材料库已就绪'),
+          detail);
+    result.screenshots.push(
+      await shot(page, EVIDENCE, '10b-normal-session-rows'));
 
     result.ok = Object.values(result.checks).every((c) => c.pass);
     result.finishedAt = new Date().toISOString();

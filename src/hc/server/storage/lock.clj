@@ -19,9 +19,22 @@
 (defn- lock-path ^Path [^Path root]
   (.resolve root "store.lock"))
 
+(defn- rethrow-lock-failure
+  "Rethrow E with the operator-facing cause.  An unwritable path must never
+  be reported as another process holding the lock."
+  [^Path f ^Throwable e lock-message]
+  (if (err/unwritable? e)
+    (throw (err/wrap :STORAGE_NOT_WRITABLE
+                     (str "the store lock path is not writable "
+                          "(permissions or a read-only mount): " f)
+                     e
+                     {:path (str f)}))
+    (throw (err/wrap :STORAGE_LOCKED lock-message e {:path (str f)}))))
+
 (defn acquire!
   "Acquire the exclusive lock for `root`.  Returns a handle for `release!`.
-  Throws `:STORAGE_LOCKED` when another holder exists."
+  Throws `:STORAGE_NOT_WRITABLE` when the lock path cannot be written and
+  `:STORAGE_LOCKED` when another holder exists."
   [^Path root]
   (let [f  (lock-path root)
         ch (try
@@ -29,19 +42,13 @@
                                              [StandardOpenOption/CREATE
                                               StandardOpenOption/WRITE]))
              (catch Throwable e
-               (throw (err/wrap :STORAGE_LOCKED
-                                "cannot open the store lock file"
-                                e
-                                {:path (str f)}))))
+               (rethrow-lock-failure f e "cannot open the store lock file")))
         lk (try
              (.tryLock ch)
              (catch OverlappingFileLockException _ nil)
              (catch Throwable e
                (.close ch)
-               (throw (err/wrap :STORAGE_LOCKED
-                                "cannot acquire the store lock"
-                                e
-                                {:path (str f)}))))]
+               (rethrow-lock-failure f e "cannot acquire the store lock")))]
     (if lk
       {:path (str f) :channel ch :lock lk}
       (do

@@ -101,6 +101,33 @@ and `:blob-ref` are rejected in `:put` because they have dedicated channels.
 - `:tenure`, `:ledger`, `:run` -> `:relay`
 - every other kind -> `:records {kind [docs]}`
 
+## View scanning and kind registration
+
+`session-view` scans only `view/known-document-kinds` by default. This keeps a
+board, Owner, diagnostics or config view from deserializing unrelated large
+documents (typically session records with message bodies) that share the
+partition. `read-session-view` passes `:include-partition-scope?` (default
+true) and `:include-unknown-kinds?` (default false). `commit-migration!`
+accepts the same two options as control keys excluded from the migration
+digest; the view it returns uses them. `:include-unknown-kinds? true` is the
+runtime escape for a document written by a newer build: it widens the scan
+back to the whole scope.
+
+Adding a current-state document kind has one mandatory companion change: add
+the kind to `view/known-document-kinds`, or make every reader pass
+`:include-unknown-kinds? true`. The
+`known-document-kinds-covers-every-committed-kind-test` static test scans the
+source for `:kind` literals and traced kind constants and fails with the
+missing list. Its exemption table is only for values that are not
+current-state document kinds (artifact field kinds, backup item kinds,
+keyword selections), and every entry states its reason. Do not add a document
+kind to the exemption table; register it instead, because a missing kind is
+invisible to every view and therefore a silent product failure.
+
+The partition-scoped `:app-config` document is read by `read-document`, not by
+a view. `:restore-safety` stays registered because the backup adapter still
+reads it through a `config` partition view.
+
 ## Commit and read barrier
 
 A migration is data:

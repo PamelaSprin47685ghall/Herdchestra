@@ -18,11 +18,13 @@
   A component that could not be constructed is reported as missing.  The
   application never substitutes a fake port or a silent no-op for a real
   dependency."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [hc.compose.fleet.service :as fleet]
             [hc.compose.fleet.conflict :as fleet-conflict]
             [hc.compose.fleet.git :as fleet-git]
+            [hc.compose.fleet.slice :as fleet-slice]
             [hc.compose.fleet.supervisor :as fleet-supervisor]
             [hc.compose.mission :as mission]
             [hc.compose.mission.control :as mission-control]
@@ -30,6 +32,8 @@
             [hc.compose.mission.model :as mission-model]
             [hc.compose.mission.worktree :as mission-worktree]
             [hc.compose.owner :as owner]
+            [hc.compose.steward :as steward]
+            [hc.compose.supervisor :as supervisor]
             [hc.compose.workspace :as workspace]
             [hc.core.pair-hint :as pair-hint]
             [hc.core.scope.ledger :as scope-ledger]
@@ -39,6 +43,7 @@
             [hc.core.ufss :as ufss]
             [hc.core.workspace-gate :as wg]
             [hc.server.app.backup :as backup-app]
+            [hc.server.app.background-loops :as background-loops]
             [hc.server.app.commands :as commands]
             [hc.server.app.config :as config]
             [hc.server.app.devops :as app-devops]
@@ -48,11 +53,17 @@
             [hc.server.app.http :as http]
             [hc.server.app.owner-store :as owner-store]
             [hc.server.app.prompts :as prompts]
+            [hc.server.app.retention-gc :as retention-gc]
             [hc.server.app.session-config :as session-config]
             [hc.server.app.session-persistence :as session-persistence]
             [hc.server.app.settings :as settings]
             [hc.server.app.snapshot :as snapshot]
             [hc.server.app.static :as static]
+            [hc.server.app.steward-git :as steward-git]
+            [hc.server.app.steward-model :as steward-model]
+            [hc.server.app.steward-runtime :as steward-runtime]
+            [hc.server.app.steward-store :as steward-store]
+            [hc.server.app.search-commands :as search-commands]
             [hc.server.artifacts.integration :as artifacts-integration]
             [hc.server.blob-store :as blob-store]
             [hc.server.browser :as browser]
@@ -79,6 +90,7 @@
             [hc.server.gateway.ports :as gateway-ports]
             [hc.server.history :as history]
             [hc.server.history.context :as history-context]
+            [hc.server.history.index :as history-index]
             [hc.server.history.run-port :as history-run-port]
             [hc.server.materials.durable-store :as materials-durable]
             [hc.server.materials.session :as materials-session]
@@ -534,12 +546,20 @@
                        (conj (str "Memory:\n" (:memory injection)))
                        (seq (:worldbook injection))
                        (conj (str "Worldbook:\n" (:worldbook injection))))]
-          (let [request
-                (if (seq (:summary-ids (history/outbound-context session)))
+          (let [outbound (history/outbound-context session)
+                ;; A stale summary is not applied, but the request must
+                ;; still be projected from the session record: the Owner
+                ;; conversation may hold the pre-edit copy of a source
+                ;; message.  Any applied compression engages this
+                ;; replacement; a fresh one still emits its summary entry.
+                replace? (or (seq (:summary-ids outbound))
+                             (seq (history-context/applied-compressions
+                                   session)))
+                request
+                (if replace?
                   (update-in request [:snapshot :messages]
                              (fn [_]
-                               (history-context/model-messages
-                                (history/outbound-context session))))
+                               (history-context/model-messages outbound)))
                   request)]
             (if (seq pieces)
               (update-in request [:snapshot :messages]
@@ -934,10 +954,12 @@
                                 :disposition :fail
                                 :retryable? false
                                 :message
-                                (str "The selected main model does not declare "
-                                     ":tools; Plan and Reviewer require their "
-                                     "program tool. Select a model with tools "
-                                     "and retry.")
+                                (str (or (some-> program-role name)
+                                         "This program role")
+                                     " requires a program tool surface, but "
+                                     "the selected model does not declare "
+                                     ":tools. Select a model with tools and "
+                                     "retry.")
                                 :program-role
                                 program-role
                                 :mission-role
@@ -1150,14 +1172,25 @@
   accepted delete."
   [clock session-config owner-ref persistence outbound-context]
   {:apply-command (fn [session payload]
-                    (sessions/apply-command
-                     session payload
-                     {:now (clock)
-                      :config (session-config)
-                      :delegate (fn [s request opts]
-                                  (history/apply-command s request opts))
-                      :outbound-context (or outbound-context
-                                            history/outbound-context)}))
+                    (let [result
+                          (sessions/apply-command
+                           session payload
+                           {:now (clock)
+                            :config (session-config)
+                            :delegate (fn [s request opts]
+                                        (history/apply-command s request opts))
+                            :outbound-context (or outbound-context
+                                                  history/outbound-context)})]
+                      ;; The Owner projection cannot require the history
+                      ;; context namespace.  Recompute the server-owned
+                      ;; `:stale?` marker on the accepted session copy so an
+                      ;; edit, version switch, delete or fold immediately
+                      ;; shows whether an applied summary still describes
+                      ;; its sources.
+                      (if-let [accepted (:session result)]
+                        (assoc result :session
+                               (history-context/annotate-compressions accepted))
+                        result)))
    :confirm-draft-saved (fn [session request]
                           (sessions/confirm-draft-saved-port
                            session (assoc request :now (clock))))
@@ -1194,9 +1227,18 @@
       :command-epoch (owner-command-epoch owner)
       :payload payload})
     (catch Throwable t
-      {:status :error
-       :error {:code :OWNER_COMMAND_FAILED
-               :message (or (ex-message t) (str (class t)))}})))
+      (let [data (ex-data t)
+            cause (or (:code data) (get-in data [:error :code]))
+            cause-details (or (:details data)
+                              (get-in data [:error :details])
+                              (when (fn? (:cause data)) nil))]
+        {:status :error
+         :error
+         (cond-> {:code :OWNER_COMMAND_FAILED
+                  :message (or (ex-message t) (str (class t)))}
+           (some? cause)
+           (assoc :details {:cause cause
+                            :cause-details cause-details}))}))))
 
 (defn- record-plan-draft-error!
   [system-ref error]
@@ -1321,6 +1363,117 @@
                  :disk-length (some-> disk-content count)
                  :relay-length (some-> relay-content count)}})))
 
+(def ^:private fleet-state-row-keys
+  "The fixed Steward-facing row projection.  No task, action, or agent
+  detail can enter this shape."
+  [:swarm-id :slice-id :workspace :status
+   :root-ready :root-waiting :root-done
+   :queued-count :last-event :master-version])
+
+(def ^:private fleet-state-row-limit
+  "At most fifty rows reach the Steward tool surface."
+  50)
+
+(defn- trusted-steward-control?
+  "True when the program control context belongs to the Steward tool surface.
+
+  The program runtime sets these fields on the server; a model or browser
+  cannot choose them.  `:program-role`/`:origin` are accepted when present
+  (the command envelope shape); `:role` and `:program-name` are the fields
+  the program control context carries today."
+  [ctx]
+  (boolean
+   (or (= :steward (:program-role ctx))
+       (= :steward (:role ctx))
+       (= :steward-tool (:origin ctx))
+       (= "steward" (:program-name ctx)))))
+
+(defn- fleet-state-view
+  "Bounded fleet observation for the Steward `:fleet-state` primitive."
+  [service steward-rt]
+  (let [rows (vec (fleet/fleet-rows service))
+        capacity (or (:capacity
+                      (when steward-rt
+                        (steward-runtime/snapshot steward-rt)))
+                     (steward/fleet-capacity rows {}))
+        observation (fleet/observation-summary service)]
+    {:master-version (:master-version observation)
+     :slots-total (:slots-total capacity)
+     :slots-allocated (:slots-allocated capacity)
+     :rows (mapv #(select-keys % fleet-state-row-keys)
+                 (take-last fleet-state-row-limit rows))}))
+
+(defn- fork-primitive!
+  "Validate and run one Steward fork.  Never retries a smaller slice set."
+  [service request]
+  (let [slices (:slices request)]
+    (cond
+      (not (and (vector? slices) (seq slices)))
+      {:ok? false
+       :error {:code :INVALID_SLICES
+               :message "fork requires a non-empty vector of slices"
+               :details {:slices slices}}}
+
+      :else
+      (let [validation (fleet-slice/validate-slices slices)]
+        (if-not (:ok? validation)
+          {:ok? false :error (:error validation)}
+          (try
+            (let [result (fleet/fork! service (:slices validation))]
+              (cond
+                (= :INSUFFICIENT_WORKTREES result)
+                {:ok? false
+                 :error {:code :INSUFFICIENT_WORKTREES
+                         :message "the fleet has no free worktree"}}
+
+                (:ok? result)
+                {:ok? true
+                 :kind :fork
+                 :swarms (mapv #(select-keys %
+                                             [:swarm-id :slice-id :workspace])
+                               (:swarms result))}
+
+                :else
+                {:ok? false :error (:error result)}))
+            (catch clojure.lang.ExceptionInfo e
+              (let [data (ex-data e)]
+                (if (= :INSUFFICIENT_WORKTREES (:code data))
+                  {:ok? false
+                   :error {:code :INSUFFICIENT_WORKTREES
+                           :message "the fleet has no free worktree"}}
+                  {:ok? false
+                   :error (or (when (map? data) data)
+                              {:code :FLEET_FORK_FAILED
+                               :message (or (ex-message e)
+                                            "the fleet fork failed")})})))))))))
+
+(defn- join-primitive!
+  "Take one completed fleet result without ever waiting for a running one.
+
+  The control snapshot names the completion queue and the running swarms.
+  A non-empty queue is integrated by `join!`; an empty queue with a running
+  swarm returns `:JOIN_WOULD_BLOCK` so the Steward retries on a later tick.
+  Waiting here would block the program thread indefinitely."
+  [service]
+  (let [state (fleet/state service)
+        queued? (seq (:completion-queue state))
+        running? (boolean (some #(= :running (:status %))
+                                (vals (:swarms state))))]
+    (cond
+      queued?
+      (let [result (fleet/join! service)]
+        (if (and (map? result) (:fleet/error result))
+          {:ok? false :error (:fleet/error result)}
+          {:ok? true :kind :join :result result}))
+
+      running?
+      {:ok? false
+       :error {:code :JOIN_WOULD_BLOCK
+               :message "fleet still running; retry later"}}
+
+      :else
+      {:ok? true :kind :join :result :none})))
+
 (defn- control-fallback
   "Handle program control primitives owned by the application.
 
@@ -1339,10 +1492,49 @@
   handing off a stale relay copy."
   ([owner-ref devops-exec-ref]
    (control-fallback owner-ref devops-exec-ref nil))
-  ([owner-ref devops-exec-ref {:keys [draft-root draft-reader]
+  ([owner-ref devops-exec-ref {:keys [draft-root draft-reader fleet-ref
+                                      steward-runtime-ref]
                                 :or {draft-reader draft-disk-read}}]
   (fn [ctx {:keys [primitive request]}]
     (case primitive
+      ;; The Steward tool surface.  These three primitives mutate or read the
+      ;; repository fleet; only the server-trusted Steward program may call
+      ;; them.  A browser or ordinary worker gets an explicit refusal.
+      :fleet-state
+      (if-not (trusted-steward-control? ctx)
+        {:ok? false
+         :error {:code :FLEET_FORBIDDEN
+                 :message "fleet state is reserved for the Steward"}}
+        (if-let [service @fleet-ref]
+          {:ok? true
+           :kind :fleet-state
+           :value (fleet-state-view service @steward-runtime-ref)}
+          {:ok? false
+           :error {:code :FLEET_UNAVAILABLE
+                   :message "the fleet service is not started"}}))
+
+      :fork
+      (if-not (trusted-steward-control? ctx)
+        {:ok? false
+         :error {:code :FLEET_FORBIDDEN
+                 :message "fork is reserved for the Steward"}}
+        (if-let [service @fleet-ref]
+          (fork-primitive! service request)
+          {:ok? false
+           :error {:code :FLEET_UNAVAILABLE
+                   :message "the fleet service is not started"}}))
+
+      :join
+      (if-not (trusted-steward-control? ctx)
+        {:ok? false
+         :error {:code :FLEET_FORBIDDEN
+                 :message "join is reserved for the Steward"}}
+        (if-let [service @fleet-ref]
+          (join-primitive! service)
+          {:ok? false
+           :error {:code :FLEET_UNAVAILABLE
+                   :message "the fleet service is not started"}}))
+
       :devops
       (if-let [exec @devops-exec-ref]
         (let [call-id (or (:call-id ctx) (:call-id request))
@@ -1609,12 +1801,19 @@
   Applying or undoing a compression rewrites the outbound message prefix.
   The signature changes on either transition and is stable while the
   applied set is unchanged, so it serves as the Pair Hint `:compaction`
-  boundary id and as the consumed cursor stored in the Pair Hint session."
+  boundary id and as the consumed cursor stored in the Pair Hint session.
+
+  A stale compression no longer replaces its sources, so it does not form
+  the rewritten prefix.  Keeping it in the signature also hid the
+  applied->stale transition, which switches the prefix back to the source
+  messages; filtering it makes that transition change the signature and
+  emit a boundary."
   [context]
   (let [compressions (:compressions context)
         applied (->> (if (map? compressions) compressions {})
                      vals
-                     (filter #(= :applied (:state %)))
+                     (filter #(and (= :applied (:state %))
+                                   (not (true? (:stale? %)))))
                      (map #(select-keys % [:compression-id
                                           :applied-at
                                           :updated-at]))
@@ -1674,7 +1873,7 @@
   [{:keys [store persistence config model-port-ref materials-ref registry-ref
            mission-port shared-gate owners notify-ref browser-services
            search-contexts search-ref diagnostics-ref system-ref fleet-ref
-           session-config extensions-ref artifacts-ref]}]
+           steward-runtime-ref session-config extensions-ref artifacts-ref]}]
   (fn [{:keys [session-id]}]
     (let [materials @materials-ref
           extensions @extensions-ref
@@ -1747,7 +1946,10 @@
                                              (control-fallback
                                               owner-ref devops-exec-ref
                                               {:draft-root
-                                               (:workspace-root config)}))
+                                               (:workspace-root config)
+                                               :fleet-ref fleet-ref
+                                               :steward-runtime-ref
+                                               steward-runtime-ref}))
             ;; The Plan dedicated worker has no board/token; it gets the
             ;; separate best-effort read-only shell path.  Swarm workers keep
             ;; the holder/token/claim board path unchanged.
@@ -1789,7 +1991,10 @@
                                           rt
                                           (control-fallback
                                            owner-ref devops-exec-ref
-                                           {:draft-root root}))
+                                           {:draft-root root
+                                            :fleet-ref fleet-ref
+                                            :steward-runtime-ref
+                                            steward-runtime-ref}))
                                 :on-terminal program-on-terminal
                                 :clock #(System/currentTimeMillis)})]
                       (reset! eval-ref (partial program/evaluate-program! prt))
@@ -2317,7 +2522,12 @@
                                          :payload opts})))))
                     :session-run-port (session-run-port
                                        #(System/currentTimeMillis))
-                    :initial-session session-record
+                    ;; The compose Owner projection cannot require the
+                    ;; history context namespace.  Hand it the annotated
+                    ;; session copy so a restarted Owner sees `:stale?` on
+                    ;; applied compressions before the first command.
+                    :initial-session
+                    (history-context/annotate-compressions session-record)
                     ;; A summary or branch session already carries visible
                     ;; history; seed the fresh Owner conversation so the
                     ;; first model request does not drop it.
@@ -2671,6 +2881,68 @@
         (when (map? value)
           (:owners value))))))
 
+(defn link-mission-session!
+  "Record which session owns MISSION-ID.
+
+  The Steward's dispatcher and the fleet join callback share this one
+  routing fact.  It lives in router state beside `:owners`, so a join
+  result can reach exactly one Owner without guessing a \"global\" Owner."
+  [router mission-id session-id]
+  (cond
+    (not (map? router))
+    nil
+
+    (not (and (string? mission-id) (not (str/blank? mission-id))))
+    nil
+
+    (not (and (string? session-id) (not (str/blank? session-id))))
+    nil
+
+    :else
+    (do (swap! (:state router) assoc-in
+               [:missions mission-id :session-id] session-id)
+        session-id)))
+
+(defn- mission-owner-handle
+  "Return the Owner handle of the session that owns MISSION-ID.
+
+  Both hops are explicit router facts: `[:missions id :session-id]` names
+  the session, `[:owners session-id]` names its live Owner."
+  [router mission-id]
+  (when (and (map? router) (some? mission-id))
+    (let [state (try @(:state router) (catch Throwable _ nil))
+          session-id (get-in state [:missions mission-id :session-id])]
+      (when (and (string? session-id) (not (str/blank? session-id)))
+        (get-in state [:owners session-id])))))
+
+(defn- publish-join-ff-ready!
+  "Tell the mission's Owner whether Git is fast-forward ready after a join.
+
+  A verified join (`:ff-commit`) or a join whose Git merge succeeded but
+  whose state write failed (`:fleet/error :git-merged? true`) publishes
+  `:ready? true`.  Any other `:fleet/error` publishes `:ready? false`.  A
+  `:none`/`:no-results` join and an unknown shape leave the previous Owner
+  value untouched: they do not prove either answer."
+  [router service result]
+  (let [error (:fleet/error result)
+        ff-commit (or (:ff-commit result) (:ff-commit error))
+        ready? (cond
+                 (and (map? result) (string? (:ff-commit result))) true
+                 (and (map? error) (true? (:git-merged? error))) true
+                 (map? error) false
+                 :else ::unchanged)]
+    (when (not= ::unchanged ready?)
+      (when-let [owner (mission-owner-handle router (:mission-id service))]
+        (when-let [submit! (:submit! owner)]
+          (let [clock (or (:clock service) #(System/currentTimeMillis))]
+            (submit! (cond-> {:type :git/ff-ready
+                              :ready? ready?
+                              :source :join
+                              :at (clock)}
+                       (and (string? ff-commit)
+                            (not (str/blank? ff-commit)))
+                       (assoc :ff-commit ff-commit)))))))))
+
 (defn- owner-snapshot-revision
   [snapshot]
   (long (or (get-in snapshot [:state :session :revision]) -1)))
@@ -2813,6 +3085,11 @@
              session-cache nil nil))
   ([registry owners router config sync known-sessions outbound-opts-fn
     session-cache published-windows history-window-size]
+   (baseline registry owners router config sync known-sessions outbound-opts-fn
+             session-cache published-windows history-window-size 0))
+  ([registry owners router config sync known-sessions outbound-opts-fn
+    session-cache published-windows history-window-size
+    inactive-history-window-size]
   (let [sessions (or known-sessions
                      (let [listed (registry/list-sessions
                                    registry {:include-deleted? false})]
@@ -2871,6 +3148,7 @@
                  :session-cache session-cache
                  :published-windows published-windows
                  :history-window-size history-window-size
+                 :inactive-history-window-size inactive-history-window-size
                  :sync (merge {:phase :synced
                                :command-epoch
                                (commands/app-command-epoch router)}
@@ -2884,17 +3162,26 @@
   Owner and session versions cover committed state; the settings hash and
   materials revision cover the active session's outbound context.  A change
   in any of them rebuilds the projection; otherwise the publisher reuses the
-  previous map instead of walking every session again."
-  [sessions owner-versions active-session command-epoch config-models
-   materials-revision published-windows history-window-size]
-  [(mapv (juxt :session-id :revision) sessions)
-   owner-versions
-   active-session
-   command-epoch
-   config-models
-   materials-revision
-   published-windows
-   history-window-size])
+  previous map instead of walking every session again.  The two history
+  window sizes are inputs because they decide which message entities are
+  published."
+  ([sessions owner-versions active-session command-epoch config-models
+    materials-revision published-windows history-window-size]
+   (baseline-cache-key sessions owner-versions active-session command-epoch
+                       config-models materials-revision published-windows
+                       history-window-size 0))
+  ([sessions owner-versions active-session command-epoch config-models
+    materials-revision published-windows history-window-size
+    inactive-history-window-size]
+   [(mapv (juxt :session-id :revision) sessions)
+    owner-versions
+    active-session
+    command-epoch
+    config-models
+    materials-revision
+    published-windows
+    history-window-size
+    inactive-history-window-size]))
 
 (defn- cached-baseline
   "Return the cached baseline for KEY, or build and cache one.
@@ -3353,14 +3640,20 @@
                   router-state @(:state router)
                   published-windows (or (get router-state :published-windows)
                                         (atom {}))
-                  history-window-size (get router-state :history-window-size)
+                  history-window-size (or (get router-state
+                                               :history-window-size)
+                                          (atom nil))
+                  inactive-history-window-size
+                  (or (get router-state :inactive-history-window-size)
+                      (atom 0))
                   key (baseline-cache-key
                        sessions owner-versions active epoch
                        (merge (:models config)
                               (select-keys config [:assistants]))
                        (:materials/revision components-snapshot)
                        @published-windows
-                       @history-window-size)
+                       @history-window-size
+                       @inactive-history-window-size)
                   outbound-opts-fn
                   (fn [session]
                     (outbound-context-opts
@@ -3376,7 +3669,8 @@
                                outbound-opts-fn
                                baseline-session-cache
                                published-windows
-                               @history-window-size)))
+                               @history-window-size
+                               @inactive-history-window-size)))
                   ;; The active session's outbound panel depends on live Owner
                   ;; context (compressions, boundary, materials).  A cache key
                   ;; cannot see every context mutation cheaply, so rebuild
@@ -3526,8 +3820,31 @@
 (def ^:private critical-component-error-keys
   [:model-auth-error :model-error :speech-error :extension-error
    :materials-error :diagnostics-error :backup-error :artifacts-error
-   :fleet-error :fleet-gc-error :search-error :scheduler-error
+   :fleet-error :fleet-gc-error :retention-gc-error :search-error
+   :scheduler-error :steward-error
    :default-session-error])
+
+(defn- retention-gc-status
+  "Read the retention scheduler's observation facts, or nil.
+
+  `:session-last-error` / `:blob-last-error` are sweep observations, not
+  component failures: a partial sweep stays visible here and never turns
+  `/healthz` into 503.  Only `:retention-gc-error` (start or child exit)
+  enters `component-errors`."
+  [system]
+  (when-let [service (:retention-gc system)]
+    (try
+      (retention-gc/status service)
+      (catch Throwable _ nil))))
+
+(defn- steward-health
+  "The Steward runtime's bounded health fields.
+
+  `:persist-conflicts` and `:last-error` are sweep observations.  They stay
+  visible in the health body and never turn `/healthz` into 503; only a
+  start/exit failure (`:steward-error`) enters `component-errors`."
+  [system]
+  (steward-runtime/health (:steward-runtime system)))
 
 (defn- fleet-unavailable?
   [error]
@@ -3584,6 +3901,28 @@
 
                :else
                {:configured? false :started? false :status :unavailable})
+   :retention-gc
+   (if-let [status (retention-gc-status system)]
+     (merge {:configured? true
+             :started? true
+             :status :started}
+            (select-keys status
+                         [:running? :stopped? :terminated?
+                          :session-interval-ms :blob-interval-ms
+                          :session-days :blob-days
+                          :session-runs :blob-runs
+                          :session-last-result :blob-last-result
+                          :session-last-error :blob-last-error
+                          :last-run-at]))
+     (if (:retention-gc-error system)
+       {:configured? true :started? false :status :failed
+        :reason (get-in system [:retention-gc-error :code])}
+       {:configured? false :started? false :status :unavailable}))
+   :steward
+   (let [health (steward-health system)]
+     (if (:steward-error system)
+       (assoc health :reason (get-in system [:steward-error :code]))
+       health))
    :search {:started? (some? (:search system))}
    :scheduler {:started? (some? (:scheduler system))}})
 
@@ -3600,6 +3939,8 @@
            :recovery-entry (:recovery-entry entry)
            :path (:path entry)}
     (:cleanup entry) (assoc :cleanup (:cleanup entry))
+    (:component-errors entry) (assoc :component-errors
+                                     (:component-errors entry))
     (:partial-system entry) (assoc :partial-system (:partial-system entry))))
 
 (defn- attachment-loader
@@ -3899,6 +4240,380 @@
         (catch Exception _ nil)))
     value))
 
+(defn- retention-gc-options
+  "The retention scheduler's options from the normalized application config.
+
+  `:purge-session!` and `:blob-cleanup!` stay absent on purpose: the
+  scheduler's defaults use the registry's `purge-deleted-session!` (Owner
+  stop plus drain evidence) and the store/blob-root cleanup coordinator."
+  [config registry store]
+  {:registry registry
+   :store store
+   :blob-root (:blob-root config)
+   :clock #(System/currentTimeMillis)
+   :session-interval-ms (get-in config [:retention :interval-ms])
+   :blob-interval-ms (get-in config [:retention :interval-ms])
+   :session-days (get-in config [:retention :session-days])
+   :blob-days (get-in config [:retention :blob-days])
+   :run-immediately? (get-in config [:retention :run-immediately?])})
+
+(defn- steward-git-log-since
+  "Build the Steward's Git observation function from the fleet port.
+
+  A fleet service that failed to start (for example a non-Git workspace)
+  still yields an honest reader: the returned function reports
+  `:STEWARD_GIT_UNAVAILABLE` per call instead of pretending there is no
+  history."
+  [config fleet-service]
+  (try
+    (steward-git/git-log-since-fn
+     (or (:git fleet-service)
+         {:repo (:workspace-root config)})
+     {:ref (or (get-in config [:fleet :master-ref]) "master")})
+    (catch Throwable _ nil)))
+
+(defn- plan-start-session!
+  "Create the Plan session for one Steward mission and return its id.
+
+  The mission binding is the router fact `[:missions id :session-id]`, which
+  the join callback and the Steward runtime resolve through
+  `link-mission-session!`.  The session record has no separate configuration
+  document; the creation carries the live model-config snapshot used for the
+  binding.  A refusal is returned, never swallowed."
+  [{:keys [registry owners router-ref session-config mission]}]
+  (let [{:keys [mission-id title]} mission
+        router @router-ref]
+    (cond
+      (not (and (string? mission-id) (not (str/blank? mission-id))))
+      {:ok? false
+       :error {:code :STEWARD_PLAN_MISSION_INVALID
+               :message "a plan start needs a non-blank mission id"
+               :details {:mission-id mission-id}}}
+
+      (not (map? router))
+      {:ok? false
+       :error {:code :STEWARD_PLAN_ROUTER_UNAVAILABLE
+               :message "the command router is not ready for a plan session"}}
+
+      :else
+      (let [created
+            (try
+              (registry/create-session!
+               registry
+               {:title (or title (str "Mission " mission-id))
+                :config (session-config)})
+              (catch Throwable t
+                {:status :error
+                 :error {:code :STEWARD_PLAN_SESSION_FAILED
+                         :message (or (.getMessage ^Throwable t) (str t))
+                         :class (.getName (class t))}}))
+            session (:session created)
+            session-id (:session-id session)
+            owner (:owner created)]
+        (if (and (= :created (:status created))
+                 (string? session-id)
+                 (some? owner))
+          (do
+            (commands/register-owner! router session-id owner)
+            (when (instance? clojure.lang.IAtom owners)
+              (swap! owners assoc session-id owner))
+            (link-mission-session! router mission-id session-id)
+            (commands/select-session! router session-id)
+            {:ok? true :session-id session-id})
+          {:ok? false
+           :error (or (:error created)
+                      {:code :STEWARD_PLAN_SESSION_FAILED
+                       :message
+                       "plan session creation returned no usable session Owner"
+                       :details {:status (:status created)
+                                 :session-id session-id}})})))))
+
+(defn- steward-report-sink
+  "The Steward's mission-level report sink.
+
+  This wave has no per-session report UI channel, so the latest report stays
+  observable on the system map as one bounded value.  Pretending a delivery
+  to a session that has no contract would be worse than a named seam."
+  [system-ref]
+  (fn [report]
+    (swap! system-ref assoc :steward-last-report report)
+    {:ok? true :stored? true}))
+
+(defn- history-index-list-sessions
+  "Full committed session documents for the search index rebuild.
+
+  `registry/list-sessions` returns summaries without message bodies; the
+  rebuild needs the authoritative records.  A failed id read throws so the
+  rebuild never clears the index over an unreadable store."
+  [persistence]
+  (fn []
+    (let [listed (session-ports/list-session-ids persistence)]
+      (if (= :ok (:status listed))
+        (keep (fn [session-id]
+                (let [result (session-ports/read-session persistence session-id)]
+                  (when (= :found (:status result))
+                    (:session result))))
+              (:ids listed))
+        (throw (ex-info "history index rebuild could not list sessions"
+                        {:status (:status listed)
+                         :error (:error listed)}))))))
+
+(defn- ensure-history-index!
+  "Make the derived search index ready, rebuilding only when it is not.
+
+  A required rebuild runs on a daemon thread so the listener can start
+  first: this function returns `:deferred? true` and health reports
+  `:state :building` until that thread finishes.  A ready index is verified
+  in place.  A failure is returned and recorded, never raised, because the
+  index is a derived layer."
+  [store list-sessions-fn current-session-fn system-ref]
+  (let [started (System/nanoTime)
+        finish (fn [value]
+                 (assoc value :duration-ms
+                        (quot (- (System/nanoTime) started) 1000000)))
+        ensure (resolve 'hc.server.history.index/ensure-ready!)
+        existing-thread (when system-ref
+                          (:history-index-bootstrap-thread @system-ref))
+        health (try (history-index/index-health store)
+                    (catch Throwable _ nil))]
+    (if (and (instance? Thread existing-thread)
+             (.isAlive ^Thread existing-thread))
+      (finish {:ok? true
+               :deferred? true
+               :already-running? true
+               :rebuilt? false
+               :state :building})
+      (if (and ensure (or (nil? health) (:needs-rebuild? health)))
+        (let [cancelled (atom false)
+              cancelled? (fn [] (boolean @cancelled))
+              deferred (finish {:ok? true
+                                :deferred? true
+                                :rebuilt? false
+                                :state :building
+                                :generation (:generation health)})]
+          (when system-ref
+            (swap! system-ref assoc
+                   :history-index-bootstrap deferred
+                   :history-index-bootstrap-cancelled? cancelled)
+            (let [thread
+                  (Thread.
+                   (fn []
+                     (let [result
+                           (if (cancelled?)
+                             {:ok? false
+                              :cancelled? true
+                              :error
+                              {:code :INDEX_REBUILD_CANCELLED
+                               :message "the index bootstrap was cancelled"}}
+                             (try
+                               (ensure store
+                                       (cond-> {:list-sessions-fn
+                                                list-sessions-fn
+                                                :cancelled? cancelled?}
+                                         current-session-fn
+                                         (assoc :current-session-fn
+                                                current-session-fn)))
+                               (catch Throwable t
+                                 {:ok? false
+                                  :error
+                                  {:code :HISTORY_INDEX_REBUILD_FAILED
+                                   :message (or (.getMessage t) (str t))
+                                   :class (.getName (class t))
+                                   :details
+                                   (let [data (ex-data t)]
+                                     (if (seq data)
+                                       {:cause (or (:code data)
+                                                   (:error data) :unknown)
+                                        :cause-details
+                                        (not-empty
+                                         (dissoc data :error :code
+                                                 :storage/expected?))}
+                                       {:cause :unknown
+                                        :cause-details
+                                        {:class (.getName (class t))}}))}})))]
+                       (cond
+                         (or (:cancelled? result) (cancelled?))
+                         (swap! system-ref assoc
+                                :history-index-bootstrap
+                                (assoc result
+                                       :deferred? false
+                                       :state :building))
+
+                         (:ok? result)
+                         (swap! system-ref assoc
+                                :history-index-bootstrap
+                                (assoc result
+                                       :deferred? false
+                                       :duration-ms
+                                       (quot (- (System/nanoTime) started)
+                                             1000000)))
+
+                         :else
+                         (swap! system-ref assoc
+                                :history-index-error (:error result)
+                                :history-index-bootstrap
+                                (assoc result :deferred? false)))))
+                   "hc-history-index-bootstrap")]
+              (swap! system-ref assoc
+                     :history-index-bootstrap-thread thread)
+              (.setDaemon thread true)
+              (.start thread)))
+          deferred)
+      (try
+        (if ensure
+          (let [result (ensure store
+                               (cond-> {:list-sessions-fn list-sessions-fn}
+                                 current-session-fn
+                                 (assoc :current-session-fn
+                                        current-session-fn)))
+                health (:health result)
+                action (:action result)]
+            (if (:ok? result)
+              (finish {:ok? true
+                       :rebuilt? (= :rebuilt action)
+                       :state (or (:state health) :ready)
+                       :generation (:generation result)
+                       :health health})
+              (finish {:ok? false
+                       :rebuilt? false
+                       :state (or (:state health) :degraded)
+                       :health health
+                       :error (or (:error result)
+                                  {:code :HISTORY_INDEX_NOT_READY
+                                   :message
+                                   "the history index could not be made ready"})})))
+          (let [meta (history-index/index-meta store)
+                ready? (and (map? meta)
+                            (= :ready (:state meta))
+                            (= history-index/schema-version
+                               (:schema-version meta))
+                            (pos? (long (or (:generation meta) 0))))]
+            (if ready?
+              (finish {:ok? true
+                       :rebuilt? false
+                       :state :ready
+                       :generation (:generation meta)})
+              (let [result (history-index/rebuild! store list-sessions-fn)]
+                (finish {:ok? true
+                         :rebuilt? true
+                         :state :ready
+                         :generation (:generation result)
+                         :sessions (:sessions result)
+                         :indexed (:indexed result)})))))
+        (catch Throwable t
+          (finish {:ok? false
+                   :rebuilt? false
+                   :state (or (:state
+                               (try (history-index/index-meta store)
+                                    (catch Throwable _ nil)))
+                              :missing)
+                   :error {:code :HISTORY_INDEX_REBUILD_FAILED
+                           :message (or (.getMessage ^Throwable t) (str t))
+                           :class (.getName (class t))
+                           :details
+                           (let [data (ex-data t)]
+                             (if (seq data)
+                               {:cause (or (:code data) (:error data) :unknown)
+                                :cause-details
+                                (not-empty
+                                 (dissoc data :error :code
+                                         :storage/expected?))}
+                               {:cause :unknown
+                                :cause-details
+                                {:class (.getName (class t))}}))}})))))))
+
+(defn- history-index-health
+  "The bounded search-index observation for health and `/healthz`."
+  [system]
+  (let [store (:store system)
+        api (resolve 'hc.server.history.index/index-health)
+        health
+        (cond
+          (and api store)
+          (try
+            (api store)
+            (catch Throwable t
+              {:state :missing
+               :generation 0
+               :session-count 0
+               :message-count 0
+               :needs-rebuild? true
+               :error {:code :HISTORY_INDEX_STATUS_FAILED
+                       :message (or (.getMessage t) (str t))
+                       :details
+                       (let [data (ex-data t)]
+                         (if (seq data)
+                           {:cause (or (:code data) (:error data) :unknown)
+                            :cause-details
+                            (not-empty
+                             (dissoc data :error :code
+                                     :storage/expected?))}
+                           {:cause :unknown
+                            :cause-details
+                            {:class (.getName (class t))}}))}}))
+
+          :else
+          (let [result
+                (when-let [status-fn (:history-index-status-fn system)]
+                  (try
+                    (status-fn nil)
+                    (catch Throwable t
+                      {:status :error
+                       :error {:code :HISTORY_INDEX_STATUS_FAILED
+                               :message (or (.getMessage t) (str t))
+                               :details
+                               (let [data (ex-data t)]
+                                 (if (seq data)
+                                   {:cause (or (:code data)
+                                               (:error data) :unknown)
+                                    :cause-details
+                                    (not-empty
+                                     (dissoc data :error :code
+                                             :storage/expected?))}
+                                   {:cause :unknown
+                                    :cause-details
+                                    {:class (.getName (class t))}}))}})))
+                payload (if (= :ok (:status result))
+                          (:payload result)
+                          {:state :missing
+                           :generation 0
+                           :session-count 0
+                           :message-count 0})]
+            (assoc payload
+                   :needs-rebuild? (not= :ready (:state payload)))))
+        error (:history-index-error system)]
+    (cond-> (select-keys health
+                         [:state :generation :session-count :message-count
+                          :built-at :needs-rebuild? :reason])
+      (some? error)
+      (assoc :state :degraded :error error)
+
+      (and (:deferred? (:history-index-bootstrap system))
+           (not= :ready (:state health)))
+      (assoc :state :building :needs-rebuild? true :reason :building))))
+
+(defn- history-index-component-error
+  "A non-fatal component-errors entry for a degraded search index.
+
+  `health.clj` computes `ok?` before this entry is merged, so the index can
+  be visible in `component-errors` without turning `/healthz` into 503."
+  [system]
+  (when-let [error (:history-index-error system)]
+    {:history-index error}))
+
+(defn- health-observations
+  "Application-owned observations attached to every health snapshot.
+
+  These stay out of `component-errors`: a missing or building search index
+  and a partial Steward sweep are availability facts, not readiness
+  failures.  A component *start* failure is recorded separately under
+  `<component>-error` and does flip `ok?`."
+  [system]
+  (cond-> {:steward (steward-health system)
+           :history-index (history-index-health system)}
+    (some? (retention-gc-status system))
+    (assoc :retention-gc (retention-gc-status system))))
+
 (defn- start-internal!
   "Start the integrated application from a normalized CONFIG map.
 
@@ -3927,11 +4642,19 @@
                                               :path
                                               (str (get-in config [:data-dir])
                                                    "/maintenance/state.edn")}}))))
-        partial-system (atom {:blocked? true :partial? true :config config})
+        partial-system (atom {:blocked? true :partial? true :config config
+                              :stop-result (atom nil)})
         ;; Shared with the command router: `:history/messages` records the
         ;; fetched window here so the publisher keeps those entities.
         published-windows (atom {})
-        history-window-size (atom 200)]
+        history-window-size (atom 200)
+        ;; A large session list must not publish every inactive session's
+        ;; message bodies.  Only the presentation active session keeps the
+        ;; 200-message window; every other session publishes no entities
+        ;; until the client fetches a page through `:history/messages`.
+        ;; 0 = no message entities for inactive sessions;
+        ;; nil = full history (tests/compatibility only).
+        inactive-history-window-size (atom 0)]
     (try
       (if blocked-journal
       (let [offline? (maintenance-journal/offline-record? blocked-journal)
@@ -4044,7 +4767,22 @@
                                    :options [:inspect-restore-journal
                                              :inspect-directory
                                              :restart]}}})))))
-                persistence (session-persistence/persistence store)
+                persistence
+                (session-persistence/persistence
+                 store
+                 ;; The derived history index follows every committed and
+                 ;; deleted session.  Its failure is advisory: the store
+                 ;; commit already succeeded and the index can be rebuilt.
+                 {:on-session-committed
+                  (fn [session]
+                    (try
+                      (history-index/index-session! store session)
+                      (catch Throwable _ nil)))
+                  :on-session-deleted
+                  (fn [session-id]
+                    (try
+                      (history-index/remove-session! store session-id)
+                      (catch Throwable _ nil)))})
                 ;; Keep the launch model configuration separate from the
                 ;; effective one: the settings service needs the launch
                 ;; connection set to decide which persisted connections an
@@ -4118,6 +4856,16 @@
             documents-component (documents/service)
             owners (atom {})
             fleet-ref (atom nil)
+            ;; One Steward Store document is shared by the runtime loop and
+            ;; the trusted `:steward/*` command plane.  The router reads the
+            ;; atom's `{:store Store}` value.
+            steward-store-instance (steward-store/steward-store store)
+            steward-ref (atom {:store steward-store-instance})
+            steward-runtime-ref (atom nil)
+            ;; The fleet service starts before the command router exists.
+            ;; Its join callback resolves the mission Owner through this
+            ;; forward reference; the callback never fires during startup.
+            router-ref (atom nil)
             browser-services (atom {})
             extensions-ref (atom nil)
             artifacts-ref (atom nil)
@@ -4178,6 +4926,7 @@
                             :diagnostics-ref diagnostics-ref
                             :system-ref system-ref
                             :fleet-ref fleet-ref
+                            :steward-runtime-ref steward-runtime-ref
                             :extensions-ref extensions-ref
                             :artifacts-ref artifacts-ref
                             :notify-ref notify-ref})
@@ -4190,6 +4939,39 @@
                      :attachments-ref attachments-ref
                      :search-contexts search-contexts :search-ref search-ref
                      :notify-ref notify-ref :materials-ref materials-ref)
+            ;; Full-text history search.  The two maps differ only in the
+            ;; reindex trust switch; the router keeps them under the agreed
+            ;; state keys and never lets a browser rebuild the index.
+            history-search-options
+            {:store store
+             :read-session-fn
+             (fn [session-id]
+               (session-ports/read-session persistence session-id))
+             :list-sessions-fn
+             (history-index-list-sessions persistence)}
+            history-search-handlers
+            (search-commands/handlers
+             (assoc history-search-options :allow-reindex? false))
+            history-search-trusted-handlers
+            (search-commands/handlers
+             (assoc history-search-options :allow-reindex? true))
+            history-index-status-fn
+            (search-commands/search-status-handler {:store store})
+            history-index-bootstrap
+            (ensure-history-index!
+             store
+             (:list-sessions-fn history-search-options)
+             (fn [session-id]
+               (let [result (session-ports/read-session persistence session-id)]
+                 (when (= :found (:status result))
+                   (:session result))))
+             system-ref)
+            _ (when-not (:ok? history-index-bootstrap)
+                (swap! system-ref assoc :history-index-error
+                       (:error history-index-bootstrap)))
+            _ (swap! partial-system assoc
+                     :history-index-bootstrap history-index-bootstrap
+                     :history-index-status-fn history-index-status-fn)
             speech-component
             (try
               (speech/start! {:data-dir (:data-dir config)
@@ -4395,6 +5177,18 @@
                       :state-file (get-in config [:fleet :state-file])
                       :models fleet-models
                       :slot-ids [:slot-a :slot-b]
+                      ;; Every join, whoever calls it, synchronizes the
+                      ;; mission Owner with the real Git answer.  The router
+                      ;; forward reference is resolved at callback time.
+                      :on-join-result!
+                      (fn [service result _opts]
+                        (when-let [router @router-ref]
+                          (publish-join-ff-ready! router service result))
+                        ;; The Steward observes the same join for its own
+                        ;; report/fork loop; this only enqueues.
+                        (when-let [rt @steward-runtime-ref]
+                          (steward-runtime/on-join-result!
+                           rt service result _opts)))
                       :evaluate-factory (worktree-evaluate-factory config)
                       :launch-swarm! (:launch fleet-supervisor-instance)
                       :stop-swarm!
@@ -4423,28 +5217,207 @@
                        {:code :FLEET_START_FAILED
                         :message (or (.getMessage ^Throwable t) (str t))})
                 nil))
+            ;; The repository Steward shares one Store document with the
+            ;; trusted `:steward/*` command plane.  Its loop is a supervisor
+            ;; child; `steward-runtime/start!` starts no thread of its own.
+            steward-plan-start
+            (fn [mission]
+              (plan-start-session!
+               {:registry session-registry
+                :owners owners
+                :router-ref router-ref
+                :session-config live-session-config
+                :mission mission}))
+            steward-git-fn (steward-git-log-since config fleet-service)
+            steward-start-fn
+            (fn []
+              (let [steward-model-port @model-port-ref
+                    ;; A live port enables the real meditate/decide calls.
+                    ;; Without one, nil keeps startup alive and every effect
+                    ;; records :MODEL_PORT_UNAVAILABLE instead of failing.
+                    steward-model-fn
+                    (try
+                      (when steward-model-port
+                        (steward-model/model-fn
+                         {:port steward-model-port
+                          :model-id (get-in config
+                                            [:models :roles :main :model])}))
+                      (catch Throwable t
+                        (swap! system-ref assoc
+                               :steward-model-error
+                               {:code :STEWARD_MODEL_UNAVAILABLE
+                                :message (or (.getMessage t) (str t))})
+                        nil))
+                    started
+                    (steward-runtime/start!
+                     {:store steward-store-instance
+                      :git steward-git-fn
+                      :fleet fleet-service
+                      :fork-fn (when fleet-service
+                                 (fn [slices]
+                                   (fleet/fork! fleet-service slices)))
+                      :plan-start-fn steward-plan-start
+                      :on-report-fn (steward-report-sink system-ref)
+                      :model-fn steward-model-fn
+                      :model-port nil
+                      :clock #(System/currentTimeMillis)
+                      :interval-ms (get-in config [:steward :interval-ms])
+                      :config
+                      {:interval-ms (get-in config [:steward :interval-ms])
+                       :git-ref (or (get-in config [:fleet :master-ref])
+                                    "master")
+                       :plan-stall-ms (get-in config [:steward :plan-stall-ms])
+                       ;; The supervisor child below waits 7000ms, so the
+                       ;; runtime's own bound must finish inside it.
+                       :stop-timeout-ms 5000}})]
+                (if (:ok? started)
+                  (do (reset! steward-runtime-ref (:runtime started))
+                      (:runtime started))
+                  {:ok? false :error (:error started)})))
+            steward-loop-child
+            (background-loops/steward-loop-child
+             {:tick-fn
+              (fn []
+                (if-let [rt @steward-runtime-ref]
+                  (steward-runtime/tick! rt)
+                  {:ok? false
+                   :error {:code :STEWARD_RUNTIME_MISSING
+                           :message "the Steward runtime is not started"}}))
+              :interval-ms (get-in config [:steward :interval-ms])
+              :start-fn steward-start-fn
+              :stop-fn (fn [rt] (steward-runtime/stop! rt))
+              ;; Wider than the runtime's own 5000ms bound: the supervisor
+              ;; wrapper must not cut a draining tick short.
+              :stop-timeout-ms 7000
+              :restart :permanent})
+            ;; Retention and fleet GC own their own ScheduledExecutorService.
+            ;; They are started directly, never as periodic supervisor
+            ;; children: a second supervisor tick would double every sweep.
+            retention-gc-instance
+            (try
+              (let [result
+                    (retention-gc/start!
+                     (retention-gc-options config session-registry store))]
+                (if (:ok? result)
+                  (:service result)
+                  (do
+                    (swap! system-ref assoc
+                           :retention-gc-error (:error result))
+                    nil)))
+              (catch Throwable t
+                (swap! system-ref assoc
+                       :retention-gc-error
+                       {:code :RETENTION_GC_START_FAILED
+                        :message (or (.getMessage ^Throwable t) (str t))})
+                nil))
             fleet-gc-instance
             (when fleet-service
               (try
-                (let [started
+                (let [result
                       (fleet-gc/start!
                        {:service fleet-service
-                        :interval-ms (or (get-in config [:fleet :gc-interval-ms])
-                                         fleet-gc/default-interval-ms)
+                        :interval-ms
+                        (or (get-in config [:fleet :gc-interval-ms])
+                            fleet-gc/default-interval-ms)
                         :clock (:clock fleet-service)
                         :run-immediately?
                         (not (false? (get-in config
                                              [:fleet :gc-run-immediately?])))})]
-                  (if (:ok? started)
-                    (:gc started)
+                  (if (:ok? result)
+                    (:gc result)
                     (do
-                      (swap! system-ref assoc :fleet-gc-error (:error started))
+                      (swap! system-ref assoc
+                             :fleet-gc-error (:error result))
                       nil)))
                 (catch Throwable t
-                  (swap! system-ref assoc :fleet-gc-error
+                  (swap! system-ref assoc
+                         :fleet-gc-error
                          {:code :FLEET_GC_START_FAILED
                           :message (or (.getMessage ^Throwable t) (str t))})
                   nil)))
+            ;; Record the direct schedulers before the supervisor starts: a
+            ;; supervisor failure must roll back what is already running.
+            _ (swap! partial-system assoc
+                     :retention-gc retention-gc-instance
+                     :fleet-gc fleet-gc-instance)
+            ;; The supervisor owns only loops that have no timer of their
+            ;; own.  The Steward runtime starts no thread; this child is its
+            ;; single tick source.
+            process-supervisor
+            (try
+              (let [started
+                    (supervisor/start!
+                     {:clock #(System/currentTimeMillis)
+                      :on-error
+                      (fn [event]
+                        ;; A transient tick failure stays in the loop status
+                        ;; and is retried with backoff; a refused start or a
+                        ;; dead child is a failed component.
+                        (when (and (= :steward-loop (:child-id event))
+                                   (contains? #{:start :exit}
+                                              (:phase event)))
+                          (swap! system-ref assoc
+                                 :steward-error (:error event))))
+                      :children [steward-loop-child]})]
+                (if (:ok? started)
+                  (do
+                    (when (some #{:steward-loop} (:degraded started))
+                      (let [child-error
+                            (get-in (supervisor/status (:supervisor started))
+                                    [:children :steward-loop :last-error])]
+                        (swap! system-ref assoc
+                               :steward-error
+                               (or child-error
+                                   {:code :STEWARD_START_FAILED
+                                    :message
+                                    "the Steward loop child could not start"}))))
+                    (:supervisor started))
+                  (throw
+                   (ex-info
+                    "the process supervisor could not start"
+                    {:recovery-blocked
+                     {:status :blocked
+                      :error (or (:error started)
+                                 {:code :SUPERVISOR_START_FAILED
+                                  :message
+                                  "the process supervisor could not start"})
+                      :component-errors
+                      {:supervisor
+                       (or (:error started)
+                           {:code :SUPERVISOR_START_FAILED
+                            :message
+                            "the process supervisor could not start"})}
+                      :hint
+                      "The application did not start because background supervision is unavailable. Inspect the logs, then restart."
+                      :recovery-entry
+                      {:action :operator
+                       :options [:inspect-directory :restart]}}}))))
+              (catch Throwable t
+                (if (:recovery-blocked (ex-data t))
+                  (throw t)
+                  (throw
+                   (ex-info
+                    "the process supervisor could not start"
+                    {:recovery-blocked
+                     {:status :blocked
+                      :error {:code :SUPERVISOR_START_FAILED
+                              :message (or (.getMessage ^Throwable t) (str t))}
+                      :component-errors
+                      {:supervisor {:code :SUPERVISOR_START_FAILED
+                                    :message (or (.getMessage ^Throwable t)
+                                                 (str t))}}
+                      :hint
+                      "The application did not start because background supervision is unavailable. Inspect the logs, then restart."
+                      :recovery-entry
+                      {:action :operator
+                       :options [:inspect-directory :restart]}}}
+                    t)))))
+            _ (swap! partial-system assoc
+                     :retention-gc retention-gc-instance
+                     :fleet-gc fleet-gc-instance
+                     :steward-runtime @steward-runtime-ref
+                     :steward-ref steward-ref
+                     :supervisor process-supervisor)
             search-service (try
                              (search/service {:config (:search config)
                                               :env (System/getenv)})
@@ -4457,6 +5430,7 @@
             _ (swap! partial-system assoc :fleet-supervisor fleet-supervisor-instance
                      :fleet-attempts fleet-attempts
                      :fleet fleet-service :fleet-gc fleet-gc-instance
+                     :supervisor process-supervisor
                      :search search-service)
             scheduler-ref (atom nil)
             startup-publish-error (atom nil)
@@ -4486,6 +5460,11 @@
                                      :browser-services browser-services
                                      :attachments-ref attachments-ref
                                      :fleet-ref fleet-ref
+                                     :steward-ref steward-ref
+                                     :history-search-handlers
+                                     history-search-handlers
+                                     :history-search-trusted-handlers
+                                     history-search-trusted-handlers
                                      :dedup-store
                                      (command-storage/store
                                       store {:partition "commands/app" :id "app"})
@@ -4499,12 +5478,14 @@
                                      :on-change (fn [_]
                                                   (when-let [f @notify-ref] (f)))})
             _ (swap! partial-system assoc :router router)
+            _ (reset! router-ref router)
             ;; The command router creates session Owners lazily through this
             ;; factory; it is stashed in router state so `commands` does not
             ;; need a new Router record field.
             _ (swap! (:state router) assoc :session-owner-factory owner-factory)
             _ (swap! (:state router) assoc :published-windows published-windows
-                     :history-window-size history-window-size)
+                     :history-window-size history-window-size
+                     :inactive-history-window-size inactive-history-window-size)
             listed (registry/list-sessions session-registry
                                            {:include-deleted? false})
             existing (ensure-session-list! store listed)
@@ -4541,6 +5522,7 @@
                             :message (or (.getMessage ^Throwable t) (str t))
                             :class (.getName (class t))}))))
             default-session-error (atom nil)
+            default-session-id (atom nil)
             _ (when (empty? existing)
                 (try
                   (let [created (registry/create-session!
@@ -4555,9 +5537,17 @@
                         session (:session created)
                         error (:error created)]
                     (if (and (= :created (:status created))
-                             (:owner created))
-                      (commands/register-owner!
-                       router (:session-id session) (:owner created))
+                             (:owner created)
+                             (:session-id session))
+                      (do
+                        (commands/register-owner!
+                         router (:session-id session) (:owner created))
+                        ;; The baseline and health views read the app
+                        ;; `owners` atom; the default session must appear
+                        ;; there exactly like a restored session.
+                        (swap! owners assoc (:session-id session)
+                               (:owner created))
+                        (reset! default-session-id (:session-id session)))
                       (let [failure (or error
                                         {:code :DEFAULT_SESSION_FAILED
                                          :message
@@ -4590,12 +5580,45 @@
                                      :choose-another-path]}}})))
             _ (when-let [e @default-session-error]
                 (swap! system-ref assoc :default-session-error e))
+            ;; A freshly created default session must be part of the very
+            ;; first baseline.  `existing` was read before the commit and is
+            ;; still empty, so publishing it would show no session and no
+            ;; active id until a restart.  Re-read the committed list and
+            ;; prove the new session is really there.
+            committed-sessions
+            (if-let [session-id @default-session-id]
+              (let [relisted (registry/list-sessions
+                              session-registry {:include-deleted? false})
+                    sessions (ensure-session-list! store relisted)]
+                (if (some #(= session-id (:session-id %)) sessions)
+                  sessions
+                  (throw
+                   (ex-info
+                    "the created default session is missing from the committed session list"
+                    {:recovery-blocked
+                     {:status :blocked
+                      :error {:code :DEFAULT_SESSION_NOT_LISTED
+                              :error :DEFAULT_SESSION_FAILED
+                              :message
+                              "the default session was created but the committed session list does not contain it"}
+                      :hint
+                      "The store opened and a first session was created, but its list entry is unreadable. Inspect the store or restore a backup."
+                      :path (str (storage/store-path store))
+                      :recovery-entry
+                      {:action :operator
+                       :options [:inspect-directory
+                                 :restore-from-backup
+                                 :choose-another-path]}}}))))
+              existing)
+            _ (when (and @default-session-id
+                         (nil? (commands/active-session-id router)))
+                (commands/select-session! router @default-session-id))
             retry-owner-errors
             (start-retry-owners! session-registry
                                  (:pending-retries session-recovery))
             baseline-snapshot
             (baseline session-registry owners router (live-settings-config)
-                      {:phase :synced} existing
+                      {:phase :synced} committed-sessions
                       (fn [session]
                         (outbound-context-opts
                          {:session session
@@ -4603,7 +5626,8 @@
                           :session-config live-settings-config}))
                       nil
                       published-windows
-                      @history-window-size)
+                      @history-window-size
+                      @inactive-history-window-size)
             initial-snapshot
             (merge (:snapshot baseline-snapshot)
                    (component-snapshot
@@ -4700,11 +5724,20 @@
             health-system (fn []
                             {:store-open? #(storage/store-open? store)
                              :session-count (fn []
-                                              (let [r (registry/list-sessions
-                                                       session-registry
-                                                       {:include-deleted? false})]
-                                                (when (= :ok (:status r))
-                                                  (count (:sessions r)))))
+                                              ;; The live `/healthz` route must
+                                              ;; not deserialize every session
+                                              ;; record; the committed id index
+                                              ;; is a point read.
+                                              (let [listed
+                                                    (try
+                                                      (session-ports/list-session-ids
+                                                       persistence)
+                                                      (catch Throwable _
+                                                        {:status :unknown}))]
+                                                (case (:status listed)
+                                                  :ok (count (:ids listed))
+                                                  :unknown :unknown
+                                                  nil)))
                              :gateway-stats #(gateway/stats gateway-handle)
                              :model-configured? (some? model-port)
                              :owners (merge (:owner-errors @system-ref)
@@ -4738,8 +5771,31 @@
                              :config config
                              :started-at (System/currentTimeMillis)})
             health-handler
-            (gateway-auth/wrap (health/handler (health-system))
-                               gateway-opts)
+            ;; `health.clj` owns the response schema and status policy.  The
+            ;; application adds its observations (retention, Steward, history
+            ;; index) to the EDN body; the status code and headers stay
+            ;; health.clj's decision.
+            (gateway-auth/wrap
+             (fn [request]
+               (let [response ((health/handler (health-system)) request)
+                     observations (health-observations @system-ref)]
+                 (if (and (= :get (:request-method request))
+                          (seq observations))
+                   (try
+                     (update response :body
+                             (fn [body]
+                               (let [merged (merge (edn/read-string body)
+                                                   observations)]
+                                 (pr-str
+                                  (if-let [error
+                                           (history-index-component-error
+                                            @system-ref)]
+                                    (update merged :component-errors
+                                            merge error)
+                                    merged)))))
+                     (catch Throwable _ response))
+                   response)))
+             gateway-opts)
             files-service (files/service {:root (:workspace-root config)})
             files-handler (files-http/handler files-service)
             model-auth-handler
@@ -4790,7 +5846,11 @@
                               :documents documents-component
                               :artifacts artifacts-component
                               :fleet fleet-service
+                              :steward-runtime @steward-runtime-ref
+                              :steward-ref steward-ref
+                              :retention-gc retention-gc-instance
                               :fleet-gc fleet-gc-instance
+                              :supervisor process-supervisor
                               :fleet-supervisor fleet-supervisor-instance
                               :fleet-attempts fleet-attempts
                               :files files-service
@@ -4806,6 +5866,8 @@
                               :retry-owner-errors retry-owner-errors
                               :scheduler-error (when-not (:ok? scheduler-start)
                                                  (:error scheduler-start))
+                              :history-index-bootstrap history-index-bootstrap
+                              :history-index-status-fn history-index-status-fn
                               :router router
                               :owners owners
                               :owner-errors @owner-errors
@@ -4820,7 +5882,8 @@
                               :http listener
                               :url (http/url listener)
                               :started-at (System/currentTimeMillis)
-                              :shared-gate shared-gate))]
+                              :shared-gate shared-gate
+                              :stop-result (atom nil)))]
       (reset! system-ref (merge @system-ref system))
       (let [publisher (start-publisher {:registry session-registry
                                         :owners owners
@@ -4880,14 +5943,25 @@
   happened after startup are visible to `--check` and the maintenance
   restart gate."
   [system]
-  (let [live (live-system system)]
-    (health/snapshot
+  (let [live (live-system system)
+        snapshot
+        (health/snapshot
      {:store-open? (fn [] (storage/store-open? (:store live)))
       :session-count (fn []
-                       (let [r (registry/list-sessions (:registry live)
-                                                       {:include-deleted? false})]
-                         (when (= :ok (:status r))
-                           (count (:sessions r)))))
+                       ;; Counting reads the committed session-id index, a
+                       ;; point read.  It never calls `list-sessions`, which
+                       ;; deserializes every record and OOMs a large store.
+                       (let [persistence (:persistence live)
+                             listed (when persistence
+                                      (try
+                                        (session-ports/list-session-ids
+                                         persistence)
+                                        (catch Throwable _
+                                          {:status :unknown})))]
+                         (case (:status listed)
+                           :ok (count (:ids listed))
+                           :unknown :unknown
+                           nil)))
       :gateway-stats (fn [] (gateway/stats (:gateway live)))
       :model-configured? (some? (:model-port live))
       :browser (into {}
@@ -4918,7 +5992,11 @@
       :components (component-presence live)
       :component-errors (component-errors live)
       :config live
-      :started-at (:started-at live)})))
+      :started-at (:started-at live)})]
+    (cond-> (merge snapshot (health-observations live))
+      (some? (history-index-component-error live))
+      (update :component-errors merge
+              (history-index-component-error live)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Stop
@@ -5009,8 +6087,21 @@
              (or (not (:blocked? system))
                  (:partial? system)
                  (:store system)))
-    (let [failures (atom [])
-          components (atom {})]
+    (if-let [cached-stop (some-> (:stop-result system) deref)]
+      cached-stop
+      (let [failures (atom [])
+          components (atom {})
+          ;; A fully started system owns a supervisor and a steward runtime.
+          ;; Synthetic/partial stop maps do not, so their absence is only a
+          ;; failure when start! completed as a full system.
+          started? (and (false? (:blocked? system))
+                        (false? (:partial? system)))
+          ;; Termination evidence for the three store-writing background
+          ;; components.  The store closes only when each one proves it
+          ;; stopped.
+          supervisor-stop (atom nil)
+          retention-stop (atom nil)
+          steward-stop (atom nil)]
       ;; Idempotent: a partial system or an older start may not have marked
       ;; the store yet.  Datalevin's JVM hook must wait for this close.
       (when-let [store (:store system)]
@@ -5034,10 +6125,96 @@
         (stop-one! components failures :publisher #((:stop! publisher))))
       (when-let [gw (:gateway system)]
         (stop-one! components failures :gateway #(gateway/stop! gw)))
-      (when-let [gc (:fleet-gc system)]
-        (stop-one! components failures :fleet-gc #(fleet-gc/stop! gc)))
+      ;; Reverse start order: the Steward loop (supervisor child), then the
+      ;; two self-timed schedulers started directly.  All stop before Owners
+      ;; and the store close, so no sweep can write after shutdown begins.
+      (if-let [process-supervisor (:supervisor system)]
+        (reset! supervisor-stop
+                (stop-one!
+                 components failures :supervisor
+                 #(supervisor/stop!
+                   process-supervisor
+                   {:timeout-ms
+                    (long (or (get-in system
+                                      [:maintenance
+                                       :supervisor-stop-timeout-ms])
+                              15000))})))
+        (when started?
+          (swap! components assoc :supervisor
+                 {:ok? false :error {:code :SUPERVISOR_NOT_STARTED
+                                     :message
+                                     "a started system has no supervisor handle"}})
+          (swap! failures conj
+                 {:component :supervisor
+                  :error {:code :SUPERVISOR_NOT_STARTED
+                          :message
+                          "a started system has no supervisor handle"}})))
+      ;; The supervisor child already stopped the runtime through its
+      ;; `:stop-fn`.  A second stop would repeat the visible component
+      ;; side effect, so when the supervisor confirmed its children the
+      ;; runtime's termination is already proven.  A failed supervisor still
+      ;; gets an explicit stop attempt.
+      (if-let [steward (:steward-runtime system)]
+        (let [result
+              (if (true? (:ok? @supervisor-stop))
+                {:ok? true
+                 :stopped? true
+                 :terminated? true
+                 :store-closed? false
+                 :via :supervisor}
+                (try
+                  (steward-runtime/stop! steward)
+                  (catch Throwable t
+                    {:ok? false
+                     :error {:code :STEWARD_STOP_FAILED
+                             :message (or (.getMessage t) (str t))}})))]
+          (swap! components assoc :steward-runtime result)
+          (reset! steward-stop result)
+          (when-not (:ok? result)
+            (swap! failures conj
+                   {:component :steward-runtime :error result}))
+          (when (:store-closed? result)
+            (swap! failures conj
+                   {:component :steward-runtime
+                    :error
+                    {:code :STEWARD_CLOSED_SHARED_STORE
+                     :message
+                     "the Steward runtime closed the shared store"}})))
+        (when (and started? (nil? (:steward-error system)))
+          (swap! failures conj
+                 {:component :steward-runtime
+                  :error {:code :STEWARD_NOT_STARTED
+                          :message
+                          "a started system has no Steward runtime"}})))
+      ;; Retention owns its own ScheduledExecutorService (option A): stop the
+      ;; returned service directly, never through a second supervisor tick.
+      (if-let [retention (:retention-gc system)]
+        (reset! retention-stop
+                (stop-one! components failures :retention-gc
+                           #(retention-gc/stop! retention)))
+        (when (and started? (nil? (:retention-gc-error system)))
+          (swap! failures conj
+                 {:component :retention-gc
+                  :error {:code :RETENTION_GC_NOT_STARTED
+                          :message
+                          "a started system has no retention scheduler"}})))
+      ;; Fleet GC likewise owns its timer and is managed directly.
+      (if-let [gc (:fleet-gc system)]
+        (stop-one! components failures :fleet-gc #(fleet-gc/stop! gc))
+        (when (and started?
+                   (some? (:fleet system))
+                   (nil? (:fleet-gc-error system)))
+          (swap! failures conj
+                 {:component :fleet-gc
+                  :error {:code :FLEET_GC_NOT_STARTED
+                          :message
+                          "a started fleet has no GC scheduler"}})))
       (when-let [sched (:scheduler system)]
         (stop-one! components failures :scheduler #(scheduler/stop! sched)))
+      ;; Dispatch ends before sessions: no new attempt may bind an owner
+      ;; that is already shutting down.
+      (when-let [fleet-service (:fleet system)]
+        (stop-one! components failures :fleet #(fleet/stop! fleet-service)))
       (doseq [[session-id handle] @(or (:owners system) (atom {}))]
         (stop-one! components failures [:owner session-id] #((:stop! handle))))
       (doseq [[session-id service] @(or (:browser-services system) (atom {}))]
@@ -5066,8 +6243,6 @@
                           (when-let [port @(or (:model-port-ref system)
                                                (atom nil))]
                             (model-contract/cancel-request! port handle))))})))
-      (when-let [fleet-service (:fleet system)]
-        (stop-one! components failures :fleet #(fleet/stop! fleet-service)))
       (when-let [capture (:diagnostics-capture system)]
         (stop-one! components failures :diagnostics-capture
                    #((:stop! capture))))
@@ -5077,62 +6252,92 @@
         (when raw
           (stop-one! components failures :model-port
                      #(model-adapter/stop-port! raw))))
-      ;; A component that reports `:stopped? true` has no live writer even
-      ;; when its mailbox still holds an unprocessed message (`:drained?`
-      ;; false).  Close the store in that case too; the result still reports
-      ;; the drain failure and keeps `:stopped? false`, so maintenance never
-      ;; treats the stop as confirmed.
-      (let [writers-stopped?
-            (every? (fn [[_ evidence]]
-                      (not (false? (:stopped? evidence))))
-                    @components)]
-        (when (and (seq @failures) writers-stopped?)
-          (when-let [store (:store system)]
-            (stop-one! components failures :store
-                       #(if (storage/store-open? store)
-                          (storage/open-close-store!
-                           store
-                           {:drain-fn (fn [] true)
-                            :timeout-ms
-                            (long (or (get-in system
-                                              [:maintenance :drain-timeout-ms])
-                                      5000))})
-                          {:closed? true})))))
-      (if (seq @failures)
-        {:stopped? false
-         :drained? false
-         :failures @failures
-         :components @components
-         :store-closed? (store-closed? system)}
-        (do
-          (when-let [store (:store system)]
-            ;; The command gate and handler drain already ran above.  The
-            ;; store close also uses the ordered intake barrier, so a late
-            ;; commit sees :STORAGE_CLOSING instead of a closed engine.
-            (stop-one! components failures :store
-                       #(if (storage/store-open? store)
-                          (storage/open-close-store!
-                           store
-                           {:drain-fn (fn [] true)
-                            :timeout-ms
-                            (long (or (get-in system
-                                              [:maintenance :drain-timeout-ms])
-                                      5000))})
-                          {:closed? true})))
-          (if (or (seq @failures) (not (store-closed? system)))
-            (do
-              (when-not (store-closed? system)
-                (swap! failures conj
-                       {:component :store
-                        :error {:code :STORE_NOT_CLOSED
-                                :message "the store remained open after close"}}))
-              {:stopped? false
-               :drained? false
-               :failures @failures
-               :components @components
-               :store-closed? (store-closed? system)})
-            {:stopped? true
-             :drained? true
-             :failures []
-             :components @components
-             :store-closed? true}))))))
+      ;; Cancel the deferred history-index rebuild before the store can
+      ;; close.  A thread that ignores the interrupt is a live writer and
+      ;; keeps the store open, like the three supervised writers.
+      (let [bootstrap-thread (:history-index-bootstrap-thread system)
+            cancelled (:history-index-bootstrap-cancelled? system)]
+        (when cancelled (reset! cancelled true))
+        (when (instance? Thread bootstrap-thread)
+          (.interrupt ^Thread bootstrap-thread)
+          (.join ^Thread bootstrap-thread
+                 (long (or (get-in system [:maintenance
+                                            :history-index-stop-timeout-ms])
+                           5000)))))
+      ;; The store closes last, and only against termination evidence from
+      ;; the three background components that can still write to it.  A
+      ;; missing or failed proof keeps the store open even when every other
+      ;; component stopped: a leaked store is recoverable, a write after the
+      ;; close is not.
+      (let [supervisor-terminated?
+            (or (nil? (:supervisor system))
+                (true? (:ok? @supervisor-stop)))
+            retention-terminated?
+            (or (nil? (:retention-gc system))
+                (true? (:terminated? @retention-stop)))
+            steward-terminated?
+            (or (nil? (:steward-runtime system))
+                (true? (:terminated? @steward-stop)))
+            bootstrap-thread (:history-index-bootstrap-thread system)
+            bootstrap-terminated?
+            (or (nil? bootstrap-thread)
+                (not (.isAlive ^Thread bootstrap-thread)))
+            writers-stopped? (and supervisor-terminated?
+                                  retention-terminated?
+                                  steward-terminated?
+                                  bootstrap-terminated?)
+            not-terminated
+            (cond-> []
+              (not supervisor-terminated?) (conj :supervisor)
+              (not retention-terminated?) (conj :retention-gc)
+              (not steward-terminated?) (conj :steward-runtime)
+              (not bootstrap-terminated?) (conj :history-index-bootstrap))
+            ;; Unconfirmed termination is a failure, never a silent skip:
+            ;; the result must not pair `:stopped? false` with `:failures []`.
+            _ (doseq [component not-terminated]
+                (when-not (some #(= component (:component %)) @failures)
+                  (swap! failures conj
+                         {:component component
+                          :error {:code :STOP_NOT_CONFIRMED
+                                  :message
+                                  "the component did not confirm termination"}})))
+            close-allowed? (and (empty? @failures) writers-stopped?)
+            store (:store system)
+            _ (when (and close-allowed? store)
+                ;; The command gate and handler drain already ran above.
+                (stop-one! components failures :store
+                           #(if (storage/store-open? store)
+                              (storage/open-close-store!
+                               store
+                               {:drain-fn (fn [] true)
+                                :timeout-ms
+                                (long (or (get-in system
+                                                  [:maintenance
+                                                   :drain-timeout-ms])
+                                          5000))})
+                              {:closed? true})))
+            closed? (and (empty? @failures) (store-closed? system))
+            skipped (when (and store (not close-allowed?))
+                      {:reason :components-failed
+                       :components
+                       (vec (distinct
+                             (map :component @failures)))})]
+        (let [bootstrap-thread (:history-index-bootstrap-thread system)
+              bootstrap-abandoned?
+              (and (instance? Thread bootstrap-thread)
+                   (.isAlive ^Thread bootstrap-thread))
+              _ (when bootstrap-abandoned?
+                  (.interrupt ^Thread bootstrap-thread))
+              result
+              (cond-> {:stopped? (and (empty? @failures) closed?)
+                       :drained? (empty? @failures)
+                       :failures @failures
+                       :components @components
+                       :store-closed? closed?}
+                skipped (assoc :store-close-skipped skipped)
+                bootstrap-abandoned?
+                (assoc :history-index-bootstrap
+                       {:abandoned? true :state :building}))]
+          (when-let [stop-result (:stop-result system)]
+            (reset! stop-result result))
+          result))))))

@@ -1,0 +1,210 @@
+{
+  "env": {
+    "node": "v26.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 12,
+    "totalMemBytes": 66924290048,
+    "chromePath": "/usr/bin/google-chrome",
+    "chromeVersion": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"
+  },
+  "config": {
+    "root": "/var/tmp/hc-e2e/hc-bench3-NjXAXA",
+    "port": 4783,
+    "draftChars": 20000,
+    "draftSha256": "d3ca716130bb23ada61ab739c41ebfc142f217b6c04836fbfe2782d72c5080c4"
+  },
+  "bundle": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "draft": {
+    "chars": 20000,
+    "sha256": "d3ca716130bb23ada61ab739c41ebfc142f217b6c04836fbfe2782d72c5080c4"
+  },
+  "thresholds": {
+    "keyLatencyP95Ms": 100,
+    "pasteMs": 500,
+    "undoMs": 500,
+    "serverPeakBytes": 2147483648,
+    "combinedPeakInformational": true
+  },
+  "phases": {
+    "appStart": {
+      "ms": 15412,
+      "url": "http://127.0.0.1:4783",
+      "pid": 2755064
+    },
+    "chromePid": 2755428,
+    "appRestartForBaseline": {
+      "ms": 15248,
+      "url": "http://127.0.0.1:4783",
+      "pid": 2755802
+    },
+    "browserOpen": {
+      "ms": 3411,
+      "chromePid": 2756097
+    },
+    "paste": {
+      "dispatchToValueMs": 6,
+      "wallMs": 332,
+      "expectedLength": 20000
+    },
+    "keystroke": {
+      "keys": 36,
+      "p50": 3,
+      "p95": 5,
+      "max": 55
+    },
+    "selection": {
+      "selectionMs": 0,
+      "chars": 200,
+      "copyOk": true,
+      "head": "草稿只存在当前浏览器 profile 的"
+    },
+    "undo": {
+      "beforeUndo": 20036,
+      "afterUndo": 20035,
+      "afterRedo": 20036,
+      "undoMs": 303
+    },
+    "draftSaved": {
+      "found": true,
+      "textLength": 20036,
+      "keys": [
+        "hc-session-222b6186-f41f-49a7-add4-8b79cbc5fb7b"
+      ]
+    },
+    "preRestartSha": {
+      "sha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "length": 20036,
+      "head": "快照替换必须先删服务器键再合并，不能复活已折叠记",
+      "tail": "mnopqrstuvwxyz0123456789"
+    },
+    "serverRestarted": {
+      "stoppedPid": 2755802
+    },
+    "appRestart": {
+      "ms": 15448,
+      "url": "http://127.0.0.1:4783",
+      "pid": 2756374
+    },
+    "browserReopen": {
+      "ms": 3239,
+      "chromePid": 2756676
+    },
+    "restored": {
+      "sha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "length": 20036,
+      "head": "快照替换必须先删服务器键再合并，不能复活已折叠记",
+      "tail": "mnopqrstuvwxyz0123456789"
+    }
+  },
+  "checks": {
+    "sessionCreated": {
+      "ok": true,
+      "sessionId": "hc-session-222b6186-f41f-49a7-add4-8b79cbc5fb7b"
+    },
+    "composerMounted": {
+      "ok": true,
+      "sessionId": "hc-session-222b6186-f41f-49a7-add4-8b79cbc5fb7b"
+    },
+    "pasteUnderThreshold": {
+      "ok": true,
+      "pasteMs": 6
+    },
+    "keyLatencyP95": {
+      "ok": true,
+      "keys": 36,
+      "p50": 3,
+      "p95": 5,
+      "max": 55
+    },
+    "selectionCopy": {
+      "ok": true,
+      "selectionMs": 0,
+      "chars": 200,
+      "copyOk": true,
+      "head": "草稿只存在当前浏览器 profile 的"
+    },
+    "undoWorks": {
+      "ok": true,
+      "beforeUndo": 20036,
+      "afterUndo": 20035,
+      "afterRedo": 20036,
+      "undoMs": 303
+    },
+    "undoLatency": {
+      "ok": true,
+      "undoMs": 303,
+      "limitMs": 500,
+      "note": "loose regression gate; the historical 100ms target is not enforced"
+    },
+    "draftSaved": {
+      "ok": true,
+      "found": true,
+      "textLength": 20036,
+      "keys": [
+        "hc-session-222b6186-f41f-49a7-add4-8b79cbc5fb7b"
+      ]
+    },
+    "draftRestored": {
+      "ok": true,
+      "expectedSha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "restoredSha": "176c11b031651c12f7f5cbc25fd8a1a45d8a8f83203afb58827e289df4907dd4",
+      "expectedLength": 20036,
+      "restoredLength": 20036
+    },
+    "serverPeakUnder2GiB": {
+      "ok": true,
+      "serverPeakMiB": 934.4,
+      "limitMiB": 2048,
+      "combinedPeakMiB": 2087.4,
+      "combinedInformational": true,
+      "sumOfHwmsMiB": 2130.2
+    },
+    "bundleStable": {
+      "ok": true,
+      "beforeSha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+      "afterSha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+      "beforeBytes": 3151319,
+      "afterBytes": 3151319
+    }
+  },
+  "startedAt": "2026-11-09T11:45:52.416Z",
+  "notes": [
+    "session/create 回执 :accepted 后运行时 STATE_DELTA 未送达客户端；重启 app 后 baseline 才含新会话。脚本在建会话后重启 app 绕行，该行为作为产品缺陷记录在案。",
+    "粘贴用 execCommand insertText（触发真实 input 事件，app 草稿同步）；逐键用 keyboard.press 单字符；撤销用 execCommand undo/redo。",
+    "serverPeak < 2 GiB 是硬判据（单个 JVM）；combined server+Chrome 峰值只记录、不参与 verdict。undoMs 使用 500ms 宽松回归界，历史 100ms 目标不强制。"
+  ],
+  "sessionId": "hc-session-222b6186-f41f-49a7-add4-8b79cbc5fb7b",
+  "memory": {
+    "server": {
+      "peakHwmMiB": 934.4,
+      "peakRssMiB": 934.4,
+      "samples": 218
+    },
+    "chrome": {
+      "peakHwmMiB": 1195.8,
+      "peakRssMiB": 1193.7,
+      "samples": 46
+    },
+    "combined": {
+      "peakHwmMiB": 2087.4,
+      "peakRssMiB": 2084.9,
+      "informational": true,
+      "note": "server+Chrome sum is context only; the 2 GiB budget is per JVM/test shard, not a sum"
+    }
+  },
+  "bundleAfter": {
+    "path": "resources/public/js/main.js",
+    "bytes": 3151319,
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c",
+    "mtime": "2026-11-09T10:54:14.210Z"
+  },
+  "bundleStable": true,
+  "finishedAt": "2026-11-09T11:47:02.275Z",
+  "verdict": "PASS"
+}

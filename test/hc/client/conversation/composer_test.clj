@@ -13,3 +13,19 @@
     (is (true? (composer/model-unavailable? :model-removed)))
     (is (false? (composer/model-unavailable? :not-returned)))
     (is (false? (composer/model-unavailable? :unconfirmed)))))
+
+(deftest local-composing-flag-guards-enter-without-native-is-composing
+  (testing "composition start state wins when the event omits isComposing"
+    (let [decision (composer/keydown
+                    {:platform :desktop :send-key :enter}
+                    {:key "Enter" :key-code 13 :which 13
+                     :is-composing? false
+                     :composing? true})]
+      (is (= :ime-candidate (:action decision)))
+      (is (false? (:prevent-default? decision)))))
+  (testing "a normal Enter still sends"
+    (let [decision (composer/keydown
+                    {:platform :desktop :send-key :enter}
+                    {:key "Enter" :key-code 13 :which 13})]
+      (is (= :send (:action decision)))
+      (is (true? (:prevent-default? decision))))))

@@ -16,7 +16,8 @@
             :cat ..., :stat ..., :ls ..., :where ..., :whereAll ...,
             :call ...}
 
-  A tool result is `{:status :ok|:failed :text \"...\"}`.  A model event is
+  A tool result is `{:status :ok|:failed :text \"...\"}`.  Structured tool
+  values are already EDN+UFSS text.  A model event is
   `{:event :chunk|:completed|:failed|:cancelled ...}` as delivered by the
   model port.  The runner returns the host's completion shape:
   `{:status :ok|:failed|:interrupted :report \"...\"}`.
@@ -28,7 +29,8 @@
 
   Reports are never summarized, truncated, or moved to an artifact."
   (:require [clojure.string :as str]
-            [hc.compose.mission.worker :as worker]))
+            [hc.compose.mission.worker :as worker]
+            [hc.core.ufss :as ufss]))
 
 (def default-max-turns
   "Bound one worker turn loop.  This is a loop guard, not a report limit."
@@ -106,12 +108,8 @@
   server, so the shape is repeated here.  The model must see the same
   `:scope` requirement on `devops` as on `clj-plan`."
   {:type "object"
-   :description (str "Flat Scope annotation for this turn. Required. "
-                     ":kind is one of reset-scope, keep-last, remove-last, "
-                     "me-too. reset-scope needs :new-scope-goal and "
-                     ":new-scope-retention-budget; remove-last needs "
-                     ":replacement; keep-last and me-too accept no other "
-                     "field.")
+   :description
+   "Flat Scope annotation for this turn; see # Scope in the system prompt."
    :properties
    {:kind {:type "string"
            :enum ["reset-scope" "keep-last" "remove-last" "me-too"]}
@@ -148,9 +146,22 @@
   [runner]
   ((:clock runner)))
 
+(defn- render
+  [value]
+  (try
+    (ufss/write-str value)
+    (catch Throwable error
+      (ufss/write-str
+       {:status :UNSUPPORTED_OPERATION
+        :message "value could not be rendered as EDN+UFSS"
+        :detail (or (.getMessage error) (str error))}))))
+
 (defn- text
   [value]
-  (if (string? value) value (str value)))
+  (cond
+    (string? value) value
+    (nil? value) ""
+    :else (render value)))
 
 (defn- failure
   [message]
@@ -271,7 +282,7 @@
             existing (get-in session [:continuations park-name])]
         (if existing
           {:status :failed
-           :text (pr-str {:code :NAME_TAKEN :name park-name})
+           :text (render {:code :NAME_TAKEN :name park-name})
            :session session}
           (let [payload (:payload arguments)
                 receipt {:name park-name
@@ -288,7 +299,7 @@
                                                      continuation)
                                            (update :park-seq inc)))]
             {:status :ok
-             :text (pr-str receipt)
+             :text (render receipt)
              :interrupt? true
              :park-receipt receipt
              :session session'})))
@@ -300,18 +311,18 @@
         (cond
           (not (and (string? park-name) (not (str/blank? park-name))))
           {:status :failed
-           :text (pr-str {:code :PROGRAM_UNKNOWN
+           :text (render {:code :PROGRAM_UNKNOWN
                           :message "unpark needs a non-blank :name"})
            :session session}
 
           (nil? continuation)
           {:status :failed
-           :text (pr-str {:code :PROGRAM_UNKNOWN :name park-name})
+           :text (render {:code :PROGRAM_UNKNOWN :name park-name})
            :session session}
 
           (= :resumed (:state continuation))
           {:status :failed
-           :text (pr-str {:code :STALE_CONTROL :name park-name})
+           :text (render {:code :STALE_CONTROL :name park-name})
            :session session}
 
           :else
@@ -325,7 +336,7 @@
                                                         :value value
                                                         :resumed-at (now runner))))]
             {:status :ok
-             :text (pr-str receipt)
+             :text (render receipt)
              :session session'})))
 
       nil)))
@@ -387,17 +398,36 @@
            :text (str "tool " name " is not available in this host")
            :session session}))))
 
+(def ^:private workspace-note
+  "workspace may have changed; re-read the facts you rely on")
+
+(defn- call-result-text
+  "Merge the best-effort workspace note into one EDN+UFSS value.
+
+  The Plan worker's `call` is best-effort read-only.  The host cannot prove
+  the command changed nothing, so the note is part of the structured value
+  rather than text appended after it."
+  [text]
+  (let [value (try
+                (ufss/read-str text)
+                (catch Throwable _ nil))]
+    (render
+     (if (map? value)
+       (assoc value
+              :workspace-may-have-changed true
+              :note workspace-note)
+       {:result text
+        :workspace-may-have-changed true
+        :note workspace-note}))))
+
 (defn- tool-message
   [call result]
   {:role :tool
    :tool-call-id (:id call)
    :name (str (:name call))
-   :text (cond-> (:text result)
-           ;; The Plan worker's `call` is best-effort read-only.  The host
-           ;; cannot prove the command changed nothing, so tell the Plan to
-           ;; re-read any fact it relies on.
-           (= "call" (str (:name call)))
-           (str "\n[workspace may have changed; re-read the facts you rely on]"))
+   :text (if (= "call" (str (:name call)))
+           (call-result-text (:text result))
+           (:text result))
    :error? (not= :ok (:status result))})
 
 (defn- normalize-calls
@@ -538,7 +568,7 @@
                        report))}
 
           (failure (str "devops worker received an unknown event: "
-                        (pr-str (:event event)))))))))
+                        (render (:event event)))))))))
 
 (defn- finish-session!
   [runner worker-id result]

@@ -58,7 +58,7 @@ Tenure 关键字段：
  :role :plan | :reviewer
  :milestone :S1 | :S2 | :S3 | :pending
             | :execution | :closing | :completed
- :status :active | :completed
+ :status :active | :completed | :abandoned
  :initial? true | false
  :first-review? true | false       ; 本里程碑是否尚未提交会改变台账或进入 Phase B 的 review
  :asked? true | false              ; 初任空账 ask 只发生一次
@@ -71,6 +71,8 @@ Tenure 关键字段：
 ```
 
 `retired` tenure 从 `:lanes :execution` 中移除；旧 `:tenure-id` 进入 `:retired-tenure-ids`，用于把迟到请求稳定拒绝为 `:TENURE_RETIRED`。同一 `call-id` 的成功回执在 `:receipts` 中跨接力保留，重放优先于退休检查。
+
+`abandoned` tenure 不进入 `:retired-tenure-ids`，而是以终态记录留在执行车道：`:status :abandoned`、`:abandoned-reason`、`:retired-at`，台账与根任务镜像清空，`:review-window :closed`、`:swarm-phase :none`、`:relay-pending? false`。Plan tenure 永远不能 abandon（`:ABANDON_PLAN_TENURE_FORBIDDEN`）。重复 abandon 幂等；review、board 命令与 relay 重试对它返回 `:TENURE_ABANDONED`/`:TENURE_NOT_ACTIVE`，绝不创建继任 tenure。abandon 不影响其它执行 tenure 的台账、屏障或接力。
 
 ## 3. 台账与 review 语义
 

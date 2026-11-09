@@ -2,16 +2,17 @@
   "test": "E2E 03",
   "mode": "automated",
   "mock": true,
-  "startedAt": "2026-11-06T05:14:55.827Z",
-  "marker": "E2E03-1793942095827",
-  "appUrl": "http://127.0.0.1:40731",
-  "mockUrl": "http://127.0.0.1:39693",
-  "chromeVersion": "153.0.8010.36",
+  "startedAt": "2026-11-09T11:00:52.765Z",
+  "marker": "E2E03-1794222052765",
+  "appUrl": "http://127.0.0.1:34347",
+  "mockUrl": "http://127.0.0.1:38795",
+  "chromeVersion": "157.0.8103.38",
   "clientBundle": {
     "path": "resources/public/js/main.js",
-    "mtime": "2026-11-06T05:02:42.384Z",
-    "sha256": "ea9e5732656e79e738883ba384b1a62b4fe9461d396b83612ad4624dd81a39c2"
+    "mtime": "2026-11-09T10:54:14.210Z",
+    "sha256": "751756ec4788679642365fbb53825878004e993967d6db3fa946563fa8de025c"
   },
+  "sourceTreeSha256": "07b1ea6bb5336f8944ffa288618d279b157f61510d80ed89cc4f1816c86e805b",
   "checks": {
     "modelBound": true,
     "streamStarted": true,
@@ -40,30 +41,32 @@
     "/home/kunweiz/Desktop/vibe/Herdchestra/plans/evidence/e2e-auto/e2e03/e2e03-04-draft-sent.png"
   ],
   "modelLabel": "模型：Mock Long",
-  "streamedBeforeWait": 162,
+  "streamedBeforeWait": 180,
   "selectionBefore": "本地模型推理的第一件事，是承认它和云端推理并没有本质区别：权",
   "scrollBefore": 0,
   "selectionAfter": "本地模型推理的第一件事，是承认它和云端推理并没有本质区别：权",
   "scrollAfter": 0,
-  "draftAfterWait": "下一条草稿 E2E03-1793942095827",
-  "lengthAtScroll": 216,
-  "lengthAfterWait": 1086,
-  "charsAtStop": 1122,
-  "charsAfterStop": 1122,
+  "draftAfterWait": "下一条草稿 E2E03-1794222052765",
+  "lengthAtScroll": 270,
+  "lengthAfterWait": 1157,
+  "charsAtStop": 1229,
+  "charsAfterStop": 1229,
   "requestsAtStop": 1,
   "requestsAfterStop": 1,
   "messagesAtStop": 2,
   "messagesAfterStop": 2,
   "usersAtStop": 1,
   "usersAfterStop": 1,
-  "draftAfterStop": "下一条草稿 E2E03-1793942095827",
-  "draftAfterSwitch": "下一条草稿 E2E03-1793942095827",
+  "draftAfterStop": "下一条草稿 E2E03-1794222052765",
+  "draftAfterSwitch": "下一条草稿 E2E03-1794222052765",
   "mockState": {
     "mock": true,
     "requests": 2,
     "chatCompletions": 2,
+    "toolCallsIssued": 0,
     "active": 0,
     "aborted": 2,
+    "completed": 0,
     "config": {
       "reply": "Mock 模型回复：这是一条可复制的固定回复。E2E-MOCK-REPLY",
       "chunkSize": 18,
@@ -73,15 +76,69 @@
       "forceToolCall": false
     },
     "last": {
-      "at": "2026-11-06T05:15:13.662Z",
+      "at": "2026-11-09T11:01:13.526Z",
       "path": "/v1/chat/completions",
       "model": "mock-long",
       "stream": true,
       "messageCount": 8,
       "hasTools": true,
-      "user": "下一条草稿 E2E03-1793942095827"
-    }
+      "toolNames": [
+        "devops",
+        "clj-plan"
+      ],
+      "toolCallMessages": [
+        [
+          null
+        ],
+        [
+          null
+        ]
+      ],
+      "user": "下一条草稿 E2E03-1794222052765"
+    },
+    "log": [
+      {
+        "at": "2026-11-09T11:00:55.152Z",
+        "path": "/v1/chat/completions",
+        "model": "mock-long",
+        "stream": true,
+        "messageCount": 4,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ]
+        ],
+        "user": "请输出长回复。标记 E2E03-1794222052765"
+      },
+      {
+        "at": "2026-11-09T11:01:13.526Z",
+        "path": "/v1/chat/completions",
+        "model": "mock-long",
+        "stream": true,
+        "messageCount": 8,
+        "hasTools": true,
+        "toolNames": [
+          "devops",
+          "clj-plan"
+        ],
+        "toolCallMessages": [
+          [
+            null
+          ],
+          [
+            null
+          ]
+        ],
+        "user": "下一条草稿 E2E03-1794222052765"
+      }
+    ],
+    "bodies": []
   },
   "ok": true,
-  "finishedAt": "2026-11-06T05:15:16.262Z"
+  "finishedAt": "2026-11-09T11:01:16.169Z"
 }

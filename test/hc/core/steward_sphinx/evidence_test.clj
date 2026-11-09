@@ -1,6 +1,6 @@
 (ns hc.core.steward-sphinx.evidence-test
   (:require [clojure.test :refer [deftest is]]
-            [clojure.test.check :as tc]
+            [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hc.core.steward-sphinx.evidence :as evidence]))
@@ -69,22 +69,16 @@
             {:watch-paths ["."]}
             {:changed-paths []}))))
 
-(deftest path-prefix-property
-  (is (:result
-       (tc/quick-check
-        100
-        (prop/for-all [base gen-path
-                       suffix (gen/not-empty gen/string-alphanumeric)]
-          (evidence/path-prefix? base (str base "/" suffix)))))))
+(defspec path-prefix-property 100
+  (prop/for-all [base gen-path
+                 suffix (gen/not-empty gen/string-alphanumeric)]
+    (evidence/path-prefix? base (str base "/" suffix))))
 
-(deftest assumption-impact-property
-  (is (:result
-       (tc/quick-check
-        100
-        (prop/for-all [watch gen-path
-                       changed gen-path]
-          (= (or (evidence/repo-wide-path? watch)
-                 (evidence/path-prefix? watch changed))
-             (evidence/affects-assumption?
-              {:watch-paths [watch]}
-              {:changed-paths [changed]})))))))
+(defspec assumption-impact-property 100
+  (prop/for-all [watch gen-path
+                 changed gen-path]
+    (= (or (evidence/repo-wide-path? watch)
+           (evidence/path-prefix? watch changed))
+       (evidence/affects-assumption?
+        {:watch-paths [watch]}
+        {:changed-paths [changed]}))))

@@ -98,18 +98,147 @@
     :permission "网页读取许可"
     :outcome-unknown "未知结果"
     :page-content "页面内容"
-    (name k)))
+    :best-effort "尽力而为"
+    :historical-not-live "历史视图，非当前页面"
+    :top-document-visible-text "仅顶层可见文本"
+    :not-read "不读取"
+    :isolated-world-top-document-only "仅顶层文档的隔离环境"
+    :fail-closed "失败关闭"
+    :resolved-against-current-dom "按当前页面结构解析"
+    :not-controlled "不受控制"
+    :ephemeral-not-inherited "临时许可，不继承"
+    :no-auto-retry "不自动重试"
+    :may-contain-personal-data "可能包含个人信息"
+    "未知"))
 
 (defn- limit-value
   [v]
-  (if (keyword? v) (name v) (str v)))
+  (cond
+    (keyword? v) (limit-label v)
+    (true? v) "是"
+    (false? v) "否"
+    :else (str v)))
+
+(def ^:private scope-labels
+  {:current-tab "当前标签页"
+   :session-tabs "会话标签页"
+   :site "指定站点"})
+
+(defn- scope-label
+  [scope]
+  (if (keyword? scope)
+    (get scope-labels scope "未知范围")
+    "未知范围"))
+
+(def ^:private provider-labels
+  {:openai-compatible "OpenAI 兼容服务"
+   :openai "OpenAI"
+   :anthropic "Anthropic"
+   :google "Google"
+   :ollama "Ollama"
+   :local "本地模型"
+   :custom "自定义服务"})
 
 (defn- provider-label
   [provider]
   (cond
-    (keyword? provider) (name provider)
+    (keyword? provider) (get provider-labels provider "其他服务")
     (string? provider) provider
     :else "未标注"))
+
+(def ^:private takeover-reason-labels
+  {:manual-input "检测到手动输入"
+   :input "检测到手动输入"
+   :sensitive-field "敏感字段"
+   :sensitive-form "敏感表单"
+   :sensitive-form-submit "敏感表单提交"
+   :operator-paused "操作员暂停"
+   :operator-request "操作员请求接管"
+   :navigation "页面跳转"
+   :page-change "页面变化"
+   :tab-closed "页面已关闭"})
+
+(defn- takeover-reason-label
+  [reason]
+  (cond
+    (keyword? reason) (get takeover-reason-labels reason "未说明原因")
+    (string? reason) reason
+    :else "未说明原因"))
+
+(def ^:private state-labels
+  {:ok "成功"
+   :failed "失败"
+   :refused "被拒绝"
+   :queued "待执行"
+   :closed "已关闭"
+   :loading "加载中"
+   :unknown "未知"})
+
+(defn- state-label
+  [value]
+  (cond
+    (keyword? value) (get state-labels value "未知状态")
+    (string? value) (get state-labels (keyword value) value)
+    (nil? value) nil
+    :else "未知状态"))
+
+(def ^:private shot-reason-labels
+  {:missing "未生成"
+   :expired "已过期"
+   :deleted "已删除"
+   :error "读取失败"
+   :capture-failed "截图失败"
+   :capture-error "截图读取失败"
+   :no-screenshot-store "未配置截图存储"
+   :screenshot-store-error "截图存储失败"
+   :unavailable "当前不可用"})
+
+(defn- shot-reason-label
+  [reason]
+  (cond
+    (keyword? reason) (get shot-reason-labels reason "原因未报告")
+    (string? reason) reason
+    :else "原因未报告"))
+
+(def ^:private node-tag-labels
+  {:input "输入框"
+   :textarea "多行输入"
+   :select "下拉框"
+   :button "按钮"
+   :a "链接"
+   :form "表单"
+   :img "图片"
+   :iframe "内嵌框架"})
+
+(def ^:private node-type-labels
+  {:text "文本"
+   :email "邮箱"
+   :password "密码"
+   :search "搜索"
+   :tel "电话"
+   :url "网址"
+   :number "数字"
+   :checkbox "复选框"
+   :radio "单选框"
+   :submit "提交"
+   :file "文件"
+   :date "日期"
+   :hidden "隐藏"})
+
+(defn- labelled-keyword
+  [labels value]
+  (cond
+    (keyword? value) (get labels value)
+    (string? value) (get labels (keyword value))
+    :else nil))
+
+(defn- command-action-label
+  [kind]
+  (get model/action-labels kind "其他操作"))
+
+(defn- command-status-label
+  [status]
+  (get model/status-labels status "未知状态"))
 
 (defn- permission-section
   [state]
@@ -124,7 +253,9 @@
         (if enabled?
           (el :div {}
               (el :div {:class "hc-browser-facts"}
-                  (el :span {} (str "范围：" (name (or (:scope permission) :current-tab))))
+                  (el :span {} (str "范围："
+                                    (scope-label (or (:scope permission)
+                                                     :current-tab))))
                   (el :span {} (str "站点：" (if (seq (:sites permission))
                                               (str/join ", " (:sites permission))
                                               "—")))
@@ -233,7 +364,7 @@
                     :aria-label "人工接管"}
           (el :div {:class "hc-browser-section-head"}
               (el :h3 {} "人工接管")
-              (badge (get model/takeover-labels takeover (name takeover))
+              (badge (get model/takeover-labels takeover "未知状态")
                      (case takeover
                        :agent-active :ok
                        :read-only :warn
@@ -242,7 +373,8 @@
                        :sensitive-paused :danger
                        :neutral)))
           (when reason
-            (el :p {:class "wb-muted"} (str "原因：" (name reason))))
+            (el :p {:class "wb-muted"}
+                (str "原因：" (takeover-reason-label reason))))
           (el :div {:class "hc-browser-actions"}
               (if (= takeover :agent-active)
                 (el :div {:class "hc-browser-actions"}
@@ -264,8 +396,9 @@
   (str/join " "
             (remove str/blank?
                     [(or (:ref node) "?")
-                     (some-> (:tag node) name)
-                     (some-> (:type node) name)
+                     (or (labelled-keyword node-tag-labels (:tag node))
+                         "页面元素")
+                     (labelled-keyword node-type-labels (:type node))
                      (or (:label node) (:field-name node) (:placeholder node))])))
 
 (defn- observation-section
@@ -357,27 +490,45 @@
       (map? result)
       (let [status (or (:status result) (if (:error result) :failed :ok))
             error (:error result)
-            page-error (:page-error result)]
-        (str (name status)
-             (when page-status (str " / " (name page-status)))
-             (when page-error (str " / " (name page-error)))
-             (when error (str " / " (or (:code error) "") " "
-                              (or (:message error) "")))))
-      :else (str result))))
+            page-error (:page-error result)
+            error-message (some-> (model/error-text error) :message)]
+        (str (state-label status)
+             (when page-status (str " / " (state-label page-status)))
+             (when page-error (str " / " (state-label page-error)))
+             (when error-message (str " / " error-message))))
+      :else (text result))))
+
+(defn- show-screenshot-fallback!
+  "Hide a failed screenshot image and reveal its sibling placeholder."
+  [event]
+  #?(:cljs
+     (let [target (or (.-currentTarget event) (.-target event))]
+       (when target
+         (let [container (.-parentNode target)
+               fallback (when container
+                          (.querySelector container
+                                          ".hc-browser-shot-fallback"))]
+           (set! (.-display (.-style target)) "none")
+           (when fallback
+             (set! (.-display (.-style fallback)) "")))))
+     :clj nil))
 
 (defn- screenshot
   [card]
   (let [shot (:screenshot card)
-        id (or (:id shot) (:blob-id shot))]
+        id (or (:id shot) (:blob-id shot))
+        reason (or (:reason shot) (:status shot))]
     (el :div {:class "hc-browser-shot"}
-        (if id
+        (when id
           (el :img {:src (str "/blobs/" id)
                     :alt "历史页面截图"
-                    :class "hc-browser-shot-image"})
-          (el :span {:class "wb-muted"}
-              (str "截图不可用"
-                   (when-let [reason (or (:reason shot) (:status shot))]
-                     (str "：" (name reason))))))
+                    :class "hc-browser-shot-image"
+                    :onError show-screenshot-fallback!}))
+        (el :span {:class "wb-muted hc-browser-shot-fallback"
+                   :style {:display (if id "none" "")}}
+            (str "截图不可用"
+                 (when reason
+                   (str "：" (shot-reason-label reason)))))
         (el :small {:class "wb-muted"} "历史截图，不是当前页面。"))))
 
 (defn- cards-section
@@ -397,7 +548,7 @@
                         (el :strong {} (str "#" (:seq card) " "
                                             (get model/action-labels
                                                  (:action card)
-                                                 (name (or (:action card) :action)))))
+                                                 "其他操作")))
                         (el :span {:class "wb-muted"} (or (:at card) "—")))
                     (el :div {:class "hc-browser-facts"}
                         (el :span {} (str "站点：" (or (:site card) "—")))
@@ -423,32 +574,65 @@
         (el :li {} "页面内容可能包含个人信息；截图是历史视图。")
         (el :li {} "浏览器权限不随重启、分支或迁移继承。"))))
 
-(defn- status-section
+(defn- command-key
+  [command]
+  [(:kind command) (:status command) (:message command)])
+
+(defn- distinct-commands
+  "Keep the newest command for each `[kind status message]` triple."
+  [commands]
+  (:kept
+   (reduce (fn [{:keys [seen] :as acc} command]
+             (let [k (command-key command)]
+               (if (contains? seen k)
+                 acc
+                 (-> acc
+                     (update :seen conj k)
+                     (update :kept conj command)))))
+           {:seen #{} :kept []}
+           commands)))
+
+(defn- visible-commands
   [state]
   (let [commands (->> (:commands state)
                       vals
                       (sort-by :queued-at)
-                      reverse)
-        problems (filter #(contains? #{:failed :refused} (:status %)) commands)
-        visible (take 4 (distinct (concat problems commands)))]
+                      reverse
+                      distinct-commands)
+        problems (filter #(contains? #{:failed :refused} (:status %)) commands)]
+    (take 4 (distinct (concat problems commands)))))
+
+(defn- command-message-text
+  [command]
+  (some-> (:message command) model/error-text :message))
+
+(defn- status-messages
+  [state]
+  (set (keep #(some-> (command-message-text %) text)
+             (visible-commands state))))
+
+(defn- status-section
+  [state]
+  (let [visible (visible-commands state)]
     (when (seq visible)
       (el :div {:class "hc-browser-command" :role "status"}
           (for [command visible]
             (el :div {:key (:command-id command)}
-                (el :span {} (str (get model/action-labels (:kind command)
-                                       (name (:kind command)))
+                (el :span {} (str (command-action-label (:kind command))
                                   "："
-                                  (get model/status-labels (:status command)
-                                       (name (:status command)))))
-                (when-let [message (:message command)]
+                                  (command-status-label (:status command))))
+                (when-let [message (command-message-text command)]
                   (el :span {:class "wb-error"} (text message)))))))))
 
 (defn- error-section
   [state]
   (when-let [error (:last-error state)]
-    (el :div {:class "hc-browser-warning" :role "alert"}
-        (el :span {} (text (or (:message error) error)))
-        (button "关闭" (action :browser/dismiss-error)))))
+    (let [message (or (:message (model/error-text error))
+                      "浏览器操作失败。")]
+      (when-not (contains? (status-messages state) (text message))
+        (el :div {:class "hc-browser-warning" :role "alert"}
+            (el :span {} (text message))
+            (button "关闭" (action :browser/dismiss-error)))))))
 
 (defn- address-section
   [state]

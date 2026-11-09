@@ -33,6 +33,15 @@
   [state receipt]
   (:state (model/apply-receipt state receipt)))
 
+(defn apply-receipt-result
+  "Apply one server receipt and return `{:state ... :effects [...]}`.
+
+  Receipt effects include `:schedule-poll`/`:cancel-poll` for model-auth
+  flows.  Callers that drive effects must use this function; the
+  state-only `apply-receipt` above stays compatible with older callers."
+  [state receipt]
+  (model/apply-receipt state receipt))
+
 (defn apply-test-result
   "Apply one asynchronous test result and return the next state."
   [state result]

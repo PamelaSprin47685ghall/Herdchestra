@@ -14,6 +14,7 @@
             [cljs.test :refer-macros [deftest is testing run-tests]]
             [com.fulcrologic.fulcro.application :as application]
             [com.fulcrologic.fulcro.components :as comp]
+            [hc.client.miniapps.view :as miniapps]
             [hc.client.settings :as settings]
             [hc.client.workbench.model :as model]
             [hc.client.workbench.mutations :as mutations]
@@ -170,6 +171,8 @@
       (is (some? (q container ".wb-drawer-backdrop"))
           "the drawer layout owns the modal layer")
       (is (= "true" (.getAttribute (q container ".wb-aux") "data-open")))
+      (is (= "none" (.. (q container "#wb-aux-toggle") -style -display))
+          "the open drawer has exactly one close control; the topbar trigger is hidden")
       (click! (q container ".wb-aux button[aria-label='关闭详情']"))
       (is (false? (:ui/aux-open (application/current-state app))))
       (render! root app)
@@ -177,6 +180,8 @@
           "closing returns focus to the topbar control that opened it")
       (is (nil? (q container ".wb-drawer-backdrop")))
       (is (= "false" (.getAttribute (q container ".wb-aux") "data-open")))
+      (is (not= "none" (.. (q container "#wb-aux-toggle") -style -display))
+          "the topbar opener returns when the drawer closes")
       (finally
         (unmount! container root)))))
 
@@ -219,21 +224,97 @@
       (finally
         (unmount! container root)))))
 
-(deftest aux-panel-is-a-labeled-nav-landmark
+(deftest aux-panel-is-a-labeled-complementary-landmark
   (let [{:keys [container root]}
         (mount! (base-db {:ui/viewport-width 1440
                           :ui/aux-open true}))]
     (try
       (let [navs (vec (.querySelectorAll container "nav"))]
-        (is (= 2 (count navs))
-            "the shell owns exactly the navigation drawer and the details panel")
-        (is (some? (q container "#wb-nav-drawer")))
+        (is (= 1 (count navs))
+            "the shell exposes exactly one navigation landmark")
+        (is (= "wb-nav-drawer" (.-id (first navs))))
         (let [aux (q container "#wb-aux")]
-          (is (= "NAV" (.-tagName aux)))
+          (is (= "ASIDE" (.-tagName aux))
+              "the details column is a complementary landmark, not a second nav")
           (is (= "上下文详情"
                  (.getAttribute aux "aria-label")))))
       (finally
         (unmount! container root)))))
+
+(deftest default-session-title-displays-in-chinese
+  (is (= "新会话" (shell/session-title-label "New session")))
+  (is (= "Alpha" (shell/session-title-label "Alpha")))
+  (let [{:keys [container root]}
+        (mount! (base-db {:ui/route :sessions
+                          :ui/viewport-width 800
+                          :ui/sidebar-open true
+                          :ui/aux-open false
+                          :ui/selected-session-id "s1"
+                          :ui/session-list [{:session-id "d1"
+                                             :title "New session"
+                                             :status :deleted
+                                             :deleted-at "2026-11-01T00:00:00Z"}]
+                          :session/by-id {"s1" {:id "s1"
+                                                :title "New session"}}
+                          :message/by-id {}
+                          :message/order []}))]
+    (try
+      (let [row (q container ".wb-nav-session")]
+        (is (= "新会话" (.-textContent (q row "strong")))
+            "the navigation list shows the Chinese default title")
+        (is (not (.includes (.-textContent row) "New session"))))
+      (let [deleted (q container ".wb-nav-deleted-row")]
+        (is (= "新会话" (.-textContent (q deleted "strong")))
+            "the deleted list uses the same display label"))
+      (finally
+        (unmount! container root)))))
+
+(deftest aux-facts-localize-the-default-session-title
+  (let [{:keys [container root]}
+        (mount! (base-db {:ui/route :sessions
+                          :ui/viewport-width 1440
+                          :ui/aux-open true
+                          :ui/selected-session-id "s1"
+                          :session/by-id {"s1" {:id "s1"
+                                                :title "New session"}}
+                          :message/by-id {}
+                          :message/order []}))]
+    (try
+      (is (= "新会话"
+             (.-textContent (q container ".wb-aux .wb-facts dd")))
+          "the details facts show the Chinese default title")
+      (finally
+        (unmount! container root)))))
+
+(deftest mini-app-boundaries-stay-chinese-and-guarded
+  (testing "a 404 is a missing resource, a 503 is a server outage"
+    (is (re-find #"找不到"
+                 (miniapps/request-error-text
+                  {:http-status 404
+                   :error {:code :NOT_FOUND}})))
+    (is (re-find #"服务器暂不可用"
+                 (miniapps/request-error-text
+                  {:http-status 503
+                   :error {:code :SERVICE_UNAVAILABLE}})))
+    (is (re-find #"打开设置"
+                 (miniapps/request-error-text
+                  {:http-status 503}))
+        "a server outage points at the settings page")
+    (is (not (re-find #"NOT_FOUND"
+                      (miniapps/request-error-text
+                       {:http-status 404
+                        :error {:code :NOT_FOUND}})))
+        "raw response codes never reach the user"))
+  (testing "clear is disabled only when no local record exists"
+    (is (true? (miniapps/clear-disabled? {})))
+    (is (true? (miniapps/clear-disabled?
+                {:data {:summary {:keys 0}}})))
+    (is (false? (miniapps/clear-disabled?
+                 {:data {:summary {:keys 2}}}))))
+  (is (= "没有可清空的本地记录" miniapps/clear-disabled-reason)
+      "the disabled clear control names its missing precondition")
+  (testing "the settings entry uses the workbench hash route"
+    (is (= "#/settings" miniapps/settings-route-hash))))
 
 (deftest drawers-are-mutually-exclusive
   (let [{:keys [app container root]}

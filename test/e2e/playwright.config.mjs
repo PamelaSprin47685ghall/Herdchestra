@@ -5,21 +5,31 @@ import { defineConfig } from '@playwright/test';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../..');
 const EVIDENCE = path.join(REPO_ROOT, 'plans/evidence/e2e-auto');
+// Parallel shards write their artifacts under a per-shard suffix so one
+// shard's Playwright outputDir cleanup cannot delete another shard's trace
+// chunks (the ENOENT seen when 22 specs ran in parallel).  Empty when the
+// variable is unset, so the default paths stay byte-for-byte unchanged.
+const SHARD = (process.env.HC_PW_SHARD || '').trim();
+const SUFFIX = SHARD ? `-${SHARD}` : '';
 
 export default defineConfig({
   testDir: HERE,
   testMatch: '**/*.spec.mjs',
+  // The global budget stays at 240s for the ordinary specs.  E2E 18 raises
+  // its own budget to 900s and E2E 19 to 600s with `test.setTimeout` inside
+  // those files, so a long disk-full or accessibility run cannot slow down
+  // or mask a hang in the rest of the suite.
   timeout: 240000,
   expect: { timeout: 20000 },
   workers: 1,
   fullyParallel: false,
   retries: 0,
   forbidOnly: true,
-  outputDir: path.join(EVIDENCE, 'playwright-artifacts'),
+  outputDir: path.join(EVIDENCE, `playwright-artifacts${SUFFIX}`),
   reporter: [
     ['list'],
-    ['json', { outputFile: path.join(EVIDENCE, 'playwright-results.json') }],
-    ['html', { outputFolder: path.join(EVIDENCE, 'playwright-report'), open: 'never' }],
+    ['json', { outputFile: path.join(EVIDENCE, `playwright-results${SUFFIX}.json`) }],
+    ['html', { outputFolder: path.join(EVIDENCE, `playwright-report${SUFFIX}`), open: 'never' }],
   ],
   use: {
     headless: true,

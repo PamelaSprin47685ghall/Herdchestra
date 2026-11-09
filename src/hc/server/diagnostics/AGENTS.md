@@ -1,6 +1,7 @@
 # `hc.server.diagnostics` — usage/cost statistics and diagnostic redaction
 
-Authority: root `AGENTS.md` §5.4, §7.4 旅程 8.6（导出诊断包）, §7.5, §7.7, and §8.5. Root
+Authority: root `AGENTS.md` §5.4, §7.4 旅程 8.6（导出诊断包）,
+§7.4 旅程 8.5（排障与十类未交付理由）, and §8.5. Root
 `AGENTS.md` wins on conflict.
 
 This package prepares statistics views, cost estimates, detailed-log

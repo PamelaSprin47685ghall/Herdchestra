@@ -5,6 +5,7 @@
   A local process keeps its program and arguments separate and is never run
   through a shell.  HTTP and SSE keep headers as a map.  Validation only reads
   and normalizes; it never connects and never executes a command."
+  (:refer-clojure :exclude [identity])
   (:require [clojure.string :as str]
             [hc.server.extensions.common :as common]
             [hc.server.extensions.error :as error])

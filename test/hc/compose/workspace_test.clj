@@ -4,7 +4,8 @@
   Every test builds its own temporary workspace and never touches the user's
   project.  The bridge is exercised through the same `:workspace` and
   `:control` ports that `hc.server.program` receives."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -102,6 +103,9 @@
           (let [action (action-for (:kernel s) "settle-1")
                 b (swarm/snapshot (:kernel s))]
             (is (= :finished (:phase action)))
+            (is (not (contains? (:result-ref action) :last-known-stage)))
+            (is (not (contains? (:result-ref action) :expected-action)))
+            (is (not (contains? (:result-ref action) :failed-at)))
             (is (nil? (get-in b [:actors (:agent s) :active-action-id])))
             (is (= :ready (get-in b [:tasks (:task s) :state]))
                 "a file edit never completes the task by itself")
@@ -152,6 +156,8 @@
   (let [root (temp-root)]
     (try
       (write-file! root "a.txt" "same")
+      (is (.exists (io/file (str root) "a.txt")))
+      (is (= "same" (read-file! root "a.txt")))
       (let [s (setup root)
             rt (runtime s)
             port (ws/workspace-port rt)
@@ -163,6 +169,7 @@
           (is (empty? (:ops facts)))
           (is (seq (:read-set facts)))
           (is (= :APPLIED (:status out)) (pr-str out))
+          (is (.exists (io/file (str root) "a.txt")))
           (is (= "same" (read-file! root "a.txt")))
           (is (= :finished (:phase (action-for (:kernel s) "settle-read-only"))))))
       (finally (cleanup! root)))))
@@ -308,6 +315,54 @@
                         {:primitive :batch
                          :request {:commands []}}))))
         (is (empty? (:ops ((:facts port) session)))))
+      (finally (cleanup! root)))))
+
+(deftest assume-pins-a-judgment-with-fixed-prose
+  (let [root (temp-root)]
+    (try
+      (let [s (setup root)
+            rt (runtime s)
+            fallback (fn [_ctx _request]
+                       (throw (ex-info "assume must not reach the fallback" {})))
+            control (ws/control-port rt fallback)]
+        (testing "the control port returns the fixed prose, not an echo"
+          (let [assumption "the cache is warm"
+                result ((:execute! control) (ctx s)
+                        {:primitive :assume
+                         :request {:assumption assumption}})]
+            (is (= ws/assume-prose result))
+            (is (string? result))
+            (is (not (str/includes? (str result) assumption)))))
+        (testing "blank assumptions are refused before any judgment is pinned"
+          (doseq [assumption [nil "" "   " 42]]
+            (let [result ((:execute! control) (ctx s)
+                          {:primitive :assume
+                           :request {:assumption assumption}})]
+              (is (false? (:ok? result)))
+              (is (= :ASSUMPTION_REQUIRED (get-in result [:error :code])))
+              (is (not (str/includes? (pr-str result) "cache")))))))
+      (testing "the real evaluator's expression value is the fixed prose"
+        (let [base (runtime (setup root))
+              prt (program/runtime
+                   {:workspace (ws/workspace-port base)
+                    :control (ws/control-port base)
+                    :clock (fn [] 0)})]
+          (try
+            (let [out (program/evaluate-program!
+                       prt
+                       {:call-id "call-assume"
+                        :attempt-id "attempt-assume"
+                        :agent-id "agent-1"
+                        :role :clj-worker
+                        :intent "pin one already-abstracted judgment"
+                        :source
+                        "(defprogram pin [] (assume {:assumption \"the cache is warm\"}))"})]
+              (is (= :COMPLETED (:status out)) (pr-str out))
+              (is (= ws/assume-prose (:value out)))
+              (is (not (str/includes? (str (:value out)) "cache")))
+              (is (= :assume (get-in out [:control-results 0 :primitive]))))
+            (finally
+              (program/stop! prt)))))
       (finally (cleanup! root)))))
 
 ;; ---------------------------------------------------------------------------
@@ -911,7 +966,17 @@
         (let [out ((:settle! port) session {:request-id "hard-1"})
               action (action-for (:kernel s) "hard-1")]
           (is (= :HARD_FAILURE (:status out)) (pr-str out))
+          (is (= :applying (get-in out [:result :last-known-stage])))
+          (is (= {:stage :applying} (get-in out [:result :failed-at])))
+          (is (string? (get-in out [:result :expected-action])))
           (is (= :uncertain (:phase action)))
+          (let [result-ref (:result-ref action)]
+            (is (= :applying (:phase result-ref)))
+            (is (= :applying (:last-known-stage result-ref)))
+            (is (= {:stage :applying} (:failed-at result-ref)))
+            (is (string? (:expected-action result-ref)))
+            (is (<= (count (:expected-action result-ref)) 300))
+            (is (= result-ref (edn/read-string (pr-str result-ref)))))
           (is (= (:action-id action)
                  (get-in (swarm/snapshot (:kernel s))
                          [:actors (:agent s) :active-action-id]))
@@ -932,7 +997,7 @@
 ;; ---------------------------------------------------------------------------
 ;; Property
 
-(defspec protected-write-roundtrip 10
+(defspec protected-write-roundtrip 30
   (prop/for-all [text (gen/fmap #(apply str %) (gen/vector gen/char-alphanumeric 0 80))]
     (let [root (temp-root)]
       (try

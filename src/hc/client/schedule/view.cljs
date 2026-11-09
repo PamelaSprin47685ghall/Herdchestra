@@ -16,7 +16,8 @@
     background wakeup."
   (:require [clojure.string :as str]
             [hc.client.schedule.model :as model]
-            [hc.client.schedule.time :as time]))
+            [hc.client.schedule.time :as time]
+            [hc.client.sessions.labels :as session-labels]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tree primitives
@@ -182,9 +183,10 @@
 (defn- session-option-label
   [session]
   (let [assistant (:assistant-name session)
+        title (session-labels/title-label (:title session))
         last-message (model/preview-text
                       (model/message-text (:last-message session)) 40)]
-    (str (:title session)
+    (str title
          (when (not (str/blank? (str assistant)))
            (str " · 助手 " assistant))
          (when last-message
@@ -376,7 +378,8 @@
 
 (defn- list-view
   [state]
-  (let [{:keys [active paused]} (model/schedule-cards state)]
+  (let [{:keys [active paused]} (model/schedule-cards state)
+        no-schedules? (and (empty? active) (empty? paused))]
     (el :div {:class "hc-schedule-body"}
         (el :div {:class "hc-schedule-toolbar"}
             (el :div {}
@@ -385,10 +388,11 @@
                     "按下一次运行时间排序；已暂停任务单独分组。"))
             (el :div {:class "hc-schedule-toolbar__actions"}
                 (button "刷新" (act :schedule/refresh :reason :manual))
-                (button "新建任务" (act :schedule/new)
-                        {:class "hc-schedule-button hc-schedule-button--primary"})))
+                (when-not no-schedules?
+                  (button "新建任务" (act :schedule/new)
+                          {:class "hc-schedule-button hc-schedule-button--primary"}))))
         (policy-note)
-        (if (and (empty? active) (empty? paused))
+        (if no-schedules?
           (empty-state state)
           (el :div {}
               (schedule-group state "活动任务" active "没有活动的定时任务。")

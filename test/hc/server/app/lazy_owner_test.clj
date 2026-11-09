@@ -200,7 +200,7 @@
                (get @(get-in @(:state router) [:published-windows]) "s1"))
             "every fetched page id is tracked for the baseline window")))))
 
-(deftest baseline-publishes-only-the-message-window-per-session
+(deftest baseline-publishes-the-active-window-and-no-inactive-entities
   (let [persistence (ports/memory-persistence)
         {:keys [registry]} (make-router persistence)
         s1 (commit-session! persistence "s1" 10)
@@ -209,42 +209,50 @@
         s2-ids (mapv #(str "s2-m" %) (range 10))
         published-windows (atom {})
         history-window-size (atom 3)
+        opts (fn [extra]
+               (merge {:sessions [s1 s2]
+                       :session-records [s1 s2]
+                       :owner-snapshots {}
+                       :active-session "s1"
+                       :published-windows published-windows
+                       :history-window-size @history-window-size}
+                      extra))
         baseline (snapshot/baseline
-                  {:sessions [s1 s2]
-                   :session-records [s1 s2]
-                   :owner-snapshots {}
-                   :active-session "s1"
-                   :published-windows published-windows
-                   :history-window-size @history-window-size})]
-    (testing "each session publishes only its newest 3 message entities"
-      (is (= (set (concat (take-last 3 s1-ids) (take-last 3 s2-ids)))
-             (set (keys (:message/by-id baseline))))
-          "only the newest 3 entities per session enter :message/by-id")
+                  (opts nil))]
+    (testing "the active session keeps its newest 3 message entities"
       (is (= #{"s1-m7" "s1-m8" "s1-m9"}
-             (set (filter #(= "s1" (:session-id (get-in baseline
-                                                           [:message/by-id %])))
-                          (keys (:message/by-id baseline))))))
-      (is (= #{"s2-m7" "s2-m8" "s2-m9"}
-             (set (filter #(= "s2" (:session-id (get-in baseline
-                                                           [:message/by-id %])))
-                          (keys (:message/by-id baseline))))))
+             (set (keys (:message/by-id baseline))))
+          "only the active session's window enters :message/by-id"))
+    (testing "the inactive session publishes no message entity"
+      (is (= #{"s1"}
+             (set (map :session-id (vals (:message/by-id baseline)))))
+          "a non-active session defaults to a zero window"))
+    (testing "the inactive default is zero even without a window option"
+      (let [plain (snapshot/baseline
+                   {:sessions [s1 s2]
+                    :session-records [s1 s2]
+                    :owner-snapshots {}
+                    :active-session "s1"})]
+        (is (= (set s1-ids) (set (keys (:message/by-id plain))))
+            "the active session keeps its full history")
+        (is (= #{"s1"}
+               (set (map :session-id (vals (:message/by-id plain)))))
+            "the inactive session still publishes no entity")))
     (testing ":session/history keeps the full visible id list"
       (is (= s1-ids
              (get-in baseline [:session/history "s1" :message-ids])))
       (is (= s2-ids
              (get-in baseline [:session/history "s2" :message-ids]))))
-    (testing "a fetched window unions with the tail"
+    (testing "a fetched window unions with the active tail"
       (swap! published-windows assoc "s1" #{"s1-m0" "s1-m1"})
-      (let [baseline' (snapshot/baseline
-                       {:sessions [s1 s2]
-                        :session-records [s1 s2]
-                        :owner-snapshots {}
-                        :active-session "s1"
-                        :published-windows published-windows
-                        :history-window-size @history-window-size})]
+      (let [baseline' (snapshot/baseline (opts nil))]
         (is (= #{"s1-m0" "s1-m1" "s1-m7" "s1-m8" "s1-m9"}
-               (set (filter #(= "s1" (:session-id (get-in baseline'
-                                                             [:message/by-id %])))
-                            (keys (:message/by-id baseline'))))))
+               (set (keys (:message/by-id baseline')))))
         (is (= s1-ids
-               (get-in baseline' [:session/history "s1" :message-ids]))))))))
+               (get-in baseline' [:session/history "s1" :message-ids])))))
+    (testing "an explicit inactive window publishes that tail"
+      (let [expanded (snapshot/baseline
+                      (opts {:inactive-history-window-size 2}))]
+        (is (= #{"s1-m0" "s1-m1" "s1-m7" "s1-m8" "s1-m9"
+                 "s2-m8" "s2-m9"}
+               (set (keys (:message/by-id expanded)))))))))

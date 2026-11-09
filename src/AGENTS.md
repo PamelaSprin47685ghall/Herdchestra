@@ -52,15 +52,15 @@ hc.client.*     浏览器端；只依赖共享协议数据与 CLJC，不 require
 
 ### 3.2 `hc/compose`
 
-当前命名空间：`hc.compose.guards.*`、`hc.compose.cancel.*`、`hc.compose.nudge.*`、`hc.compose.reports.*`、`hc.compose.retry.*`、`hc.compose.fleet.*`、`hc.compose.mission.*`、`hc.compose.owner.*`。计划补充 `hc.compose.supervisor`。职责与禁区见 `src/hc/compose/AGENTS.md`，Owner 细节见 `src/hc/compose/owner/AGENTS.md`。
+当前命名空间：`hc.compose.guards.*`、`hc.compose.cancel.*`、`hc.compose.nudge.*`、`hc.compose.reports.*`、`hc.compose.retry.*`、`hc.compose.fleet.*`、`hc.compose.mission.*`、`hc.compose.owner.*`、`hc.compose.scheduler.*`、`hc.compose.steward`、`hc.compose.supervisor`、`hc.compose.workspace.*`。职责与禁区见 `src/hc/compose/AGENTS.md`，Owner 细节见 `src/hc/compose/owner/AGENTS.md`。
 
 ### 3.3 `hc/server`
 
-当前命名空间：`hc.server.artifacts.*`、`hc.server.blob-store.*`、`hc.server.browser.*`、`hc.server.backup.*`、`hc.server.commands.*`、`hc.server.documents.*`、`hc.server.gateway.*`、`hc.server.files.*`（只读工作区文件 API 与浏览器读取面）、`hc.server.history.*`（含 `history.context` 的阅读/发送双投影）、`hc.server.model-port.*`、`hc.server.program.*`、`hc.server.scheduler.*`、`hc.server.search.*`、`hc.server.speech.*`、`hc.server.storage.*`、`hc.server.recovery.*`、`hc.server.materials.memory-suggest`。计划补充 `hc.server.config`、`hc.server.adapters`。职责与禁区见 `src/hc/server/AGENTS.md`；搜索与读取边界见 `src/hc/server/search/AGENTS.md`；产物提交边界见 `src/hc/server/artifacts/AGENTS.md`；文档提取与 OCR 边界见 `src/hc/server/documents/AGENTS.md`。
+当前命名空间：`hc.server.artifacts.*`、`hc.server.blob-store.*`、`hc.server.browser.*`、`hc.server.backup.*`、`hc.server.commands.*`、`hc.server.documents.*`、`hc.server.gateway.*`、`hc.server.files.*`（只读工作区文件 API 与浏览器读取面）、`hc.server.history.*`（含 `history.context` 的阅读/发送双投影与 `history.index` 的可重建全局历史索引）、`hc.server.model-port.*`、`hc.server.program.*`、`hc.server.scheduler.*`、`hc.server.search.*`、`hc.server.speech.*`、`hc.server.storage.*`、`hc.server.recovery.*`、`hc.server.materials.memory-suggest`、`hc.server.app.steward-store`（Steward 整态 CAS 适配器）、`hc.server.app.steward-runtime`（Steward advance 运行时）、`hc.server.app.steward-git`（有界 Git evidence）、`hc.server.app.steward-model`（Steward/Meditator 模型适配）、`hc.server.app.background-loops`（后台循环 child 适配）、`hc.server.app.retention-gc`（30d/7d 保留治理）、`hc.server.app.search-commands`（`:history/search|status|reindex` handler）。职责与禁区见 `src/hc/server/AGENTS.md`；搜索与读取边界见 `src/hc/server/search/AGENTS.md`；产物提交边界见 `src/hc/server/artifacts/AGENTS.md`；文档提取与 OCR 边界见 `src/hc/server/documents/AGENTS.md`。
 
 ### 3.4 `hc/client`
 
-当前命名空间：`hc.client.sync.*`（`adapter`、`connection`、`json-patch`、`messages`、`normalize`、`object`）、`hc.client.artifacts.*`（产物卡片、来源披露与打开/下载动作）、`hc.client.copy.*`（24 类失败文案单一事实来源）、`hc.client.conversation.*`（含 `export-plan` 的导出选择/取消/长图计划与 `minimap` 话题概览）、`hc.client.files.*`（工作区文件浏览器、stamp 展示与差异）、`hc.client.materials.*`（长期记忆、世界书、指令卡模型与视图）、`hc.client.search.*`（联网搜索三态控件、服务选择与来源卡）、`hc.client.swarm.*`（`model`、`ui`）与 `hc.client.sessions.*`（会话元数据控件、真实命令回执与已删除列表）。职责与禁区见 `src/hc/client/AGENTS.md`。
+当前命名空间：`hc.client.sync.*`（`adapter`、`connection`、`json-patch`、`messages`、`normalize`、`object`）、`hc.client.artifacts.*`（产物卡片、来源披露与打开/下载动作）、`hc.client.copy.*`（24 类错误码的内部映射、十类「未交付理由」与用户侧三状态文案）、`hc.client.conversation.*`（含 `export-plan` 的导出选择/取消/长图计划与 `minimap` 话题概览）、`hc.client.files.*`（工作区文件浏览器、stamp 展示与差异）、`hc.client.materials.*`（长期记忆、世界书、指令卡模型与视图）、`hc.client.search.*`（联网搜索三态控件、服务选择与来源卡；含 `search.history` 的全局历史搜索状态）、`hc.client.swarm.*`（`model`、`ui`）、`hc.client.sessions.*`（会话元数据控件、真实命令回执与已删除列表）与 `hc.client.workbench.*`（含 `presence-bridge` 的一次性客户端在场附着）。职责与禁区见 `src/hc/client/AGENTS.md`。
 
 ## 4 装配与启动顺序
 
@@ -100,6 +100,10 @@ so a leaked or failed store open cannot keep a non-daemon thread alive after
 the summary.  `-M:test` keeps the standard Cognitect runner, which exits
 explicitly.
 
+全量回归优先 `scripts/test-sharded.sh`：四个独立 JVM 分片、PRE=POST 树哈希
+一致、单片峰值 VmHWM 不超过 2 GiB。`pixi run test` 保留为单进程回退；
+`scripts/release-gate.sh` 在可用时直接使用分片 runner。
+
 `resources/` 已在 `:paths` 中，双语提示资源随 classpath 加载。Pixi 环境实际供应 JDK 21.0.10 与 Clojure 1.12.6.1673；宿主 JDK 26 只用于快速验证，交付验证以 Pixi 为准。
 
 ## 6 文档与变更纪律
@@ -113,7 +117,7 @@ explicitly.
 
 | 模块 | 契约 | 失败模式 | 复检 |
 |---|---|---|---|
-| `hc.client.copy.failures` | 24 类失败文案单一来源；认证/权限/模型三口径分开；`已保留` 仅在 `:saved? true`；未知用量不写 0 | 三类混用、未保存却称已保留、未知显示 0、动作只有含糊重试 | `clojure -X:test:client :nses '[hc.client.copy.failures-test]'` |
+| `hc.client.copy.failures` | 24 类错误码是内部映射；按十类「未交付理由」呈现；用户侧状态只有进行中/已交付/未交付；认证/权限/模型三口径分开；`已保留` 仅在 `:saved? true`；未知用量不写 0 | 三类混用、把错误码当用户状态、未保存却称已保留、未知显示 0、动作只有含糊重试 | `clojure -X:test:client :nses '[hc.client.copy.failures-test]'` |
 | `hc.client.conversation.export-plan` | 选择单条/多选/分支、默认当前版本、可选全部版本；取消状态机；长图分段；重复 id 显式拒绝 | 导出未选版本/工具日志、`:writing` 取消写成已取消、单条超高静默截断、重复 id 产生重复段 | `clojure -X:test:client :nses '[hc.client.conversation.export-test]'` |
 | `hc.client.conversation.minimap` | 话题概览、类型密度、稳定锚点、截断仍可 locate；重复 id 保留第一条 | 空列表崩溃、锚点随追加漂移、重复 id 覆盖定位 | `clojure -X:test:client :nses '[hc.client.conversation.minimap-test]'` |
 | `hc.server` 默认会话/恢复投影 | 默认会话传 `:config`；恢复连接重新投影；调度器冻结模型；merge restart 回执不伪造 | 首屏未绑定、恢复连接被旧 launch 标记隐藏、既有 run 被新设置替换、restart 失败报 complete | `clojure -X:test:server :nses '[hc.server.app.system-test hc.server.backup.maintenance-test hc.server.scheduler-test]'` |

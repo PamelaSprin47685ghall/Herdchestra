@@ -38,7 +38,15 @@
     :report/ack :report/register
     :session/issue-epoch :app/issue-epoch
     :fleet/fork :fleet/join :fleet/complete :fleet/abandon
-    :fleet/fail :fleet/gc :fleet/state})
+    :fleet/fail :fleet/gc :fleet/state
+    ;; Repository Steward and holder program planes are trusted-tool only;
+    ;; no browser transport may originate them.
+    :steward/state :steward/intent :steward/evidence
+    :steward/decide :steward/transition
+    :program/abandon
+    ;; Rebuilding the history index is an operator/server maintenance action.
+    ;; Search and status stay browser-available and read-only.
+    :history/reindex})
 
 (defn- kind-in?
   "True when KIND names a member of KINDS, accepting either the keyword or
@@ -216,6 +224,23 @@
           "event exceeds the Sente message boundary"
           (merge {:field field-name :size size :limit limit} details))))
 
+(defn- lower-error-details
+  "Preserve a lower layer's `ex-data` under a stable gateway code.
+
+  The top-level gateway `:code` remains the front-end contract.  A lower
+  `:code` becomes `:cause`, its `:details` becomes `:cause-details`, and a
+  Throwable without `ex-data` is reported as `:cause :unknown` plus its
+  class so the failure is still diagnosable."
+  [throwable]
+  (let [data (ex-data throwable)
+        code (when (map? data) (:code data))]
+    (cond-> {:cause (or code :unknown)}
+      (and (map? data) (contains? data :details))
+      (assoc :cause-details (:details data))
+
+      (nil? code)
+      (assoc :class (.getName (class throwable))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Replies and delivery
 
@@ -242,7 +267,8 @@
         (catch Throwable t
           (error :SUBSCRIPTION_DELIVERY_FAILED
                  "subscription send failed"
-                 {:subscription-id sid :cause (str t)}))))
+                 (merge {:subscription-id sid}
+                        (lower-error-details t))))))
     (error :STALE_SUBSCRIPTION
            "subscription is not current"
            {:subscription-id sid :action :resubscribe})))
@@ -487,7 +513,7 @@
             (reply-fn {:ok? false
                        :error {:code :COMMAND_SUBMIT_FAILED
                                :message "Owner failed while accepting the command"
-                               :cause (str t)}})))))))
+                               :details (lower-error-details t)}})))))))
 
 (defn- handle-receipt!
   [gw {:keys [uid ?reply-fn]} data]
@@ -540,7 +566,7 @@
           (reply! ?reply-fn
                   (error :COMMAND_RECEIPT_FAILED
                          "Owner failed while reading the receipt"
-                         {:cause (str t)})))))))
+                         (lower-error-details t))))))))
 
 (defn- handle-ack!
   [gw {:keys [uid ?reply-fn]} data]

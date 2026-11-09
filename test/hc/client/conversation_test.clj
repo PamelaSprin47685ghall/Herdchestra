@@ -380,6 +380,12 @@
     (is (re-find #"接管"
                  (get-in rejected-send [:last-outcome :message]))
         "an observer sees that another client controls the session")
+    (is (= :takeover (get-in rejected-send [:last-outcome :action]))
+        "the rejected send offers the explicit takeover action")
+    (is (= :takeover
+           (get-in rejected-send
+                   [:commands (:command-id send-command) :action]))
+        "the tracked command carries the same takeover affordance")
     (is (= "hello" (get-in rejected-send [:drafts "s1" :text]))
         "the rejected send restores the operator's draft"))
   (let [state (-> (base) (edit "s1" "hello") send!)
@@ -396,7 +402,35 @@
                             :at "t"})]
     (is (re-find #"控制权"
                  (get-in rejected-stop [:last-outcome :message]))
-        "an observer sees that the stop was not sent")))
+        "an observer sees that the stop was not sent")
+    (is (= :takeover (get-in rejected-stop [:last-outcome :action]))
+        "a refused stop also points at the takeover action")))
+
+(deftest presence-view-names-controller-observer-and-free
+  (testing "the local client is the controller"
+    (is (= {:role :controller
+            :takeover? false
+            :label "你正在控制本会话"}
+           (surface/presence-view
+            {:controller-id "client-a"
+             :observer-ids ["client-b"]
+             :local-client-id "client-a"}))))
+  (testing "another client controls the session and takeover is offered"
+    (is (= {:role :observer
+            :takeover? true
+            :label "另一客户端正在控制本会话"}
+           (surface/presence-view
+            {:controller-id "client-a"
+             :observer-ids ["client-b"]
+             :local-client-id "client-b"}))))
+  (testing "no controller is attached yet"
+    (is (= {:role :free
+            :takeover? false
+            :label "本会话暂无控制客户端"}
+           (surface/presence-view
+            {:controller-id nil
+             :observer-ids []
+             :local-client-id "client-b"})))))
 
 (deftest stop-request-does-not-require-a-local-stream
   (let [state (base)
@@ -1031,6 +1065,16 @@
                    :connection {:phase :synced}})]
     (is (= :blocked (:action decision)))
     (is (= :unattended (:intent decision)))))
+
+(deftest cancelled-and-stopped-runs-are-not-active
+  (is (false? (#'conv/session-run-active?
+               {:run-status :cancelled :current-run-id "run-1"})))
+  (is (false? (#'conv/session-run-active?
+               {:run-status :stopped :current-run-id "run-1"})))
+  (is (true? (#'conv/session-run-active?
+              {:run-status :running :current-run-id "run-1"})))
+  (is (true? (#'conv/session-run-active? {:current-run-id "run-1"}))
+      "an unknown status with a live run id stays active"))
 
 (deftest surface-ask-card-and-save-warning
   (let [state (-> (base)

@@ -212,6 +212,9 @@
                   {:sessions [s1 s2]
                    :session-records [s1 s2]
                    :active-session "s1"
+                   ;; Explicit full history (nil), distinct from the
+                   ;; production default 0 (0 = no inactive entities).
+                   :inactive-history-window-size nil
                    :owner-snapshots
                    {"s1" {:state {:conversation
                                   [{:id "extra-s1"

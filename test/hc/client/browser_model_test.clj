@@ -253,3 +253,102 @@
            :browser/takeover :browser/operator-input :browser/resume
            :browser/close-tab :browser/stop}
          model/browser-kinds)))
+
+(deftest server-browser-errors-are-normalized
+  (testing "a missing managed browser reads as Chinese"
+    (let [state (synced)
+          {:keys [state command]} (model/queue-command
+                                   state :browser/snapshot {})
+          state (model/apply-receipt
+                 state
+                 {:command-id (:command-id command)
+                  :status :refused
+                  :error {:code :BROWSER_UNAVAILABLE
+                          :message "managed browser is not connected for this session"}})]
+      (is (= "本会话尚未连接受管浏览器。"
+             (get-in state [:last-error :message])))
+      (is (= "本会话尚未连接受管浏览器。"
+             (get-in state [:commands (:command-id command) :message])))
+      (is (= :BROWSER_UNAVAILABLE (get-in state [:last-error :code])))))
+  (testing "a disabled managed browser reads as Chinese"
+    (let [state (synced)
+          {:keys [state command]} (model/queue-command
+                                   state :browser/snapshot {})
+          state (model/mark-send-failed
+                 state (:command-id command)
+                 "The operator has not enabled the managed browser.")]
+      (is (= "操作员尚未启用受管浏览器。"
+             (get-in state [:last-error :message])))
+      (is (= "操作员尚未启用受管浏览器。"
+             (get-in state [:commands (:command-id command) :message])))))
+  (testing "the session-scoped disabled message is translated too"
+    (is (= "操作员尚未为本会话启用受管浏览器。"
+           (:message (model/error-text
+                      "The operator has not enabled the managed browser for this session."))))))
+
+(deftest error-banner-skips-visible-command-messages
+  (let [message "本会话尚未连接受管浏览器。"
+        state (-> (synced)
+                  (assoc :last-error {:message message})
+                  (assoc :commands
+                         {"c1" {:command-id "c1"
+                                :kind :browser/snapshot
+                                :status :failed
+                                :queued-at "1"
+                                :message message}}))
+        rendered (pr-str (view/browser-panel-tree state))]
+    (is (re-find #"本会话尚未连接受管浏览器。" rendered))
+    (is (not (re-find #"hc-browser-warning" rendered))))
+  (testing "an unrelated error still renders its banner"
+    (let [state (-> (synced)
+                    (assoc :last-error {:message "其他浏览器错误。"})
+                    (assoc :commands
+                           {"c1" {:command-id "c1"
+                                  :kind :browser/snapshot
+                                  :status :failed
+                                  :queued-at "1"
+                                  :message "本会话尚未连接受管浏览器。"}}))
+          rendered (pr-str (view/browser-panel-tree state))]
+      (is (re-find #"hc-browser-warning" rendered))
+      (is (re-find #"其他浏览器错误。" rendered)))))
+
+(deftest duplicate-command-messages-render-once
+  (let [message "本会话尚未连接受管浏览器。"
+        state (-> (synced)
+                  (assoc :commands
+                         {"c1" {:command-id "c1"
+                                :kind :browser/snapshot
+                                :status :failed
+                                :queued-at "1"
+                                :message message}
+                          "c2" {:command-id "c2"
+                                :kind :browser/snapshot
+                                :status :failed
+                                :queued-at "2"
+                                :message message}}))
+        rendered (pr-str (view/browser-panel-tree state))]
+    (is (= 1 (count (re-seq #"本会话尚未连接受管浏览器。" rendered))))))
+
+(deftest screenshot-failure-reveals-the-hidden-placeholder
+  (let [card {:card-id "card-1" :seq 1 :action :navigate
+              :screenshot {:id "blob-1" :reason :missing}}
+        rendered (pr-str (view/browser-panel-tree
+                          (assoc (synced) :cards [card])))]
+    (is (re-find #"/blobs/blob-1" rendered))
+    (is (re-find #":onError" rendered))
+    (is (re-find #"截图不可用：未生成" rendered))
+    (is (re-find #":display \"none\"" rendered))))
+
+(deftest limits-and-card-states-use-chinese-labels
+  (let [state (-> (synced)
+                  (assoc :limits {:screenshot :historical-not-live
+                                  :custom-limit :whatever})
+                  (assoc :cards [{:card-id "card-1" :seq 1
+                                  :action :navigate
+                                  :result {:status :ok
+                                           :page-status :loading}}]))
+        rendered (pr-str (view/browser-panel-tree state))]
+    (is (re-find #"截图：历史视图，非当前页面" rendered))
+    (is (re-find #"未知：未知" rendered))
+    (is (re-find #"成功 / 加载中" rendered))
+    (is (not (re-find #"historical-not-live" rendered)))))

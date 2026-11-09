@@ -1315,6 +1315,53 @@
     (is (false? (:ok? result)))
     (is (= :TERMINAL_MILESTONE (get-in result [:error :code])))))
 
+(deftest abandon-execution-tenure-test
+  (let [state (-> (fresh) drive-plan-to-pending! start-execution! :state)
+        first-id (relay/current-tenure-id state :execution)
+        plan-id (relay/current-tenure-id state :plan)
+        second (ok! (review! state :plan plan-id []))
+        second-state (:state second)
+        second-id (get-in second [:receipt :execution-tenure-id])
+        abandoned (ok! (relay/abandon-execution-tenure
+                        second-state first-id "master moved" 4242))
+        state' (:state abandoned)
+        first' (exec state' first-id)]
+    (testing "the tenure is a terminal record with the reason and time"
+      (is (= :abandoned (:status first')))
+      (is (= "master moved" (:abandoned-reason first')))
+      (is (= 4242 (:retired-at first')))
+      (is (false? (tenure/active? first')))
+      (is (false? (tenure/completed? first')))
+      (is (tenure/terminal? first'))
+      (is (empty? (:ledger first')))
+      (is (empty? (:root-tasks first')))
+      (is (= :none (:swarm-phase first'))))
+    (testing "another execution tenure is untouched"
+      (is (= :active (get-in state' [:lanes :execution second-id :status])))
+      (is (nil? (get-in state' [:lanes :execution second-id
+                                :abandoned-reason]))))
+    (assert-valid state')
+    (testing "a repeated abandon is an idempotent success"
+      (let [again (ok! (relay/abandon-execution-tenure
+                        state' first-id "again"))]
+        (is (= :already-abandoned (outcome again)))
+        (is (= state' (:state again)))
+        (is (= "master moved"
+               (get-in again [:receipt :reason])))))
+    (testing "the Plan tenure can never be abandoned"
+      (let [refused (relay/abandon-execution-tenure state' plan-id "no")]
+        (is (= :ABANDON_PLAN_TENURE_FORBIDDEN (error-code refused)))
+        (is (= state' (:state refused)))))
+    (testing "reviews and relay retries see the abandoned tenure"
+      (is (= :TENURE_ABANDONED
+             (error-code (review! state' :execution first-id []))))
+      (is (= :TENURE_ABANDONED
+             (error-code (relay/maybe-relay
+                          state'
+                          {:lane :execution
+                           :tenure-id first-id
+                           :board (quiescent-board)})))))))
+
 (deftest board-is-not-part-of-call-payload-test
   (let [state (-> (fresh) drive-plan-to-pending! start-execution! :state)
         execution-id (relay/current-tenure-id state :execution)

@@ -249,29 +249,53 @@
           (swap! (:sessions runtime) assoc k s))
         s)))
 
+(def assume-prose
+  "The fixed prose returned by `(assume {:assumption ...})`.
+
+  The primitive pins a judgment; it never restates or echoes the assumption
+  text.  The value is a bare string so the program expression and the tool
+  text are the prose itself, not an EDN map that buries it under keys."
+  "已笃定，不再因为没有信息增量的犹豫反复改判。")
+
 (defn control-port
   "Return the `:control` map expected by `hc.server.program/runtime`.
 
   `:execute!` receives `(ctx {:primitive kw :request map})` and returns the
-  board primitive's result verbatim.  Only worker board primitives are
-  handled here; `:review`, `:devops`, `:abandon`, `:askPreviousScope`,
-  `:negotiate` and `:assume` belong to other composition layers.  When a
-  `fallback` function is supplied it is called for those primitives;
-  otherwise the bridge returns an explicit `:UNSUPPORTED_OPERATION` value."
+  board primitive's result verbatim.  Worker board primitives and `:assume`
+  are handled here; `:review`, `:devops`, `:abandon`, `:askPreviousScope`
+  and `:negotiate` belong to other composition layers.  `:assume` succeeds
+  with `assume-prose` (a bare string: the program expression value and the
+  tool text are the fixed prose) and refuses a blank assumption with
+  `:ASSUMPTION_REQUIRED`.  When a `fallback` function is supplied it is
+  called for the remaining primitives; otherwise the bridge returns an
+  explicit `:UNSUPPORTED_OPERATION` value."
   ([runtime] (control-port runtime nil))
   ([runtime fallback]
    {:execute!
     (fn [ctx {:keys [primitive request]}]
       (let [session (session-for runtime ctx)]
-        (if (session/program-op? primitive)
+        (cond
+          (= :assume primitive)
+          (let [assumption (:assumption request)]
+            (if (and (string? assumption) (not (str/blank? assumption)))
+              assume-prose
+              {:ok? false
+               :error {:code :ASSUMPTION_REQUIRED
+                       :message
+                       "assume requires a non-blank :assumption string"}}))
+
+          (session/program-op? primitive)
           (session/board-command session
                                  (assoc (or request {}) :op primitive))
-          (if fallback
-            (fallback ctx {:primitive primitive :request request})
-            {:ok? false
-             :error :UNSUPPORTED_OPERATION
-             :detail {:primitive primitive
-                      :reason "not owned by the workspace bridge"}}))))}))
+
+          fallback
+          (fallback ctx {:primitive primitive :request request})
+
+          :else
+          {:ok? false
+           :error :UNSUPPORTED_OPERATION
+           :detail {:primitive primitive
+                    :reason "not owned by the workspace bridge"}})))}))
 
 ;; ---------------------------------------------------------------------------
 ;; Result shaping

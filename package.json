@@ -1,6 +1,6 @@
 {
   "name": "herdchestra-client",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "description": "Browser client dependencies for the Herdchestra thin workbench.",
@@ -20,8 +20,10 @@
     "build:css": "mkdir -p resources/public/css && cp node_modules/framework7/framework7-bundle.css resources/public/css/framework7-bundle.css",
     "dev": "npm run build:css && npx shadow-cljs watch :app",
     "release": "npm run build:css && npx shadow-cljs release :app",
-    "e2e": "playwright test --config test/e2e/playwright.config.mjs",
-    "e2e:core": "playwright test --config test/e2e/playwright.config.mjs --grep @core",
+    "e2e": "node test/e2e/run-e2e.mjs",
+    "e2e:core": "node test/e2e/run-e2e.mjs --grep @core",
+    "e2e:18": "node test/e2e/run-e2e.mjs --grep @disk",
+    "e2e:a11y": "node test/e2e/run-e2e.mjs --grep @a11y",
     "e2e:mock": "playwright test --config test/e2e/playwright.config.mjs --grep @mock",
     "e2e:memory": "playwright test --config test/e2e/playwright.config.mjs --grep @memory"
   }

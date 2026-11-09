@@ -25,6 +25,14 @@ validate and preview, stage the selected backup, block new work, drain command
 handlers, stop every writer, run the offline restore, start a fresh system, and
 publish a durable status that a reconnecting client can read.
 
+`/healthz` (and `--check`) computes `ok?` only from `store-open?` plus a
+non-nil `gateway-stats` plus an empty `component-errors` map. A session count
+is an observation, not a readiness condition: a nil or throwing count becomes
+`{:count :unknown}` and never turns health into 503. The body always carries
+`:version`, `:git-hash` and `:git-dirty?` from `hc.version/build-identity`;
+a source tarball outside Git reports `:git-hash "unknown"` rather than failing
+startup.
+
 ## 2 Start and stop contracts
 
 `system/start!` has two arities:
@@ -364,7 +372,9 @@ and each result-session creation, so a model saved after start is usable by
 the next scheduled attempt.  A captured map would freeze the startup model
 set and leave preflight at `:MODEL_UNAVAILABLE` until restart.
 
-`:settings/test-connection` follows the four-layer contract in root §6.4.
+`:settings/test-connection` follows the four-layer contract in appendix §6.4
+(测试分层: reachable → auth-ok → models-listed → minimal-request-ok); root
+§7.4 旅程 1.2 requires the same separation.
 `settings/probe-connection` first GETs `<base-url>/models` for reachability,
 authentication, and listing.  That GET never proves generation.  When the
 connection has an enabled model and an OpenAI-compatible provider, the probe
@@ -724,6 +734,152 @@ supervisor.
 | `backup.clj` | live backup adapter and maintenance command delegation |
 | `restore_supervisor.clj` | preview/stage/gate/drain/stop/restore/start/journal |
 | `commands.clj` | router, durable command dedup, maintenance gate and drain |
+| `steward_store.clj` | Steward state adapter: one `steward/repository` partition, whole-document CAS |
+| `steward_runtime.clj` | Steward advance runtime: pending inputs, tick serialization, Store commit, effects |
+| `steward_git/` | bounded real-Git evidence adapter for the Steward (`git-log-since-fn`) |
+| `steward_model/` | Steward/Meditator model adapter over the low-level ModelPort |
+| `background_loops.clj` | supervisor child adapters for steward/fleet-gc/retention-gc loops |
+| `retention_gc.clj` | app-owned session (30d) and blob (7d) retention sweeps |
+| `search_commands.clj` | `:history/search|search-status|reindex` command handlers |
+
+`hc.server.app.steward-store` adapts the shared storage engine to
+`hc.compose.owner.store/Store` for the repository-wide Steward.  The state is
+one `:steward-state` document with id `"current"` in partition
+`"steward/repository"`; a commit compare-and-sets the partition version, so a
+partial Steward state can never merge.  `close!` closes only this handle and
+never the shared engine.  `:STORAGE_VERSION_CONFLICT` maps to
+`:VERSION_CONFLICT`; an oversized document returns
+`:STEWARD_STATE_TOO_LARGE` with `:remedy :compact-cognition`; a version with
+no state document is `:STEWARD_STORE_CORRUPT` and refuses to read as empty.
+
+### 4.1 `hc.server.app.steward-store`
+
+**(a) API**
+
+```clojure
+(steward-store storage-engine) ; => Store
+(load-state store)             ; => {:version n :state map|nil}
+(commit! store expected-version next-state)
+;; => {:ok? true :version n}
+;; |  {:ok? false :error {:code .. :message .. :details? ..}}
+(close! store)                 ; => {:ok? true :closed? true}
+```
+
+**(b) 失败码**
+
+| code | 触发 |
+|---|---|
+| `:STORE_CLOSED` | 已 `close!` 的 handle 再 `commit!` |
+| `:INVALID_VERSION` | `expected-version` 不是非负整数 |
+| `:INVALID_STATE` | `next-state` 不是 map |
+| `:VERSION_CONFLICT` | 共享存储的 partition version 不等于 expected |
+| `:STEWARD_STATE_TOO_LARGE` | 文档超过存储上限；`:remedy :compact-cognition` |
+| `:STEWARD_STORE_CORRUPT` | partition 有 version 但没有 `:steward-state` 文档 |
+
+**(c) 不变量**
+
+保证：整态 CAS（不合并部分 Steward state）；`close!` 只关闭本 handle；校验
+读取不会把损坏文档当空 state。
+
+不保证：不校验 Steward 业务不变量（由 `steward/check-invariants` 负责）；
+不提供跨 partition 事务；不关闭共享 storage engine；不保证写后立即可见
+（由 storage read barrier 决定）。
+
+**(d) 验证**：`clojure -M:test:server -n hc.server.app.steward-store-test`；
+代码事实，未复测：7 deftest + 2 defspec（9 个测试入口）/ 31 个 `is`。
+
+### 4.2 `hc.server.app.steward-runtime`
+
+**(a) API**
+
+```clojure
+(start! opts)                  ; => {:ok? true :runtime rt} | {:ok? false :error ..}
+(stop! rt) / (stop! rt opts)   ; => {:ok? .. :stopped? .. :terminated? ..
+                               ;     :pending-ticks n :pending-models n
+                               ;     :store-closed? .. :store-close-deferred? ..}
+(submit-intent! rt intent)     ; => {:ok? true} | {:ok? false :error ..}
+(submit-evidence! rt evidence) ; batch 全有或全无
+(submit-decision! rt decision) ; 单个 map 或序列
+(submit-revision! rt revision) ; => {:ok? true} | {:ok? false :error ..}
+(tick! rt)                     ; 同步一次 advance
+(on-plan-ready! rt mission-id plan-info)
+(on-join-result! rt service result opts)
+(snapshot rt) / (health rt) / (child-spec rt opts)
+```
+
+**(b) 失败码**
+
+| code | 触发 |
+|---|---|
+| `:STEWARD_RUNTIME_STOPPED` | runtime 未运行或已 stop，`submit-*!`/tick 被拒 |
+| `:STEWARD_RUNTIME_MISSING` | Plan/join 回调收到 nil runtime |
+| `:STEWARD_RUNTIME_INVALID_OPTIONS` | 缺少 Store，或 `:interval-ms` 非正整数 |
+| `:STEWARD_RUNTIME_START_FAILED` | `start!` 初始化/加载抛异常 |
+| `:STEWARD_STATE_INVALID` | 加载的 state 违反 `loop/check-invariants` |
+| `:STEWARD_PERSIST_FAILED` / `:STEWARD_PERSIST_RELOAD_FAILED` | Store commit 失败，或冲突后重读失败 |
+| `:STEWARD_DISPATCH_FAILED` / `:STEWARD_TICK_FAILED` | 效果派发或一次 tick 抛异常 |
+| `:STEWARD_MODEL_FAILED` | meditator/decide 模型调用失败 |
+| `:STEWARD_PLAN_START_FAILED` / `:STEWARD_PLAN_SESSION_MISSING` | plan-start 拒绝或没有返回 session id |
+| `:STEWARD_FORK_FAILED` / `:STEWARD_FORK_INSUFFICIENT_WORKTREES` / `:STEWARD_FORK_NO_SWARMS` | fork 拒绝、无 worktree、或没有 swarm |
+| `:STEWARD_REPORT_FAILED` | report 发射失败 |
+| `:STEWARD_GIT_OBSERVATION_FAILED` / `:STEWARD_FLEET_OBSERVATION_FAILED` | git/fleet 观测返回不可识别值或抛异常 |
+| `:STEWARD_SNAPSHOT_FAILED` | snapshot 投影失败（health 中记录） |
+| `:INVALID_INTENT` / `:INVALID_EVIDENCE` / `:INVALID_DECISION` / `:INVALID_REVISION` | 入队输入形状不合法 |
+| `:UNKNOWN_MISSION` / `:MISSION_NOT_PLANNING` / `:INVALID_PLAN_HANDOFF` | Plan handoff 指向未知/已离开 planning 的 mission，或 plan-info 不是 map |
+| `:UNKNOWN_EFFECT` | loop 输出了该 runtime 不认识的 effect |
+
+**(c) 不变量**
+
+保证：一次 tick 串行；pending 输入整批原子；commit 前不派发 effect；重复
+effect 按指纹在窗口内去重；stop 有界等待，只有 `:terminated? true` 才表示
+没有后续 tick/model 任务或 commit；Plan/join 回调只入队，不阻塞调用方。
+
+不保证：不保证 effect 的外部副作用恰好一次（at-least-once，由 fingerprint
+缩小重复窗口）；不保证模型/Plan/fleet 成功；不保证进程崩溃后重放 pending
+输入；不保证 Store 与外部 effect 原子提交；不拥有共享 Store 的生命周期。
+`stop!` 超时返回 `:terminated? false` 时仍可能有 commit 启动，调用方不得
+关闭共享 Store。
+
+**(d) 验证**：`clojure -M:test:server -n hc.server.app.steward-runtime-test`；
+代码事实，未复测（2026-11-09 当前文件）：10 tests / 81 个 `is`。
+
+### 4.3 `hc.server.app.retention-gc`
+
+**(a) API**
+
+```clojure
+(start! opts) ; => {:ok? true :service rt} | {:ok? false :error ..}
+(stop! rt)    ; => {:stopped? bool :terminated? bool}
+(status rt)   ; => {:session-days .. :blob-days .. :session-runs .. :blob-runs ..}
+(purge-expired-deleted! rt opts) ; => sweep result
+(gc-blobs! rt opts)             ; => sweep result
+```
+
+**(b) 失败码**
+
+| code | 触发 |
+|---|---|
+| `:RETENTION_REGISTRY_REQUIRED` / `:RETENTION_PURGE_REQUIRED` / `:RETENTION_BLOB_CLEANUP_REQUIRED` | `start!` 缺少 registry、purge 函数或 blob cleanup |
+| `:RETENTION_SESSION_INTERVAL_INVALID` / `:RETENTION_BLOB_INTERVAL_INVALID` | interval 不是正整数（至少 1000ms） |
+| `:RETENTION_SESSION_DAYS_INVALID` / `:RETENTION_BLOB_DAYS_INVALID` | retention days 不是正整数/超出 epoch 范围 |
+| `:RETENTION_STOP_TIMEOUT_INVALID` / `:RETENTION_RUN_IMMEDIATELY_INVALID` | stop timeout 非非负整数，或 run-immediately 非布尔 |
+| `:RETENTION_CLOCK_INVALID` | clock 不返回 epoch 毫秒 |
+| `:RETENTION_SESSION_LIST_FAILED` / `:RETENTION_SESSION_SWEEP_FAILED` / `:RETENTION_SESSION_PURGE_FAILED` | 列出已删除会话失败、sweep 失败、单个 purge 失败 |
+| `:RETENTION_BLOB_SWEEP_FAILED` / `:RETENTION_BLOB_PARTIAL` | blob cleanup 失败或部分失败 |
+| `:RETENTION_GC_STOPPED` / `:RETENTION_TIMER_FAILED` | 已停止后重跑，或定时器启动失败 |
+
+**(c) 不变量**
+
+保证：session 与 blob 两个 sweep 独立、各自串行；临时会话永不成为候选；
+备份保留原 `:deleted-at`，恢复不重启保留时钟；timer 用 fixed delay，墙钟
+跳变不产生 burst；`stop!` 幂等并等待在途 sweep。
+
+不保证：不保证 sweep 在进程停机期间运行；不保证每个候选都能 purge
+（失败逐项记录）；不删除已恢复/未到期/仍被引用的对象；不把部分失败升级为
+component failure（只有 start/child 退出进入 `component-errors`）。
+
+**(d) 验证**：`clojure -M:test:server -n hc.server.app.retention-gc-test`；
+代码事实，未复测（2026-11-09 当前文件）：11 tests / 100 个 `is`。
 
 ## 5 Tests
 
