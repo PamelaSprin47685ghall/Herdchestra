@@ -245,7 +245,7 @@ echo "expected version: $EXPECTED_VERSION"
 echo "pixi: $PIXI"
 echo "evidence: $EVIDENCE"
 {
-  echo "started_at=$(date -Is)"
+  echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "repo=$REPO_ROOT"
   echo "pixi=$PIXI"
   echo "pixi_version=$("$PIXI" --version 2>&1 | head -1)"
@@ -269,8 +269,22 @@ if [ ! -s "$MAIN" ] || [ ! -s "$CSS" ]; then
   fail "client-release-artifacts" "$LAST_LOG"
 fi
 {
-  stat -c '%n size=%s mtime=%y' "$MAIN" "$CSS"
-  sha256sum "$MAIN" "$CSS"
+  # `stat -c` and `sha256sum` are GNU-only; macOS ships BSD stat and shasum.
+  # Both shapes must produce the same fields so evidence stays comparable.
+  for f in "$MAIN" "$CSS"; do
+    sz="$(wc -c < "$f" | tr -d ' ')"
+    if stat -c '%s' "$f" >/dev/null 2>&1; then
+      mt="$(stat -c '%y' "$f")"
+    else
+      mt="$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$f")"
+    fi
+    echo "$f size=$sz mtime=$mt"
+  done
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$MAIN" "$CSS"
+  else
+    shasum -a 256 "$MAIN" "$CSS"
+  fi
 } > "$EVIDENCE/artifacts.txt"
 
 # 3. app-check: health must name the expected version and a real tree.

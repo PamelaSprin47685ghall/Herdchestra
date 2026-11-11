@@ -32,6 +32,11 @@ hs_err_pid*.log
 *.tmp.mjs
 test-results/
 !plans/evidence/**/*.log
+# Per-run server stdout from the E2E harness.  Each run writes a fresh
+# `server-hc-e2e-<random>.log`; they are debugging scraps, not evidence.
+# The curated `server-src.log` / `server-dst.log` beside a result stay
+# tracked because a reader needs them to interpret that result.
+plans/evidence/**/server-hc-e2e-*.log
 
 # Release-prep exclusions (user ruling 2026-11-06)
 /机制提炼/

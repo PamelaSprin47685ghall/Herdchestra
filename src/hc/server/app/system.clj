@@ -607,15 +607,60 @@
     (:plan-worker :dedicated-worker :worker :holder :task) :task
     :main))
 
+(defn- same-id?
+  "True when two configuration identities name the same entry.
+
+  Settings documents store connection and model ids as strings.  A request
+  snapshot or an older binding may carry the same identity as a keyword."
+  [left right]
+  (and (some? left)
+       (some? right)
+       (= (str left) (str right))))
+
+(defn- entry-id
+  "Return the stable id of one connection or model entry."
+  [entry]
+  (when (map? entry)
+    (or (:id entry)
+        (:connection-id entry)
+        (:model-entry-id entry)
+        (:model-id entry)
+        (:name entry))))
+
+(defn- matching-entry
+  "Find WANTED-ID in a map or a vector of configuration entries.
+
+  Committed settings keep `:connections` and `:models` as vectors.  The
+  session-config projection and older callers keep them as id-keyed maps.
+  A map-only lookup treats a saved vector entry as absent, so a declared
+  `:capabilities {:tools true}` never reaches the send gate."
+  [entries wanted-id]
+  (cond
+    (map? entries)
+    (or (get entries wanted-id)
+        (get entries (str wanted-id))
+        (some (fn [[id entry]]
+                (when (or (same-id? id wanted-id)
+                          (same-id? (entry-id entry) wanted-id))
+                  entry))
+              entries))
+
+    (sequential? entries)
+    (some (fn [entry]
+            (when (same-id? (entry-id entry) wanted-id)
+              entry))
+          entries)
+
+    :else nil))
+
 (defn- model-supports-tools?
   [config]
   (let [role (get-in config [:models :roles :main])
         connection-id (:connection role)
         model-id (:model role)
-        connection (first (filter #(= connection-id (:id %))
-                                  (get-in config [:models :connections])))
-        model (first (filter #(= model-id (if (map? %) (:id %) (str %)))
-                             (:models connection)))]
+        connection (matching-entry (get-in config [:models :connections])
+                                   connection-id)
+        model (matching-entry (:models connection) model-id)]
     (mission-model/supports-tools? (:capabilities model))))
 
 (defn- tools-capability-entry
@@ -658,9 +703,11 @@
   [current-config binding fallback]
   (let [model (try
                 (when (and (fn? current-config) (map? binding))
-                  (get-in (current-config)
-                          [:connections (:connection-id binding)
-                           :models (:model-entry-id binding)]))
+                  (let [config (current-config)]
+                    (matching-entry
+                     (:models (matching-entry (:connections config)
+                                              (:connection-id binding)))
+                     (:model-entry-id binding))))
                 (catch Throwable _ nil))
         live-entry (when (map? model)
                      (tools-capability-entry (:capabilities model)))
