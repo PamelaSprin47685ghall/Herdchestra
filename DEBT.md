@@ -133,3 +133,97 @@
 - **影响**：每次停止至少多等 150 ms；若某个会话把 `:stop-grace-ms` 设得比 150 ms 更短（测试里就是 300），实际停止时长由 `:settle-ms` 而非 `:stop-grace-ms` 主导，参数语义不一致。
 - **建议**：把 `:settle-ms` 纳入 `runner :limits`（例如 `:stop-settle-ms`），并让 `session.clj` 的四个 `stop-tree!` 调用点统一透传；或按 `min(settle-ms, grace-ms)` 收敛。
 - **优先级**：低；不影响正确性，只影响停止延迟与参数一致性。
+
+## D-49 通知（notice）永不过期，可长期占据右上角
+
+- **条款**：`AGENTS.md` §7.4-4（过程区与错误状态）、§7.4-8（未交付理由必须可读且可关闭）。
+- **位置**：`src/hc/client/workbench/mutations.cljs:407-420` 只有 `notify` 与 `dismiss-notice`（需用户点 ×）；`src/hc/client/workbench/views/shell.cljs:472-476` 只渲染 `(take-last 3 notices)`。没有任何自动过期或去重。
+- **缺口**：`src/hc/client/workbench/events.cljc:1048-1058` 在服务端报告本轮中断时加入一条「服务器报告本轮未完成」通知。它会一直留到用户手动关闭；同类事件也不会合并。
+- **影响**：曾导致 `#wb-aux-toggle` 与 `#wb-aux-close` 在 1047 次命中测试中被通知的关闭按钮遮挡（见提交 `83ee20a` 的 CSS 修复，已把通知栈移出顶部栏、并把抽屉层级提到通知之上）。遮挡已修，但「通知永驻」本身仍会让界面越用越挤，且用户没有除逐条关闭之外的清理方式。
+- **建议**：给非 `:danger` 通知加自动过期（例如 8–15 秒，鼠标悬停时暂停）；同 key 通知去重并计数；提供「全部关闭」。`danger` 保留手动关闭。
+- **优先级**：低到中；遮挡症状已消除，剩下的是体验与可维护性。
+
+## D-50 `#wb-aux-close` 与其他右上角控件缺少遮挡防护
+
+- **条款**：`AGENTS.md` §7.4-1（关键操作必须在各视口可达）。
+- **位置**：`src/hc/client/workbench/views/shell.cljs:419`（`#wb-aux-close`）；`resources/public/css/workbench.css:937-947`（toast-stack）；`:1015`、`:998`（抽屉 z-index）。
+- **缺口**：右上角是 topbar、通知栈与抽屉关闭按钮的公共落点，三者此前同处或相近层级，任一浮层出现即可遮住另一个控件。当前修复把通知栈移出顶部栏并把抽屉提到通知之上，层级不再冲突，但没有任何测试或结构约束防止将来再次引入同层浮层。
+- **影响**：历史上已发生两次（`#wb-aux-toggle` 与 `#wb-aux-close` 各一次）。表现是「按钮看得见但点不动」，且 Playwright 会重试到整个测试预算耗尽，真正原因不出现在报错里。
+- **建议**：给右上角定义一个明确的层级序列（抽屉 > 通知 > topbar）并写成 CSS 变量注释；E2E 用 `clickUncovered`（已在 `e2e-19` 内）覆盖所有右上角控件；新增浮层时必须说明它在序列中的位置。
+- **优先级**：低；已有测试侧防护。
+
+## D-51 发送被拒时只有草稿留在框里，界面不说明原因
+
+- **条款**：`AGENTS.md` §7.4-2（发送必须可解释）、§7.4-8（未交付必须给理由）。
+- **位置**：`src/hc/client/conversation/view.cljs:1749` 的 `request-send!` 分支：
+  `(contains? #{:disabled :duplicate :wait :select-model} intent) nil` 直接返回 `nil`。
+  `src/hc/client/conversation.cljc:216` 的 `submit-send` 在 blocker 命中时返回
+  `:outcome :send :blocked`，但 UI 只在 `:needs-decision`、`:fix` 与 `:blocked`
+  的部分 intent 上渲染提示。
+- **缺口**：`request-send!` 的前置短路在**渲染层**丢弃了按键，`submit-send` 的
+  `:blocked` 结果根本没有机会产生。于是 `:duplicate`（上一轮的 send 回执还没到）、
+  `:wait`（正在停止）、`:unattended`（无人值守运行中）这三种情况下，按 Enter 或点发送
+  都没有任何可见反馈，草稿原地不动。
+- **影响**：E2E 11 连续三次在「第 4 次发送」处失败，每次失败点都表现为
+  「mainCalls 少一次」，而不是「发送被拒」。定位成本极高：它伪装成竞态。
+  2026-11-11 的修法（`00d8b5a`）只覆盖了 `:disabled`/`:select-model`，因为那一次
+  的复现恰好是「输入法刚填完、view-model 还慢一帧」。同类问题在 `:duplicate`
+  上仍然存在。
+- **建议**：`request-send!` 在**任何**短路分支上都应产生一条可见结果。若 `submit-send`
+  能按 DOM 快照重新裁决（它已经有 `captured?` 分支会主动清掉 `command-pending?`），
+  就让 `:duplicate` 也走快照路径，由 `submit-send` 决定是入队还是明确拒绝；不能让
+  渲染层的 intent 单方面决定「什么都不做」。或者退一步：短路时发一条 `notify`，
+  写明「上一轮提交尚未确认，请稍候」。
+- **优先级**：中。它不损坏数据，但会持续把「拒绝」伪装成「竞态」，吞掉定位时间。
+
+## D-52 `:duplicate` 与 `captured?` 的语义冲突缺少文档与测试
+
+- **条款**：`AGENTS.md` §5.1（`command-id` 去重）、§7.4-2（不允许静默重复提交）。
+- **位置**：`src/hc/client/conversation.cljc:194-215`。`captured?` 为真时无条件
+  设置 `:command-pending? false` 与 `:run-active? false`，即「快照路径绕过一切阻塞」。
+- **缺口**：`send-decision` 的注释说「`:duplicate` 描述在途命令，不允许静默重复提交」，
+  而 `submit-send` 在 `captured?` 路径上恰好解除了 `:command-pending?` 的拦截。两条
+  规则在代码里同时成立，靠调用方（`request-send!` 的 intent 白名单）决定谁生效。
+  这个耦合没有任何测试固定，也没有注释解释为什么快照路径可以越过去重。
+- **影响**：D-51 的修复若扩大白名单，可能引入真正的重复提交；若保持不变，
+  `:duplicate` 继续静默。两条路都需要先把这个语义说清楚。
+- **建议**：把「快照路径的语义」写成一条独立断言：快照代表操作员**此刻**的明确提交，
+  因此它只解除 `:run-active?`（那是上一轮的自动续跑），不解除 `:command-pending?`
+  （那是同一份内容的在途重复）。二者混为一谈是当前歧义的根源。
+- **优先级**：中。它是 D-51 修复前必须先定的契约。
+
+## D-53 材料页不显示它当前服务哪个会话，且会话切换后不重新请求
+
+- **条款**：`AGENTS.md` §7.4-4（任务/资料视图必须能回答「这是谁的」）、§5.1（客户端与服务端对选中会话的认知必须可核对）。
+- **位置**：`src/hc/client/materials/view.cljc:227`（只渲染 ready/未就绪徽标）；
+  `src/hc/client/materials/model.cljc:336-344`（`cross-session?` 丢弃快照）；
+  `src/hc/client/workbench/materials_bridge.cljs:507-544`（刷新条件）。
+- **缺口**：服务端只回答「它当前会话」的材料快照；客户端选中会话与这个「当前会话」
+  之间隔着一次命令往返。两者的 id 不一致时，`apply-snapshot` 正确地丢弃快照，但**没有
+  任何一方重新发起对齐**：客户端不因为「丢弃了跨会话快照」而再次请求，服务端也不知道
+  客户端想要哪个会话。结果是页面停在「材料库已就绪」+ 0 行，而服务端其实持有别的会话
+  的数据。界面上没有任何字段能让操作员发现「这块面板描述的不是我选中的会话」。
+- **实证**（2026-11-11，E2E 11）：
+  `{"ready":true,"revision":16,"sessionId":"hc-session-509ab5ac…","memoryCount":0,`
+  `"ui":{"ready":false,"revision":null,"selectedSessionId":"hc-session-e6df4b65…"}}`
+  —— 服务端说会话 A 有 16 号 revision，客户端投影停在被清空的会话 B 上。
+- **建议**：
+  1. 材料视图显示它对应的 `session-id`（截断即可）与会话标题，让不一致可被看见。
+  2. `apply-snapshot` 丢弃跨会话快照时，桥接层应记录「待对齐」并在下一次可用时机重新
+     请求当前选中会话的快照，而不是等用户手动刷新页面。
+  3. `openMaterialsMemory` 这类「等就绪」的判据应由产品提供：就绪必须同时意味着
+     「描述的是当前会话」。
+- **优先级**：中高。它不影响数据正确性（快照被正确丢弃），但会让操作员看到错的空白面板，
+  并且是 E2E 11 反复失败的直接原因。
+
+## D-54 `cross-session?` 的丢弃是静默的，没有诊断出口
+
+- **条款**：`AGENTS.md` §3.10-7（普通拒绝必须含类别与可重读入口）。
+- **位置**：`src/hc/client/materials/model.cljc:343`：`(if (or stale? cross-session?) state`。
+- **缺口**：`state` 原样返回，既不记 `:error`，也不记 `:last-rejected-snapshot`。事后无法
+  从 `:ui/materials` 判断「上一次快照是因为跨会话被丢弃」还是「根本没有快照到达」。
+  这与 §3.10-7 要求的可解释性相反。
+- **影响**：D-53 因此无法被自诊断；E2E 11 的定位只能靠额外加探针。
+- **建议**：在 `state` 上保留 `:last-rejected {:reason :cross-session :snapshot-session-id …}`
+  （短字段，不含正文），供视图与探针读取。丢弃仍然是丢弃，但理由要留下。
+- **优先级**：中。它是 D-53 修复的配套。

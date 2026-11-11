@@ -127,6 +127,45 @@ aliases，否则 `-m cljs.main` 会覆盖 shadow CLI。
    无签名安装包；默认 loopback-only；离线恢复走 `hc.server.backup.cli`
    且有已知边界；没有 GPU 路径。
 
+### E2E 复跑纪律（2026-11-11 起）
+
+判定标准是 22 条 E2E 在本机全部通过，不是抽样代表。复跑必须遵守：
+
+```bash
+# 全量（单进程串行）。TMPDIR 必须在真实磁盘：/tmp 是 tmpfs，
+# 写满会产生假连接中断（HACK.md §17.24）。
+PATH=/private/tmp/hc-e2e-venv/bin:$PATH \
+  CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  TMPDIR=/var/tmp/hc-e2e \
+  npx playwright test --config test/e2e/playwright.config.mjs --workers=1
+```
+
+- **禁止两个 Playwright 进程并行。** 它们共用
+  `plans/evidence/e2e-auto/playwright-artifacts`，互删 trace 会产生成片的
+  `ENOENT ... recording5-pwnetcopy-1.network` 假失败。确需并行时用
+  `HC_PW_SHARD=<name>` 隔离 `outputDir`，并给每个 shard 不同端口。
+- **改任何 `.cljs` 之后必须 `npm run release`**，否则 E2E 跑的是旧 bundle。
+  只改 CSS 或 spec 文件不需要重建。改完用
+  `shasum -a 256 resources/public/js/main.js` 记录前 16 位，与
+  `e2e-NN-result.json` 的 `clientBundle` 对照。
+- **Pillow 虚拟环境在 `/private/tmp/hc-e2e-venv`**，不是 `/tmp`：该路径在
+  macOS 上是符号链接，`site-packages` 解析会失败。
+- 每轮结束确认没有残留：`pkill -f "hc-e2e"`，否则下一轮端口冲突。
+
+### 诊断 E2E 失败的顺序
+
+1. 先读 `plans/evidence/e2e-NN/e2e-NN-result.json` 的 `checks`：每项的
+   `detail` 带观察到的实际值，比截图快。`error` 通常只是最后一个断言。
+2. `checks` 全 pass 而 `error` 非空，说明失败发生在断言之后的收尾阶段。
+3. 判断「失败点是否随修改移动」：移动则是多缺陷叠加，继续逐层剥；
+   不动则定位单一原因。
+4. 区分产品缺陷与测试假设：同一场景手工操作也失败才是产品缺陷。
+   例：E2E 11 的 `turn did not settle` 一度被当成产品问题，实际是
+   `waitMockQuiet`（mock 静默）被误当作 UI 空闲。
+5. 客户端状态不可从 DOM 观察时，用 `window.__HC_DB__()` 只读探针：
+   它返回会话 id、消息归属、看板存在性与材料库的 ready/revision/行数，
+   不含正文与草稿。DOM 与探针不一致本身就是线索。
+
 **资源纪律**：所有 app/test JVM 必须带显式堆上限（`deps.edn` 默认
 `-Xmx1g -XX:MaxDirectMemorySize=512m`；测试子 JVM 512m/256m；E2E app
 768m/512m）；同一时刻最多 1 个重资源 app JVM + 1 个 Chrome；全量测试与

@@ -1054,3 +1054,34 @@
     (testing "no applied compressions and no cursor emits nothing"
       (let [empty-owner (atom {:snapshot (fn [] {:state {:session {}}})})]
         (is (nil? (#'system/pair-request-boundary empty-owner {})))))))
+
+(deftest materials-component-cache-keys-on-the-session-too
+  ;; The materials snapshot carries session identity (temporary flag, project
+  ;; scope, per-session instruction turns) and blanks the memory rows for a
+  ;; temporary session.  Its revision only advances when the library changes,
+  ;; so caching on the revision alone served the previous session's snapshot
+  ;; after a session switch: the client then discarded it as cross-session and
+  ;; the panel sat empty on a ready badge (E2E 11).
+  ;;
+  ;; The component cache is a private helper; `var-get` returns its IFn, whose
+  ;; arity is (cache kind version build).
+  (let [built (atom [])
+        cache (atom {})
+        cached (var-get #'system/cached-component)
+        component (fn [session-id]
+                    (cached cache [:materials session-id]
+                            [16 session-id]
+                            (fn []
+                              (swap! built conj session-id)
+                              {:materials/session {:session-id session-id}})))]
+    (is (= "session-a" (get-in (component "session-a")
+                               [:materials/session :session-id])))
+    (is (= "session-b" (get-in (component "session-b")
+                               [:materials/session :session-id]))
+        "a different session must not reuse the cached snapshot")
+    (is (= ["session-a" "session-b"] @built)
+        "each session is built once; no snapshot is served to the wrong one")
+    ;; Unchanged revision and session reuses the cached value.
+    (component "session-b")
+    (is (= 2 (count @built))
+        "an unchanged revision and session reuses the value")))

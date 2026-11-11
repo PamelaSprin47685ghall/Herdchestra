@@ -3271,10 +3271,19 @@
                     (catch Throwable _ nil)))]
     (merge
      (when materials
+       ;; The materials snapshot is per-session: it carries the session's
+       ;; temporary flag, project scope and workspace-turn selections, and it
+       ;; blanks the memory rows for a temporary session.  The revision alone
+       ;; is not a sufficient cache version because it only advances when the
+       ;; library changes, so switching sessions with the same revision served
+       ;; the previous session's snapshot — the client then correctly rejected
+       ;; it as cross-session and the panel sat empty on a ready badge
+       ;; (E2E 11).  Key the version by session identity as well.
        (try (if component-cache
               (cached-component
                component-cache [:materials active-session]
-               (materials-session/revision materials)
+               (when (some? active-session)
+                 [(materials-session/revision materials) active-session])
                #(materials-session/snapshot materials session))
               (materials-session/snapshot materials session))
             (catch Throwable _ {:materials/ready? false})))
