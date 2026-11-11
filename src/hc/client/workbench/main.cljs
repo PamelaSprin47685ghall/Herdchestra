@@ -465,7 +465,28 @@
                         :selectedSessionId (:selected-session-id ui)
                         :sessionId (get-in ui [:session :session-id])
                         :memoryCount (count (:memories ui))
-                        :memoryOrder (count (:memory-order ui))})}})))))
+                        :memoryOrder (count (:memory-order ui))
+                        ;; Refresh bookkeeping: `transact-state!` drops a
+                        ;; snapshot that belongs to another session, and the
+                        ;; drop is silent by design.  These three fields make
+                        ;; "the request went out" distinguishable from "the
+                        ;; request was never sent", which no UI element says.
+                        :syncCommandEpoch (get-in ui [:sync :command-epoch])
+                        :syncPhase (get-in ui [:sync :phase])
+                        :outboxCount (count (:outbox ui))
+                        :lastRejected (:last-rejected ui)
+                        ;; Bridge-level decision record: which values
+                        ;; `sync-from-db!` actually compared.  `fetch? false`
+                        ;; with a blank projection is the whole bug class,
+                        ;; and no database field can show why.
+                        :fetchDecision (some-> materials-bridge/fetch-decision
+                                               deref
+                                               clj->js)
+                        :commandStatuses
+                        (into {}
+                              (map (fn [[id c]]
+                                     [(name id) (:status c)]))
+                              (:commands ui))})}})))))
       (reset! last-persisted (persist-signature initial))
       (apply-appearance! initial)
       (bridge/set-app! app)

@@ -30,6 +30,19 @@
 ;; reports a revision.
 (defonce fetched-at (atom nil))
 
+;; One scheduled self-heal pass for a not-ready projection.
+;;
+;; See the `sync-from-db!` tail: an idle UI fires no sync events, so the
+;; throttle retry in `fetch?` never gets evaluated.  Holding the timer id
+;; keeps at most one pass in flight.
+(defonce retry-timer (atom nil))
+
+(def ^:private retry-delay-ms 200)
+
+;; Last rejected snapshot and the last fetch decision, for the E2E probe.
+(defonce last-rejected (atom nil))
+(defonce fetch-decision (atom nil))
+
 ;; Diagnostic copy of the last projected materials state.  Never read this to
 ;; decide what is true: the Fulcro database's `:ui/materials` is the single
 ;; authority, so a state the database rejected as stale cannot be revived by a
@@ -156,10 +169,15 @@
         current (:ui/materials db)
         same-session? (= (:selected-session-id state)
                          (:selected-session-id current))
-        ;; A snapshot with no revision cannot describe newer server state:
-        ;; it is either a blank projection or a session mismatch.  Never let
-        ;; it replace a projection that carries a revision, or the badge and
-        ;; rows blink to empty while the real data is still current.
+        ;; A *snapshot-derived* projection with no revision cannot describe
+        ;; newer server state: it is either blank or belongs to another
+        ;; session, and letting it replace a revision-carrying projection
+        ;; makes the badge and rows blink to empty while the real data is
+        ;; still current.
+        ;;
+        ;; `begin-session` on a real session switch clears the projection;
+        ;; that is a legitimate downgrade because `same-session?` is already
+        ;; false for it, so the guard below cannot swallow it.
         no-revision-downgrade? (and same-session?
                                     (nil? (:revision state))
                                     (integer? (:revision current)))
@@ -456,32 +474,31 @@
         ;; `selected-session-id` falls back to the first visible session
         ;; whenever the requested id is missing from the visible session
         ;; table.  That is right for a deleted session, but the table is
-        ;; windowed: while a snapshot is re-installed the old id can vanish
-        ;; for a commit or two.  Taking the fallback then calls
-        ;; `begin-session` with a *different* session, which blanks
-        ;; `:ui/materials` (`ready? false`, `revision nil`); the blank
+        ;; windowed: while a snapshot is re-installed the requested id can be
+        ;; absent for a commit or two.  Acting on the fallback then calls
+        ;; `begin-session` for a *different* session, which blanks
+        ;; `:ui/materials` (`ready? false`, `revision nil`); a blank
         ;; projection has no revision, so the stale guard accepts it over
-        ;; good data, and the 1500 ms retry window then refuses to re-fetch.
-        ;; The badge flips to "材料库未就绪" with zero rows even though the
-        ;; session never changed.  Only start a new materials session when
-        ;; the previous one is genuinely gone (deleted, or replaced in every
-        ;; table that could still describe it); a transient absence keeps
-        ;; the existing state and waits for the snapshot.
-        previous-id (:selected-session-id current)
-        selected-id (or (wb-model/selected-session-id db)
+        ;; good data, and the 1500 ms retry window then declines to re-fetch.
+        ;; The badge flips to "材料库未就绪" with zero rows although the
+        ;; operator never changed sessions.
+        ;;
+        ;; A real session switch must still reset, so prefer the *requested*
+        ;; id whenever it is still a live session: only an id that is gone
+        ;; from the table is treated as a fallback flash.  `begin-session`
+        ;; then runs exactly when the selection really changed.
+        requested (or (wb-model/field db :ui/selected-session-id)
+                      (wb-model/field db :session/active-id))
+        requested-live? (and (model/non-blank-string? requested)
+                             (some? (wb-model/session-by-id db requested)))
+        selected-id (or (when requested-live? requested)
+                        (wb-model/selected-session-id db)
                         (get-in snapshot [:materials/session :session-id]))
-        vanished? (and previous-id
-                       (not= previous-id selected-id)
-                       (nil? (wb-model/session-by-id db previous-id))
-                       (not= previous-id
-                               (get-in snapshot [:materials/session :session-id])))
         session-changed? (and selected-id
-                              (not= selected-id (:selected-session-id current))
-                              (or (nil? previous-id) vanished?))
+                              (not= selected-id (:selected-session-id current)))
         current (if session-changed?
                   (materials/begin-session current selected-id)
-                  (update current :selected-session-id
-                          (fn [existing] (or existing selected-id))))
+                  (assoc current :selected-session-id selected-id))
         state (materials/apply-snapshot current snapshot)
         session-id (or (:selected-session-id state)
                        (get-in state [:session :session-id]))
@@ -505,6 +522,17 @@
         ;; leak into the next turn (D-27).
         state (sweep-accepted-send-clears! state db)
         now-ms (js/Date.now)
+        ;; `begin-session` clears the projection, and the session it cleared
+        ;; from was fetched a moment earlier.  The `not=` guard below then
+        ;; finds the record already pointing at this session, and the 1500 ms
+        ;; throttle has not elapsed, so nothing is re-requested: the panel
+        ;; stays on "材料库未就绪" with zero rows and no error, because a
+        ;; dropped snapshot is silent by design (`apply-snapshot`
+        ;; `cross-session?`).  Forgetting the record makes a real session
+        ;; switch re-request unconditionally.
+        _ (when session-changed?
+            (reset! fetched-session nil)
+            (reset! fetched-at nil))
         retry? (and (not (:ready? state))
                     (or (nil? @fetched-at)
                         (> (- now-ms @fetched-at) 1500)))
@@ -519,7 +547,29 @@
             (reset! fetched-at nil))
         _ (when fetch?
             (reset! fetched-session session-id)
-            (reset! fetched-at now-ms))]
+            (reset! fetched-at now-ms))
+        ;; A rejected snapshot means the projection did not advance.  The
+        ;; record that claims "this session was fetched" is then a lie: the
+        ;; request either never left or came back with another session's
+        ;; tables.  Forgetting it is what lets the next pass ask again
+        ;; instead of waiting out the throttle against a blank panel.
+        rejected (:last-rejected state)
+        rejected-new? (not= rejected @last-rejected)
+        _ (when rejected-new?
+            (reset! last-rejected rejected)
+            (reset! fetched-session nil)
+            (reset! fetched-at nil))
+        ;; Readable decision record for the E2E probe.  No payloads.
+        _ (reset! fetch-decision
+                  {:session-id session-id
+                   :fetched-session @fetched-session
+                   :fetched-at @fetched-at
+                   :command-epoch command-epoch
+                   :command-allowed? (boolean (:command-allowed? connection))
+                   :retry? (boolean retry?)
+                   :fetch? (boolean fetch?)
+                   :session-changed? (boolean session-changed?)
+                   :rejected-new? (boolean rejected-new?)})]
     (transact-state! (materials/flush-outbox! state submit!))
     (recover-pending-materials-commands! state now-ms)
     (when fetch?
@@ -533,7 +583,19 @@
              (let [current (current-with-local db)
                    latest-epoch (or (wb-model/session-command-epoch db session-id)
                                     (bridge/command-epoch-for-session session-id))
+                   ;; `reduce-action :materials/refresh` stamps the command's
+                   ;; `:session-id` from `effective-session-id` of the state it
+                   ;; is handed.  Re-reading the database a moment after the
+                   ;; validated closure can still return the previous selection
+                   ;; because the guarded `:ui/materials` transaction is queued.
+                   ;; The request would then ask for the old session, come back
+                   ;; with that session's snapshot, and `apply-snapshot` would
+                   ;; drop it as `cross-session?` — silently, leaving the panel
+                   ;; not-ready with no error and no rows.  Pin the validated id
+                   ;; so the request and the projection cannot disagree.
                    current (-> current
+                               (assoc :selected-session-id session-id)
+                               (assoc-in [:session :session-id] session-id)
                                (assoc-in [:sync :phase] (:phase (bridge/connection)))
                                (assoc-in [:sync :command-epoch] latest-epoch))
                    {:keys [state]} (materials/reduce-action
@@ -542,12 +604,35 @@
              ;; A connection that dropped before this timer fires retries on
              ;; the next successful sync instead of reporting a false error.
              (reset! fetched-session nil))))
-       (if session-changed? 50 750)))))
+       (if session-changed? 50 750)))
+    ;; A not-ready projection must retry on a timer, not only when a sync
+    ;; event happens to arrive.  `sync-from-db!` is driven by three watches
+    ;; (`:ui/server-revision`, `:ui/connection`, session or epoch change); an
+    ;; idle UI fires none of them, so a blank projection stays blank forever
+    ;; even though the 1500 ms `retry?` throttle would have allowed the
+    ;; request.  One scheduled pass per short window closes that gap without
+    ;; polling the database.
+    (when (and (not fetch?)
+               (not (:ready? state))
+               (:command-allowed? connection)
+               (some? command-epoch)
+               (some? session-id)
+               (or (nil? @retry-timer)
+                   (not (js/isFinite @retry-timer))))
+      (reset! retry-timer
+              (js/setTimeout
+               (fn []
+                 (reset! retry-timer nil)
+                 (sync-from-db! nil))
+               retry-delay-ms)))))
 
 (defn install!
   [app]
   (reset! fetched-session nil)
   (reset! last-state nil)
+  (when (some? @retry-timer)
+    (js/clearTimeout @retry-timer)
+    (reset! retry-timer nil))
   (set-app! app)
   ;; `install!` runs again on hot reload and after a transport restart; the
   ;; listener must stay unique or one receipt is reduced twice.
