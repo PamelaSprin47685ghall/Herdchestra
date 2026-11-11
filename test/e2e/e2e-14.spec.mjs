@@ -302,13 +302,19 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
       // the DOM), so the server classifies every observation as private.
       // Approve private-page read once, up front; the observe then returns
       // real text instead of :private-read-confirmation-required.
+      //
+      // The confirmation is a round trip: the click posts, the server
+      // answers, the badge re-renders.  A fixed 800 ms sleep sometimes
+      // reads the badge before that lands and reports a false negative.
+      // Wait for the badge text instead.
       const approveEarly = page.getByRole('button', { name: '确认私密页读取' });
       if (await approveEarly.count()) {
         await approveEarly.first().evaluate((el) => el.click());
-        await page.waitForTimeout(800);
       }
       checks.privateReadApproved = await page.getByText('私密页读取：已确认')
-        .count() > 0;
+        .first()
+        .waitFor({ state: 'visible', timeout: 15000 })
+        .then(() => true, () => false);
 
       await observe(page);
       try {
@@ -492,10 +498,16 @@ test('@e2e E2E 14 managed browser observe, takeover and tab close', async ({ pag
         .count();
       // The workbench session itself is untouched: navigate back to
       // sessions and confirm the session row still exists.
+      //
+      // `waitForShell` only waits for the shell container, not for the
+      // session list to receive its first snapshot.  Counting immediately
+      // reads an empty list and reports a false negative.  Wait for the row.
       await goto(page, app.url, '/sessions');
       await waitForShell(page);
-      checks.sessionKept = await page.locator('.wb-session-list .wb-list-button')
-        .count() > 0;
+      const sessionRow = page.locator('.wb-session-list .wb-list-button').first();
+      checks.sessionKept = await sessionRow
+        .waitFor({ state: 'visible', timeout: 15000 })
+        .then(() => true, () => false);
       evidence.screenshots.push(await shot(page, '09-after-close'));
 
       evidence.ok = Object.values(checks).every(Boolean);
