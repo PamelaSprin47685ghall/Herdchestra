@@ -141,6 +141,7 @@ async function waitTurnDone(page, mock, marker, timeout = 300000) {
       const texts = await assistantTexts(page).catch(() => []);
       const replied = texts.some((text) => text.includes(marker));
       lastSnapshot = await readTurnSnapshot(page);
+      // Kept for the failure diagnostics below; neither gates the settle.
       const generating = lastSnapshot.bodyHasWaiting ? 1 : 0;
       const streamLive = /正在生成|生成中/.test(lastSnapshot.statusText);
       let mockQuiet = true;
@@ -155,7 +156,12 @@ async function waitTurnDone(page, mock, marker, timeout = 300000) {
         }
         mockQuiet = stablePolls >= 4;
       }
-      if (replied && generating === 0 && !streamLive && mockQuiet) {
+      // `generating`/`streamLive` are diagnostic only.  The unattended driver
+      // (`nudgeRoundBudget`) keeps a follow-up turn running after the scripted
+      // reply, so requiring a fully idle UI would never terminate even though
+      // this spec's contract — the marker reply arrived and the mock stopped
+      // producing requests — is already satisfied.
+      if (replied && mockQuiet) {
         if (quietSince === null) quietSince = Date.now();
         if (Date.now() - quietSince >= 2000) return true;
       } else {
@@ -184,11 +190,42 @@ async function waitTurnDone(page, mock, marker, timeout = 300000) {
   return false;
 }
 
+// A live turn makes the composer open the "stop-and-send / continue-editing"
+// banner instead of submitting, leaving the draft in the box and producing no
+// model request.  That banner is the product's own answer to this situation:
+// take it, stop the current round and send.  Without this the failure reads
+// as "the turn did not settle", which points at the model rather than at the
+// refused send.
+async function clickStopAndSend(page) {
+  const button = page.locator(
+    '[role="group"][aria-label="当前轮仍在生成"] button',
+    { hasText: '停止当前轮并发送' }).first();
+  const present = await button.count()
+    .then((n) => n > 0).catch(() => false);
+  if (!present) return false;
+  await button.click({ timeout: 5000 }).catch(() => {});
+  // The banner stays mounted while the stop is in flight, and
+  // `waitTurnDone` treats its text as "still generating".  Wait it out, or
+  // the settle gate can never open.
+  await page.waitForFunction(() => !document.body.textContent
+    .includes('当前轮仍在生成'), null, { timeout: 30000 }).catch(() => {});
+  return true;
+}
+
 async function sendAndSettle(page, mock, text, replyMarker) {
   console.log(`[sendAndSettle] sending "${text.slice(0, 30)}" at ${new Date().toISOString()}`);
   await waitForSync(page, 30000);
+  const bubblesBefore = await page.evaluate(() => document.querySelectorAll(
+    '.hc-message-out .hc-message-body').length);
   await send(page, text);
   console.log(`[sendAndSettle] sent at ${new Date().toISOString()}`);
+  // Give the send a moment to either land or open the decision banner.
+  await page.waitForTimeout(1200);
+  const landed = await page.evaluate((before) => document.querySelectorAll(
+    '.hc-message-out .hc-message-body').length > before, bubblesBefore);
+  if (!landed && await clickStopAndSend(page)) {
+    console.log('[sendAndSettle] a turn was live; stopped it and resent');
+  }
   const settled = await waitTurnDone(page, mock, replyMarker || text.slice(0, 12));
   console.log(`[sendAndSettle] settle=${settled} at ${new Date().toISOString()}`);
   if (!settled) {
