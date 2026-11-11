@@ -96,6 +96,7 @@
 - **影响**：消息错投、草稿错位；用户看到会话归属错误，且后续上下文可能挂到错误会话。
 - **建议**：在 `:session/create` 回执前禁用发送，或把发送排队到 selected-session 更新之后；也可让命令携带 expected session id 并在回执校验，不匹配则拒绝而不是落盘。
 - **证据**：本轮 E2E 新建会话用例使用 helper 等待 `:session/create` 回执；产品侧无门控。
+- **补充证据（2026-11-11）**：E2E 19 在全新 data-dir 上稳定复现了同一竞态更隐蔽的一面。服务端启动时会预建一个空默认会话，因此 `newSession` 的「当前会话已有消息」判据恒为假，helper 点击后立即返回、不等回执；紧随其后的 Enter 命中本地门控 `:connection-not-ready`，消息被静默丢弃（草稿保留、无气泡），页面看似「连接中断」实为 teardown 后的遗照。测试侧已改为先等发送按钮可用再按 Enter；**产品侧门控仍未实现**，即本条缺口依旧成立。
 
 ## D-45 浏览器录音（WebM）无法使用云端语音识别
 
@@ -114,3 +115,21 @@
 - **影响**：跨 spec/门禁比较源树哈希会误报；E2E 21 的哈希不能直接与标准 tree 哈希对齐。
 - **建议**：所有 spec 必须从 `test/e2e/support/evidence.mjs` 导入 `sourceTreeSha256`，禁止本地重写；确需自定义口径时必须在证据中显式标记，并在门禁比较时排除。
 - **状态**：已知限制，不视为失败；已在 `HACK.md` §17.29 记录。
+
+## D-47 devops worker 内部的 shell 动作不进 Owner 调用账本
+
+- **条款**：`AGENTS.md` §5.3（未结责任与 `:outcome-unknown` 恢复窗口）、§4.4（`.call` 会话边界）。
+- **位置**：`src/hc/server/app/devops.clj:121-126` 与 `src/hc/server/app/system.clj:2381-2395` 的 `call` helper 同步执行 shell；`src/hc/compose/owner/state.clj:1631-1660` 的 `recover-state` 只把 Owner 账本里 `:dispatching`/`:running` 的 call 标为 `:outcome-unknown`；`src/hc/server/app/snapshot.clj:308-327` 只发布这些 call。
+- **缺口**：Plan dedicated worker 通过 `call` 工具启动的 shell 会话不写入 Owner 的 `:calls`。JVM 被 SIGKILL 时，worker 的 shell 确实在途，但重启后没有任何记录可标 `:outcome-unknown`，「结果待确认」面板不会出现。
+- **影响**：worker 侧的外部副作用在硬崩溃后失去可核对入口，与 §5.3「可能产生外部副作用的 Shell 结果未知时优先核对」不一致。E2E 10 因此只能靠 Plan 顶层 `clj-plan` 的 call 记录来间接覆盖。
+- **建议**：让 devops worker 的 `call` 也登记为 Owner 可恢复的动作（或让 worker 会话把在途 shell 事实汇报给父 Owner），使 `recover-state` 能覆盖它；同时补一条针对该路径的验收。
+- **优先级**：中；当前 E2E 10 已用顶层 call 覆盖同类语义，但 worker 路径本身仍是盲区。
+
+## D-48 `stop-tree!` 的 `:settle-ms` 未随 `:stop-grace-ms` 一起收敛
+
+- **条款**：`AGENTS.md` §4.4（会话边界与停止语义）、§8.3 F11/F12。
+- **位置**：`src/hc/server/shell/process.clj` 的 `stop-tree!`：`:settle-ms` 默认 150，`:stop-grace-ms` 由 `runner :limits` 传入（默认 2000，测试可设 300）。
+- **缺口**：`stop-tree!` 在发第一轮信号前固定等待 `:settle-ms`，让 `sh` 完成 fork；该值不来自 `runner :limits`，调用点也无法按会话覆盖。
+- **影响**：每次停止至少多等 150 ms；若某个会话把 `:stop-grace-ms` 设得比 150 ms 更短（测试里就是 300），实际停止时长由 `:settle-ms` 而非 `:stop-grace-ms` 主导，参数语义不一致。
+- **建议**：把 `:settle-ms` 纳入 `runner :limits`（例如 `:stop-settle-ms`），并让 `session.clj` 的四个 `stop-tree!` 调用点统一透传；或按 `min(settle-ms, grace-ms)` 收敛。
+- **优先级**：低；不影响正确性，只影响停止延迟与参数一致性。

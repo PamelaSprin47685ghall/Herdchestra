@@ -3450,13 +3450,18 @@
            stop-timeout-ms]}]
   (let [executor (Executors/newSingleThreadScheduledExecutor
                   (thread-factory "hc-publisher"))
+        ;; The heartbeat must not queue behind a state publish: its whole
+        ;; meaning is "the channel is alive".  A separate thread keeps that
+        ;; signal honest when a publish is slow.
+        heartbeat-executor (Executors/newSingleThreadScheduledExecutor
+                            (thread-factory "hc-heartbeat"))
         timeout-ms (long (or stop-timeout-ms 10000))
         stopped? (atom false)
         ;; One lock covers every state read.  The scheduled executor is
-        ;; single-threaded, but Owner notifications call `publish-now!`
-        ;; directly from their own threads.  `stop!` sets `stopped?`, then
-        ;; waits for the executor and for this lock, so no read can cross
-        ;; `close-store!`.
+        ;; single-threaded and Owner notifications now only mark dirty (see
+        ;; `subscribe-owner!`), so every read of this lock happens on
+        ;; `hc-publisher`.  `stop!` sets `stopped?`, then waits for the
+        ;; executor and for this lock, so no read can cross `close-store!`.
         publish-lock (ReentrantLock.)
         scheduled? (atom false)
         subscribed (atom {})
@@ -3471,8 +3476,19 @@
             (try
               (let [unsubscribe
                     ((:subscribe! handle)
+                     ;; Mark dirty; do not publish here.  `publish-now!` takes
+                     ;; the publish lock and rebuilds the whole baseline, so
+                     ;; running it on every Owner commit made submission
+                     ;; density equal publish count.  A streaming turn commits
+                     ;; per chunk; the publisher then never caught up, and the
+                     ;; 5 s heartbeat queued behind it on the same single
+                     ;; thread — the browser saw 166 s of silence and reported
+                     ;; "连接中断" while the socket was still open.  `schedule!`
+                     ;; already coalesces bursts behind a 25 ms CAS, and the
+                     ;; 500 ms level-triggered fallback still guarantees
+                     ;; convergence if a notification is ever lost.
                      (fn [_notification]
-                       (when-let [f (:publish-now! @system-ref)] (f))))]
+                       (when-let [f (:schedule-publish! @system-ref)] (f))))]
                 (swap! subscribed assoc session-id unsubscribe))
               (catch Throwable _ nil))))
         previous-calls (atom {})
@@ -3794,8 +3810,15 @@
     ;; Lightweight recovery checkpoint.  Clients use this to re-query pending
     ;; command receipts without receiving a complete state snapshot; it does
     ;; not consume a feed sequence and carries no state payload.
+    ;;
+    ;; It runs on its own thread on purpose.  The heartbeat means "the channel
+    ;; is alive"; sharing `hc-publisher` with the state publish made the
+    ;; heartbeat inherit any publish stall, and a client that sees no
+    ;; heartbeat for a few cycles concludes the transport died even while the
+    ;; socket is open.  A separate scheduler keeps a slow publish visible as
+    ;; a slow publish instead of disguising it as a disconnect.
     (.scheduleWithFixedDelay
-     executor
+     heartbeat-executor
      ^Runnable (fn []
                  (try
                    (gateway/broadcast!
@@ -3828,6 +3851,9 @@
                 ;; check holds `publish-lock`; the executor wait below covers
                 ;; scheduled reads and the lock wait covers direct calls.
                 (compare-and-set! stopped? false true)
+                ;; The heartbeat holds no state and reads nothing from the
+                ;; store, so it can stop before the publish drain below.
+                (.shutdownNow heartbeat-executor)
                 (remove-watch owners ::publisher)
                 (unsubscribe-all!)
                 (if publisher-thread?
@@ -5954,7 +5980,11 @@
                                      :search-contexts search-contexts
                                                      :artifacts artifacts-component
                                                      :scheduler (:scheduler scheduler-start)}})]
-        (reset! notify-ref (:publish-now! publisher))
+        ;; Every `notify-ref` call site means "state changed, tell the
+        ;; browser".  Bind the coalescing scheduler, not the publish itself:
+        ;; a direct call rebuilds the whole baseline under the publish lock,
+        ;; and these fire per tool result and per streamed chunk.
+        (reset! notify-ref (:schedule-publish! publisher))
         (swap! system-ref assoc :publisher publisher)
         @system-ref)))))
       (catch Throwable t

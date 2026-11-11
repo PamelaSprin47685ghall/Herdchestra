@@ -9,7 +9,7 @@ import { startApp } from './support/app.mjs';
 import { LONG_TEXT, startMockModel } from './support/mock-model.mjs';
 import { checksOk, recordEvidence } from './support/evidence.mjs';
 import {
-  assert, composer, ensureIdle, evidenceDir, goto, newSession, selectFirstSession,
+  assert, composer, evidenceDir, goto, newSession, selectFirstSession,
   shot, turnLive, userTexts, waitForSettings, waitForSync,
 } from './support/ui.mjs';
 import {
@@ -185,6 +185,18 @@ async function waitUntilIdle(page, timeout = 30000) {
   return false;
 }
 
+// The send button reflects the rendered send intent.  Waiting for it to
+// enable is the cheapest way to know the composer state has caught up with
+// the DOM, without depending on any particular frame timing.
+async function waitForSendReady(page, timeout = 20000) {
+  const ok = await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="发送消息"]');
+    return Boolean(button && !button.disabled
+      && button.getAttribute('aria-disabled') !== 'true');
+  }, null, { timeout }).then(() => true, () => false);
+  assert(ok, 'send button never became enabled');
+}
+
 // Wait for THIS turn's assistant reply, not whichever assistant body happens
 // to be stable.  The user bubble must carry the turn's unique text, and an
 // assistant bubble after that user bubble must carry the mock reply marker.
@@ -308,11 +320,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     // for the gate first, then prove Enter — and not the button — sends.
     const first = `键盘发送 ${MARKER}`;
     await composer(page).fill(first);
-    const sendReady = await page.waitForFunction(() => {
-      const button = document.querySelector('button[aria-label="发送消息"]');
-      return Boolean(button && !button.disabled);
-    }, null, { timeout: 40000 }).then(() => true, () => false);
-    assert(sendReady, 'send button never became enabled for the keyboard turn');
+    await waitForSendReady(page, 40000);
     const usersBeforeEnter = (await userTexts(page)).length;
     await composer(page).press('Enter');
     try {
@@ -333,7 +341,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       && enterUsers.filter((text) => text.includes(first)).length === 1;
     if (!checks.enterSends) diagnostics.enter = await collectTurnDiagnostics(page);
     assert(checks.enterSends, 'Enter did not send exactly one message');
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     await composer(page).fill('第一行');
     const usersBeforeShift = (await userTexts(page)).length;
@@ -351,6 +359,11 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
 
     const repeatText = `连按只发一条 ${MARKER}`;
     await composer(page).fill(repeatText);
+    // The textarea is uncontrolled: `fill` updates the DOM at once but the
+    // rendered send intent lags one frame.  Pressing Enter inside that window
+    // used to be dropped silently.  The product now falls back to the DOM
+    // value, and this wait keeps the spec from depending on either behaviour.
+    await waitForSendReady(page);
     const usersBeforeRepeat = (await userTexts(page)).length;
     await composer(page).press('Enter');
     await composer(page).press('Enter');
@@ -363,10 +376,11 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       diagnostics.keyRepeat = await collectTurnDiagnostics(page);
     }
     assert(checks.keyRepeatSendsOnce, `rapid Enter produced ${repeatUsers.length - usersBeforeRepeat} messages`);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     const doubleText = `双击只发一条 ${MARKER}`;
     await composer(page).fill(doubleText);
+    await waitForSendReady(page);
     const usersBeforeDouble = (await userTexts(page)).length;
     await page.locator(SEND_SELECTOR).first().dblclick();
     const doubleReply = await waitForTurnReply(page, doubleText);
@@ -378,7 +392,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       diagnostics.doubleClick = await collectTurnDiagnostics(page);
     }
     assert(checks.doubleClickSendsOnce, `double click produced ${doubleUsers.length - usersBeforeDouble} messages`);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     const actionNames = await page.locator('.hc-message-actions button').evaluateAll((nodes) =>
       nodes
@@ -520,7 +534,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
 
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     // --- 200% at 820: tablet drawer band --------------------------------
     await page.setViewportSize({ width: 820, height: 900 });
@@ -560,7 +574,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05a-tablet-200'));
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     // --- Desktop 1440: compact targets and stop/send/close ----------------
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -614,7 +628,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       `a compact button is under 32x32: ${JSON.stringify(compactTargets.filter((row) => row.width < 32 || row.height < 32))}`);
     assert(checks.desktopMenuHiddenByDesign, 'the desktop menu trigger is still shown');
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05-desktop-200'));
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     // --- IME: composing Enter never sends --------------------------------
     await waitUntilIdle(page, 30000);
@@ -681,7 +695,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       Object.assign(diagnostics, await collectTurnDiagnostics(page));
     }
     assert(checks.normalEnterStillSends, 'a normal Enter no longer sends after composition');
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
     evidence.screenshots.push(await shot(page, dir, 'e2e19-06-ime'));
 
     // --- Focus return and the three-level Escape hierarchy ----------------
