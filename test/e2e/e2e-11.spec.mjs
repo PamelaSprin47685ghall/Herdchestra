@@ -351,6 +351,26 @@ async function waitUserBubble(page, count, timeout = 20000) {
   return false;
 }
 
+// Send TEXT and wait for the turn to settle.
+//
+// The gate can close again between the wait and the click: the unattended
+// driver (`nudgeRoundBudget`) starts a follow-up turn of its own, so "idle"
+// is a window, not a state.  When the click lands inside a live turn the
+// composer opens the "stop-and-send / continue-editing" banner instead of
+// submitting, and the draft stays in the box.  That banner is the product's
+// own answer to this situation, so take it: stop the current round and send.
+// Anything else (a pending envelope, a missing model) is a real failure.
+async function clickStopAndSend(page) {
+  const button = page.locator(
+    '[role="group"][aria-label="当前轮仍在生成"] button',
+    { hasText: '停止当前轮并发送' }).first();
+  const present = await button.count()
+    .then((n) => n > 0).catch(() => false);
+  if (!present) return false;
+  await button.click({ timeout: 5000 }).catch(() => {});
+  return true;
+}
+
 async function sendAndSettle(page, mock, text, expectedMainCalls) {
   await waitForSync(page, 30000);
   const gate = await waitTurnGateClear(page);
@@ -360,7 +380,13 @@ async function sendAndSettle(page, mock, text, expectedMainCalls) {
   const before = await lastAssistantText(page).catch(() => '');
   const bubbles = await userBubbleCount(page);
   await send(page, text);
-  const accepted = await waitUserBubble(page, bubbles + 1);
+  let accepted = await waitUserBubble(page, bubbles + 1);
+  if (!accepted) {
+    // A live turn opened the decision banner instead of submitting.
+    if (await clickStopAndSend(page)) {
+      accepted = await waitUserBubble(page, bubbles + 1, 60000);
+    }
+  }
   assert(accepted,
          `the send was refused, no user bubble appeared for ${JSON.stringify(text)}`
          + ` (diag=${JSON.stringify(
@@ -412,7 +438,10 @@ async function materialsAgreement(page) {
       uiReady: ui.ready,
       uiRevision: ui.revision,
       uiRows: ui.memoryCount,
+      uiError: ui.error,
+      uiLastError: ui.lastError,
       selectedSessionId: db.selectedSessionId,
+      sessionFlags: db.sessionFlags,
       // The top-level `:materials/*` keys are the last pushed baseline and
       // legitimately lag the rendered projection; only the projection has to
       // describe the selected session.
@@ -423,10 +452,16 @@ async function materialsAgreement(page) {
   }).catch((error) => ({ probe: `failed: ${String(error)}` }));
 }
 
+// Open the materials page and wait until the rendered projection describes
+// the selected session.
+//
+// A full page load resets the bridge's `fetched-session`, so the first
+// refresh after it always goes out; each further `goto` interrupts whatever
+// refresh was in flight and starts over.  Retrying by reloading therefore
+// never lets a slow snapshot land.  Load once, then poll in place; reload
+// only if the whole wait expires.
 async function openMaterialsMemory(page, appUrl) {
-  const deadline = Date.now() + 120000;
-  let lastNote = '';
-  while (Date.now() < deadline) {
+  const attempt = async (timeout) => {
     await goto(page, appUrl, '/materials');
     // A full page load reconnects the transport; wait for the sync badge
     // before asking for materials, otherwise the snapshot command is refused.
@@ -435,24 +470,23 @@ async function openMaterialsMemory(page, appUrl) {
       .click({ timeout: 15000 }).catch(() => {});
     await page.locator('.hc-mat-section').first()
       .waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-    const ready = await page.locator('.hc-mat-badge')
-      .filter({ hasText: '材料库已就绪' }).first()
-      .waitFor({ state: 'visible', timeout: 20000 })
-      .then(() => true).catch(() => false);
-    // Poll for agreement for a few seconds: the badge can be ready from an
-    // earlier render while the authoritative snapshot is still in flight.
-    const agreeDeadline = Date.now() + 15000;
+    const deadline = Date.now() + timeout;
     let agreement = await materialsAgreement(page);
-    while (ready && !agreement.agree && Date.now() < agreeDeadline) {
+    while (!agreement.agree && Date.now() < deadline) {
       await page.waitForTimeout(400);
       agreement = await materialsAgreement(page);
     }
-    if (ready && agreement.agree) return agreement;
-    lastNote = `badge=${ready}; agreement=${JSON.stringify(agreement)}`;
-    await page.waitForTimeout(2000);
+    return agreement;
+  };
+  let agreement = await attempt(90000);
+  if (!agreement.agree) {
+    agreement = await attempt(60000);
   }
-  throw new Error(
-    `materials never settled on the selected session: ${lastNote}`);
+  if (!agreement.agree) {
+    throw new Error(
+      `materials never settled on the selected session: ${JSON.stringify(agreement)}`);
+  }
+  return agreement;
 }
 
 function memoryCheckbox(page, label) {

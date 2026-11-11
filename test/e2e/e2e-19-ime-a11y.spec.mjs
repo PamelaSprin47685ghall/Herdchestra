@@ -219,6 +219,19 @@ async function clickUncovered(page, selector) {
   await page.locator(selector).first().click();
 }
 
+// The long-reply phases only need the turn to *start*; the mock streams
+// LONG_TEXT at 8 chars / 50 ms, so letting it finish would cost minutes and
+// the next phase would still find "正在生成".  Stop it explicitly instead of
+// discarding a `waitUntilIdle` result — a still-running turn makes
+// `send-blocker` return `:generating`, and the next send is then refused.
+async function stopAndSettle(page, timeout = 30000) {
+  const stop = page.locator(STOP_SELECTOR).first();
+  if (await stop.count() && await stop.isVisible().catch(() => false)) {
+    await stop.click({ timeout: 3000 }).catch(() => {});
+  }
+  return waitUntilIdle(page, timeout);
+}
+
 // Wait for THIS turn's assistant reply, not whichever assistant body happens
 // to be stable.  The user bubble must carry the turn's unique text, and an
 // assistant bubble after that user bubble must carry the mock reply marker.
@@ -556,7 +569,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
 
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await waitUntilIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- 200% at 820: tablet drawer band --------------------------------
     await page.setViewportSize({ width: 820, height: 900 });
@@ -596,7 +609,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05a-tablet-200'));
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await waitUntilIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- Desktop 1440: compact targets and stop/send/close ----------------
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -650,7 +663,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       `a compact button is under 32x32: ${JSON.stringify(compactTargets.filter((row) => row.width < 32 || row.height < 32))}`);
     assert(checks.desktopMenuHiddenByDesign, 'the desktop menu trigger is still shown');
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05-desktop-200'));
-    await waitUntilIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- IME: composing Enter never sends --------------------------------
     await waitUntilIdle(page, 30000);
@@ -717,7 +730,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       Object.assign(diagnostics, await collectTurnDiagnostics(page));
     }
     assert(checks.normalEnterStillSends, 'a normal Enter no longer sends after composition');
-    await waitUntilIdle(page, 30000);
+    await stopAndSettle(page, 30000);
     evidence.screenshots.push(await shot(page, dir, 'e2e19-06-ime'));
 
     // --- Focus return and the three-level Escape hierarchy ----------------
