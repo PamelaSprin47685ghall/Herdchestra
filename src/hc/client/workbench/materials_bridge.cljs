@@ -156,10 +156,18 @@
         current (:ui/materials db)
         same-session? (= (:selected-session-id state)
                          (:selected-session-id current))
-        stale? (and same-session?
-                    (integer? (:revision state))
-                    (integer? (:revision current))
-                    (< (:revision state) (:revision current)))
+        ;; A snapshot with no revision cannot describe newer server state:
+        ;; it is either a blank projection or a session mismatch.  Never let
+        ;; it replace a projection that carries a revision, or the badge and
+        ;; rows blink to empty while the real data is still current.
+        no-revision-downgrade? (and same-session?
+                                    (nil? (:revision state))
+                                    (integer? (:revision current)))
+        stale? (or no-revision-downgrade?
+                   (and same-session?
+                        (integer? (:revision state))
+                        (integer? (:revision current))
+                        (< (:revision state) (:revision current))))
         ;; A stale write is stale only in its server-derived revision: the
         ;; database already holds a newer snapshot.  Dropping the whole
         ;; state would also drop the local delta the write carried — a
@@ -445,13 +453,35 @@
         ;; `install-sync` projects; read it directly instead.
         connection (bridge/connection)
         snapshot (materials/snapshot-from-db db)
+        ;; `selected-session-id` falls back to the first visible session
+        ;; whenever the requested id is missing from the visible session
+        ;; table.  That is right for a deleted session, but the table is
+        ;; windowed: while a snapshot is re-installed the old id can vanish
+        ;; for a commit or two.  Taking the fallback then calls
+        ;; `begin-session` with a *different* session, which blanks
+        ;; `:ui/materials` (`ready? false`, `revision nil`); the blank
+        ;; projection has no revision, so the stale guard accepts it over
+        ;; good data, and the 1500 ms retry window then refuses to re-fetch.
+        ;; The badge flips to "材料库未就绪" with zero rows even though the
+        ;; session never changed.  Only start a new materials session when
+        ;; the previous one is genuinely gone (deleted, or replaced in every
+        ;; table that could still describe it); a transient absence keeps
+        ;; the existing state and waits for the snapshot.
+        previous-id (:selected-session-id current)
         selected-id (or (wb-model/selected-session-id db)
                         (get-in snapshot [:materials/session :session-id]))
+        vanished? (and previous-id
+                       (not= previous-id selected-id)
+                       (nil? (wb-model/session-by-id db previous-id))
+                       (not= previous-id
+                               (get-in snapshot [:materials/session :session-id])))
         session-changed? (and selected-id
-                              (not= selected-id (:selected-session-id current)))
+                              (not= selected-id (:selected-session-id current))
+                              (or (nil? previous-id) vanished?))
         current (if session-changed?
                   (materials/begin-session current selected-id)
-                  (assoc current :selected-session-id selected-id))
+                  (update current :selected-session-id
+                          (fn [existing] (or existing selected-id))))
         state (materials/apply-snapshot current snapshot)
         session-id (or (:selected-session-id state)
                        (get-in state [:session :session-id]))

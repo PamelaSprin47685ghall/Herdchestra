@@ -936,7 +936,13 @@ button.wb-badge:focus-visible,
 
 .wb-toast-stack {
   position: fixed;
-  top: 16px;
+  /* Clear the topbar.  It is 56px tall with 6px vertical padding and sits at
+     the same z-index (50), so at `top: 16px` the stack's close button landed
+     exactly on `#wb-aux-toggle` and swallowed every click there — the toggle
+     became unusable for as long as a notice stayed on screen, and notices
+     never expire on their own.  Keeping the stack below the bar removes the
+     overlap at every width. */
+  top: 68px;
   right: 16px;
   z-index: 50;
   display: flex;

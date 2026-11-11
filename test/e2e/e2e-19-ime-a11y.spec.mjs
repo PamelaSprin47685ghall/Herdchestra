@@ -157,19 +157,21 @@ async function waitForNav(page, open) {
 
 async function sendLongReply(page, text) {
   await composer(page).fill(text);
-  const sendButton = page.locator(SEND_SELECTOR).first();
-  const enabledSince = Date.now();
-  let enabled = false;
-  while (Date.now() - enabledSince < 30000) {
-    enabled = await sendButton.isEnabled()
-      && (await sendButton.getAttribute('aria-disabled')) !== 'true';
-    if (enabled) break;
-    await page.waitForTimeout(200);
-  }
-  if (!enabled) return false;
-  await sendButton.click();
-  const started = Date.now();
-  while (Date.now() - started < 20000) {
+  await waitForSendReady(page, 30000);
+  // Prove this message specifically was submitted.  `turnLive` only says
+  // "a turn is running", so a still-streaming previous reply made it true
+  // and the caller saw success for a message that was never sent.
+  const usersBefore = (await userTexts(page)).length;
+  await page.locator(SEND_SELECTOR).first().click();
+  const submitted = await page.waitForFunction(({ count, needle }) => {
+    const bubbles = document.querySelectorAll('.hc-message-out .hc-message-body');
+    if (bubbles.length <= count) return false;
+    return [...bubbles].some((node) => (node.innerText || '').includes(needle));
+  }, { count: usersBefore, needle: text }, { timeout: 20000 })
+    .then(() => true, () => false);
+  if (!submitted) return false;
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
     if (await turnLive(page)) return true;
     await page.waitForTimeout(200);
   }
@@ -195,6 +197,26 @@ async function waitForSendReady(page, timeout = 20000) {
       && button.getAttribute('aria-disabled') !== 'true');
   }, null, { timeout }).then(() => true, () => false);
   assert(ok, 'send button never became enabled');
+}
+
+// Click a control only after proving nothing covers it.  Playwright's action
+// retries a covered click for the whole test budget, which turns a layering
+// bug into a ten-minute timeout with no stated cause.  A notice stack over
+// the topbar did exactly that once; this check names the coverer instead.
+async function clickUncovered(page, selector) {
+  const blocked = await page.evaluate((sel) => {
+    const target = document.querySelector(sel);
+    if (!target) return 'element missing';
+    const box = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      box.x + box.width / 2, box.y + box.height / 2);
+    if (!hit) return 'no element at the centre';
+    if (hit === target || target.contains(hit)) return null;
+    if (hit.closest && hit.closest('.wb-toast-stack')) return 'a notice covers it';
+    return `covered by ${hit.tagName}/${hit.className}`;
+  }, selector);
+  assert(!blocked, `${selector} is not clickable: ${blocked}`);
+  await page.locator(selector).first().click();
 }
 
 // Wait for THIS turn's assistant reply, not whichever assistant body happens
@@ -511,7 +533,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     ]);
     // The topbar toggle is the stable entry at both drawer widths; the
     // session-header opener is exercised by the focus-return phase below.
-    await page.locator('#wb-aux-toggle').first().click();
+    await clickUncovered(page, '#wb-aux-toggle');
     evidence.mobileAuxOpenedBy = 'wb-aux-toggle';
     await waitForAux(page, true);
     await page.locator(AUX_CLOSE_SELECTOR).first().waitFor({ state: 'visible', timeout: 5000 });
@@ -553,7 +575,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       { name: 'stop', selector: STOP_SELECTOR },
       { name: 'menu', selector: MENU_SELECTOR },
     ]);
-    await page.locator('#wb-aux-toggle').first().click();
+    await clickUncovered(page, '#wb-aux-toggle');
     await waitForAux(page, true);
     await page.locator(AUX_CLOSE_SELECTOR).first().waitFor({ state: 'visible', timeout: 5000 });
     await waitForSettledTarget(page, AUX_CLOSE_SELECTOR);
