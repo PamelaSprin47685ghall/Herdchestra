@@ -285,19 +285,143 @@ async function waitMockQuiet(mock, count, timeout = 120000) {
   }
   return false;
 }
+// A rejected send leaves no user bubble and no model request, so the next
+// assertion reads "turn did not settle" without naming the cause.
+//
+// Three different gates can refuse a send, and they need different answers:
+//
+//   * `:generating` — the previous turn is still streaming.  The send opens
+//     the "stop-and-send / continue-editing" banner instead of submitting
+//     (`decisionBanner`), and nothing reaches the model.  Wait for the
+//     previous turn to finish; that is what this helper's callers mean.
+//   * `:duplicate` — an earlier send envelope has no receipt yet.  The
+//     composer keeps the draft and says nothing.  Wait for the pending list
+//     to empty.
+//   * `:unattended` — the unattended driver owns the turn.  Not applicable
+//     here; it would be a real failure.
+//
+// The send button's own enabled state is NOT the signal: `request-send!`
+// hands the DOM snapshot to the bridge whenever the textarea holds text, so a
+// `:disabled` intent still submits.
+async function turnGate(page) {
+  return page.evaluate(() => {
+    const probe = window.__HC_DB__;
+    const db = typeof probe === 'function' ? probe() : null;
+    // `intent` is a view-model derivative, not stored state, so the DOM
+    // banner is the observable stand-in for `:generating`.  Pending sends are
+    // in the database and cover the silent `:duplicate` gate.
+    return {
+      decision: Boolean(document.querySelector(
+        '[role="group"][aria-label="当前轮仍在生成"]')),
+      pending: db && Array.isArray(db.pendingCommands)
+        ? db.pendingCommands.length : 0,
+      // `aria-label="停止当前生成"` is mounted even while idle: the control
+      // stays in the DOM and its *label text* changes (`停止` when there is
+      // nothing to stop).  Its presence is therefore not a turn signal, and
+      // neither is `disabled` (only `stopping?` and a missing callback set
+      // it).  The decision banner and the pending list are the real gates.
+    };
+  });
+}
+
+async function waitTurnGateClear(page, timeout = 90000) {
+  const deadline = Date.now() + timeout;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await turnGate(page).catch(() => null);
+    if (last && !last.decision && last.pending === 0) {
+      return { cleared: true, state: last };
+    }
+    await page.waitForTimeout(250);
+  }
+  return { cleared: false, state: last };
+}
+
+async function userBubbleCount(page) {
+  return page.evaluate(() => document.querySelectorAll(
+    '.hc-message-out .hc-message-body').length);
+}
+
+async function waitUserBubble(page, count, timeout = 20000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if ((await userBubbleCount(page)) >= count) return true;
+    await page.waitForTimeout(200);
+  }
+  return false;
+}
 
 async function sendAndSettle(page, mock, text, expectedMainCalls) {
   await waitForSync(page, 30000);
+  const gate = await waitTurnGateClear(page);
+  assert(gate.cleared,
+         `the previous turn never finished before sending ${JSON.stringify(text)}`
+         + ` (gate=${JSON.stringify(gate.state)})`);
   const before = await lastAssistantText(page).catch(() => '');
+  const bubbles = await userBubbleCount(page);
   await send(page, text);
+  const accepted = await waitUserBubble(page, bubbles + 1);
+  assert(accepted,
+         `the send was refused, no user bubble appeared for ${JSON.stringify(text)}`
+         + ` (diag=${JSON.stringify(
+           await page.evaluate(() => {
+             const input = document.querySelector('.hc-composer textarea');
+             const probe = window.__HC_DB__;
+             const db = typeof probe === 'function' ? probe() : null;
+             return {
+               composer: input ? input.value.slice(0, 80) : '<no textarea>',
+               pending: db ? db.pendingCommands : '<no probe>',
+               intent: db && db.composerIntent ? db.composerIntent : '<no probe>',
+               decisionBanner: Boolean(document.querySelector(
+                 '[role="group"][aria-label="当前轮仍在生成"]')),
+             };
+           }).catch((error) => `unreadable: ${String(error)}`))})`);
   const settled = await waitMockQuiet(mock, expectedMainCalls);
-  assert(settled, `turn did not settle: expected ${expectedMainCalls} main calls`);
+  assert(settled, `turn did not settle: expected ${expectedMainCalls} main calls`
+         + ` after ${JSON.stringify(text)}`);
   await page.waitForTimeout(800);
   const after = await lastAssistantText(page).catch(() => '');
   return { before, after };
 }
 
 // Materials page helpers ----------------------------------------------------
+
+// Open the materials page and wait until the projection the view renders
+// actually describes the session the operator selected.
+//
+// "材料库已就绪" alone is not that signal.  The badge is driven by the
+// client projection, which survives a session switch as `ready? false`; and
+// the server answers materials snapshots for *its* current session, which
+// lags a click by a command round trip.  When the two disagree the client
+// correctly discards the snapshot as cross-session, so the page can sit on a
+// ready badge with zero rows while the server holds data for another session.
+// Require the two ids to agree, and report them when they do not.
+async function materialsAgreement(page) {
+  return page.evaluate(() => {
+    const probe = window.__HC_DB__;
+    const db = typeof probe === 'function' ? probe() : null;
+    if (!db || !db.materials) return { probe: 'absent' };
+    const server = db.materials;
+    const ui = server.ui || {};
+    return {
+      serverSessionId: server.sessionId,
+      serverReady: server.ready,
+      serverRevision: server.revision,
+      uiSessionId: ui.sessionId,
+      uiSelectedSessionId: ui.selectedSessionId,
+      uiReady: ui.ready,
+      uiRevision: ui.revision,
+      uiRows: ui.memoryCount,
+      selectedSessionId: db.selectedSessionId,
+      // The top-level `:materials/*` keys are the last pushed baseline and
+      // legitimately lag the rendered projection; only the projection has to
+      // describe the selected session.
+      agree: Boolean(ui.sessionId)
+        && ui.sessionId === db.selectedSessionId
+        && ui.ready === true,
+    };
+  }).catch((error) => ({ probe: `failed: ${String(error)}` }));
+}
 
 async function openMaterialsMemory(page, appUrl) {
   const deadline = Date.now() + 120000;
@@ -315,19 +439,20 @@ async function openMaterialsMemory(page, appUrl) {
       .filter({ hasText: '材料库已就绪' }).first()
       .waitFor({ state: 'visible', timeout: 20000 })
       .then(() => true).catch(() => false);
-    if (ready) return;
-    lastNote = await page.evaluate(() => {
-      const badge = document.querySelector('.hc-mat-badge');
-      const facts = document.querySelector('.wb-facts');
-      const sync = document.querySelector('.wb-badge[aria-label^="连接状态"]');
-      return `badge=${badge ? badge.textContent.trim() : '<none>'}; `
-        + `facts=${facts ? facts.textContent.trim().slice(0, 120) : '<none>'}; `
-        + `sync=${sync ? sync.textContent.trim() : '<none>'}`;
-    }).catch(() => '<unreadable>');
-    await page.waitForTimeout(3000);
+    // Poll for agreement for a few seconds: the badge can be ready from an
+    // earlier render while the authoritative snapshot is still in flight.
+    const agreeDeadline = Date.now() + 15000;
+    let agreement = await materialsAgreement(page);
+    while (ready && !agreement.agree && Date.now() < agreeDeadline) {
+      await page.waitForTimeout(400);
+      agreement = await materialsAgreement(page);
+    }
+    if (ready && agreement.agree) return agreement;
+    lastNote = `badge=${ready}; agreement=${JSON.stringify(agreement)}`;
+    await page.waitForTimeout(2000);
   }
   throw new Error(
-    `materials never became ready after reconnect retries: ${lastNote}`);
+    `materials never settled on the selected session: ${lastNote}`);
 }
 
 function memoryCheckbox(page, label) {
@@ -777,8 +902,18 @@ test('@e2e E2E 11 memory candidates, archive and temporary sessions', async ({ p
     const visibleRows = await page.locator('.hc-memory-row:visible').count();
     const materialRevision = shellFacts['材料 revision'] ?? '—';
     const syncSeq = shellFacts['同步序号'] ?? '—';
+    // Server keys and the rendered projection are separate stores; a ready
+    // badge with zero rows means they disagree.  Dump both so the next
+    // failure names the store instead of the symptom.
+    const materialsDiag = await page.evaluate(() => {
+      const probe = window.__HC_DB__;
+      if (typeof probe !== 'function') return { probe: 'absent' };
+      const snapshot = probe();
+      return snapshot && snapshot.materials ? snapshot.materials : { materials: 'absent' };
+    }).catch((error) => ({ probe: `failed: ${String(error)}` }));
     const detail = `badge=${badgeText}; revision=${materialRevision}; `
-      + `seq=${syncSeq}; visibleRows=${visibleRows}`;
+      + `seq=${syncSeq}; visibleRows=${visibleRows}; `
+      + `materials=${JSON.stringify(materialsDiag)}`;
     check('normal-session-memory-visible',
           visibleRows >= 1 && badgeText.includes('材料库已就绪'),
           detail);
