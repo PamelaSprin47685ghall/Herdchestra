@@ -1814,3 +1814,37 @@ HC_E2E_KEEP_TEMP=1 JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
 - **复检**：`grep -n "sourceTreeSha256" test/e2e/*.spec.mjs` 应只看到导入/
   使用，不应看到本地 walk 实现；比较不同 spec 的哈希前先确认口径。
 - **适用范围**：所有 E2E 证据与门禁跨 spec 哈希比较。
+
+## 18 E2E 06 的 fixture 依赖 Pillow 与跨平台字体（2026-11-11）
+
+`[实测，2026-11-11]` 环境：macOS 25.6.0 / arm64，系统 Python 3.14.6，
+`test/e2e/e2e-06.spec.mjs`。
+
+- **现象**：E2E 06 在 macOS 上以 `fixture generation failed` 失败，栈顶是
+  `ModuleNotFoundError: No module named 'PIL'`；装好 Pillow 后又报
+  `OSError: cannot open resource`，因为字体路径只有 Linux 的两条。
+- **根因**：fixture 生成脚本假设 Linux——`/usr/share/fonts/...` 硬编码，
+  且系统 Python 一定带 Pillow。二者都不在任何依赖声明里：`pixi.toml` 只
+  供应 JDK/Clojure/Node，`deps.edn` 不涉及 Python。
+- **规范**：
+  - 字体探测按平台列出候选：Linux（Noto CJK、DejaVu）、macOS
+    （`Hiragino Sans GB.ttc`、`Songti.ttc`）、Windows（`msyh.ttc`、
+    `simhei.ttf`）。全都不存在时打印候选清单后 `exit 2`，不抛裸栈。
+  - Pillow 缺失时打印 `python3 -m pip install --user pillow` 后 `exit 2`。
+- **复检**：
+  ```bash
+  python3 -c 'import PIL; print(PIL.__version__)'   # 必须成功
+  PATH=<装好 Pillow 的解释器目录>:$PATH \
+    npx playwright test --config test/e2e/playwright.config.mjs test/e2e/e2e-06.spec.mjs
+  ```
+- **macOS 装 Pillow 的实测路径**：系统 Python 受 PEP 668 保护，
+  `pip install --user` 直接失败。可行做法是建 venv：
+  ```bash
+  python3 -m venv /private/tmp/hc-e2e-venv
+  /private/tmp/hc-e2e-venv/bin/pip install pillow
+  ```
+  注意必须用 `/private/tmp` 而非 `/tmp`：macOS 的 `/tmp` 是符号链接，
+  venv 的 `sys.prefix` 记录的是真实路径，从 `/tmp` 进入会让
+  `site-packages` 解析不一致，`import PIL` 仍失败。
+- **适用范围**：所有需要生成图像 fixture 的 E2E；新增此类 spec 时必须复用
+  同一份字体探测逻辑，不得再写死单平台路径。

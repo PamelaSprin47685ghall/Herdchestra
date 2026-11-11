@@ -299,13 +299,33 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     await newSession(page);
 
     // --- Keyboard baseline -------------------------------------------------
+    // Enter must be tested as a *keyboard* affordance, not as a race against
+    // the connection gate.  A fresh data directory reuses a pre-created blank
+    // session, so `newSession` returns before any `:session/create` receipt
+    // can arrive; pressing Enter in that window is refused locally as
+    // `:connection-not-ready` and the message is silently dropped (draft kept,
+    // no bubble).  E2E 08 gates on the send button for the same reason.  Wait
+    // for the gate first, then prove Enter — and not the button — sends.
     const first = `键盘发送 ${MARKER}`;
     await composer(page).fill(first);
+    const sendReady = await page.waitForFunction(() => {
+      const button = document.querySelector('button[aria-label="发送消息"]');
+      return Boolean(button && !button.disabled);
+    }, null, { timeout: 40000 }).then(() => true, () => false);
+    assert(sendReady, 'send button never became enabled for the keyboard turn');
     const usersBeforeEnter = (await userTexts(page)).length;
     await composer(page).press('Enter');
-    await page.waitForFunction((count) =>
-      document.querySelectorAll('.hc-message-out .hc-message-body').length > count,
-    usersBeforeEnter, { timeout: 20000 });
+    try {
+      await page.waitForFunction((count) =>
+        document.querySelectorAll('.hc-message-out .hc-message-body').length > count,
+      usersBeforeEnter, { timeout: 20000 });
+    } catch (error) {
+      // The old code only collected diagnostics after the count assertion, so
+      // a timeout here produced an empty `diagnostics` object and left no clue
+      // which gate refused the send.  Collect first, then rethrow.
+      diagnostics.enterTimeout = await collectTurnDiagnostics(page).catch(() => null);
+      throw error;
+    }
     const enterReply = await waitForTurnReply(page, first);
     const enterUsers = await userTexts(page);
     checks.enterSends = enterReply
