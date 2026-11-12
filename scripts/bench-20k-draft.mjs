@@ -26,6 +26,7 @@
 //
 // 只杀自己 spawn 的子进程；不写 git；不重建 bundle。
 
+import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -60,7 +61,14 @@ const DRAFT_CHARS = Number(arg('chars', '20000'));
 const JSON_OUT = arg('json',
   path.join(REPO_ROOT, 'plans/evidence/p-bench3/bench-20k-draft.json'));
 const EVIDENCE_DIR = path.dirname(JSON_OUT);
-const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
+const CHROME_PATH = process.env.CHROME_PATH || process.env.HC_CHROME || [
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+].find((p) => fs.existsSync(p)) || '/usr/bin/google-chrome';
 const USER_DATA = path.join(ROOT, 'chrome-profile');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -131,35 +139,77 @@ function buildDraftText(chars) {
 const DRAFT_TEXT = buildDraftText(DRAFT_CHARS);
 const DRAFT_SHA = crypto.createHash('sha256').update(DRAFT_TEXT, 'utf8').digest('hex');
 
-// ---- /proc 内存采样 -------------------------------------------------------
+// ---- /proc 或 ps 内存采样 -------------------------------------------------
+function psTable() {
+  try {
+    const out = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,state=,command='], { encoding: 'utf8' });
+    const rows = [];
+    for (const line of out.split('\n')) {
+      const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
+      if (m) {
+        rows.push({
+          pid: Number(m[1]),
+          ppid: Number(m[2]),
+          rssKb: Number(m[3]),
+          state: m[4],
+          command: m[5] || '',
+        });
+      }
+    }
+    return rows;
+  } catch { return []; }
+}
+
 function readStatus(pid) {
   try {
     const t = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
     const hwm = t.match(/^VmHWM:\s+(\d+)\s*kB/m);
     const rss = t.match(/^VmRSS:\s+(\d+)\s*kB/m);
     return { hwmKb: hwm ? Number(hwm[1]) : null, rssKb: rss ? Number(rss[1]) : null };
-  } catch { return null; }
+  } catch {
+    try {
+      const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' });
+      const rss = Number(out.trim());
+      if (Number.isFinite(rss) && rss > 0) return { hwmKb: rss, rssKb: rss };
+    } catch { /* process exited */ }
+    return null;
+  }
 }
 
 function procCmdline(pid) {
   try { return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); }
-  catch { return ''; }
+  catch {
+    try {
+      return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    } catch { return ''; }
+  }
 }
 
 function descendantsOf(rootPid) {
   const out = [];
   const queue = [rootPid];
-  const entries = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n));
+  if (fs.existsSync('/proc')) {
+    const entries = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n));
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const name of entries) {
+        const pid = Number(name);
+        if (pid === process.pid || out.includes(pid)) continue;
+        try {
+          const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+          const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+          if (ppid === cur) { out.push(pid); queue.push(pid); }
+        } catch { /* 进程已退出 */ }
+      }
+    }
+    return out;
+  }
+  const rows = psTable();
   while (queue.length) {
     const cur = queue.shift();
-    for (const name of entries) {
-      const pid = Number(name);
-      if (pid === process.pid || out.includes(pid)) continue;
-      try {
-        const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-        const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
-        if (ppid === cur) { out.push(pid); queue.push(pid); }
-      } catch { /* 进程已退出 */ }
+    for (const r of rows) {
+      if (r.pid === process.pid || out.includes(r.pid)) continue;
+      if (r.ppid === cur) { out.push(r.pid); queue.push(r.pid); }
     }
   }
   return out;
@@ -235,16 +285,25 @@ function combinedPeak(serverSamples, chromeSamples) {
 
 function findChromePid() {
   // Chrome 主进程是 node 的后代且 cmdline 含 --type 缺失（browser process
-  // 没有 --type= 参数）。遍历 /proc 找 ppid 链上属于本 node 的 chrome。
-  const entries = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n));
+  // 没有 --type= 参数）。遍历 /proc（或 ps）找 ppid 链上属于本 node 的 chrome。
   const byPpid = new Map();
-  for (const name of entries) {
-    const pid = Number(name);
-    try {
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-      const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
-      byPpid.set(pid, ppid);
-    } catch { /* exited */ }
+  let pidList = [];
+  if (fs.existsSync('/proc')) {
+    const entries = fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n));
+    for (const name of entries) {
+      const pid = Number(name);
+      pidList.push(pid);
+      try {
+        const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+        const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+        byPpid.set(pid, ppid);
+      } catch { /* exited */ }
+    }
+  } else {
+    for (const r of psTable()) {
+      pidList.push(r.pid);
+      byPpid.set(r.pid, r.ppid);
+    }
   }
   // 从 node 的直接子进程出发找 chrome
   const isDescendant = (pid) => {
@@ -257,8 +316,7 @@ function findChromePid() {
     }
     return false;
   };
-  for (const name of entries) {
-    const pid = Number(name);
+  for (const pid of pidList) {
     const cmd = procCmdline(pid);
     if (!/chrome|chromium/i.test(cmd)) continue;
     if (cmd.includes('--type=')) continue; // 只要 browser 主进程
@@ -330,9 +388,14 @@ async function stopServer(app) {
   while (Date.now() < deadline) {
     try {
       process.kill(app.pid, 0);
-      const stat = fs.readFileSync(`/proc/${app.pid}/stat`, 'utf8');
-      const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
-      if (state === 'Z') return; // zombie
+      if (fs.existsSync(`/proc/${app.pid}/stat`)) {
+        const stat = fs.readFileSync(`/proc/${app.pid}/stat`, 'utf8');
+        const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+        if (state === 'Z') return; // zombie
+      } else {
+        const state = execFileSync('ps', ['-o', 'state=', '-p', String(app.pid)], { encoding: 'utf8' }).trim();
+        if (!state || state.startsWith('Z')) return;
+      }
     } catch { return; }
     await sleep(200);
   }
