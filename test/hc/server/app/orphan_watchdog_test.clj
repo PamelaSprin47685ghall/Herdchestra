@@ -70,8 +70,25 @@
     (is (false? (#'app/start-matches?
                 (.minusSeconds start 3600)
                 (java.util.Optional/of handle))))
-    (is (true? (#'app/start-matches? nil java.util.Optional/empty))
-        "a missing start instant cannot disprove identity")))
+    (is (false? (#'app/start-matches? nil java.util.Optional/empty))
+        "an empty Optional means the process is gone, so it cannot be the same one")
+    (is (true? (#'app/start-matches? nil handle))
+        "a live handle with no recorded start instant is still a match")))
+
+(deftest parent-info-unwraps-optional-command
+  ;; `ProcessHandle$Info.commandLine` and `.command` return
+  ;; `java.util.Optional`, never nil.  Keeping the Optional made `:command`
+  ;; non-string, `shell-launcher?` false, and the orphan watchdog silently
+  ;; inert from 0.0.1 on.  `ProcessHandle/current` is alive, so its info is
+  ;; always present.
+  (let [{:keys [pid start command]} (#'app/parent-info (ProcessHandle/current))]
+    (is (integer? pid))
+    (is (some? start) "current process must report a start instant")
+    (is (string? command)
+        (str "expected a command string, got "
+             (some-> command class .getName)))
+    (is (not (instance? java.util.Optional command))
+        ":command must be unwrapped, not the Optional wrapper")))
 
 (deftest lock-held-by-flock-sees-a-live-flock-holder
   ;; `flock` is GNU util-linux; macOS has no equivalent binary.  The negative

@@ -81,33 +81,65 @@
 ;; as the JVM shutdown hook, so the store closes, the control endpoint is
 ;; unpublished and the instance lock is released for the next start.
 
+(defn- safe-handle-info
+  "Return the ProcessHandle$Info for HANDLE, or nil when OS or sandbox
+  restrictions refuse process inspection.
+
+  `ProcessHandle.info` throws when a security manager denies
+  `RuntimePermission(\"manageProcess\")`.  An unguarded call inside the orphan
+  watchdog kills its polling thread, and the watchdog then never fires again."
+  [^ProcessHandle handle]
+  (try
+    (.info handle)
+    (catch Exception _ nil)))
+
+(defn- parent-info
+  "Identity of PARENT: pid, start instant and command line.
+
+  `commandLine` and `command` both return `java.util.Optional`, which is never
+  nil, so `or` alone would keep the Optional.  Unwrapping is what makes
+  `:command` a string; without it `shell-launcher?` cannot match and the
+  orphan watchdog never fires.  Kept separate from `launcher-info` so a test
+  can feed a handle whose Optional is known to be present."
+  [^ProcessHandle parent]
+  (let [info (safe-handle-info parent)]
+    {:pid (.pid parent)
+     :start (when info (.orElse (.startInstant info) nil))
+     :command (when info
+                (or (.orElse (.commandLine info) nil)
+                    (.orElse (.command info) nil)))}))
+
 (defn- launcher-info
-  "Identity of the process that launched this JVM: pid, start instant and
-  command line.  Captured once at namespace load because the parent may be
-  reparented or recycled while the app runs."
+  "Identity of the process that launched this JVM.  Captured once at
+  namespace load because the parent may be reparented or recycled while the
+  app runs."
   []
-  (when-let [parent (some-> (.parent (ProcessHandle/current))
-                           (.orElse nil))]
-    (let [info (.info parent)]
-      {:pid (.pid parent)
-       :start (.orElse (.startInstant info) nil)
-       :command (or (.commandLine info) (.command info))})))
+  (when-let [parent (try (some-> (.parent (ProcessHandle/current))
+                                 (.orElse nil))
+                         (catch Exception _ nil))]
+    (parent-info parent)))
 
 (def ^:private launcher (delay (launcher-info)))
 
 (defn- start-matches?
-  "True when CURRENT still names the same process START described.  A
-  missing instant on either side cannot disprove identity, so it counts as
-  a match."
+  "True when CURRENT still names the same process START described.
+
+  An empty `Optional` means the process is gone, so it cannot be the same
+  process.  A missing START instant on a live handle cannot disprove identity,
+  so that case is a match."
   [^java.time.Instant start current]
   (let [handle (cond
                  (instance? java.util.Optional current) (.orElse ^java.util.Optional current nil)
                  (instance? ProcessHandle current) current
                  :else nil)]
-    (if (and start (some? handle))
-      (let [other (.orElse (.startInstant (.info ^ProcessHandle handle)) nil)]
-        (or (nil? other) (.equals start other)))
-      true)))
+    (if (nil? handle)
+      false
+      (if start
+        (let [info (safe-handle-info handle)
+              other (when info (.orElse (.startInstant info) nil))]
+          (or (nil? other) (.equals start other)))
+        (try (.isAlive ^ProcessHandle handle)
+             (catch Exception _ true))))))
 
 (defn- parent-alive?
   "True while the recorded launcher process still exists.  A recycled pid
