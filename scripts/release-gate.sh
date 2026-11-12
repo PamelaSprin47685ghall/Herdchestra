@@ -603,10 +603,20 @@ printf 'version-consistency\t0\t%s\t%s\n' "$((VERSION_END - VERSION_START))" "$E
 
 # 9. Release notes.  Hard fail, not a warning: this gate certifies a
 # releasable tree, and the notes are part of that deliverable.
-NOTES="$REPO_ROOT/plans/$EXPECTED_VERSION-release-notes.md"
+#
+# Two naming conventions exist in this repository: `release-notes-<version>.md`
+# (0.0.1, 0.0.2, 0.0.4) and `<version>-release-notes.md` (0.0.3).  Both are
+# accepted, because the alternative is rewriting history to satisfy a gate.
+# The version is still pinned: whichever file is present must name the
+# version this gate is checking.
+NOTES="$REPO_ROOT/plans/release-notes-$EXPECTED_VERSION.md"
+if [ ! -s "$NOTES" ]; then
+  NOTES="$REPO_ROOT/plans/$EXPECTED_VERSION-release-notes.md"
+fi
 if [ ! -s "$NOTES" ]; then
   {
-    echo "missing or empty: $NOTES"
+    echo "missing or empty: plans/release-notes-$EXPECTED_VERSION.md"
+    echo "              and: plans/$EXPECTED_VERSION-release-notes.md"
     echo "reason: a passing release gate certifies a releasable tree; the release notes are part of the release deliverable."
   } > "$EVIDENCE/release-notes.txt"
   fail "release-notes-missing" "$EVIDENCE/release-notes.txt"
