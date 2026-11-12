@@ -32,7 +32,7 @@ before_count="$(printf '%s\n' "$before" | grep -c . || true)"
 
 {
   echo "== store shutdown stress =="
-  echo "started: $(date -Is)"
+  echo "started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner:  ${PIXI_BIN:-repository .pixi}"
   run java -version
   echo "hs_err before: $before_count"
