@@ -36,8 +36,12 @@ test-results/
 # `server-hc-e2e-<random>.log`; they are debugging scraps, not evidence.
 # The curated `server-src.log` / `server-dst.log` beside a result stay
 # tracked because a reader needs them to interpret that result.
-plans/evidence/**/server-hc-e2e-*.log
+plans/evidence/**/server-hc-e2e*.log
 
 # Release-prep exclusions (user ruling 2026-11-06)
 /机制提炼/
 plans/evidence/**/playwright-report/
+
+# Operator review material from the project-audit pass (2026-11-09).  A local
+# findings bundle, not a product artifact; it carries no build input.
+/_审视/

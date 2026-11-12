@@ -7,9 +7,7 @@
   it supplies the workbench-specific composition around it."
   (:require ["framework7/lite" :as Framework7]
             ["framework7-react" :as Framework7ReactModule
-             :refer [App View Page Navbar NavLeft NavTitle
-                     NavRight PageContent Button Icon
-                     Preloader Block BlockTitle Link Badge]]
+             :refer [App View Page]]
             [clojure.string :as str]
             [com.fulcrologic.fulcro.algorithms.react-interop :as interop]
             [com.fulcrologic.fulcro.dom :as dom]))
@@ -19,21 +17,12 @@
 ;; before `f7events` exists and throws on the first layout effect.
 (.use (.-default Framework7) (.-default Framework7ReactModule))
 
+;; Only the three components the shell actually composes are wrapped.  Every
+;; other Framework7 surface is plain Fulcro DOM; wrapping a component nobody
+;; mounts would add a factory call and a require without changing any pixel.
 (def ui-app (interop/react-factory App))
 (def ui-view (interop/react-factory View))
 (def ui-page (interop/react-factory Page))
-(def ui-navbar (interop/react-factory Navbar))
-(def ui-nav-left (interop/react-factory NavLeft))
-(def ui-nav-title (interop/react-factory NavTitle))
-(def ui-nav-right (interop/react-factory NavRight))
-(def ui-page-content (interop/react-factory PageContent))
-(def ui-button (interop/react-factory Button))
-(def ui-icon (interop/react-factory Icon))
-(def ui-preloader (interop/react-factory Preloader))
-(def ui-block (interop/react-factory Block))
-(def ui-block-title (interop/react-factory BlockTitle))
-(def ui-link (interop/react-factory Link))
-(def ui-badge (interop/react-factory Badge))
 
 (defn badge
   [text tone]
