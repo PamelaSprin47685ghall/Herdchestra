@@ -230,3 +230,41 @@
                 (connection/draft-validation-errors bad-top-p)))
       (is (some #(= [:models 0 :pricing] (:field %))
                 (connection/draft-validation-errors bad-price))))))
+
+(deftest server-connection-sends-a-picked-location-test
+  (testing "a location the user picked reaches the server payload"
+    ;; `draft/edit-field` normalizes `:location` to a keyword, but the old
+    ;; guard used `present?`, which only accepts non-blank strings.  Every
+    ;; picked location was therefore dropped and the server had to guess the
+    ;; destination from the base URL while the UI still claimed "不出本机".
+    (let [payload (connection/server-connection
+                   {:draft-id "d-local"
+                    :connection-id "c-local"
+                    :fields {:name "Ollama"
+                             :base-url "http://127.0.0.1:11434"
+                             :service-kind :local-service
+                             :protocol :openai-compatible
+                             :location :instance}})]
+      (is (= :instance (get-in payload [:auth :location]))
+          "the picked keyword must survive into the auth block")))
+  (testing ":unknown means not chosen, so it is not sent"
+    (let [payload (connection/server-connection
+                   {:draft-id "d-unknown"
+                    :connection-id "c-unknown"
+                    :fields {:name "Ollama"
+                             :base-url "http://127.0.0.1:11434"
+                             :service-kind :local-service
+                             :protocol :openai-compatible
+                             :location :unknown}})]
+      (is (not (contains? (:auth payload) :location))
+          "an unchosen location must not become a claim about the destination")))
+  (testing "a string location is normalized before it is sent"
+    (let [payload (connection/server-connection
+                   {:draft-id "d-lan"
+                    :connection-id "c-lan"
+                    :fields {:name "Ollama"
+                             :base-url "http://192.168.1.20:11434"
+                             :service-kind :local-service
+                             :protocol :openai-compatible
+                             :location "lan-device"}})]
+      (is (= :lan-device (get-in payload [:auth :location]))))))
