@@ -221,6 +221,44 @@
         (reset! bridge/auth-tick-timers {})
         (reset! bridge/app-ref nil)))))
 
+(deftest persist-drafts-reports-error-inside-the-same-transaction
+  ;; `persist-drafts!` used to `dispatch!` its own status action.  A nested
+  ;; dispatch reads the database as it was before the outer action commits,
+  ;; so the outer `transact-state!` overwrote `:error` back to the stale
+  ;; value.  A browser without a writable localStorage reported `:saved`.
+  ;; The fix threads state through the effect, so the status lands in the
+  ;; same transaction as the action that asked for the save.
+  (let [state (settings-api/initial-state)
+        ;; `localStorage` is undefined under node, so `setItem` throws and the
+        ;; effect must report `:error` rather than `:saved`.
+        next (#'bridge/handle-effect!
+              state
+              {:effect :persist-drafts
+               :drafts (:drafts state)})]
+    (is (= :error (get-in next [:ui :draft-storage-status]))
+        "a failed save must not be reported as saved")
+    (is (= (dissoc state :ui) (dissoc next :ui))
+        "the effect only touches the durability status, never draft bodies")))
+
+(deftest persist-drafts-success-reports-saved
+  (let [state (settings-api/initial-state)
+        store (atom {})]
+    (with-redefs [bridge/storage-key "test-settings-drafts"]
+      (set! (.-localStorage js/globalThis)
+            #js {:setItem (fn [_k v] (swap! store assoc "test-settings-drafts" v))
+                 :getItem (fn [_k] (get @store "test-settings-drafts"))
+                 :removeItem (fn [_k] (swap! store dissoc "test-settings-drafts"))})
+      (try
+        (let [next (#'bridge/handle-effect!
+                    state
+                    {:effect :persist-drafts
+                     :drafts (:drafts state)})]
+          (is (= :saved (get-in next [:ui :draft-storage-status])))
+          (is (some? (get @store "test-settings-drafts"))
+              "the payload reached localStorage"))
+        (finally
+          (set! (.-localStorage js/globalThis) js/undefined))))))
+
 (defn -main
   [& _]
   (run-tests 'hc.client.workbench.settings-bridge-test))
