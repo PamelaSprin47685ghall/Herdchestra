@@ -31,12 +31,27 @@ mbdbg.*/
 hs_err_pid*.log
 *.tmp.mjs
 test-results/
-!plans/evidence/**/*.log
-# Per-run server stdout from the E2E harness.  Each run writes a fresh
-# `server-hc-e2e-<random>.log`; they are debugging scraps, not evidence.
-# The curated `server-src.log` / `server-dst.log` beside a result stay
-# tracked because a reader needs them to interpret that result.
-plans/evidence/**/server-hc-e2e*.log
+
+# `plans/evidence/` holds two different things under one path.
+#
+#   * The audit chain: the result JSON each spec writes, the freeze metadata
+#     and the human rulings.  A release claim is checked against these, so
+#     they stay tracked.
+#   * Everything a re-run also produces: a screenshot for every step, per-run
+#     server stdout, and older snapshots of the same spec keyed by build hash.
+#     Replaying the suite regenerates them, and they were 97 MB of the 107 MB
+#     this directory weighed.
+#
+# Ignoring the whole directory keeps the second kind from creeping back: an
+# ignore rule does not apply to a path git already tracks, so the 172 audit
+# files below stay, and each re-run overwrites them in place.  A new artifact
+# that a document cites has to be re-included by an explicit `!` line, which
+# is the only way it should ever become tracked.  0.0.3 ruled this split and
+# never enforced it; the history is in plans/0.0.3-release-commit-plan.md §3.
+plans/evidence/**
+!plans/evidence/*.md
+!plans/evidence/*.json
+!plans/evidence/*.patch
 
 # Release-prep exclusions (user ruling 2026-11-06)
 /机制提炼/

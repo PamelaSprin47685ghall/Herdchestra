@@ -1,7 +1,0 @@
-SPEECH_REQ POST http://127.0.0.1:19215/speech/recordings {"x-hc-session-id":"hc-session-f6eb1b2b-fc14-4692-8620-5b07c06a06d6","sec-ch-ua-platform":"\"Linux\"","x-hc-duration-ms":"0","referer":"","sec-ch-ua":"\"Google Chrome\";v=\"153\", \"Not_A Brand\";v=\"8\", \"Chromium\";v=\"153\"","x-hc-language":"auto","sec-ch-ua-mobile":"?0","x-hc-insert-at":"0","user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36","accept":"application/edn","content-type":"audio/webm;codecs=opus","x-hc-service-id":""} body undefined
-SPEECH_RESP 400 http://127.0.0.1:19215/speech/recordings {:ok? false, :error {:code :SPEECH_AUDIO_EMPTY, :message "audio is empty", :details {}}}
-FAILED locator.waitFor: Timeout 30000ms exceeded.
-Call log:
-  - waiting for getByRole('button', { name: '停止录音', exact: true }).first() to be visible
-
-    at /tmp/hc-w6/e2e15.cjs:32:13

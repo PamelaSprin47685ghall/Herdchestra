@@ -1,1 +1,0 @@
-wrote /tmp/hc-w7-reg/e2e01-config.edn scenario=single base-url=http://127.0.0.1:11434/v1 model=qwen3.6:27b

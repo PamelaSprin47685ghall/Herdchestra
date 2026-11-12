@@ -1,6 +1,0 @@
-WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
-WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
-WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
-WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
-Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
-{:error {:code :START_FAILED, :message "class java.lang.Character cannot be cast to class java.util.Map$Entry (java.lang.Character and java.util.Map$Entry are in module java.base of loader 'bootstrap')", :class "java.lang.ClassCastException"}, :hint "Inspect the data directory and the log, then retry.", :recovery-entry {:action :operator, :options [:inspect-directory :restart]}, :path "/tmp/hc-w7-reg/data-e2e22-b", :cleanup {:stopped? true, :drained? true, :failures [], :components {:store {:drained? true, :closed? true, :path "/tmp/hc-w7-reg/data-e2e22-b/db"}}, :store-closed? true}}

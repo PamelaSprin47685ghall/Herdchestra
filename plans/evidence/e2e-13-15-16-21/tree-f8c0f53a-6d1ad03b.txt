@@ -1,3 +1,0 @@
-run start tree (before): 6d1ad03bf767ed1070f99434871ff8d1c08dbec98c12282ed991840e66e11feb
-run end tree (after, sibling drift): cb08d0fa23cf9fbb8876faee242fe116216fdec690b0223af302d658ceb5edd8
-bundle: f8c0f53acc14f237d0a76e44f12e9605a5c472542c4306f54e1439c01c26842a (e2e15-v6 script does not embed tree field; see /tmp/hc-w3e5r4/evidence-final/tree-w76r6-{before,after}.txt)

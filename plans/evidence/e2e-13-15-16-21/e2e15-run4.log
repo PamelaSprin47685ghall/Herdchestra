@@ -1,5 +1,0 @@
-FAILED locator.waitFor: Timeout 30000ms exceeded.
-Call log:
-  - waiting for getByRole('button', { name: '停止录音', exact: true }).first() to be visible
-
-    at /tmp/hc-w6/e2e15.cjs:32:13

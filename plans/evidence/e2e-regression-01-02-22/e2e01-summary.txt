@@ -1,6 +1,0 @@
-exit=0
-base_url=http://127.0.0.1:41847/
-data_dir=/tmp/hc-w7-reg/data-e2e01
-workspace=/tmp/hc-w7-reg/work-e2e01
-finished_at=2026-11-05T15:32:46+08:00
-bundle_sha256=ec5ceea29bb3697e8da2b80edea7caa2659c44b46204c4464cd8b4e3d97fc908

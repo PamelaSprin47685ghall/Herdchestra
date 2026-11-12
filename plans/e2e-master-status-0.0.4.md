@@ -23,6 +23,12 @@
   `HC_PW_SHARD=<name>` 隔离 `outputDir`。
 - 状态定义：`PASS` = 在本轮 bundle 上 `ok=true` 且所有 checks true；
   未实测项不写 PASS。
+- **证据保留**：本表引用的是 0.0.4 轮产物。按 2026-11-12 操作员裁决
+  （证据政策 C），该轮证据已丢弃、未入版本库；工作区内同名路径现在是
+  0.0.3 轮（bundle `751756ec`、tree `07b1ea6b`）的残留文件。要复核本表
+  的 0.0.4 结论，只能在该轮 bundle 上重跑，不能直接打开库里那份 JSON。
+  版本库只保留审计链：spec 的固定名 result JSON、freeze-meta 与人工裁决；
+  `plans/evidence/**` 已整体加入 `.gitignore`（详见 `plans/0.0.3-release-commit-plan.md` §3）。
 
 ## 1. 状态表
 
@@ -36,7 +42,7 @@
 | 05 | `test/e2e/e2e-05.spec.mjs` | `@core` | `plans/evidence/e2e-05/e2e05-result.json` | `PASS` | all true |
 | 06 | `test/e2e/e2e-06.spec.mjs` | `@core` | `plans/evidence/e2e-06/e2e06-result.json` | `PASS` | all true |
 | 07 | `test/e2e/e2e-07.spec.mjs` | `@core` | `plans/evidence/e2e-07/e2e07-result.json` | `PASS` | all true |
-| 08 | `test/e2e/e2e-08.spec.mjs` | `@core` | `plans/evidence/e2e-07-08/e2e08-9739f287-377bb599-result.json` | `PASS` | all true |
+| 08 | `test/e2e/e2e-08.spec.mjs` | `@core` | 0.0.4 轮为 `plans/evidence/e2e-07-08/e2e08-9739f287-377bb599-result.json`（该文件从未入库，本轮已丢弃；重跑后按 `<bundle8>-<tree8>` 重新命名） | `PASS` | all true |
 | 09 | `test/e2e/e2e-09-protected-commit.spec.mjs` | `@core` | `plans/evidence/e2e-auto/e2e09/e2e09-result.json` | `PASS` | all true |
 | 10 | `test/e2e/e2e-10-tool-interrupt.spec.mjs` | `@core` | `plans/evidence/e2e-10/e2e-10-result.json` | `PASS` | all true；46.9s |
 | 11 | `test/e2e/e2e-11.spec.mjs` | `@e2e` | `plans/evidence/e2e-11/e2e-11-result.json` | `PASS` | **31/31**；本版第 6 处修复的直接验收点 |

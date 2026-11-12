@@ -1,3 +1,0 @@
-256007:
-garbage-first heap   total reserved 786432K, committed 332800K, used 236816K [0x00000000d0000000, 0x0000000100000000)
- region size 1M, 117 eden (117M), 13 survivor (13M), 102 old (102M), 1 humongous (1M), 92 free (92M)

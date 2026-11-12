@@ -1,9 +1,0 @@
-e2e=e2e12-732baf05-final14
-run_at=2026-11-07T05:34:21+08:00/2026-11-07T05:37:10+08:00
-bundle_js_sha256=732baf05ab0537109b3bf51ad168c4209474142624d7fc082d23c5972a29cdd6
-bundle_js_mtime=2026-11-07 04:33:20.205508512 +0800
-workbench_css_sha256=332f9fd3f3e759f5ef215dbe1ff9307e774d7f56b262d0ce9839d861e8609c4b
-src_tree_sha256=79f21de95bb2f8625cf2778625dde1614a1f2a073b63ddc04d38a2ef8ee00d5c
-git_head=379b021449ea69cfbc67a5b8c32834e6f0dfae0a
-result=FAIL node_exit=1 checks_pass=25/38 app_rss_kib=1196440
-evidence=plans/evidence/e2e-11-12/e2e12-732baf05-final14.json

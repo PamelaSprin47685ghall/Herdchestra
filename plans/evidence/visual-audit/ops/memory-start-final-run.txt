@@ -1,7 +1,0 @@
-start 2026-11-06T11:19:31+08:00 app_pid=314453
- 314453 1130784 3826012 /usr/bin/java -XX:-OmitStackTraceInFastThrow -Xmx1g -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError -Dclojure.basis=.cpcache/1199881488.basis -classpath src:resources:/home/kunweiz/.m2/re
-314453:
--XX:-AOTAdapterCaching -XX:-AOTCompatibleOopCompression -XX:-AOTInvokeDynamicLinking -XX:-AOTRecordTraining -XX:-AOTReplayTraining -XX:-AOTStubCaching -XX:CICompilerCount=4 -XX:ConcGCThreads=3 -XX:+ExitOnOutOfMemoryError -XX:G1ConcRefinementThreads=10 -XX:G1EagerReclaimRemSetThreshold=10 -XX:G1HeapRegionSize=1048576 -XX:G1RemSetArrayOfCardsEntries=10 -XX:G1RemSetHowlMaxNumBuckets=8 -XX:G1RemSetHowlNumBuckets=4 -XX:HotCodeHeapSize=0 -XX:InitialHeapSize=8388608 -XX:-IntelJccErratumMitigation -XX:MarkStackSize=4194304 -XX:MarkStackSizeMax=536870912 -XX:MaxDirectMemorySize=536870912 -XX:MaxHeapSize=1073741824 -XX:MaxNewSize=643825664 -XX:MinHeapDeltaBytes=1048576 -XX:MinHeapSize=8388608 -XX:NonNMethodCodeHeapSize=5840896 -XX:NonProfiledCodeHeapSize=122912768 -XX:-OmitStackTraceInFastThrow -XX:ProfiledCodeHeapSize=122912768 -XX:ReservedCodeCacheSize=251666432 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=1073741824 -XX:+UseCompressedOops -XX:+UseCondCardMark -XX:+UseFastUnorderedTimeStamps -XX:+UseG1GC -XX:X86ICacheSync=3 
-314453:
-garbage-first heap   total reserved 1048576K, committed 508928K, used 202147K [0x00000000c0000000, 0x0000000100000000)
- region size 1M, 82 eden (82M), 21 survivor (21M), 95 old (95M), 1 humongous (1M), 298 free (298M)

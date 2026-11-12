@@ -1,9 +1,0 @@
-{:kind :worker/run-program :session-id "hc-session-1325a867-bad3-436c-8191-f6e91baeaf00" :task-id :task-1 :claim-id :claim-1 :program-source "(defprogram e2e09-resume [x]\n  (unpark {:name \"e2e09-park\" :value nil}))" :intent "E2E 09 resume the parked program after an external edit"}
-{:ok? true, :receipt {:status :accepted, :outcome :scheduled, :job-id "worker-job-4926c0d3-1647-4af8-ab99-db3f3900b6b2", :task-id :task-1, :claim-id :claim-1, :agent-id :agent-4}, :error nil, :replayed? false}
-
-WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
-WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
-WARNING: identity already refers to: #'clojure.core/identity in namespace: hc.server.extensions.mcp.config, being replaced by: #'hc.server.extensions.mcp.config/identity
-WARNING: send already refers to: #'clojure.core/send in namespace: hc.server.extensions.http, being replaced by: #'hc.server.extensions.http/send
-Reflection warning, hc/server/attachments/ingest.clj:839:30 - reference to field close can't be resolved.
-

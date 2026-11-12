@@ -1848,3 +1848,33 @@ HC_E2E_KEEP_TEMP=1 JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
   `site-packages` 解析不一致，`import PIL` 仍失败。
 - **适用范围**：所有需要生成图像 fixture 的 E2E；新增此类 spec 时必须复用
   同一份字体探测逻辑，不得再写死单平台路径。
+
+## 19 `plans/evidence/` 的版本管理政策（2026-11-12 操作员裁决）
+
+- **现象**：`plans/evidence/` 曾跟踪 1,577 个文件、107 MB。其中 PNG 754 张
+  占 95 MB，per-run 服务日志 455 个占 0.9 MB，而真正被
+  `plans/e2e-master-status-*.md` 引用的只有 26 个 result JSON（681 KB）。
+  没有任何代码读取历史证据；唯一消费者是人与文档链接。
+- **增殖原因**：e2e-08 一类 spec 按 `<bundle8>-<tree8>` 命名产物，每换一次
+  构建就整套换名新增而不覆盖。清理前 `e2e-07-08/` 已有 11 套历史快照、
+  191 个文件。0.0.3 曾裁决「只提交白名单」（
+  `plans/0.0.3-release-commit-plan.md` §3），那次靠手工挑选，之后又长回来。
+- **裁决（政策 C：拆分）**：版本库只保留审计链——spec 的固定名 result JSON、
+  `*-freeze-meta.json`、人工裁决 `.md`、被文档引用的少量截图与日志；
+  逐步骤截图、per-run 服务日志、按构建哈希命名的历史快照全部不入库。
+- **落地**：`.gitignore` 用 `plans/evidence/**` 整体忽略，再用显式 `!` 放行
+  `*.md`、`*.json`、`*.patch`。注意 git 不会进入被排除的目录，所以先把
+  `!plans/evidence/**/` 加回来，文件级 `!` 才会生效。已跟踪的 172 个文件
+  不受影响（ignore 规则对已跟踪路径无效），每次重跑原地覆盖。
+- **代价，必须如实接受**：0.0.4 轮证据已丢弃，工作区内同名路径现在是 0.0.3
+  轮（bundle `751756ec`、tree `07b1ea6b`）的残留。要复核
+  `plans/e2e-master-status-0.0.4.md` 的结论，只能在该轮 bundle 上重跑，
+  不能打开库里那份 JSON 冒充。该台账首节已写明这一点。
+- **新增 spec 时**：产物写固定名（如 `e2e-NN-result.json`），不要按构建哈希
+  命名；否则每次构建都产生一套无人引用的新文件，而这正是本次清理的对象。
+- **复检**：
+  ```bash
+  git ls-files plans/evidence | wc -l                    # 应为 172
+  git status --porcelain plans/evidence | grep -c '^??'  # 应为 0
+  git check-ignore -v plans/evidence/e2e-16/anything.png # 应命中
+  ```

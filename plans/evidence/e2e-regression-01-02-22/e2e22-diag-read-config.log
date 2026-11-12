@@ -1,8 +1,0 @@
-WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
-:STATUS :found
-:CONFIG-KEYS (:updated-at :storage/version :revision :connection-order :storage/partition :storage/kind :storage/session-id :connections :assistants :storage/id :storage/updated-at :role-bindings)
-:MODELS-KEYS nil
-:CONNECTIONS-TYPE nil
-:CONNECTIONS nil
-:ROLES nil
-:REVISION 1
