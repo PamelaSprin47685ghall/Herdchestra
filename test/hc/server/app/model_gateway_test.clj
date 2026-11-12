@@ -485,3 +485,55 @@
            (reader {:snapshot {:connection "conn-a" :model "m1"}})))
     (is (nil? (reader {:snapshot {:messages []}}))
         "a request without a binding has no availability fact")))
+
+(deftest session-binding-reads-a-vector-live-declaration
+  (let [owner (atom {:snapshot
+                     (fn []
+                       {:state {:session
+                                {:model-binding
+                                 {:connection-id "conn"
+                                  :model-entry-id "model"
+                                  :capabilities {}}}}})})
+        settings (fn []
+                   {:connections
+                    [{:id "conn"
+                      :models [{:id "model"
+                                :capabilities {:tools true}}]}]})
+        supported ((resolve 'hc.server.app.system/live-tools-supported)
+                   owner false settings)]
+    (is (true? (supported {} nil))
+        "a saved vector declaration reaches a session binding with no tools fact")))
+
+(deftest saved-vector-declaration-passes-the-send-gate
+  (let [owner (atom {:snapshot (fn [] {:state {:session {}}})})
+        settings (fn []
+                   {:connections
+                    [{:id "conn"
+                      :models [{:id "model"
+                                :capabilities {:tools true}}]}]})
+        supported ((resolve 'hc.server.app.system/live-tools-supported)
+                   owner false settings)
+        source ((resolve 'hc.server.app.system/live-tools-source)
+                owner false settings)
+        request {:snapshot {:connection "conn" :model "model"}}]
+    (is (true? (supported request nil))
+        "Plan's send gate must see a declaration saved as a model vector")
+    (is (= :live-model (source request nil))
+        "the refusal source must name the saved model, not an empty binding")))
+
+(deftest live-tool-support-reads-a-vector-connection-model
+  (let [owner (atom {:snapshot (fn [] {:state {:session {}}})})
+        ;; Settings persistence stores connections and models as vectors.
+        ;; The send gate must read that shape; a map-only lookup treats a
+        ;; saved declaration as absent and Plan refuses the send.
+        config (fn []
+                 {:connections
+                  [{:id "conn"
+                    :models [{:id "model"
+                              :capabilities {:tools true}}]}]})
+        live ((resolve 'hc.server.app.system/live-tools-supported)
+              owner false config)]
+    (is (true? (live {:snapshot {:connection "conn"
+                                 :model "model"}}
+                     nil))
+        "a saved vector model declaration is the live tools fact")))
