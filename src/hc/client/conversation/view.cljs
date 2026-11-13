@@ -1753,9 +1753,6 @@
         intent (get-in view-model [:composer :send :intent])
         fix-intent (get-in view-model [:composer :send :fix-intent])]
     (cond
-      (contains? #{:disabled :duplicate :wait :select-model} intent)
-      nil
-
       (= :needs-decision intent)
       (set-local-decision! (get-in view-model [:composer :send :options]))
 
@@ -1763,6 +1760,32 @@
       ((:fix! callbacks) {:session-id session-id :intent fix-intent})
 
       fix-intent
+      nil
+
+      ;; `intent` comes from the last render, but the textarea is
+      ;; uncontrolled: a `fill`/paste followed by Enter in the same frame
+      ;; still reads the previous render's `:disabled`/`:empty`.  Dropping
+      ;; the key silently there is a data-loss bug the operator cannot see —
+      ;; the draft stays in the box and nothing explains why.  So when the
+      ;; visible field holds real text, hand the DOM snapshot to the bridge,
+      ;; which decides from the state at submit time.  `:duplicate` and
+      ;; `:wait` still short-circuit: those describe an in-flight command the
+      ;; operator must not silently double-submit.
+      (and (contains? #{:disabled :select-model} intent)
+           (let [value (some-> textarea-ref .-current .-value)]
+             (string? value)
+             (not (str/blank? value))))
+      (let [result ((:send! callbacks)
+                    {:session-id session-id
+                     :snapshot (composer-snapshot props textarea-ref)})]
+        (when (true? (:ok? result))
+          (when-let [node (.-current textarea-ref)]
+            (set! (.-value node) "")
+            (when (fn? (.-setSelectionRange node))
+              (.setSelectionRange node 0 0))))
+        result)
+
+      (contains? #{:disabled :duplicate :wait :select-model} intent)
       nil
 
       (fn? (:send! callbacks))

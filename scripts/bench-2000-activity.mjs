@@ -20,7 +20,7 @@
 // The script never kills processes it did not start; the app child is
 // SIGTERM'd and SIGKILL'd only if it ignores SIGTERM.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -118,12 +118,22 @@ async function healthOk(url, timeoutMs = 120000) {
   throw last || new Error('healthz timeout');
 }
 
+function psRssKb(pid) {
+  try {
+    const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' });
+    const n = Number(out.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch { return null; }
+}
+
 function statusField(pid, field) {
   try {
     const t = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
     const m = t.match(new RegExp(`^${field}:\\s+(\\d+)`, 'm'));
     return m ? Number(m[1]) : null;
-  } catch { return null; }
+  } catch {
+    return psRssKb(pid);
+  }
 }
 
 function messageIndex(id) {
@@ -294,8 +304,16 @@ async function main() {
   // ---- phase 3+4: DOM probe ----------------------------------------------
   let browser;
   try {
+    const chromeExe = process.env.CHROME_PATH || process.env.HC_CHROME || [
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ].find((p) => fs.existsSync(p));
     browser = await chromium.launch({
-      executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+      ...(chromeExe ? { executablePath: chromeExe } : {}),
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
              `--js-flags=--max-old-space-size=${process.env.HC_CHROME_HEAP_MB || 512}`,

@@ -1,3 +1,0 @@
-WARNING: Implicit use of clojure.main with options is deprecated, use -M -e (println (System/getProperty "java.version")) (println (clojure-version))
-21.0.10-internal
-1.12.6

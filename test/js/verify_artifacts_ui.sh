@@ -5,16 +5,26 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-OUT=out-artifacts-ui
-rm -rf "$OUT"
+OUT="$(mktemp -d "./out-artifacts-ui.XXXXXX")"
+OUT="${OUT#./}"
+cleanup() {
+  local status=$?
+  if [ "$status" -eq 0 ]; then
+    rm -rf "$OUT"
+  else
+    printf 'artifacts ui output kept for inspection: %s\n' "$OUT" >&2
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 
 clojure -Sdeps '{:deps {org.clojure/clojurescript {:mvn/version "1.12.145"}}}' \
   -M:dev:client \
   -m cljs.main \
-  -co "$(cat <<'EDN'
+  -co "$(cat <<EDN
 {:target :nodejs
- :output-to "out-artifacts-ui/test.js"
- :output-dir "out-artifacts-ui"
+ :output-to "$OUT/test.js"
+ :output-dir "$OUT"
  :optimizations :none
  :main hc.client.artifacts.ui-test/-main
  :language-in :ecmascript-2017

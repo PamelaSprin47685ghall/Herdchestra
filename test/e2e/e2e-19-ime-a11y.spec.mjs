@@ -9,7 +9,7 @@ import { startApp } from './support/app.mjs';
 import { LONG_TEXT, startMockModel } from './support/mock-model.mjs';
 import { checksOk, recordEvidence } from './support/evidence.mjs';
 import {
-  assert, composer, ensureIdle, evidenceDir, goto, newSession, selectFirstSession,
+  assert, composer, evidenceDir, goto, newSession, selectFirstSession,
   shot, turnLive, userTexts, waitForSettings, waitForSync,
 } from './support/ui.mjs';
 import {
@@ -157,19 +157,21 @@ async function waitForNav(page, open) {
 
 async function sendLongReply(page, text) {
   await composer(page).fill(text);
-  const sendButton = page.locator(SEND_SELECTOR).first();
-  const enabledSince = Date.now();
-  let enabled = false;
-  while (Date.now() - enabledSince < 30000) {
-    enabled = await sendButton.isEnabled()
-      && (await sendButton.getAttribute('aria-disabled')) !== 'true';
-    if (enabled) break;
-    await page.waitForTimeout(200);
-  }
-  if (!enabled) return false;
-  await sendButton.click();
-  const started = Date.now();
-  while (Date.now() - started < 20000) {
+  await waitForSendReady(page, 30000);
+  // Prove this message specifically was submitted.  `turnLive` only says
+  // "a turn is running", so a still-streaming previous reply made it true
+  // and the caller saw success for a message that was never sent.
+  const usersBefore = (await userTexts(page)).length;
+  await page.locator(SEND_SELECTOR).first().click();
+  const submitted = await page.waitForFunction(({ count, needle }) => {
+    const bubbles = document.querySelectorAll('.hc-message-out .hc-message-body');
+    if (bubbles.length <= count) return false;
+    return [...bubbles].some((node) => (node.innerText || '').includes(needle));
+  }, { count: usersBefore, needle: text }, { timeout: 20000 })
+    .then(() => true, () => false);
+  if (!submitted) return false;
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
     if (await turnLive(page)) return true;
     await page.waitForTimeout(200);
   }
@@ -183,6 +185,51 @@ async function waitUntilIdle(page, timeout = 30000) {
     await page.waitForTimeout(300);
   }
   return false;
+}
+
+// The send button reflects the rendered send intent.  Waiting for it to
+// enable is the cheapest way to know the composer state has caught up with
+// the DOM, without depending on any particular frame timing.
+async function waitForSendReady(page, timeout = 20000) {
+  const ok = await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="发送消息"]');
+    return Boolean(button && !button.disabled
+      && button.getAttribute('aria-disabled') !== 'true');
+  }, null, { timeout }).then(() => true, () => false);
+  assert(ok, 'send button never became enabled');
+}
+
+// Click a control only after proving nothing covers it.  Playwright's action
+// retries a covered click for the whole test budget, which turns a layering
+// bug into a ten-minute timeout with no stated cause.  A notice stack over
+// the topbar did exactly that once; this check names the coverer instead.
+async function clickUncovered(page, selector) {
+  const blocked = await page.evaluate((sel) => {
+    const target = document.querySelector(sel);
+    if (!target) return 'element missing';
+    const box = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      box.x + box.width / 2, box.y + box.height / 2);
+    if (!hit) return 'no element at the centre';
+    if (hit === target || target.contains(hit)) return null;
+    if (hit.closest && hit.closest('.wb-toast-stack')) return 'a notice covers it';
+    return `covered by ${hit.tagName}/${hit.className}`;
+  }, selector);
+  assert(!blocked, `${selector} is not clickable: ${blocked}`);
+  await page.locator(selector).first().click();
+}
+
+// The long-reply phases only need the turn to *start*; the mock streams
+// LONG_TEXT at 8 chars / 50 ms, so letting it finish would cost minutes and
+// the next phase would still find "正在生成".  Stop it explicitly instead of
+// discarding a `waitUntilIdle` result — a still-running turn makes
+// `send-blocker` return `:generating`, and the next send is then refused.
+async function stopAndSettle(page, timeout = 30000) {
+  const stop = page.locator(STOP_SELECTOR).first();
+  if (await stop.count() && await stop.isVisible().catch(() => false)) {
+    await stop.click({ timeout: 3000 }).catch(() => {});
+  }
+  return waitUntilIdle(page, timeout);
 }
 
 // Wait for THIS turn's assistant reply, not whichever assistant body happens
@@ -299,13 +346,29 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     await newSession(page);
 
     // --- Keyboard baseline -------------------------------------------------
+    // Enter must be tested as a *keyboard* affordance, not as a race against
+    // the connection gate.  A fresh data directory reuses a pre-created blank
+    // session, so `newSession` returns before any `:session/create` receipt
+    // can arrive; pressing Enter in that window is refused locally as
+    // `:connection-not-ready` and the message is silently dropped (draft kept,
+    // no bubble).  E2E 08 gates on the send button for the same reason.  Wait
+    // for the gate first, then prove Enter — and not the button — sends.
     const first = `键盘发送 ${MARKER}`;
     await composer(page).fill(first);
+    await waitForSendReady(page, 40000);
     const usersBeforeEnter = (await userTexts(page)).length;
     await composer(page).press('Enter');
-    await page.waitForFunction((count) =>
-      document.querySelectorAll('.hc-message-out .hc-message-body').length > count,
-    usersBeforeEnter, { timeout: 20000 });
+    try {
+      await page.waitForFunction((count) =>
+        document.querySelectorAll('.hc-message-out .hc-message-body').length > count,
+      usersBeforeEnter, { timeout: 20000 });
+    } catch (error) {
+      // The old code only collected diagnostics after the count assertion, so
+      // a timeout here produced an empty `diagnostics` object and left no clue
+      // which gate refused the send.  Collect first, then rethrow.
+      diagnostics.enterTimeout = await collectTurnDiagnostics(page).catch(() => null);
+      throw error;
+    }
     const enterReply = await waitForTurnReply(page, first);
     const enterUsers = await userTexts(page);
     checks.enterSends = enterReply
@@ -313,7 +376,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       && enterUsers.filter((text) => text.includes(first)).length === 1;
     if (!checks.enterSends) diagnostics.enter = await collectTurnDiagnostics(page);
     assert(checks.enterSends, 'Enter did not send exactly one message');
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     await composer(page).fill('第一行');
     const usersBeforeShift = (await userTexts(page)).length;
@@ -331,6 +394,11 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
 
     const repeatText = `连按只发一条 ${MARKER}`;
     await composer(page).fill(repeatText);
+    // The textarea is uncontrolled: `fill` updates the DOM at once but the
+    // rendered send intent lags one frame.  Pressing Enter inside that window
+    // used to be dropped silently.  The product now falls back to the DOM
+    // value, and this wait keeps the spec from depending on either behaviour.
+    await waitForSendReady(page);
     const usersBeforeRepeat = (await userTexts(page)).length;
     await composer(page).press('Enter');
     await composer(page).press('Enter');
@@ -343,10 +411,11 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       diagnostics.keyRepeat = await collectTurnDiagnostics(page);
     }
     assert(checks.keyRepeatSendsOnce, `rapid Enter produced ${repeatUsers.length - usersBeforeRepeat} messages`);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     const doubleText = `双击只发一条 ${MARKER}`;
     await composer(page).fill(doubleText);
+    await waitForSendReady(page);
     const usersBeforeDouble = (await userTexts(page)).length;
     await page.locator(SEND_SELECTOR).first().dblclick();
     const doubleReply = await waitForTurnReply(page, doubleText);
@@ -358,7 +427,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       diagnostics.doubleClick = await collectTurnDiagnostics(page);
     }
     assert(checks.doubleClickSendsOnce, `double click produced ${doubleUsers.length - usersBeforeDouble} messages`);
-    await ensureIdle(page, 30000);
+    await waitUntilIdle(page, 30000);
 
     const actionNames = await page.locator('.hc-message-actions button').evaluateAll((nodes) =>
       nodes
@@ -477,7 +546,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     ]);
     // The topbar toggle is the stable entry at both drawer widths; the
     // session-header opener is exercised by the focus-return phase below.
-    await page.locator('#wb-aux-toggle').first().click();
+    await clickUncovered(page, '#wb-aux-toggle');
     evidence.mobileAuxOpenedBy = 'wb-aux-toggle';
     await waitForAux(page, true);
     await page.locator(AUX_CLOSE_SELECTOR).first().waitFor({ state: 'visible', timeout: 5000 });
@@ -500,7 +569,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
 
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await ensureIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- 200% at 820: tablet drawer band --------------------------------
     await page.setViewportSize({ width: 820, height: 900 });
@@ -519,7 +588,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       { name: 'stop', selector: STOP_SELECTOR },
       { name: 'menu', selector: MENU_SELECTOR },
     ]);
-    await page.locator('#wb-aux-toggle').first().click();
+    await clickUncovered(page, '#wb-aux-toggle');
     await waitForAux(page, true);
     await page.locator(AUX_CLOSE_SELECTOR).first().waitFor({ state: 'visible', timeout: 5000 });
     await waitForSettledTarget(page, AUX_CLOSE_SELECTOR);
@@ -540,7 +609,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05a-tablet-200'));
     await page.locator(AUX_CLOSE_SELECTOR).first().click();
     await waitForAux(page, false);
-    await ensureIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- Desktop 1440: compact targets and stop/send/close ----------------
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -594,7 +663,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       `a compact button is under 32x32: ${JSON.stringify(compactTargets.filter((row) => row.width < 32 || row.height < 32))}`);
     assert(checks.desktopMenuHiddenByDesign, 'the desktop menu trigger is still shown');
     evidence.screenshots.push(await shot(page, dir, 'e2e19-05-desktop-200'));
-    await ensureIdle(page, 30000);
+    await stopAndSettle(page, 30000);
 
     // --- IME: composing Enter never sends --------------------------------
     await waitUntilIdle(page, 30000);
@@ -661,7 +730,7 @@ test('@core @a11y E2E 19 keyboard, 200% text, IME, focus return and AX tree', as
       Object.assign(diagnostics, await collectTurnDiagnostics(page));
     }
     assert(checks.normalEnterStillSends, 'a normal Enter no longer sends after composition');
-    await ensureIdle(page, 30000);
+    await stopAndSettle(page, 30000);
     evidence.screenshots.push(await shot(page, dir, 'e2e19-06-ime'));
 
     // --- Focus return and the three-level Escape hierarchy ----------------

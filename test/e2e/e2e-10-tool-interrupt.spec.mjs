@@ -23,6 +23,15 @@ import { sourceTreeSha256, collectMockState } from './support/evidence.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
+// This spec SIGKILLs the app JVM and restarts it on the same data directory.
+// The trace recorder keeps `.network` / `.trace` chunks in the Playwright
+// artifacts dir and flushes them at context close; the abrupt process death
+// leaves those handles stale, so teardown failed with
+// `ENOENT ... recording5-pwnetcopy-1.network` *after* every assertion had
+// already passed (`ok: true` in the evidence).  Traces buy nothing for a
+// deliberate crash, so they are off here.
+test.use({ trace: 'off' });
+
 function evidenceDir10() {
   const dir = path.join(REPO_ROOT, 'plans/evidence/e2e-10');
   fs.mkdirSync(dir, { recursive: true });
@@ -62,7 +71,21 @@ function e2e10ToolCalls(body) {
         name: 'clj-plan',
         arguments: {
           source: PLAN_SOURCE,
-          intent: 'E2E 10 interruption probe: one devops call that sleeps.',
+          // The clj-plan deadline is the UTF-8 byte length of `intent` times
+          // 50 ms (§4.3).  The probe must stay parked long enough for the test
+          // to observe the running worker and SIGKILL the JVM; a short intent
+          // parked the program after ~2.7 s, the tool call then settled as
+          // `:succeeded`, and nothing was left for restart recovery to mark
+          // `:outcome-unknown`.  That is why this paragraph is long: it buys
+          // the window the assertions need.
+          intent: 'E2E 10 interruption probe: run one read-only devops call that '
+            + 'sleeps for five minutes so the JVM can be killed while the shell '
+            + 'is still running, then verify the board publishes the interrupted '
+            + 'call as outcome-unknown, that clicking the acknowledge button '
+            + 'settles it, and that no automatic replay ever issues a second tool '
+            + 'call. Keep this intent long: the program deadline is derived from '
+            + 'its UTF-8 byte length, so a short intent would park the probe '
+            + 'before the kill lands and defeat the whole test.',
           scope: {
             kind: 'reset-scope',
             'new-scope-goal': 'E2E 10 tool interruption probe',
@@ -168,6 +191,24 @@ test('@core E2E 10 tool interruption marks outcome-unknown, ack settles without 
 
     // Wait until the Plan dedicated worker's `call` tool is actually running
     // `sleep 300`: a `sleep 300` child process owned by the app JVM.
+    //
+    // `pgrep -x sleep` finds candidates everywhere, but confirming that the
+    // command line is the `sleep 300` we issued needs a per-OS source.  The
+    // original read `/proc/<pid>/cmdline`, which only exists on Linux; on
+    // macOS every read threw and `sawWorkerCall` stayed false for the full
+    // 120 s, so the kill always landed after the probe had already settled.
+    const commandLine = (pid) => {
+      try {
+        if (process.platform === 'linux') {
+          return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+        }
+        return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+          encoding: 'utf8',
+        });
+      } catch {
+        return '';
+      }
+    };
     const sleepDeadline = Date.now() + 120000;
     let sawWorkerCall = false;
     while (Date.now() < sleepDeadline && !sawWorkerCall) {
@@ -175,21 +216,23 @@ test('@core E2E 10 tool interruption marks outcome-unknown, ack settles without 
         const out = execFileSync('pgrep', ['-x', 'sleep'], { encoding: 'utf8' });
         const pids = out.trim().split('\n').filter(Boolean);
         for (const pid of pids) {
-          try {
-            const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
-            if (cmdline.includes('sleep') && cmdline.includes('300')) {
-              sawWorkerCall = true;
-              break;
-            }
-          } catch { /* process exited between pgrep and read */ }
+          const cmdline = commandLine(pid);
+          if (cmdline.includes('sleep') && cmdline.includes('300')) {
+            sawWorkerCall = true;
+            break;
+          }
         }
       } catch { /* pgrep exits 1 when nothing matches */ }
       if (sawWorkerCall) break;
       await page.waitForTimeout(500);
     }
+    result.checks.workerCallObserved = sawWorkerCall;
+    // Without the observation the kill timing is unverified and the final
+    // assertion could never pass, so fail here with the real cause instead of
+    // spending another 90 s waiting for a panel that cannot appear.
+    assert(sawWorkerCall, 'never observed the worker running `sleep 300`');
     // Give the shell a moment to spawn inside the app JVM.
     await page.waitForTimeout(1500);
-    result.checks.workerCallObserved = sawWorkerCall;
 
     const beforeKill = await mockState(model);
     result.checks.modelRequestsBeforeKill = beforeKill.chatCompletions;

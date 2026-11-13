@@ -1,3 +1,0 @@
-WARNING: ensure already refers to: #'clojure.core/ensure in namespace: hc.server.extensions.catalog, being replaced by: #'hc.server.extensions.catalog/ensure
-WARNING: key already refers to: #'clojure.core/key in namespace: hc.server.storage.keys, being replaced by: #'hc.server.storage.keys/key
-Terminating due to java.lang.OutOfMemoryError: Metaspace

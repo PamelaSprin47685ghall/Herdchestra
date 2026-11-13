@@ -1012,3 +1012,85 @@
     (is (= 0 (get-in selected [:state :session :messages "m1"
                                :current-version])))
     (is (= [a1] (get-view-attachments (:state selected))))))
+
+;; --- refusal paths -------------------------------------------------------
+;;
+;; `history/regenerate` has five refusal branches before it starts a run.
+;; Each must return a structured `{:ok? false :error {:code ... :message ...}}`
+;; and leave the session untouched.  A branch that returned `nil`, threw, or
+;; dropped the error map would surface as an opaque failure in the UI, which is
+;; the defect this block guards.
+
+(deftest regenerate-refuses-when-the-target-is-not-an-assistant-message
+  (let [session (-> (base-session)
+                    (assoc :model-binding {:connection-id "conn-1"
+                                           :model-entry-id "model-1"})
+                    (add-message "m1" :user "question" {}))
+        refused (command session :history/regenerate {:message-id "m1"} 2000)]
+    (is (false? (:ok? refused)))
+    (is (= :REGENERATE_TARGET_INVALID (get-in refused [:error :code])))
+    (is (string? (get-in refused [:error :message])))
+    (is (= "m1" (get-in refused [:error :details :message-id])))
+    (testing "the refusal returns the session unchanged"
+      (is (= session (:session refused)))
+      (is (= [] (:effects refused))))))
+
+(deftest regenerate-refuses-while-a-run-is-active
+  (let [session (-> (base-session)
+                    (assoc :model-binding {:connection-id "conn-1"
+                                           :model-entry-id "model-1"})
+                    (add-message "m1" :user "question" {})
+                    (add-message "m2" :assistant "old answer" {})
+                    (assoc :runs {"run-live" {:run-id "run-live"
+                                              :state :running}}
+                           :run-order ["run-live"]))
+        refused (command session :history/regenerate {:message-id "m2"} 2000)]
+    (is (false? (:ok? refused)))
+    (is (= :RUN_ALREADY_ACTIVE (get-in refused [:error :code])))
+    (is (= "run-live" (get-in refused [:error :details :run-id])))
+    (testing "the refusal does not disturb the active run"
+      (is (= :running (get-in refused [:session :runs "run-live" :state])))
+      (is (= [] (:effects refused))))))
+
+(deftest regenerate-refuses-without-a-selected-model
+  (let [session (-> (base-session)
+                    (add-message "m1" :user "question" {})
+                    (add-message "m2" :assistant "old answer" {}))
+        refused (command session :history/regenerate {:message-id "m2"} 2000)]
+    (is (false? (:ok? refused)))
+    (is (= :MODEL_NOT_SELECTED (get-in refused [:error :code])))
+    (is (map? (get-in refused [:error :details])))
+    (is (= [] (:effects refused)))))
+
+(deftest regenerate-refuses-an-unknown-message
+  (let [session (-> (base-session)
+                    (assoc :model-binding {:connection-id "conn-1"
+                                           :model-entry-id "model-1"}))
+        refused (command session :history/regenerate
+                         {:message-id "m-missing"} 2000)]
+    (is (false? (:ok? refused)))
+    (is (= :MESSAGE_NOT_FOUND (get-in refused [:error :code])))
+    (is (string? (get-in refused [:error :message])))
+    (is (= [] (:effects refused)))))
+
+(deftest every-history-refusal-carries-a-code-and-a-message
+  ;; A refusal that loses either field reaches the client as an unlabelled
+  ;; failure.  Walk the reachable refusal branches and assert the shape once.
+  (let [bare (base-session)
+        with-model (assoc bare :model-binding {:connection-id "conn-1"
+                                               :model-entry-id "model-1"})
+        cases [[(command bare :history/regenerate {:message-id "nope"} 2000)
+                :MESSAGE_NOT_FOUND]
+               [(command with-model :history/regenerate {:message-id "nope"} 2000)
+                :MESSAGE_NOT_FOUND]
+               [(command (add-message with-model "m1" :user "q" {})
+                         :history/regenerate {:message-id "m1"} 2000)
+                :REGENERATE_TARGET_INVALID]]]
+    (doseq [[refused expected] cases]
+      (is (false? (:ok? refused)) (str "expected a refusal for " expected))
+      (is (= expected (get-in refused [:error :code]))
+          (str "wrong code for " expected))
+      (is (string? (get-in refused [:error :message]))
+          (str "missing message for " expected))
+      (is (seq (get-in refused [:error :message]))
+          (str "empty message for " expected)))))

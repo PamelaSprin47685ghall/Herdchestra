@@ -1814,3 +1814,67 @@ HC_E2E_KEEP_TEMP=1 JAVA_HOME=$PWD/.pixi/envs/default/lib/jvm \
 - **复检**：`grep -n "sourceTreeSha256" test/e2e/*.spec.mjs` 应只看到导入/
   使用，不应看到本地 walk 实现；比较不同 spec 的哈希前先确认口径。
 - **适用范围**：所有 E2E 证据与门禁跨 spec 哈希比较。
+
+## 18 E2E 06 的 fixture 依赖 Pillow 与跨平台字体（2026-11-11）
+
+`[实测，2026-11-11]` 环境：macOS 25.6.0 / arm64，系统 Python 3.14.6，
+`test/e2e/e2e-06.spec.mjs`。
+
+- **现象**：E2E 06 在 macOS 上以 `fixture generation failed` 失败，栈顶是
+  `ModuleNotFoundError: No module named 'PIL'`；装好 Pillow 后又报
+  `OSError: cannot open resource`，因为字体路径只有 Linux 的两条。
+- **根因**：fixture 生成脚本假设 Linux——`/usr/share/fonts/...` 硬编码，
+  且系统 Python 一定带 Pillow。二者都不在任何依赖声明里：`pixi.toml` 只
+  供应 JDK/Clojure/Node，`deps.edn` 不涉及 Python。
+- **规范**：
+  - 字体探测按平台列出候选：Linux（Noto CJK、DejaVu）、macOS
+    （`Hiragino Sans GB.ttc`、`Songti.ttc`）、Windows（`msyh.ttc`、
+    `simhei.ttf`）。全都不存在时打印候选清单后 `exit 2`，不抛裸栈。
+  - Pillow 缺失时打印 `python3 -m pip install --user pillow` 后 `exit 2`。
+- **复检**：
+  ```bash
+  python3 -c 'import PIL; print(PIL.__version__)'   # 必须成功
+  PATH=<装好 Pillow 的解释器目录>:$PATH \
+    npx playwright test --config test/e2e/playwright.config.mjs test/e2e/e2e-06.spec.mjs
+  ```
+- **macOS 装 Pillow 的实测路径**：系统 Python 受 PEP 668 保护，
+  `pip install --user` 直接失败。可行做法是建 venv：
+  ```bash
+  python3 -m venv /private/tmp/hc-e2e-venv
+  /private/tmp/hc-e2e-venv/bin/pip install pillow
+  ```
+  注意必须用 `/private/tmp` 而非 `/tmp`：macOS 的 `/tmp` 是符号链接，
+  venv 的 `sys.prefix` 记录的是真实路径，从 `/tmp` 进入会让
+  `site-packages` 解析不一致，`import PIL` 仍失败。
+- **适用范围**：所有需要生成图像 fixture 的 E2E；新增此类 spec 时必须复用
+  同一份字体探测逻辑，不得再写死单平台路径。
+
+## 19 `plans/evidence/` 的版本管理政策（2026-11-12 操作员裁决）
+
+- **现象**：`plans/evidence/` 曾跟踪 1,577 个文件、107 MB。其中 PNG 754 张
+  占 95 MB，per-run 服务日志 455 个占 0.9 MB，而真正被
+  `plans/e2e-master-status-*.md` 引用的只有 26 个 result JSON（681 KB）。
+  没有任何代码读取历史证据；唯一消费者是人与文档链接。
+- **增殖原因**：e2e-08 一类 spec 按 `<bundle8>-<tree8>` 命名产物，每换一次
+  构建就整套换名新增而不覆盖。清理前 `e2e-07-08/` 已有 11 套历史快照、
+  191 个文件。0.0.3 曾裁决「只提交白名单」（
+  `plans/0.0.3-release-commit-plan.md` §3），那次靠手工挑选，之后又长回来。
+- **裁决（政策 C：拆分）**：版本库只保留审计链——spec 的固定名 result JSON、
+  `*-freeze-meta.json`、人工裁决 `.md`、被文档引用的少量截图与日志；
+  逐步骤截图、per-run 服务日志、按构建哈希命名的历史快照全部不入库。
+- **落地**：`.gitignore` 用 `plans/evidence/**` 整体忽略，再用显式 `!` 放行
+  `*.md`、`*.json`、`*.patch`。注意 git 不会进入被排除的目录，所以先把
+  `!plans/evidence/**/` 加回来，文件级 `!` 才会生效。已跟踪的 172 个文件
+  不受影响（ignore 规则对已跟踪路径无效），每次重跑原地覆盖。
+- **代价，必须如实接受**：0.0.4 轮证据已丢弃，工作区内同名路径现在是 0.0.3
+  轮（bundle `751756ec`、tree `07b1ea6b`）的残留。要复核
+  `plans/e2e-master-status-0.0.4.md` 的结论，只能在该轮 bundle 上重跑，
+  不能打开库里那份 JSON 冒充。该台账首节已写明这一点。
+- **新增 spec 时**：产物写固定名（如 `e2e-NN-result.json`），不要按构建哈希
+  命名；否则每次构建都产生一套无人引用的新文件，而这正是本次清理的对象。
+- **复检**：
+  ```bash
+  git ls-files plans/evidence | wc -l                    # 应为 172
+  git status --porcelain plans/evidence | grep -c '^??'  # 应为 0
+  git check-ignore -v plans/evidence/e2e-16/anything.png # 应命中
+  ```

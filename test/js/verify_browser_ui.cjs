@@ -70,7 +70,15 @@ const pageHtml = `<!doctype html><html><head><meta charset="utf-8"><title>UI Har
   });
   await new Promise((resolve) => pageServer.listen(pagePort, '127.0.0.1', resolve));
 
-  const chrome = spawn('/usr/bin/google-chrome', [
+  const chromeExe = process.env.HC_CHROME || process.env.CHROME_PATH || [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ].find((p) => fs.existsSync(p)) || '/usr/bin/google-chrome';
+  const chrome = spawn(chromeExe, [
     '--headless=new', `--remote-debugging-port=${chromePort}`,
     '--remote-allow-origins=*', `--user-data-dir=${CHROME_DATA}`,
     '--no-first-run', '--no-default-browser-check', '--disable-gpu', 'about:blank'

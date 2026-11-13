@@ -936,7 +936,13 @@ button.wb-badge:focus-visible,
 
 .wb-toast-stack {
   position: fixed;
-  top: 16px;
+  /* Clear the topbar.  It is 56px tall with 6px vertical padding and sits at
+     the same z-index (50), so at `top: 16px` the stack's close button landed
+     exactly on `#wb-aux-toggle` and swallowed every click there — the toggle
+     became unusable for as long as a notice stayed on screen, and notices
+     never expire on their own.  Keeping the stack below the bar removes the
+     overlap at every width. */
+  top: 68px;
   right: 16px;
   z-index: 50;
   display: flex;
@@ -982,10 +988,14 @@ button.wb-badge:focus-visible,
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* The drawers are modal surfaces: while open they must sit above the
+     notice stack (z-index 50).  At 40 the stack's close button covered the
+     drawer's own close button in the top-right corner, so the drawer could
+     not be dismissed by pointer at all. */
   .wb-nav {
     position: fixed;
     inset: 0 auto 0 0;
-    z-index: 40;
+    z-index: 55;
     width: min(var(--wb-nav-width), 82vw);
     transform: translateX(-102%);
     visibility: hidden;
@@ -1002,7 +1012,7 @@ button.wb-badge:focus-visible,
   .wb-aux {
     position: fixed;
     inset: 0 0 0 auto;
-    z-index: 40;
+    z-index: 55;  /* above the notice stack (50), same reason as .wb-nav */
     width: min(var(--wb-aux-width), 88vw);
     transform: translateX(102%);
     visibility: hidden;

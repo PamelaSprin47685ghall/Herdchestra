@@ -613,8 +613,15 @@
                 saved)
         keys (:keys draft)
         auth (cond-> (or (:auth saved) {})
-               (util/present? (:location fields))
-               (assoc :location (:location fields))
+               ;; `:location` arrives as a keyword from `draft/edit-field`,
+               ;; and `present?` only accepts non-blank strings.  Checking
+               ;; `present?` here therefore dropped every location the user
+               ;; picked, and the server fell back to guessing from the base
+               ;; URL.  `:unknown` is explicitly excluded: it is "not chosen",
+               ;; not a claim about where requests go.
+               (and (some? (:location fields))
+                    (not= :unknown (util/normalize-keyword (:location fields))))
+               (assoc :location (util/normalize-keyword (:location fields)))
 
                (util/present? (:account-label fields))
                (assoc :account-label (:account-label fields))

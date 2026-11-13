@@ -1,9 +1,0 @@
-snapshot-ready?=true
-snapshot-revision=0
-settings-ok?=true
-suggest-ok?=true
-suggest-status=
-suggest-attempts=1
-suggest-candidates=3
-suggest-elapsed-ms=159071
-suggest-error=nil

@@ -1,4 +1,0 @@
-run: e2e07u (2026-11-06 ~16:00 local / 08:0x UTC), flock /tmp/hc-app-single.lock, port 42086, data /tmp/hc-w2/data-07u
-bundle: 072587a4690b6953bae9cae3a06eaaa815a38b13eee9b98dc5ce98e72a54824f (3,011,162 B, 13:51:04; CSS 332f9fd3) — identical before/after
-source-tree: 6aa694f1223187ab3aa3fda90d61d3313c2aa25410d14a1009c89cc5f4c10035 — identical before/after (final10 PASS tree)
-model: Ollama qwen3.6:27b via 127.0.0.1:11434/v1 (reasoning-effort none); search stub 127.0.0.1:18095 + docs 127.0.0.1:18096 (non-internet)

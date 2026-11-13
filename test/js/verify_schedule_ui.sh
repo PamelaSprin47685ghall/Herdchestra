@@ -7,13 +7,23 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-OUT=out-schedule-ui
-rm -rf "$OUT"
+OUT="$(mktemp -d "./out-schedule-ui.XXXXXX")"
+OUT="${OUT#./}"
+cleanup() {
+  local status=$?
+  if [ "$status" -eq 0 ]; then
+    rm -rf "$OUT"
+  else
+    printf 'schedule ui output kept for inspection: %s\n' "$OUT" >&2
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 
-clojure -M:dev:cljs:client -co "$(cat <<'EDN'
+clojure -M:dev:cljs:client -co "$(cat <<EDN
 {:target :nodejs
- :output-to "out-schedule-ui/test.js"
- :output-dir "out-schedule-ui"
+ :output-to "$OUT/test.js"
+ :output-dir "$OUT"
  :optimizations :none
  :main hc.client.schedule.ui-test/-main
  :language-in :ecmascript-2017

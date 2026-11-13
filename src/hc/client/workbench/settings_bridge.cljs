@@ -121,6 +121,12 @@
                             [(mutations/notify {:notice notice})])))))
 
 (defn- persist-drafts!
+  "Persist DRAFTS to localStorage and return `{:ok? boolean :error ...}`.
+
+  Returns a value instead of dispatching, because the caller is already
+  inside `dispatch!`.  A nested `dispatch!` reads the database as it was
+  before the outer action committed, so its write is overwritten by the
+  outer `transact-state!` — a failed save would then report `:saved`."
   [drafts]
   (try
     (let [payload (draft/export-drafts drafts)]
@@ -133,14 +139,12 @@
                 ;; value a draft may carry so `JSON.stringify` cannot
                 ;; throw `Converting circular structure to JSON`.
                 (js/JSON.stringify (clj->js (settings-util/json-safe payload)))))
-    (dispatch! {:type :settings/set-draft-storage-status :status :saved})
     (notify! :info "设置草稿已保存到本浏览器。")
+    {:ok? true}
     (catch :default e
       (log/warn "Settings draft persistence failed" e)
-      (dispatch! {:type :settings/set-draft-storage-status
-                  :status :error
-                  :error (str e)})
-      (notify! :warn "设置草稿暂未保存：浏览器本地存储不可用。"))))
+      (notify! :warn "设置草稿暂未保存：浏览器本地存储不可用。")
+      {:ok? false :error (str e)})))
 
 (defn- copy-secret!
   [secret label]
@@ -229,33 +233,49 @@
       (swap! auth-tick-timers assoc flow-id timer))))
 
 (defn- handle-effect!
-  [{:keys [effect] :as effect-map}]
+  "Run one effect for its side effect and return the next STATE.
+
+  Threading state through keeps the durability status (`:saved` / `:error`)
+  inside the same transaction as the action that produced it.  Dispatching
+  from here would read a database that has not committed the outer action
+  yet, so the outer write would overwrite the effect's own status."
+  [state {:keys [effect] :as effect-map}]
   (case effect
     :persist-drafts
-    (persist-drafts! (:drafts effect-map))
+    (let [{:keys [ok?]} (persist-drafts! (:drafts effect-map))]
+      ;; `settings-api/set-draft-storage-status` already returns a bare state;
+      ;; the facade in `hc.client.settings` unwraps the `model` result wrapper
+      ;; itself, so taking `:state` here would yield nil.
+      (settings-api/set-draft-storage-status state (if ok? :saved :error)))
 
     :copy-secret
-    (copy-secret! (:secret effect-map) (or (:label effect-map) "密钥"))
+    (do (copy-secret! (:secret effect-map) (or (:label effect-map) "密钥"))
+        state)
 
     :request-stop-run
-    (when-let [app @app-ref]
-      (commands/stop-run! app (:session-id effect-map)
-                          (or (:reason effect-map) :settings-stop)))
+    (do (when-let [app @app-ref]
+          (commands/stop-run! app (:session-id effect-map)
+                              (or (:reason effect-map) :settings-stop)))
+        state)
 
     :open-url
-    (open-url! (:url effect-map))
+    (do (open-url! (:url effect-map))
+        state)
 
     :schedule-poll
     (do
       (schedule-auth-poll! (:flow-id effect-map) (:after-ms effect-map))
-      (schedule-auth-tick! (:flow-id effect-map)))
+      (schedule-auth-tick! (:flow-id effect-map))
+      state)
 
     :cancel-poll
     (do
       (cancel-auth-poll! (:flow-id effect-map))
-      (cancel-auth-tick! (:flow-id effect-map)))
+      (cancel-auth-tick! (:flow-id effect-map))
+      state)
 
-    (log/debug "Ignoring settings effect" effect)))
+    (do (log/debug "Ignoring settings effect" effect)
+        state)))
 
 (defn- flush-outbox!
   [state]
@@ -334,11 +354,10 @@
     (dispatch-appearance! action)
     (let [db (when-let [app @app-ref] (application/current-state app))
           current (or (:ui/settings db) (settings-api/initial-state))
-          {:keys [state effects]} (settings-api/reduce-action current action)]
-      (doseq [effect effects]
-        (handle-effect! effect))
-      (let [state (flush-outbox! state)]
-        (transact-state! state)))))
+          {:keys [state effects]} (settings-api/reduce-action current action)
+          state (reduce handle-effect! state effects)
+          state (flush-outbox! state)]
+      (transact-state! state))))
 
 (defn- event-keyword
   [value]
@@ -362,16 +381,15 @@
   "Apply a settings receipt, execute its effects, and return the next state.
 
   Effects run before the state transaction because the scheduler/cancel and
-  clipboard actions are side effects of the pure transition.  The only
-  stateful effect, `:persist-drafts`, reads the state carried by the effect
-  itself.  Doing this before `transact-state!` also means a scheduled timer
-  (always at least one second) always observes the committed next state."
+  clipboard actions are side effects of the pure transition.  State is
+  threaded through them so `:persist-drafts` can report the durability status
+  inside this same transaction.  Doing this before `transact-state!` also
+  means a scheduled timer (always at least one second) always observes the
+  committed next state."
   [state receipt]
   (let [{:keys [state effects]} (settings-api/apply-receipt-result
                                  state receipt)]
-    (doseq [effect effects]
-      (handle-effect! effect))
-    state))
+    (reduce handle-effect! state effects)))
 
 (defn handle-event!
   "Feed a server receipt to the settings state.  Non-receipt events are

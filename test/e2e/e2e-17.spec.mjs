@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startApp } from './support/app.mjs';
+import { clojureCommand, startApp } from './support/app.mjs';
 import { sourceTreeSha256 } from './support/evidence.mjs';
 import { startMockWebDAV } from './support/mock-services.mjs';
 import {
@@ -39,7 +39,7 @@ async function shot(page, dir, name) {
 }
 
 function runSeed(dataDir, wsExtPath, blobRoot, variant) {
-  const out = execFileSync('clojure',
+  const out = execFileSync(clojureCommand(),
     ['-M:server', '-i', 'test/e2e/e2e17_seed.clj',
      '--eval', `(e2e17-seed/run ${JSON.stringify(dataDir)} ${JSON.stringify(wsExtPath)} ${JSON.stringify(blobRoot)} ${JSON.stringify(variant)})`],
     { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120000 });
@@ -47,7 +47,7 @@ function runSeed(dataDir, wsExtPath, blobRoot, variant) {
 }
 
 function runVerify(dbPath) {
-  const out = execFileSync('clojure',
+  const out = execFileSync(clojureCommand(),
     ['-M:server', '-i', 'test/e2e/e2e17_verify.clj',
      '--eval', `(e2e17-verify/run ${JSON.stringify(dbPath)})`],
     { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120000 });
@@ -483,7 +483,7 @@ test('@e2e E2E 17 encrypted backup, wrong password refusal and merge restore', a
     const objectBytes = Buffer.from(await objectRes.arrayBuffer());
     fs.writeFileSync(path.join(mirrorRoot, 'objects', `${backupId}.hcb`), objectBytes);
 
-    const restoreOut = execFileSync('clojure',
+    const restoreOut = execFileSync(clojureCommand(),
       ['-M:server', '-m', 'hc.server.backup.cli', 'restore',
        '--db-path', path.join(dstData, 'db'),
        '--data-dir', dstData,

@@ -245,7 +245,7 @@ echo "expected version: $EXPECTED_VERSION"
 echo "pixi: $PIXI"
 echo "evidence: $EVIDENCE"
 {
-  echo "started_at=$(date -Is)"
+  echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "repo=$REPO_ROOT"
   echo "pixi=$PIXI"
   echo "pixi_version=$("$PIXI" --version 2>&1 | head -1)"
@@ -269,8 +269,22 @@ if [ ! -s "$MAIN" ] || [ ! -s "$CSS" ]; then
   fail "client-release-artifacts" "$LAST_LOG"
 fi
 {
-  stat -c '%n size=%s mtime=%y' "$MAIN" "$CSS"
-  sha256sum "$MAIN" "$CSS"
+  # `stat -c` and `sha256sum` are GNU-only; macOS ships BSD stat and shasum.
+  # Both shapes must produce the same fields so evidence stays comparable.
+  for f in "$MAIN" "$CSS"; do
+    sz="$(wc -c < "$f" | tr -d ' ')"
+    if stat -c '%s' "$f" >/dev/null 2>&1; then
+      mt="$(stat -c '%y' "$f")"
+    else
+      mt="$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$f")"
+    fi
+    echo "$f size=$sz mtime=$mt"
+  done
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$MAIN" "$CSS"
+  else
+    shasum -a 256 "$MAIN" "$CSS"
+  fi
 } > "$EVIDENCE/artifacts.txt"
 
 # 3. app-check: health must name the expected version and a real tree.
@@ -589,10 +603,20 @@ printf 'version-consistency\t0\t%s\t%s\n' "$((VERSION_END - VERSION_START))" "$E
 
 # 9. Release notes.  Hard fail, not a warning: this gate certifies a
 # releasable tree, and the notes are part of that deliverable.
-NOTES="$REPO_ROOT/plans/$EXPECTED_VERSION-release-notes.md"
+#
+# Two naming conventions exist in this repository: `release-notes-<version>.md`
+# (0.0.1, 0.0.2, 0.0.4) and `<version>-release-notes.md` (0.0.3).  Both are
+# accepted, because the alternative is rewriting history to satisfy a gate.
+# The version is still pinned: whichever file is present must name the
+# version this gate is checking.
+NOTES="$REPO_ROOT/plans/release-notes-$EXPECTED_VERSION.md"
+if [ ! -s "$NOTES" ]; then
+  NOTES="$REPO_ROOT/plans/$EXPECTED_VERSION-release-notes.md"
+fi
 if [ ! -s "$NOTES" ]; then
   {
-    echo "missing or empty: $NOTES"
+    echo "missing or empty: plans/release-notes-$EXPECTED_VERSION.md"
+    echo "              and: plans/$EXPECTED_VERSION-release-notes.md"
     echo "reason: a passing release gate certifies a releasable tree; the release notes are part of the release deliverable."
   } > "$EVIDENCE/release-notes.txt"
   fail "release-notes-missing" "$EVIDENCE/release-notes.txt"

@@ -1,3 +1,0 @@
-ollama already listening on 127.0.0.1:11434
-starting 'w7-e2e01' (attempt 1) data=/tmp/hc-w7-reg/data-e2e01 log=/tmp/hc-e2e-harness/run/w7-e2e01/app.attempt1.log
-instance 'w7-e2e01' ready at http://127.0.0.1:41847/ (pid 3919620)

@@ -191,7 +191,25 @@
     (is (= "s-2" (:selected-session-id next)))
     (is (empty? (:memories next)))
     (is (pos? (:turn-selection-version next)))
-    (is (not (:ready? next)))))
+    (is (not (:ready? next))
+        "a dropped snapshot must not claim readiness")
+    ;; A dropped snapshot is inert, but its reason has to survive: otherwise
+    ;; the panel shows a not-ready badge with a null error and nothing can
+    ;; tell "rejected" from "never arrived" (D-54).
+    (is (= :cross-session (get-in next [:last-rejected :reason])))
+    (is (= "s-2" (get-in next [:last-rejected :selected-session-id]))
+        "the rejection names the session the client wanted")
+    (is (= "s-1" (get-in next [:last-rejected :snapshot-session-id]))
+        "and the session the snapshot described")))
+
+(deftest a-stale-snapshot-is-recorded-as-stale
+  (let [current (model/apply-snapshot (synced-state) snapshot)
+        current (assoc current :revision 9)
+        older (assoc snapshot :materials/revision 4)
+        next (model/apply-snapshot current older)]
+    (is (= 9 (:revision next)) "the older revision must not win")
+    (is (= :stale (get-in next [:last-rejected :reason]))
+        "an older revision is kept out, and says so")))
 
 (deftest commands-target-selected-session
   (let [state (-> (model/apply-snapshot (synced-state) snapshot)

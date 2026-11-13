@@ -634,3 +634,41 @@
                (get-in alias-config
                        [:connections "conn-3" :models "alias-model"
                         :display-name])))))))
+
+(deftest declared-tools-survive-select-model-into-the-send-gate
+  (let [persistence (ports/memory-persistence)
+        settings-service (settings-service-for persistence {})
+        config* (live-session-config settings-service)
+        connection {:id "conn-manual"
+                    :name "Manual provider"
+                    :kind :openai-compatible
+                    :base-url "https://api.example.com/v1"
+                    :models [{:id "manual-model"
+                              :name "Manual Model"
+                              :enabled? true
+                              :source :manual
+                              :capabilities {:tools true}}]}
+        _ (is (:ok? (settings/handle! settings-service
+                                      {:kind :settings/save-connection
+                                       :fields connection})))
+        created (sessions/new-session
+                 {:session-id "s-tools"
+                  :owner-id "o-tools"
+                  :config (config*)
+                  :id-source (ids/counter-source)
+                  :now 1000})
+        selected (sessions/apply-command
+                  (:session created)
+                  {:kind :session/select-model
+                   :connection-id "conn-manual"
+                   :model-entry-id "manual-model"}
+                  {:now 1000 :config (config*)})
+        binding (get-in selected [:session :model-binding])
+        live-config (config*)
+        live-model (get-in live-config
+                           [:connections "conn-manual" :models "manual-model"])]
+    (is (true? (:ok? selected)))
+    (is (true? (get-in binding [:capabilities :tools]))
+        "select-model copies the saved declaration into the session binding")
+    (is (true? (get-in live-model [:capabilities :tools]))
+        "the live session projection keeps the declaration for the send gate")))

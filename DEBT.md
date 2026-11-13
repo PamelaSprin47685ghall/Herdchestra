@@ -96,6 +96,7 @@
 - **影响**：消息错投、草稿错位；用户看到会话归属错误，且后续上下文可能挂到错误会话。
 - **建议**：在 `:session/create` 回执前禁用发送，或把发送排队到 selected-session 更新之后；也可让命令携带 expected session id 并在回执校验，不匹配则拒绝而不是落盘。
 - **证据**：本轮 E2E 新建会话用例使用 helper 等待 `:session/create` 回执；产品侧无门控。
+- **补充证据（2026-11-11）**：E2E 19 在全新 data-dir 上稳定复现了同一竞态更隐蔽的一面。服务端启动时会预建一个空默认会话，因此 `newSession` 的「当前会话已有消息」判据恒为假，helper 点击后立即返回、不等回执；紧随其后的 Enter 命中本地门控 `:connection-not-ready`，消息被静默丢弃（草稿保留、无气泡），页面看似「连接中断」实为 teardown 后的遗照。测试侧已改为先等发送按钮可用再按 Enter；**产品侧门控仍未实现**，即本条缺口依旧成立。
 
 ## D-45 浏览器录音（WebM）无法使用云端语音识别
 
@@ -114,3 +115,97 @@
 - **影响**：跨 spec/门禁比较源树哈希会误报；E2E 21 的哈希不能直接与标准 tree 哈希对齐。
 - **建议**：所有 spec 必须从 `test/e2e/support/evidence.mjs` 导入 `sourceTreeSha256`，禁止本地重写；确需自定义口径时必须在证据中显式标记，并在门禁比较时排除。
 - **状态**：已知限制，不视为失败；已在 `HACK.md` §17.29 记录。
+
+## D-47 devops worker 内部的 shell 动作不进 Owner 调用账本
+
+- **条款**：`AGENTS.md` §5.3（未结责任与 `:outcome-unknown` 恢复窗口）、§4.4（`.call` 会话边界）。
+- **位置**：`src/hc/server/app/devops.clj:121-126` 与 `src/hc/server/app/system.clj:2381-2395` 的 `call` helper 同步执行 shell；`src/hc/compose/owner/state.clj:1631-1660` 的 `recover-state` 只把 Owner 账本里 `:dispatching`/`:running` 的 call 标为 `:outcome-unknown`；`src/hc/server/app/snapshot.clj:308-327` 只发布这些 call。
+- **缺口**：Plan dedicated worker 通过 `call` 工具启动的 shell 会话不写入 Owner 的 `:calls`。JVM 被 SIGKILL 时，worker 的 shell 确实在途，但重启后没有任何记录可标 `:outcome-unknown`，「结果待确认」面板不会出现。
+- **影响**：worker 侧的外部副作用在硬崩溃后失去可核对入口，与 §5.3「可能产生外部副作用的 Shell 结果未知时优先核对」不一致。E2E 10 因此只能靠 Plan 顶层 `clj-plan` 的 call 记录来间接覆盖。
+- **建议**：让 devops worker 的 `call` 也登记为 Owner 可恢复的动作（或让 worker 会话把在途 shell 事实汇报给父 Owner），使 `recover-state` 能覆盖它；同时补一条针对该路径的验收。
+- **优先级**：中；当前 E2E 10 已用顶层 call 覆盖同类语义，但 worker 路径本身仍是盲区。
+
+## D-48 `stop-tree!` 的 `:settle-ms` 未随 `:stop-grace-ms` 一起收敛
+
+- **条款**：`AGENTS.md` §4.4（会话边界与停止语义）、§8.3 F11/F12。
+- **位置**：`src/hc/server/shell/process.clj` 的 `stop-tree!`：`:settle-ms` 默认 150，`:stop-grace-ms` 由 `runner :limits` 传入（默认 2000，测试可设 300）。
+- **缺口**：`stop-tree!` 在发第一轮信号前固定等待 `:settle-ms`，让 `sh` 完成 fork；该值不来自 `runner :limits`，调用点也无法按会话覆盖。
+- **影响**：每次停止至少多等 150 ms；若某个会话把 `:stop-grace-ms` 设得比 150 ms 更短（测试里就是 300），实际停止时长由 `:settle-ms` 而非 `:stop-grace-ms` 主导，参数语义不一致。
+- **建议**：把 `:settle-ms` 纳入 `runner :limits`（例如 `:stop-settle-ms`），并让 `session.clj` 的四个 `stop-tree!` 调用点统一透传；或按 `min(settle-ms, grace-ms)` 收敛。
+- **优先级**：低；不影响正确性，只影响停止延迟与参数一致性。
+
+## D-49 通知（notice）永不过期，可长期占据右上角
+
+- **条款**：`AGENTS.md` §7.4-4（过程区与错误状态）、§7.4-8（未交付理由必须可读且可关闭）。
+- **位置**：`src/hc/client/workbench/mutations.cljs:407-420` 只有 `notify` 与 `dismiss-notice`（需用户点 ×）；`src/hc/client/workbench/views/shell.cljs:472-476` 只渲染 `(take-last 3 notices)`。没有任何自动过期或去重。
+- **缺口**：`src/hc/client/workbench/events.cljc:1048-1058` 在服务端报告本轮中断时加入一条「服务器报告本轮未完成」通知。它会一直留到用户手动关闭；同类事件也不会合并。
+- **影响**：曾导致 `#wb-aux-toggle` 与 `#wb-aux-close` 在 1047 次命中测试中被通知的关闭按钮遮挡（见提交 `83ee20a` 的 CSS 修复，已把通知栈移出顶部栏、并把抽屉层级提到通知之上）。遮挡已修，但「通知永驻」本身仍会让界面越用越挤，且用户没有除逐条关闭之外的清理方式。
+- **建议**：给非 `:danger` 通知加自动过期（例如 8–15 秒，鼠标悬停时暂停）；同 key 通知去重并计数；提供「全部关闭」。`danger` 保留手动关闭。
+- **优先级**：低到中；遮挡症状已消除，剩下的是体验与可维护性。
+
+## D-50 `#wb-aux-close` 与其他右上角控件缺少遮挡防护
+
+- **条款**：`AGENTS.md` §7.4-1（关键操作必须在各视口可达）。
+- **位置**：`src/hc/client/workbench/views/shell.cljs:419`（`#wb-aux-close`）；`resources/public/css/workbench.css:937-947`（toast-stack）；`:1015`、`:998`（抽屉 z-index）。
+- **缺口**：右上角是 topbar、通知栈与抽屉关闭按钮的公共落点，三者此前同处或相近层级，任一浮层出现即可遮住另一个控件。当前修复把通知栈移出顶部栏并把抽屉提到通知之上，层级不再冲突，但没有任何测试或结构约束防止将来再次引入同层浮层。
+- **影响**：历史上已发生两次（`#wb-aux-toggle` 与 `#wb-aux-close` 各一次）。表现是「按钮看得见但点不动」，且 Playwright 会重试到整个测试预算耗尽，真正原因不出现在报错里。
+- **建议**：给右上角定义一个明确的层级序列（抽屉 > 通知 > topbar）并写成 CSS 变量注释；E2E 用 `clickUncovered`（已在 `e2e-19` 内）覆盖所有右上角控件；新增浮层时必须说明它在序列中的位置。
+- **优先级**：低；已有测试侧防护。
+
+## D-51 发送被拒时只有草稿留在框里，界面不说明原因
+
+- **条款**：`AGENTS.md` §7.4-2（发送必须可解释）、§7.4-8（未交付必须给理由）。
+- **位置**：`src/hc/client/conversation/view.cljs:1749` 的 `request-send!` 分支：
+  `(contains? #{:disabled :duplicate :wait :select-model} intent) nil` 直接返回 `nil`。
+  `src/hc/client/conversation.cljc:216` 的 `submit-send` 在 blocker 命中时返回
+  `:outcome :send :blocked`，但 UI 只在 `:needs-decision`、`:fix` 与 `:blocked`
+  的部分 intent 上渲染提示。
+- **缺口**：`request-send!` 的前置短路在**渲染层**丢弃了按键，`submit-send` 的
+  `:blocked` 结果根本没有机会产生。于是 `:duplicate`（上一轮的 send 回执还没到）、
+  `:wait`（正在停止）、`:unattended`（无人值守运行中）这三种情况下，按 Enter 或点发送
+  都没有任何可见反馈，草稿原地不动。
+- **影响**：E2E 11 连续三次在「第 4 次发送」处失败，每次失败点都表现为
+  「mainCalls 少一次」，而不是「发送被拒」。定位成本极高：它伪装成竞态。
+  2026-11-11 的修法（`00d8b5a`）只覆盖了 `:disabled`/`:select-model`，因为那一次
+  的复现恰好是「输入法刚填完、view-model 还慢一帧」。同类问题在 `:duplicate`
+  上仍然存在。
+- **建议**：`request-send!` 在**任何**短路分支上都应产生一条可见结果。若 `submit-send`
+  能按 DOM 快照重新裁决（它已经有 `captured?` 分支会主动清掉 `command-pending?`），
+  就让 `:duplicate` 也走快照路径，由 `submit-send` 决定是入队还是明确拒绝；不能让
+  渲染层的 intent 单方面决定「什么都不做」。或者退一步：短路时发一条 `notify`，
+  写明「上一轮提交尚未确认，请稍候」。
+- **优先级**：中。它不损坏数据，但会持续把「拒绝」伪装成「竞态」，吞掉定位时间。
+
+## D-52 `:duplicate` 与 `captured?` 的语义冲突缺少文档与测试
+
+- **条款**：`AGENTS.md` §5.1（`command-id` 去重）、§7.4-2（不允许静默重复提交）。
+- **位置**：`src/hc/client/conversation.cljc:194-215`。`captured?` 为真时无条件
+  设置 `:command-pending? false` 与 `:run-active? false`，即「快照路径绕过一切阻塞」。
+- **缺口**：`send-decision` 的注释说「`:duplicate` 描述在途命令，不允许静默重复提交」，
+  而 `submit-send` 在 `captured?` 路径上恰好解除了 `:command-pending?` 的拦截。两条
+  规则在代码里同时成立，靠调用方（`request-send!` 的 intent 白名单）决定谁生效。
+  这个耦合没有任何测试固定，也没有注释解释为什么快照路径可以越过去重。
+- **影响**：D-51 的修复若扩大白名单，可能引入真正的重复提交；若保持不变，
+  `:duplicate` 继续静默。两条路都需要先把这个语义说清楚。
+- **建议**：把「快照路径的语义」写成一条独立断言：快照代表操作员**此刻**的明确提交，
+  因此它只解除 `:run-active?`（那是上一轮的自动续跑），不解除 `:command-pending?`
+  （那是同一份内容的在途重复）。二者混为一谈是当前歧义的根源。
+- **优先级**：中。它是 D-51 修复前必须先定的契约。
+
+## D-53 材料页不显示它当前服务哪个会话
+
+- **条款**：`AGENTS.md` §7.4-4（任务/资料视图必须能回答「这是谁的」）。
+- **位置**：`src/hc/client/materials/view.cljc:227`（只渲染 ready/未就绪徽标）。
+- **缺口**：面板不写它描述的是哪个会话。跨会话快照被丢弃时（`cross-session?`），投影
+  停在被清空的会话上，徽标仍是「材料库已就绪」，操作员无法从界面判断「这块面板描述的
+  不是我选中的会话」。
+- **已关闭的部分**（2026-11-12）：
+  1. `apply-snapshot` 丢弃快照时记录 `:last-rejected`（D-54 已实现）。
+  2. 桥接层见到新的 `:last-rejected` 就忘掉 `fetched-session`/`fetched-at`，让下一次
+     同步重新请求；并对未就绪投影排一次 200ms 自愈（`materials_bridge.cljs`
+     的 `retry-timer`）。会话切换时强制重取，不再被 1500ms 节流挡住。
+  3. `:materials/snapshot` 请求的 `:session-id` 由桥接层钉死为已校验的会话，避免
+     定时回调读到排队事务里的旧选择而请求旧会话。
+- **剩余缺口**：只差第 1 条——视图显示 `session-id`/标题。
+- **优先级**：中。数据正确性不受影响，只影响可读性。
+

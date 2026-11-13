@@ -13,8 +13,16 @@
 (def ^:private identity-line
   (var-get #'app/identity-line))
 
-(def ^:private version-pattern
-  #"^Herdchestra 0\.0\.3 git=([0-9a-f]{7,40}|unknown) dirty=(true|false)$")
+(defn- version-pattern
+  "The identity line for the version this tree actually declares.
+
+  Pinning a literal here turns every release into a test edit and hides the
+  real assertion (the printer uses `build-identity`) behind a number."
+  []
+  (re-pattern
+   (str "^Herdchestra "
+        (java.util.regex.Pattern/quote version/version)
+        " git=([0-9a-f]{7,40}|unknown) dirty=(true|false)$")))
 
 (defn- capture-version
   []
@@ -29,7 +37,7 @@
       (is (= 0 code))
       (is (str/includes? output "git="))
       (is (str/includes? output "dirty="))
-      (is (re-matches version-pattern line)
+      (is (re-matches (version-pattern) line)
           (str "unexpected identity line: " (pr-str line)))
       (is (not (str/includes? output "nil")))))
 
@@ -47,7 +55,7 @@
       (is (boolean? (:git-dirty? snapshot))))
     (testing "a non-git tree passes through unknown/false"
       (with-redefs [version/build-identity
-                    (fn [] {:version "0.0.3"
+                    (fn [] {:version version/version
                             :git-hash "unknown"
                             :git-dirty? false})]
         (let [snapshot (health/snapshot {})]
@@ -55,7 +63,8 @@
           (is (false? (:git-dirty? snapshot)))))))
 
   (testing "the version comes from build-identity, not a printer literal"
-    (is (= "0.0.3" version/version))
+    (is (re-matches #"\d+\.\d+\.\d+" version/version)
+        "the declared version is a plain semver triple")
     (let [code (atom nil)
           output (with-out-str
                    (with-redefs [version/build-identity

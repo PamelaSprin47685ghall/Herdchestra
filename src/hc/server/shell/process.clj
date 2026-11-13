@@ -259,7 +259,29 @@
 (defn- alive-handles
   [handles]
   (filterv #(.isAlive ^ProcessHandle %) handles))
+(defn- refresh-handles!
+  "Re-read the live descendants and fold them into `known`.
 
+  This must run *before* the parent is killed: `ProcessHandle.descendants`
+  walks the current ppid chain, so once the parent dies its children reparent
+  to init and become unreachable forever.  A stop that snapshots the tree once
+  at entry therefore misses any child forked in the meantime — and a child
+  forked by `sh -c` appears within milliseconds, well inside the window."
+  [^java.lang.Process process known]
+  (try
+    (let [stream (.descendants (.toHandle process))]
+      (doseq [^ProcessHandle h (iterator-seq (.iterator stream))]
+        (swap! known assoc (.pid h) (handle-info h))))
+    (catch Throwable _ nil))
+  (handles-to-stop process known))
+
+;; A `sh -c "trap '' TERM; sleep 30"` forks `sleep` a few milliseconds after
+;; start.  `ProcessHandle.descendants` walks the live ppid chain, so a child
+;; forked after a scan stays invisible until the next one — and once the
+;; parent dies it reparents to init and can never be found again.  A stop that
+;; snapshots the tree once at entry therefore leaves that child alive forever.
+;; So: let the shell finish forking, keep re-scanning, and signal children
+;; before their parent.
 (defn stop-tree!
   "Signal the main process and every known descendant.
 
@@ -268,51 +290,59 @@
   what was sent and what remained alive; it never claims the session ended."
   ([process known]
    (stop-tree! process known {}))
-  ([^java.lang.Process process known {:keys [grace-ms] :or {grace-ms 2000}}]
-   (let [handles (handles-to-stop process known)
-         signal-errors (atom [])
+  ([^java.lang.Process process known {:keys [grace-ms settle-ms]
+                                      :or {grace-ms 2000 settle-ms 150}}]
+   (let [signal-errors (atom [])
          signal-sent? (atom false)
-         forcibly? (atom false)]
-     (doseq [^ProcessHandle h handles]
+         forcibly? (atom false)
+         ;; pid → :term / :kill, so a re-scan never restates a signal and an
+         ;; escalated kill is never downgraded back to a term.
+         signalled (atom {})]
+     (letfn [(signal! [^ProcessHandle h forcibly]
+               (let [pid (.pid h)
+                     previous (get @signalled pid)]
+                 (when (if forcibly (not= :kill previous) (nil? previous))
+                   (try
+                     (when (if forcibly (.destroyForcibly h) (.destroy h))
+                       (reset! signal-sent? true)
+                       (when forcibly (reset! forcibly? true)))
+                     (swap! signalled assoc pid (if forcibly :kill :term))
+                     (catch Throwable t
+                       (swap! signal-errors conj
+                              {:pid pid
+                               :phase (if forcibly :destroy-forcibly :destroy)
+                               :error (err/throwable->data t)}))))))
+             ;; `handles-to-stop` lists descendants before the main handle, so
+             ;; this signals children first and the parent last.
+             (signal-tree! [forcibly]
+               (doseq [^ProcessHandle h (alive-handles
+                                         (refresh-handles! process known))]
+                 (signal! h forcibly)))
+             (wait! [millis forcibly]
+               (let [deadline (+ (System/currentTimeMillis) (long millis))]
+                 (loop []
+                   (when (< (System/currentTimeMillis) deadline)
+                     (try
+                       (Thread/sleep 20)
+                       (catch InterruptedException _
+                         (Thread/interrupted)))
+                     (signal-tree! forcibly)
+                    (recur)))))]
+       ;; Let the shell finish forking before the first signal.  Without this
+       ;; pause the first scan can miss the very child this stop exists to
+       ;; reach, and the parent's death then hides it permanently.
        (try
-         (when (.destroy h)
-           (reset! signal-sent? true))
-         (catch Throwable t
-           (swap! signal-errors conj {:pid (.pid h)
-                                      :phase :destroy
-                                      :error (err/throwable->data t)}))))
-     (let [deadline (+ (System/currentTimeMillis) (long grace-ms))]
-       (loop []
-         (when (and (seq (alive-handles handles))
-                    (< (System/currentTimeMillis) deadline))
-           (try
-             (Thread/sleep 20)
-             (catch InterruptedException _
-               (Thread/interrupted)))
-           (recur))))
-     (doseq [^ProcessHandle h (alive-handles handles)]
-       (try
-         (when (.destroyForcibly h)
-           (reset! forcibly? true)
-           (reset! signal-sent? true))
-         (catch Throwable t
-           (swap! signal-errors conj {:pid (.pid h)
-                                      :phase :destroy-forcibly
-                                      :error (err/throwable->data t)}))))
-     ;; Give the OS a short window to report the kill.
-     (let [final-deadline (+ (System/currentTimeMillis) 200)]
-       (loop []
-         (when (and (seq (alive-handles handles))
-                    (< (System/currentTimeMillis) final-deadline))
-           (try
-             (Thread/sleep 20)
-             (catch InterruptedException _
-               (Thread/interrupted)))
-           (recur))))
-     {:signal-sent? (boolean @signal-sent?)
-      :forcibly? (boolean @forcibly?)
-      :alive (mapv public-handle-info (alive-handles handles))
-      :errors @signal-errors})))
+         (Thread/sleep (long settle-ms))
+         (catch InterruptedException _ (Thread/interrupted)))
+       (signal-tree! false)
+       (wait! grace-ms false)
+       (signal-tree! true)
+       (wait! 200 true)
+       {:signal-sent? (boolean @signal-sent?)
+        :forcibly? (boolean @forcibly?)
+        :alive (mapv public-handle-info
+                     (alive-handles (refresh-handles! process known)))
+       :errors @signal-errors}))))
 
 (defn alive?
   [^java.lang.Process process]

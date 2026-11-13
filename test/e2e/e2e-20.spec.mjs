@@ -430,9 +430,13 @@ async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true }
     const st = await mockState(mock).catch(() => null);
     const n = st ? st.chat.length : -1;
     const unattended = await page.getByText('无人值守').count().catch(() => 0);
-    if (!live && unattended === 0 && n === lastCount) {
+    // A live `turnLive` here is diagnostic, not fatal: the unattended driver
+    // keeps the run status occupied after the scripted reply, so requiring a
+    // fully idle UI would never terminate.  What must hold is that the mock
+    // stopped producing requests and the reply text is on screen.
+    if (n === lastCount) {
       if (quietSince === null) quietSince = Date.now();
-      if (Date.now() - quietSince >= 5000) {
+      if (Date.now() - quietSince >= 8000) {
         const after = await page.evaluate(() => {
           const log = document.querySelector('[aria-label="会话消息"]');
           return log
@@ -449,9 +453,15 @@ async function sendTurnE2E20(page, text, mock, timeout = 120000, { fill = true }
     await page.waitForTimeout(500);
   }
   const dump = await page.evaluate(() => ({
-    bodyText: (document.body.innerText || '').slice(0, 3000),
+    bodyText: (document.body.innerText || '').slice(0, 1200),
+    turnLive: Boolean(document.querySelector(
+      '[role="group"][aria-label="当前轮仍在生成"]')),
+    logPresent: Boolean(document.querySelector('[aria-label="会话消息"]')),
   }));
-  throw new Error(`turn did not settle within 120s; dump=${JSON.stringify(dump)}`);
+  const st = await mockState(mock).catch(() => null);
+  throw new Error(
+    `turn did not settle within 120s; chat=${st ? st.chat.length : '?'}; `
+    + `dump=${JSON.stringify(dump)}`);
 }
 
 async function createTemporarySession(page) {

@@ -5,16 +5,26 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-OUT=out-files-ui
-rm -rf "$OUT"
+OUT="$(mktemp -d "./out-files-ui.XXXXXX")"
+OUT="${OUT#./}"
+cleanup() {
+  local status=$?
+  if [ "$status" -eq 0 ]; then
+    rm -rf "$OUT"
+  else
+    printf 'files ui output kept for inspection: %s\n' "$OUT" >&2
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 
 clojure -Sdeps '{:deps {org.clojure/clojurescript {:mvn/version "1.12.145"}}}' \
   -M:dev:client \
   -m cljs.main \
-  -co "$(cat <<'EDN'
+  -co "$(cat <<EDN
 {:target :nodejs
- :output-to "out-files-ui/test.js"
- :output-dir "out-files-ui"
+ :output-to "$OUT/test.js"
+ :output-dir "$OUT"
  :optimizations :none
  :main hc.client.files.ui-smoke/-main
  :language-in :ecmascript-2017

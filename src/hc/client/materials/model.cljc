@@ -341,7 +341,18 @@
                     (integer? current-revision)
                     (< revision current-revision))]
     (if (or stale? cross-session?)
-      state
+      ;; A dropped snapshot is inert by design (it must not overwrite newer
+      ;; or other-session tables), but it must leave its reason behind:
+      ;; otherwise `:ui/materials` cannot tell "the last snapshot was
+      ;; rejected" from "no snapshot ever arrived", and the panel shows a
+      ;; not-ready badge with a null error (D-54).  Identity and counts only.
+      (assoc state :last-rejected
+             (cond-> {:reason (if cross-session? :cross-session :stale)
+                      :snapshot-session-id snapshot-session-id
+                      :selected-session-id selected-session-id
+                      :snapshot-revision revision
+                      :current-revision current-revision}
+               (some? (:last-rejected state)) (assoc :previous (:last-rejected state))))
       (let [memory-table? (snapshot-key-present? snapshot :memory/by-id)
             book-table? (snapshot-key-present? snapshot :worldbook/by-id)
             entry-table? (snapshot-key-present?
@@ -1549,7 +1560,7 @@
   (let [;; Fields that can be explicitly cleared (dissoc'ed or set to nil)
         ;; must merge on key presence, not value truthiness.
         local-keys [:commands :outbox :orphan-receipts :last-move
-                    :last-error :memory-suggest-result
+                    :last-error :last-rejected :memory-suggest-result
                     :memory-draft :book-draft :entry-draft :card-draft
                     :selected-memory-id :selected-book-id :selected-card-id
                     :instruction-mode :temporary-read?

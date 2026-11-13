@@ -38,7 +38,7 @@ before_count="$(printf '%s\n' "$before" | grep -c . || true)"
 
 {
   echo "== SIGTERM shutdown regression =="
-  echo "started: $(date -Is)"
+  echo "started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   "$JAVA" -version
   echo "rounds:  $ROUNDS"
   echo "hs_err before: $before_count"

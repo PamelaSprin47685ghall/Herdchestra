@@ -55,12 +55,37 @@ const WORKSPACE_GUIDE_TEXT = 'E2E06 workspace guide: relocation fixture.\n';
 function generateFixtures(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const script = `
-from PIL import Image, ImageDraw, ImageFont
+import sys
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    sys.stderr.write(
+        'Pillow is required to build the E2E 06 scan fixture.\\n'
+        'Install it into the runner you invoke, e.g.\\n'
+        '  python3 -m pip install --user pillow\\n'
+        'The suite cannot fake a scanned PDF without an image library.\\n')
+    raise SystemExit(2)
 import os, random
 out = ${JSON.stringify(dir)}
-font_path = '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc'
-if not os.path.exists(font_path):
-    font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+
+# The fixture needs a CJK-capable font.  Only Linux paths were listed, so
+# the case failed on macOS rather than skipping.  Probe the platforms the
+# project supports and fail with a readable message when none is present.
+font_candidates = [
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/System/Library/Fonts/Hiragino Sans GB.ttc',
+    '/System/Library/Fonts/Supplemental/Songti.ttc',
+    'C:/Windows/Fonts/msyh.ttc',
+    'C:/Windows/Fonts/simhei.ttf',
+]
+font_path = next((p for p in font_candidates if os.path.exists(p)), None)
+if font_path is None:
+    sys.stderr.write(
+        'No CJK font found for the E2E 06 fixture.  Candidates tried:\\n'
+        + '\\n'.join('  ' + p for p in font_candidates) + '\\n')
+    raise SystemExit(2)
 font = ImageFont.truetype(font_path, 52)
 pages = []
 for text in ['部署检查清单 : 服务已就绪。 E2E06 page one.',

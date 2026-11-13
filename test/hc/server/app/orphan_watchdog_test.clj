@@ -18,6 +18,21 @@
   []
   (str (Files/createTempDirectory "hc-orphan-" (make-array FileAttribute 0))))
 
+(defn- flock-available?
+  "True when a real `flock` binary is on PATH.
+
+  The two tests below drive `flock` itself to prove the watchdog sees a
+  live holder.  macOS ships no `flock`, so on that platform the probe
+  cannot run; it must skip rather than fail.
+  `lock-held-by-flock-is-false-without-a-holder` still runs everywhere, so
+  the negative path stays covered."
+  []
+  (try
+    (zero? (.waitFor (.start (ProcessBuilder. ["flock" "--version"]))
+                     10
+                     TimeUnit/SECONDS))
+    (catch Throwable _ false)))
+
 (defn- delete-tree!
   [root]
   (doseq [file (reverse (file-seq (io/file root)))]
@@ -55,25 +70,46 @@
     (is (false? (#'app/start-matches?
                 (.minusSeconds start 3600)
                 (java.util.Optional/of handle))))
-    (is (true? (#'app/start-matches? nil java.util.Optional/empty))
-        "a missing start instant cannot disprove identity")))
+    (is (false? (#'app/start-matches? nil java.util.Optional/empty))
+        "an empty Optional means the process is gone, so it cannot be the same one")
+    (is (true? (#'app/start-matches? nil handle))
+        "a live handle with no recorded start instant is still a match")))
+
+(deftest parent-info-unwraps-optional-command
+  ;; `ProcessHandle$Info.commandLine` and `.command` return
+  ;; `java.util.Optional`, never nil.  Keeping the Optional made `:command`
+  ;; non-string, `shell-launcher?` false, and the orphan watchdog silently
+  ;; inert from 0.0.1 on.  `ProcessHandle/current` is alive, so its info is
+  ;; always present.
+  (let [{:keys [pid start command]} (#'app/parent-info (ProcessHandle/current))]
+    (is (integer? pid))
+    (is (some? start) "current process must report a start instant")
+    (is (string? command)
+        (str "expected a command string, got "
+             (some-> command class .getName)))
+    (is (not (instance? java.util.Optional command))
+        ":command must be unwrapped, not the Optional wrapper")))
 
 (deftest lock-held-by-flock-sees-a-live-flock-holder
-  (let [dir (temp-dir)
-        lock-file (str (singleton/lock-path dir))]
-    (try
-      ;; Hold the lock file with a real flock subprocess; the watchdog must
-      ;; see it as held and must not consider the app orphaned.  `flock
-      ;; FILE CMD` keeps the lock for the command's lifetime.
-      (let [proc (.start (ProcessBuilder.
-                          ["flock" lock-file "sleep" "30"]))]
-        (try
-          (is (wait-for #(#'app/lock-held-by-flock? dir) 10000)
-              "a live flock holding instance.lock is detected")
-          (finally
-            (.destroyForcibly proc)
-            (.waitFor proc 5 TimeUnit/SECONDS))))
-      (finally (delete-tree! dir)))))
+  ;; `flock` is GNU util-linux; macOS has no equivalent binary.  The negative
+  ;; test below still runs everywhere.
+  (if-not (flock-available?)
+    (println "SKIP lock-held-by-flock-sees-a-live-flock-holder: no flock binary")
+    (let [dir (temp-dir)
+          lock-file (str (singleton/lock-path dir))]
+      (try
+        ;; Hold the lock file with a real flock subprocess; the watchdog must
+        ;; see it as held and must not consider the app orphaned.  `flock
+        ;; FILE CMD` keeps the lock for the command's lifetime.
+        (let [proc (.start (ProcessBuilder.
+                            ["flock" lock-file "sleep" "30"]))]
+          (try
+            (is (wait-for #(#'app/lock-held-by-flock? dir) 10000)
+                "a live flock holding instance.lock is detected")
+            (finally
+              (.destroyForcibly proc)
+              (.waitFor proc 5 TimeUnit/SECONDS))))
+        (finally (delete-tree! dir))))))
 
 (deftest lock-held-by-flock-is-false-without-a-holder
   (let [dir (temp-dir)]

@@ -1,11 +1,10 @@
 {
   "name": "herdchestra-client",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "type": "module",
   "description": "Browser client dependencies for the Herdchestra thin workbench.",
   "dependencies": {
-    "@cljs-oss/module-deps": "^1.1.1",
     "framework7": "^9.3.0",
     "framework7-react": "^9.3.0",
     "react": "^18.3.1",
@@ -25,6 +24,7 @@
     "e2e:18": "node test/e2e/run-e2e.mjs --grep @disk",
     "e2e:a11y": "node test/e2e/run-e2e.mjs --grep @a11y",
     "e2e:mock": "playwright test --config test/e2e/playwright.config.mjs --grep @mock",
-    "e2e:memory": "playwright test --config test/e2e/playwright.config.mjs --grep @memory"
+    "e2e:memory": "playwright test --config test/e2e/playwright.config.mjs --grep @memory",
+    "verify:js": "bash test/js/verify_all.sh"
   }
 }

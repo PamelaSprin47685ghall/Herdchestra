@@ -171,15 +171,21 @@ export async function turnLive(page) {
     if (lastText.includes('已停止')) return false;
     if ((document.body.innerText || document.body.textContent || '')
         .includes('当前轮仍在生成')) return true;
+    // The stop control is mounted even while idle, and its `aria-label` is
+    // constant ("停止当前生成") — only the label *text* changes to `停止`
+    // when there is nothing to stop.  Presence and `aria-label` therefore
+    // prove nothing; the text does.  `offsetParent` is also unreliable here:
+    // the control lives in a fixed-position composer, so it reports a
+    // non-null parent even on a route where the composer is not shown.
     const buttons = document.querySelectorAll(
       'button[aria-label="停止当前生成"], button[aria-label="停止无人值守运行"]');
     for (const button of buttons) {
-      const visible = button.offsetParent !== null
-        || button.getClientRects().length > 0;
+      const rect = button.getBoundingClientRect();
+      const visible = rect.width > 0 && rect.height > 0
+        && getComputedStyle(button).visibility !== 'hidden';
       if (!visible) continue;
-      const aria = button.getAttribute('aria-label') || '';
       const text = (button.innerText || button.textContent || '').trim();
-      if (aria === '停止无人值守运行'
+      if (text === '停止无人值守运行'
           || /正在生成|正在停止|停止无人值守运行/.test(text)) {
         return true;
       }

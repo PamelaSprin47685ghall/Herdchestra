@@ -12,7 +12,7 @@
                     [clojure.string :as str]))
   #?(:clj (:import (java.util.concurrent TimeUnit))))
 
-(def version "0.0.3")
+(def version "0.0.4")
 
 #?(:clj
    (defn- git-output

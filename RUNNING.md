@@ -1,7 +1,8 @@
-# Herdchestra 0.0.1 — 运行与发布检查
+# Herdchestra — 运行与发布检查
 
-版本：**0.0.1**。唯一运行时版本源是 `src/hc/version.cljc`；`pixi.toml` 与
-`package.json` 的版本必须与它一致。`--help` 与 `GET /healthz` 都会显示该版本。
+版本：以 `src/hc/version.cljc` 为唯一运行时版本源；`pixi.toml` 与
+`package.json` 的版本必须与它一致。本文件不写死版本号——写死会让升级时
+文档与代码脱节，0.0.2 的 tag 就曾因此发布出 0.0.1 的版本号（见 `DEBT.md` D-43）。`--help` 与 `GET /healthz` 都会显示该版本。
 
 这是源码级本地发布，不是签名安装包。Pixi 负责 JVM、Clojure、Node 与锁文件；
 浏览器客户端仍由 shadow-cljs 构建。
@@ -37,7 +38,7 @@ http://127.0.0.1:7575/
 curl -s http://127.0.0.1:7575/healthz
 ```
 
-健康 EDN 应包含 `:ok true`、`:version "0.0.1"`、`:store {:open? true}` 与
+健康 EDN 应包含 `:ok true`、`:version "<version.cljc 的值>"`、`:store {:open? true}` 与
 `:gateway` 计数。停止应用使用 Ctrl-C 或 SIGTERM；进程会先停止接收新工作，
 再关闭网关、Owner、模型端口与存储。
 
@@ -53,7 +54,7 @@ check 模式下 fleet 以 `:preflight? false` 启动（不执行真实 fork）�
 
 ```bash
 pixi run clojure -M:server -m hc.server.app --check --port 0 \
-  --data-dir /tmp/hc-0.0.1-data \
+  --data-dir /tmp/hc-data \
   --workspace-root "$PWD" \
   --static-root resources/public
 ```
@@ -82,8 +83,8 @@ pixi run clojure -M:server -m hc.server.app --help
 
 | 项 | 期望 |
 |---|---|
-| `pixi.toml` `version` | `0.0.1` |
-| `package.json` `version` | `0.0.1` |
+| `pixi.toml` `version` | 与 `version.cljc` 一致 |
+| `package.json` `version` | 与 `version.cljc` 一致 |
 | Pixi 运行时 | JDK 21、Clojure 1.12.6、Node 22 |
 | 锁文件 | `pixi.lock` 存在；安装使用 `--locked` |
 | 客户端依赖 | `pixi run client-install`（`npm ci`） |
@@ -101,22 +102,22 @@ pixi run clojure -M:server -m hc.server.app --help
 `:main-opts`；`:cljs` 只用于 cljs.main/REPL。不要把 `:cljs` 加回 shadow 的
 aliases，否则 `-m cljs.main` 会覆盖 shadow CLI。
 
-## 0.0.1 发布条件
+## 发布条件
 
-以下全部满足才可标记 0.0.1：
+以下全部满足才可标记发布：
 
 1. `pixi install --locked` 在干净环境成功。
 2. `pixi run client-install` 与 `pixi run client-release` 退出 0；静态产物存在。
-3. `pixi run app-check` 退出 0，健康包含 `:version "0.0.1"`、存储打开与网关计数。
+3. `pixi run app-check` 退出 0，健康包含 `:version` 与 `version.cljc` 相等、存储打开与网关计数。
 4. 真实启动后 `GET /healthz` 返回 200，`GET /` 返回客户端 shell。
 5. `pixi run test` 全量通过；记录命令、测试数、断言数、退出码与 seed。
 6. 发布提交干净；没有未提交/未跟踪的产品文件。版本在 `hc.version`、
    `pixi.toml`、`package.json` 与 `--help`/health 中一致。
 7. 没有模型配置时启动仍健康，但聊天明确提示需要选择模型；不得用假模型或
    静默回退冒充可用。
-8. `plans/release-notes-0.0.1.md` 如实列出已验证项、`NOT RUN`/`BLOCKED` 项与
-   已知边界：E2E 尚未全部 PASS；逐条状态与证据以
-   `plans/e2e-master-status-0.0.1.md` 为准；修复中的条目不得预写 PASS。
+8. 当前版本的 `plans/release-notes-<version>.md` 如实列出已验证项、
+   `NOT RUN`/`BLOCKED` 项与已知边界；逐条 E2E 状态与证据以
+   `plans/e2e-master-status-<version>.md` 为准；修复中的条目不得预写 PASS。
    根 `AGENTS.md` §8.5 要求 22 条 E2E 全部自动化，配套 mock 模型服务与
    OAuth/WebDAV/S3 mock 外部服务；手工验收只用于 mock 无法覆盖的宿主平台
    差异。自动化结果以 W10 的报告为准；W10 完成前条件 8 不能算 PASS。
@@ -126,13 +127,52 @@ aliases，否则 `-m cljs.main` 会覆盖 shadow CLI。
    无签名安装包；默认 loopback-only；离线恢复走 `hc.server.backup.cli`
    且有已知边界；没有 GPU 路径。
 
+### E2E 复跑纪律（2026-11-11 起）
+
+判定标准是 22 条 E2E 在本机全部通过，不是抽样代表。复跑必须遵守：
+
+```bash
+# 全量（单进程串行）。TMPDIR 必须在真实磁盘：/tmp 是 tmpfs，
+# 写满会产生假连接中断（HACK.md §17.24）。
+PATH=/private/tmp/hc-e2e-venv/bin:$PATH \
+  CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  TMPDIR=/var/tmp/hc-e2e \
+  npx playwright test --config test/e2e/playwright.config.mjs --workers=1
+```
+
+- **禁止两个 Playwright 进程并行。** 它们共用
+  `plans/evidence/e2e-auto/playwright-artifacts`，互删 trace 会产生成片的
+  `ENOENT ... recording5-pwnetcopy-1.network` 假失败。确需并行时用
+  `HC_PW_SHARD=<name>` 隔离 `outputDir`，并给每个 shard 不同端口。
+- **改任何 `.cljs` 之后必须 `npm run release`**，否则 E2E 跑的是旧 bundle。
+  只改 CSS 或 spec 文件不需要重建。改完用
+  `shasum -a 256 resources/public/js/main.js` 记录前 16 位，与
+  `e2e-NN-result.json` 的 `clientBundle` 对照。
+- **Pillow 虚拟环境在 `/private/tmp/hc-e2e-venv`**，不是 `/tmp`：该路径在
+  macOS 上是符号链接，`site-packages` 解析会失败。
+- 每轮结束确认没有残留：`pkill -f "hc-e2e"`，否则下一轮端口冲突。
+
+### 诊断 E2E 失败的顺序
+
+1. 先读 `plans/evidence/e2e-NN/e2e-NN-result.json` 的 `checks`：每项的
+   `detail` 带观察到的实际值，比截图快。`error` 通常只是最后一个断言。
+2. `checks` 全 pass 而 `error` 非空，说明失败发生在断言之后的收尾阶段。
+3. 判断「失败点是否随修改移动」：移动则是多缺陷叠加，继续逐层剥；
+   不动则定位单一原因。
+4. 区分产品缺陷与测试假设：同一场景手工操作也失败才是产品缺陷。
+   例：E2E 11 的 `turn did not settle` 一度被当成产品问题，实际是
+   `waitMockQuiet`（mock 静默）被误当作 UI 空闲。
+5. 客户端状态不可从 DOM 观察时，用 `window.__HC_DB__()` 只读探针：
+   它返回会话 id、消息归属、看板存在性与材料库的 ready/revision/行数，
+   不含正文与草稿。DOM 与探针不一致本身就是线索。
+
 **资源纪律**：所有 app/test JVM 必须带显式堆上限（`deps.edn` 默认
 `-Xmx1g -XX:MaxDirectMemorySize=512m`；测试子 JVM 512m/256m；E2E app
 768m/512m）；同一时刻最多 1 个重资源 app JVM + 1 个 Chrome；全量测试与
 E2E 串行；结束立即停止 app/Chrome。不得用无 caps 的裸 `java`/无别名
 `clojure` 绕过 `deps.edn`。
 
-0.0.1 的逐项证据与未覆盖清单以 `plans/release-notes-0.0.1.md` 为准；本文件
+当前版本的逐项证据与未覆盖清单以 `plans/release-notes-<version>.md` 为准；本文件
 只保留运行入口、发布条件与操作边界。
 
 ## 已知边界
@@ -150,5 +190,5 @@ E2E 串行；结束立即停止 app/Chrome。不得用无 caps 的裸 `java`/无
 - 小应用生成是同步 HTTP `POST /api/workspace/miniapp-generate`，默认截止
   300 s、上限 600 s，真实生成可能耗时数分钟；UI 不得在等待期间重复提交。
 - 本地 Ollama 端点（`127.0.0.1:11434/v1`、`qwen3.6:27b`）只用于开发/验证，
-  不是 0.0.1 的发布依赖；发布不要求本机运行 Ollama。验证时使用
+  不是发布依赖；发布不要求本机运行 Ollama。验证时使用
   `OLLAMA_CONTEXT_LENGTH=16384`、`OLLAMA_NUM_PARALLEL=1`，E2E 串行。

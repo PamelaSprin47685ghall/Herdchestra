@@ -413,7 +413,80 @@
                     (into {}
                           (map (fn [[id summary]]
                                  [id (count (or (:worker-programs summary) []))]))
-                          sessions)})))))
+                          sessions)
+                    ;; Materials projection: identity, readiness, revision
+                    ;; and row counts only — never memory text, drafts or
+                    ;; settings.  The server keys are the raw DB keys; the
+                    ;; `ui` block is what the view actually renders, and the
+                    ;; two disagreeing is exactly the bug class this probe
+                    ;; has to make visible.
+                    ;; Pending commands: a send envelope whose receipt has
+                    ;; not arrived refuses the next send as `:duplicate`
+                    ;; with no visible reason (only the draft stays in the
+                    ;; box).  Identity and kind only, no payload.
+                    ;; Session identity and temporary flag: the materials
+                    ;; snapshot blanks its memory rows for a temporary
+                    ;; session, so a disagreement here explains an empty
+                    ;; panel without any error.
+                    :sessionFlags
+                    (into {}
+                          (map (fn [[id summary]]
+                                 [id {:temporary (boolean (:temporary? summary))}]))
+                          sessions)
+                    :pendingCommands
+                    (->> (vals (get-in db [:ui/conversation :commands]))
+                         (filter (fn [c] (= :pending (:status c))))
+                         (mapv (fn [c] {:kind (:kind c)
+                                        :session (:session-id c)})))
+                    ;; Composer send gate for the selected session: the
+                    ;; intent is what the send button renders as, and it is
+                    ;; the same value `request-send!` branches on.  Naming it
+                    ;; turns "send was refused" into a stated reason.
+                    :composerIntent
+                    (let [conversation (get db :ui/conversation)
+                          session-id (or (get db :ui/selected-session-id)
+                                         (get db :session/active-id))
+                          stream (get-in conversation [:streams session-id])]
+                      {:intent (get-in conversation
+                                       [:composer :send :intent])
+                       :streaming (:status stream)
+                       :selectedSessionId session-id})
+                    :materials
+                    {:ready (get db :materials/ready?)
+                     :revision (get db :materials/revision)
+                     :sessionId (get-in db [:materials/session :session-id])
+                     :memoryCount (count (get db :memory/by-id))
+                     :ui
+                     (when-let [ui (get db :ui/materials)]
+                       {:ready (:ready? ui)
+                        :error (:error ui)
+                        :lastError (:last-error ui)
+                        :revision (:revision ui)
+                        :selectedSessionId (:selected-session-id ui)
+                        :sessionId (get-in ui [:session :session-id])
+                        :memoryCount (count (:memories ui))
+                        :memoryOrder (count (:memory-order ui))
+                        ;; Refresh bookkeeping: `transact-state!` drops a
+                        ;; snapshot that belongs to another session, and the
+                        ;; drop is silent by design.  These three fields make
+                        ;; "the request went out" distinguishable from "the
+                        ;; request was never sent", which no UI element says.
+                        :syncCommandEpoch (get-in ui [:sync :command-epoch])
+                        :syncPhase (get-in ui [:sync :phase])
+                        :outboxCount (count (:outbox ui))
+                        :lastRejected (:last-rejected ui)
+                        ;; Bridge-level decision record: which values
+                        ;; `sync-from-db!` actually compared.  `fetch? false`
+                        ;; with a blank projection is the whole bug class,
+                        ;; and no database field can show why.
+                        :fetchDecision (some-> materials-bridge/fetch-decision
+                                               deref
+                                               clj->js)
+                        :commandStatuses
+                        (into {}
+                              (map (fn [[id c]]
+                                     [(name id) (:status c)]))
+                              (:commands ui))})}})))))
       (reset! last-persisted (persist-signature initial))
       (apply-appearance! initial)
       (bridge/set-app! app)
